@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>Air Explorer</title>
+<h1>Air Explorer</h1><p>Latest air-quality analysis for the city.</p>
+<pre id="out">loading…</pre>
+<script>
+// A sandboxed app never talks to the backend directly. It asks its HOST (the app-host shell) over
+// postMessage; the host attaches the USER's token and enforces this app's schema allow-list.
+function ask(op, msg){ return new Promise(res=>{
+  const id = Math.random().toString(36).slice(2);
+  window.addEventListener('message', function h(e){ if((e.data||{}).id===id){ window.removeEventListener('message',h); res(e.data);} });
+  parent.postMessage(Object.assign({id, op}, msg), '*');
+});}
+ask('registry.search', {schema:'intelligence.analysis', id:'ds:kmc:analysis/air/today/descriptive'})
+  .then(r=>{ document.getElementById('out').textContent = JSON.stringify(r.result||r.error, null, 2); });
+</script>

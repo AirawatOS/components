@@ -1,0 +1,8 @@
+component_id: ds:kmc:app/rogue-app
+kind: app
+version: 0.1.0
+provider: ds:evil:vendor
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [intelligence.analysis]

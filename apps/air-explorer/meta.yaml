@@ -1,0 +1,12 @@
+# A UI app (kind=app). It holds NO component run-token and NO registry handle: it runs in the browser
+# and calls the kernel under the SIGNED-IN USER's token, mediated by the app-host (PLAT-HOST-005).
+# It declares required_schemas (its DATA allow-list), not broker scopes.
+component_id: ds:kmc:app/air-explorer
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Air Explorer
+entrypoint: index.html      # SPA entry inside the bundle
+bundle: dist                # the static bundle directory served under /apps/<id>/
+sandboxed: true             # third-party default → null-origin iframe + host-mediated calls
+required_schemas: [intelligence.analysis, intelligence.signal]
