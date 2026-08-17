@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><title>City Explorer — Terrain</title>
+<style>
+  body{margin:0;font:14px system-ui,sans-serif;background:#0d1117;color:#e6edf3}
+  header{padding:12px 16px;border-bottom:1px solid #21262d}
+  h1{margin:0;font-size:16px} .sub{color:#8b949e;font-size:12px;margin-top:2px}
+  #wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+  canvas{background:#0b0f16;border:1px solid #21262d;border-radius:8px}
+  .legend{font-size:12px;color:#8b949e} .legend b{color:#e6edf3}
+  .bar{height:12px;width:180px;border-radius:3px;margin:6px 0;
+       background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725)}
+  .row{display:flex;justify-content:space-between;width:180px}
+</style>
+<header><h1>City Explorer — Terrain</h1><div class="sub" id="sub">loading the geo.terrain layer…</div></header>
+<div id="wrap">
+  <canvas id="c" width="520" height="420"></canvas>
+  <div class="legend">
+    <div><b>Elevation</b> (m)</div><div class="bar"></div>
+    <div class="row"><span id="lo">–</span><span id="hi">–</span></div>
+    <div style="margin-top:14px" id="stats"></div>
+  </div>
+</div>
+<script>
+// A sandboxed app asks its HOST for data (never the backend directly). The host attaches the user's
+// token and permits only this app's declared schemas (space.aoi, geo.terrain).
+function ask(op, msg){ return new Promise(res=>{
+  const id = Math.random().toString(36).slice(2);
+  window.addEventListener('message', function h(e){ if((e.data||{}).id===id){ window.removeEventListener('message',h); res(e.data);} });
+  parent.postMessage(Object.assign({id, op}, msg), '*');
+});}
+// viridis-ish ramp
+const STOPS=[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
+function ramp(t){ t=Math.max(0,Math.min(1,t)); const x=t*(STOPS.length-1), i=Math.floor(x), f=x-i;
+  const a=STOPS[i], b=STOPS[Math.min(i+1,STOPS.length-1)];
+  return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`; }
+
+(async function(){
+  const aoiRes = await ask('registry.query', {schema:'space.aoi', filter:{}});
+  const cellRes = await ask('registry.query', {schema:'geo.terrain', filter:{}});
+  const aoi = (aoiRes.result||[])[0]; const cells = cellRes.result||[];
+  if(!aoi || !cells.length){ document.getElementById('sub').textContent='no terrain layer found — run the terrain driver first'; return; }
+  const [w,s,e,n] = aoi.bbox;
+  const els = cells.map(c=>c.elevation_m); const lo=Math.min(...els), hi=Math.max(...els);
+  document.getElementById('sub').textContent = `${aoi.name} · ${cells.length} H3 cells · res ${aoi.h3_res}`;
+  document.getElementById('lo').textContent = lo.toFixed(0);
+  document.getElementById('hi').textContent = hi.toFixed(0);
+  const classes={}; cells.forEach(c=>classes[c.terrain_class]=(classes[c.terrain_class]||0)+1);
+  document.getElementById('stats').innerHTML = '<b>Terrain class</b><br>' +
+    Object.entries(classes).map(([k,v])=>`${k}: ${v}`).join('<br>');
+
+  const cv=document.getElementById('c'), g=cv.getContext('2d'), P=24;
+  const X=lon=>P+(lon-w)/(e-w)*(cv.width-2*P), Y=lat=>cv.height-P-(lat-s)/(n-s)*(cv.height-2*P);
+  const r=Math.max(6, (cv.width-2*P)/Math.sqrt(cells.length)/1.6);
+  cells.forEach(c=>{ const [lon,lat]=c.space.centroid; const t=(c.elevation_m-lo)/((hi-lo)||1);
+    g.beginPath(); g.arc(X(lon),Y(lat),r,0,7); g.fillStyle=ramp(t); g.globalAlpha=.92; g.fill(); });
+})();
+</script>

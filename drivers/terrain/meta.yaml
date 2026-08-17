@@ -1,0 +1,14 @@
+# A DRIVER (kind=driver). Confined by the Component Host: its only I/O is the broker. It reads the AOI
+# (space.aoi) as CONTEXT, fills the bbox with H3 cells, and writes a geo.terrain measure per cell.
+component_id: ds:kmc:driver/terrain
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Terrain (DEM → H3) driver
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi]
+writes: [geo.terrain]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: geo.terrain, tenant: kmc }

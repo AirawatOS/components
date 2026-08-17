@@ -1,0 +1,11 @@
+# City Explorer (kind=app). Renders registry layers on a map. Sandboxed: it reaches data only through
+# the app-host bridge, as the signed-in USER, and only for its declared schemas.
+component_id: ds:kmc:app/city-explorer
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Explorer
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [space.aoi, geo.terrain]
