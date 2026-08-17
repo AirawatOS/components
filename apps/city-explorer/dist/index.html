@@ -3,76 +3,75 @@
   body{margin:0;font:14px system-ui,sans-serif;background:#0d1117;color:#e6edf3}
   header{padding:12px 16px;border-bottom:1px solid #21262d}
   h1{margin:0;font-size:16px} .sub{color:#8b949e;font-size:12px;margin-top:2px}
-  #wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
   #tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 16px 0}
   .tab{font-size:12px;padding:5px 11px;border:1px solid #21262d;border-radius:999px;color:#8b949e;cursor:pointer;background:#0b0f16}
   .tab.on{color:#e6edf3;border-color:#3b82f6;background:#12203a}
-  canvas{background:#0b0f16;border:1px solid #21262d;border-radius:8px}
+  #wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+  canvas{background:#0b0f16;border:1px solid #21262d;border-radius:8px;max-width:100%}
   .legend{font-size:12px;color:#8b949e} .legend b{color:#e6edf3}
   .bar{height:12px;width:180px;border-radius:3px;margin:6px 0}
-  .row{display:flex;justify-content:space-between;width:180px}
+  .rowb{display:flex;justify-content:space-between;width:180px;font-variant-numeric:tabular-nums}
 </style>
 <header><h1>City Explorer</h1><div class="sub" id="sub">loading catalog…</div></header>
 <div id="tabs"></div>
 <div id="wrap">
-  <canvas id="c" width="520" height="420"></canvas>
+  <canvas id="c" width="620" height="480"></canvas>
   <div class="legend">
-    <div><b id="lname">–</b> <span id="lunit"></span></div><div class="bar" id="bar"></div>
-    <div class="row"><span id="lo">–</span><span id="hi">–</span></div>
+    <b id="ln">–</b> <span id="lu"></span><div class="bar" id="bar"></div>
+    <div class="rowb"><span id="lo">–</span><span id="hi">–</span></div>
     <div style="margin-top:12px;font-size:12px" id="interp"></div>
     <div style="margin-top:12px" id="stats"></div>
   </div>
 </div>
 <script>
-function ask(op,msg){return new Promise(res=>{const id=Math.random().toString(36).slice(2);
-  window.addEventListener('message',function h(e){if((e.data||{}).id===id){window.removeEventListener('message',h);res(e.data);}});
-  parent.postMessage(Object.assign({id,op},msg),'*');});}
-function path(o,p){return p.split('.').reduce((a,k)=>a==null?a:a[k],o);}
-// four named ramps (viridis|reds|blues|aqi) — dependency-free, mirrors AirOS color scales
-const RAMPS={
-  viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],
+const RAMPS={viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],
   reds:[[255,245,240],[252,187,161],[251,106,74],[203,24,29],[103,0,13]],
   blues:[[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]],
-  aqi:[[0,153,102],[255,222,51],[255,153,51],[204,0,51],[126,0,35]]
-};
-function color(scale,t){const S=RAMPS[scale]||RAMPS.viridis;t=Math.max(0,Math.min(1,t));
-  const x=t*(S.length-1),i=Math.floor(x),f=x-i,a=S[i],b=S[Math.min(i+1,S.length-1)];
-  return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`;}
-
-let AOI=null, LAYERS=[], active=null;
+  aqi:[[0,153,102],[255,222,51],[255,153,51],[204,0,51],[126,0,35]]};
+function color(s,t){const S=RAMPS[s]||RAMPS.viridis;t=Math.max(0,Math.min(1,t));const x=t*(S.length-1),i=Math.floor(x),f=x-i,a=S[i],b=S[Math.min(i+1,4)];return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`;}
+function path(o,p){return p.split('.').reduce((a,k)=>a==null?a:a[k],o);}
+let APPID, AOI=null, LAYERS=[];
+// The app reaches data ONLY through the host's /bridge/query (same-origin; connect-src 'self' blocks
+// any other destination). The host enforces this app's schema allow-list + attaches the user's token.
+async function query(schema, filter){
+  const r = await fetch('/bridge/query', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({app_id: APPID, schema, filter: filter||{}})});
+  if(!r.ok) throw new Error('bridge '+r.status+' for '+schema);
+  return (await r.json()).results || [];
+}
 async function boot(){
-  const cat=(await ask('registry.query',{schema:'viz.layer',filter:{}})).result||[];
-  LAYERS=cat.filter(l=>l.enabled!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  AOI=((await ask('registry.query',{schema:'space.aoi',filter:{}})).result||[])[0];
-  if(!LAYERS.length){document.getElementById('sub').textContent='no viz.layer catalog found';return;}
-  document.getElementById('sub').textContent=(AOI?AOI.name+' · ':'')+LAYERS.length+' layers in the catalog';
-  const tabs=document.getElementById('tabs');
-  LAYERS.forEach((l,i)=>{const b=document.createElement('div');b.className='tab';b.textContent=l.label;
-    b.onclick=()=>select(i);tabs.appendChild(l._el=b);});
-  select(0);
+  try{
+    const cfg = await fetch('./config.json').then(r=>r.json()); APPID = cfg.app_id;
+    LAYERS = (await query('viz.layer',{})).filter(l=>l.enabled!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+    AOI = (await query('space.aoi',{}))[0];
+    if(!LAYERS.length){ document.getElementById('sub').textContent='no viz.layer catalog found'; return; }
+    document.getElementById('sub').textContent=(AOI?AOI.name+' · ':'')+LAYERS.length+' layers · click a tab';
+    const tabs=document.getElementById('tabs');
+    LAYERS.forEach((l,i)=>{const b=document.createElement('div');b.className='tab';b.textContent=l.label;b.onclick=()=>select(i);l._el=b;tabs.appendChild(b);});
+    select(0);
+  }catch(e){ document.getElementById('sub').textContent='error: '+e.message; }
 }
 async function select(i){
-  active=LAYERS[i]; LAYERS.forEach(l=>l._el.classList.toggle('on',l===active));
-  const cells=(await ask('registry.query',{schema:active.source_schema,filter:active.filters||{}})).result||[];
-  render(active,cells);
+  const L=LAYERS[i]; LAYERS.forEach(l=>l._el.classList.toggle('on',l===L));
+  const cells = await query(L.source_schema, L.filters||{});
+  render(L, cells);
 }
 function render(L,cells){
-  const vals=cells.map(c=>Number(path(c,L.value_field))).filter(v=>!isNaN(v));
-  const lo=Math.min(...vals),hi=Math.max(...vals);
-  document.getElementById('lname').textContent=L.label;
-  document.getElementById('lunit').textContent=L.unit?'('+L.unit+')':'';
-  document.getElementById('lo').textContent=lo.toFixed(1);
-  document.getElementById('hi').textContent=hi.toFixed(1);
+  const vals=cells.map(c=>Number(path(c,L.value_field))).filter(v=>!isNaN(v)); const lo=Math.min(...vals),hi=Math.max(...vals);
+  document.getElementById('ln').textContent=L.label; document.getElementById('lu').textContent=L.unit?'('+L.unit+')':'';
+  document.getElementById('lo').textContent=lo.toFixed(1); document.getElementById('hi').textContent=hi.toFixed(1);
   document.getElementById('interp').textContent=L.interpretation||L.description||'';
   const S=RAMPS[L.color_scale]||RAMPS.viridis;
   document.getElementById('bar').style.background='linear-gradient(90deg,'+S.map(c=>`rgb(${c.join(',')})`).join(',')+')';
-  const cl={}; cells.forEach(c=>{const k=c.terrain_class||c.class; if(k)cl[k]=(cl[k]||0)+1;});
-  document.getElementById('stats').innerHTML=Object.keys(cl).length?('<b>class</b><br>'+Object.entries(cl).map(([k,v])=>`${k}: ${v}`).join('<br>')):'';
-  const cv=document.getElementById('c'),g=cv.getContext('2d'),P=24; g.clearRect(0,0,cv.width,cv.height);
+  const cl={}; cells.forEach(c=>{const k=c.terrain_class; if(k)cl[k]=(cl[k]||0)+1;});
+  document.getElementById('stats').innerHTML=Object.keys(cl).length?('<b>class</b><br>'+Object.entries(cl).map(([k,v])=>`${k.replace('_',' ')}: ${v}`).join('<br>')):'';
+  const cv=document.getElementById('c'),g=cv.getContext('2d'),P=26; g.clearRect(0,0,cv.width,cv.height);
   const bb=AOI?AOI.bbox:[Math.min(...cells.map(c=>c.space.centroid[0])),Math.min(...cells.map(c=>c.space.centroid[1])),Math.max(...cells.map(c=>c.space.centroid[0])),Math.max(...cells.map(c=>c.space.centroid[1]))];
   const [w,s,e,n]=bb, X=lon=>P+(lon-w)/(e-w)*(cv.width-2*P), Y=lat=>cv.height-P-(lat-s)/(n-s)*(cv.height-2*P);
-  const r=Math.max(6,(cv.width-2*P)/Math.sqrt(cells.length)/1.6);
-  cells.forEach(c=>{const ce=c.space&&c.space.centroid; if(!ce)return; let t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
-    if(L.higher_is_worse===false){} g.beginPath();g.arc(X(ce[0]),Y(ce[1]),r,0,7);g.fillStyle=color(L.color_scale,t);g.globalAlpha=.92;g.fill();});
+  const r=Math.max(9,(cv.width-2*P)/Math.sqrt(cells.length)/1.5);
+  function hex(cx,cy,rad){g.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k-30),px=cx+rad*Math.cos(a),py=cy+rad*Math.sin(a);k?g.lineTo(px,py):g.moveTo(px,py);}g.closePath();}
+  cells.forEach(c=>{const ce=c.space&&c.space.centroid; if(!ce)return; const t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
+    hex(X(ce[0]),Y(ce[1]),r*0.62); g.fillStyle=color(L.color_scale,t); g.globalAlpha=.95; g.fill(); g.globalAlpha=1; g.strokeStyle='rgba(0,0,0,.28)'; g.stroke();});
 }
 boot();
+</script>
