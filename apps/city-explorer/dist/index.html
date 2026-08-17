@@ -8,6 +8,7 @@
   .tab.on{color:#e6edf3;border-color:#3b82f6;background:#12203a}
   #wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
   canvas{background:#0b0f16;border:1px solid #21262d;border-radius:8px;max-width:100%}
+  .attrib{font-size:10px;color:#5b6675;margin-top:4px}
   .legend{font-size:12px;color:#8b949e} .legend b{color:#e6edf3}
   .bar{height:12px;width:180px;border-radius:3px;margin:6px 0}
   .rowb{display:flex;justify-content:space-between;width:180px;font-variant-numeric:tabular-nums}
@@ -15,7 +16,10 @@
 <header><h1>City Explorer</h1><div class="sub" id="sub">loading catalog…</div></header>
 <div id="tabs"></div>
 <div id="wrap">
-  <canvas id="c" width="620" height="480"></canvas>
+  <div>
+    <canvas id="c" width="640" height="480"></canvas>
+    <div class="attrib">Basemap © OpenStreetMap contributors · proxied by the app-host</div>
+  </div>
   <div class="legend">
     <b id="ln">–</b> <span id="lu"></span><div class="bar" id="bar"></div>
     <div class="rowb"><span id="lo">–</span><span id="hi">–</span></div>
@@ -56,7 +60,22 @@ async function select(i){
   const cells = await query(L.source_schema, L.filters||{});
   render(L, cells);
 }
-function render(L,cells){
+// web-mercator so the hex cells line up with the basemap tiles
+const Z=14, N2=Math.pow(2,Z)*256;
+function lon2px(lo){return (lo+180)/360*N2;}
+function lat2px(la){const s=Math.sin(la*Math.PI/180);return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*N2;}
+let PXW,PXE,PYN,PYS;
+async function drawBasemap(g,cv){
+  const sx=cv.width/(PXE-PXW), sy=cv.height/(PYS-PYN);
+  const x0=Math.floor(PXW/256),x1=Math.floor(PXE/256),y0=Math.floor(PYN/256),y1=Math.floor(PYS/256), jobs=[];
+  for(let xt=x0;xt<=x1;xt++)for(let yt=y0;yt<=y1;yt++){
+    jobs.push(new Promise(res=>{const im=new Image();
+      im.onload=()=>{g.drawImage(im,(xt*256-PXW)*sx,(yt*256-PYN)*sy,256*sx,256*sy);res();};
+      im.onerror=()=>res(); im.src=`/bridge/tile/${Z}/${xt}/${yt}`;}));
+  }
+  await Promise.all(jobs);
+}
+async function render(L,cells){
   const vals=cells.map(c=>Number(path(c,L.value_field))).filter(v=>!isNaN(v)); const lo=Math.min(...vals),hi=Math.max(...vals);
   document.getElementById('ln').textContent=L.label; document.getElementById('lu').textContent=L.unit?'('+L.unit+')':'';
   document.getElementById('lo').textContent=lo.toFixed(1); document.getElementById('hi').textContent=hi.toFixed(1);
@@ -65,13 +84,17 @@ function render(L,cells){
   document.getElementById('bar').style.background='linear-gradient(90deg,'+S.map(c=>`rgb(${c.join(',')})`).join(',')+')';
   const cl={}; cells.forEach(c=>{const k=c.terrain_class; if(k)cl[k]=(cl[k]||0)+1;});
   document.getElementById('stats').innerHTML=Object.keys(cl).length?('<b>class</b><br>'+Object.entries(cl).map(([k,v])=>`${k.replace('_',' ')}: ${v}`).join('<br>')):'';
-  const cv=document.getElementById('c'),g=cv.getContext('2d'),P=26; g.clearRect(0,0,cv.width,cv.height);
   const bb=AOI?AOI.bbox:[Math.min(...cells.map(c=>c.space.centroid[0])),Math.min(...cells.map(c=>c.space.centroid[1])),Math.max(...cells.map(c=>c.space.centroid[0])),Math.max(...cells.map(c=>c.space.centroid[1]))];
-  const [w,s,e,n]=bb, X=lon=>P+(lon-w)/(e-w)*(cv.width-2*P), Y=lat=>cv.height-P-(lat-s)/(n-s)*(cv.height-2*P);
-  const r=Math.max(9,(cv.width-2*P)/Math.sqrt(cells.length)/1.5);
+  const [w,s,e,n]=bb; PXW=lon2px(w);PXE=lon2px(e);PYN=lat2px(n);PYS=lat2px(s);
+  const cv=document.getElementById('c'); cv.height=Math.round(cv.width*(PYS-PYN)/(PXE-PXW));   // undistorted
+  const g=cv.getContext('2d'); g.clearRect(0,0,cv.width,cv.height);
+  await drawBasemap(g,cv);                                    // basemap first…
+  const X=lo2=>(lon2px(lo2)-PXW)/(PXE-PXW)*cv.width, Y=la2=>(lat2px(la2)-PYN)/(PYS-PYN)*cv.height;
+  const r=Math.max(9,(cv.width)/Math.sqrt(cells.length)/1.5);
   function hex(cx,cy,rad){g.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k-30),px=cx+rad*Math.cos(a),py=cy+rad*Math.sin(a);k?g.lineTo(px,py):g.moveTo(px,py);}g.closePath();}
   cells.forEach(c=>{const ce=c.space&&c.space.centroid; if(!ce)return; const t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
-    hex(X(ce[0]),Y(ce[1]),r*0.62); g.fillStyle=color(L.color_scale,t); g.globalAlpha=.95; g.fill(); g.globalAlpha=1; g.strokeStyle='rgba(0,0,0,.28)'; g.stroke();});
+    hex(X(ce[0]),Y(ce[1]),r*0.6); g.fillStyle=color(L.color_scale,t); g.globalAlpha=.6; g.fill();   // …hexes on top, translucent
+    g.globalAlpha=.9; g.strokeStyle='rgba(255,255,255,.35)'; g.lineWidth=1; g.stroke(); g.globalAlpha=1;});
 }
 boot();
 </script>
