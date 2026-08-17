@@ -49,6 +49,20 @@ Analyses + Signal landed**. Its guarantees, all checked live:
 - **Never decides (INT-REC-001):** the engine only *offers* a Recommendation; an **Authority** admits
   it into a Decision (`POST /v1/decisions`) with a signed receipt.
 
-`meta.yaml` declares `kind: engine`, `reads: [air.station_reading]`,
-`writes: [intelligence.analysis, intelligence.signal]`, and the matching broker `scopes`. The tiny
-HTTP client in `run.py` is a stand-in for the `sdk` broker/HTTP binding.
+`meta.yaml` is the component's **host manifest** (platform-spec PLAT-HOST-008): `kind: engine`,
+`entrypoint: run.py`, `confinement_min: L1`, `reads`/`writes`, and the matching broker `scopes`. The
+tiny HTTP client in `run.py` is a stand-in for the `sdk` broker/HTTP binding.
+
+### Run it *inside* the Component Host (confinement by construction)
+
+`bash engines/air-diagnosis/demo.sh` runs the engine as a trusted subprocess that *chooses* to use only
+the broker. To make confinement structural, run it through the reference **Component Host**
+(`platform-spec/reference`):
+
+```bash
+bash ../platform-spec/reference/demo.sh     # launches this engine inside the host
+```
+
+The host starts the engine with a **clean environment** (no ambient secrets) and an **egress shim** that
+allow-lists only the broker — so a raw socket to anywhere else is *absent*, not merely denied. Same host,
+same guarantees, for any kind.
