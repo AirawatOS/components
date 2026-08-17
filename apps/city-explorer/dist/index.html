@@ -90,10 +90,12 @@ async function render(L,cells){
   const g=cv.getContext('2d'); g.clearRect(0,0,cv.width,cv.height);
   await drawBasemap(g,cv);                                    // basemap first…
   const X=lo2=>(lon2px(lo2)-PXW)/(PXE-PXW)*cv.width, Y=la2=>(lat2px(la2)-PYN)/(PYS-PYN)*cv.height;
-  const r=Math.max(9,(cv.width)/Math.sqrt(cells.length)/1.5);
-  function hex(cx,cy,rad){g.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k-30),px=cx+rad*Math.cos(a),py=cy+rad*Math.sin(a);k?g.lineTo(px,py):g.moveTo(px,py);}g.closePath();}
-  cells.forEach(c=>{const ce=c.space&&c.space.centroid; if(!ce)return; const t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
-    hex(X(ce[0]),Y(ce[1]),r*0.6); g.fillStyle=color(L.color_scale,t); g.globalAlpha=.6; g.fill();   // …hexes on top, translucent
+  function poly(pts){g.beginPath();pts.forEach((p,i)=>{const x=X(p[0]),y=Y(p[1]);i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();}
+  function hexAt(cx,cy,rad){g.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k-30),px=cx+rad*Math.cos(a),py=cy+rad*Math.sin(a);k?g.lineTo(px,py):g.moveTo(px,py);}g.closePath();}
+  cells.forEach(c=>{const sp=c.space||{}; const t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
+    if(sp.boundary&&sp.boundary.length){ poly(sp.boundary); }        // exact H3 cell → edge-to-edge tiling
+    else if(sp.centroid){ hexAt(X(sp.centroid[0]),Y(sp.centroid[1]),18); } else return;
+    g.fillStyle=color(L.color_scale,t); g.globalAlpha=.6; g.fill();   // translucent so the basemap reads through
     g.globalAlpha=.9; g.strokeStyle='rgba(255,255,255,.35)'; g.lineWidth=1; g.stroke(); g.globalAlpha=1;});
 }
 boot();

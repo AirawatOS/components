@@ -69,10 +69,11 @@ def main():
 
     for h in cells:
         lat, lng = h3.cell_to_latlng(h)
+        boundary = [[round(lo, 6), round(la, 6)] for (la, lo) in h3.cell_to_boundary(h)]  # [lon,lat] ring
         elev, slope = synthetic_terrain(lat, lng, bbox)
         fact = {
             "schema": "geo.terrain", "id": f"ds:kmc:geo/terrain/{h}",
-            "space": {"h3": h, "res": res, "centroid": [round(lng, 6), round(lat, 6)]},
+            "space": {"h3": h, "res": res, "centroid": [round(lng, 6), round(lat, 6)], "boundary": boundary},
             "elevation_m": elev, "slope_deg": slope, "terrain_class": classify(slope), "unit": "m",
             "observed_at": OBSERVED_AT,
             "prov": {"method": "ds:kmc:method/synthetic-dem", "component": ctx["component_id"]},
