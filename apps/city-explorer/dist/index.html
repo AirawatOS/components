@@ -1,32 +1,28 @@
-<!doctype html><meta charset="utf-8"><title>City Explorer</title>
+<!doctype html><meta charset="utf-8"><title>Explorer</title>
 <style>
-  body{margin:0;font:14px system-ui,sans-serif;background:#0d1117;color:#e6edf3}
-  header{padding:12px 16px;border-bottom:1px solid #21262d}
-  h1{margin:0;font-size:16px} .sub{color:#8b949e;font-size:12px;margin-top:2px}
-  #tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 16px 0}
-  .tab{font-size:12px;padding:5px 11px;border:1px solid #21262d;border-radius:999px;color:#8b949e;cursor:pointer;background:#0b0f16}
-  .tab.on{color:#e6edf3;border-color:#3b82f6;background:#12203a}
-  #wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
-  canvas{background:#0b0f16;border:1px solid #21262d;border-radius:8px;max-width:100%}
-  .attrib{font-size:10px;color:#5b6675;margin-top:4px}
-  .legend{font-size:12px;color:#8b949e} .legend b{color:#e6edf3}
-  .bar{height:12px;width:180px;border-radius:3px;margin:6px 0}
-  .rowb{display:flex;justify-content:space-between;width:180px;font-variant-numeric:tabular-nums}
+  html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0b0f16;color:#e6edf3}
+  #c{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+  #panel{position:fixed;left:16px;bottom:16px;z-index:10;background:rgba(13,17,23,.82);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid #2a3340;border-radius:12px;
+    padding:14px 16px;min-width:220px;max-width:300px;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+  #panel h1{margin:0;font-size:15px;letter-spacing:-.01em} .sub{color:#8b949e;font-size:11.5px;margin:2px 0 11px}
+  #tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px}
+  .tab{font-size:12px;padding:5px 11px;border:1px solid #2a3340;border-radius:999px;color:#9fb0c3;cursor:pointer;background:rgba(255,255,255,.03)}
+  .tab.on{color:#fff;border-color:#3b82f6;background:#12203a}
+  .lname{font-weight:600;font-size:13px} .lunit{color:#8b949e;font-size:11px;font-weight:400}
+  .bar{height:10px;border-radius:3px;margin:7px 0} .rowb{display:flex;justify-content:space-between;font-size:11px;color:#8b949e;font-variant-numeric:tabular-nums}
+  .interp{font-size:11.5px;color:#9fb0c3;margin-top:9px} .stats{font-size:11px;color:#8b949e;margin-top:9px;line-height:1.7}
+  .attrib{position:fixed;right:8px;bottom:6px;z-index:10;font-size:10px;color:rgba(200,210,225,.7);background:rgba(0,0,0,.4);padding:2px 6px;border-radius:4px}
 </style>
-<header><h1>City Explorer</h1><div class="sub" id="sub">loading catalog…</div></header>
-<div id="tabs"></div>
-<div id="wrap">
-  <div>
-    <canvas id="c" width="640" height="480"></canvas>
-    <div class="attrib">Basemap © OpenStreetMap contributors · proxied by the app-host</div>
-  </div>
-  <div class="legend">
-    <b id="ln">–</b> <span id="lu"></span><div class="bar" id="bar"></div>
-    <div class="rowb"><span id="lo">–</span><span id="hi">–</span></div>
-    <div style="margin-top:12px;font-size:12px" id="interp"></div>
-    <div style="margin-top:12px" id="stats"></div>
-  </div>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>Explorer</h1><div class="sub" id="sub">loading…</div>
+  <div id="tabs"></div>
+  <div class="lname"><span id="ln"></span> <span class="lunit" id="lu"></span></div>
+  <div class="bar" id="bar"></div><div class="rowb"><span id="lo"></span><span id="hi"></span></div>
+  <div class="interp" id="interp"></div><div class="stats" id="stats"></div>
 </div>
+<div class="attrib">© OpenStreetMap · proxied by the app-host</div>
 <script>
 const RAMPS={viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],
   reds:[[255,245,240],[252,187,161],[251,106,74],[203,24,29],[103,0,13]],
@@ -34,48 +30,44 @@ const RAMPS={viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37
   aqi:[[0,153,102],[255,222,51],[255,153,51],[204,0,51],[126,0,35]]};
 function color(s,t){const S=RAMPS[s]||RAMPS.viridis;t=Math.max(0,Math.min(1,t));const x=t*(S.length-1),i=Math.floor(x),f=x-i,a=S[i],b=S[Math.min(i+1,4)];return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`;}
 function path(o,p){return p.split('.').reduce((a,k)=>a==null?a:a[k],o);}
-let APPID, AOI=null, LAYERS=[];
-// The app reaches data ONLY through the host's /bridge/query (same-origin; connect-src 'self' blocks
-// any other destination). The host enforces this app's schema allow-list + attaches the user's token.
-async function query(schema, filter){
-  const r = await fetch('/bridge/query', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({app_id: APPID, schema, filter: filter||{}})});
-  if(!r.ok) throw new Error('bridge '+r.status+' for '+schema);
-  return (await r.json()).results || [];
-}
-async function boot(){
-  try{
-    const cfg = await fetch('./config.json').then(r=>r.json()); APPID = cfg.app_id;
-    LAYERS = (await query('viz.layer',{})).filter(l=>l.enabled!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-    AOI = (await query('space.aoi',{}))[0];
-    if(!LAYERS.length){ document.getElementById('sub').textContent='no viz.layer catalog found'; return; }
-    document.getElementById('sub').textContent=(AOI?AOI.name+' · ':'')+LAYERS.length+' layers · click a tab';
-    const tabs=document.getElementById('tabs');
-    LAYERS.forEach((l,i)=>{const b=document.createElement('div');b.className='tab';b.textContent=l.label;b.onclick=()=>select(i);l._el=b;tabs.appendChild(b);});
-    select(0);
-  }catch(e){ document.getElementById('sub').textContent='error: '+e.message; }
-}
-async function select(i){
-  const L=LAYERS[i]; LAYERS.forEach(l=>l._el.classList.toggle('on',l===L));
-  const cells = await query(L.source_schema, L.filters||{});
-  render(L, cells);
-}
-// web-mercator so the hex cells line up with the basemap tiles
 const Z=14, N2=Math.pow(2,Z)*256;
 function lon2px(lo){return (lo+180)/360*N2;}
 function lat2px(la){const s=Math.sin(la*Math.PI/180);return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*N2;}
-let PXW,PXE,PYN,PYS;
-async function drawBasemap(g,cv){
-  const sx=cv.width/(PXE-PXW), sy=cv.height/(PYS-PYN);
-  const x0=Math.floor(PXW/256),x1=Math.floor(PXE/256),y0=Math.floor(PYN/256),y1=Math.floor(PYS/256), jobs=[];
+let APPID, AOI=null, LAYERS=[], LAST=null;
+async function query(schema, filter){
+  const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({app_id:APPID,schema,filter:filter||{}})});
+  if(!r.ok) throw new Error('bridge '+r.status+' for '+schema);
+  return (await r.json()).results||[];
+}
+async function boot(){
+  try{
+    const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
+    LAYERS=(await query('viz.layer',{})).filter(l=>l.enabled!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+    AOI=(await query('space.aoi',{}))[0];
+    if(!LAYERS.length){document.getElementById('sub').textContent='no viz.layer catalog found';return;}
+    document.getElementById('sub').textContent=(AOI?AOI.name+' · ':'')+LAYERS.length+' layers';
+    const tabs=document.getElementById('tabs');
+    LAYERS.forEach((l,i)=>{const b=document.createElement('div');b.className='tab';b.textContent=l.label;b.onclick=()=>select(i);l._el=b;tabs.appendChild(b);});
+    select(0);
+  }catch(e){document.getElementById('sub').textContent='error: '+e.message;}
+}
+async function select(i){
+  const L=LAYERS[i]; LAYERS.forEach(l=>l._el.classList.toggle('on',l===L));
+  const cells=await query(L.source_schema,L.filters||{});
+  render(L,cells);
+}
+async function drawBasemap(g,cv,pcx,pcy,scale){
+  const l=pcx-(cv.width/2)/scale, r=pcx+(cv.width/2)/scale, t=pcy-(cv.height/2)/scale, b=pcy+(cv.height/2)/scale;
+  const x0=Math.floor(l/256),x1=Math.floor(r/256),y0=Math.floor(t/256),y1=Math.floor(b/256), T=256*scale, jobs=[];
   for(let xt=x0;xt<=x1;xt++)for(let yt=y0;yt<=y1;yt++){
-    jobs.push(new Promise(res=>{const im=new Image();
-      im.onload=()=>{g.drawImage(im,(xt*256-PXW)*sx,(yt*256-PYN)*sy,256*sx,256*sy);res();};
-      im.onerror=()=>res(); im.src=`/bridge/tile/${Z}/${xt}/${yt}`;}));
+    const dx=(xt*256-pcx)*scale+cv.width/2, dy=(yt*256-pcy)*scale+cv.height/2;
+    jobs.push(new Promise(res=>{const im=new Image();im.onload=()=>{g.drawImage(im,dx,dy,T,T);res();};im.onerror=()=>res();im.src=`/bridge/tile/${Z}/${xt}/${yt}`;}));
   }
   await Promise.all(jobs);
 }
 async function render(L,cells){
+  LAST={L,cells};
   const vals=cells.map(c=>Number(path(c,L.value_field))).filter(v=>!isNaN(v)); const lo=Math.min(...vals),hi=Math.max(...vals);
   document.getElementById('ln').textContent=L.label; document.getElementById('lu').textContent=L.unit?'('+L.unit+')':'';
   document.getElementById('lo').textContent=lo.toFixed(1); document.getElementById('hi').textContent=hi.toFixed(1);
@@ -84,19 +76,18 @@ async function render(L,cells){
   document.getElementById('bar').style.background='linear-gradient(90deg,'+S.map(c=>`rgb(${c.join(',')})`).join(',')+')';
   const cl={}; cells.forEach(c=>{const k=c.terrain_class; if(k)cl[k]=(cl[k]||0)+1;});
   document.getElementById('stats').innerHTML=Object.keys(cl).length?('<b>class</b><br>'+Object.entries(cl).map(([k,v])=>`${k.replace('_',' ')}: ${v}`).join('<br>')):'';
-  const bb=AOI?AOI.bbox:[Math.min(...cells.map(c=>c.space.centroid[0])),Math.min(...cells.map(c=>c.space.centroid[1])),Math.max(...cells.map(c=>c.space.centroid[0])),Math.max(...cells.map(c=>c.space.centroid[1]))];
-  const [w,s,e,n]=bb; PXW=lon2px(w);PXE=lon2px(e);PYN=lat2px(n);PYS=lat2px(s);
-  const cv=document.getElementById('c'); cv.height=Math.round(cv.width*(PYS-PYN)/(PXE-PXW));   // undistorted
+  const cv=document.getElementById('c'); cv.width=window.innerWidth; cv.height=window.innerHeight;
   const g=cv.getContext('2d'); g.clearRect(0,0,cv.width,cv.height);
-  await drawBasemap(g,cv);                                    // basemap first…
-  const X=lo2=>(lon2px(lo2)-PXW)/(PXE-PXW)*cv.width, Y=la2=>(lat2px(la2)-PYN)/(PYS-PYN)*cv.height;
+  const bb=AOI?AOI.bbox:[Math.min(...cells.map(c=>c.space.centroid[0])),Math.min(...cells.map(c=>c.space.centroid[1])),Math.max(...cells.map(c=>c.space.centroid[0])),Math.max(...cells.map(c=>c.space.centroid[1]))];
+  const pxW=lon2px(bb[0]),pxE=lon2px(bb[2]),pyN=lat2px(bb[3]),pyS=lat2px(bb[1]), pcx=(pxW+pxE)/2, pcy=(pyN+pyS)/2;
+  const scale=Math.min(cv.width/(pxE-pxW), cv.height/(pyS-pyN))*0.86;   // contain-fit the AOI, centered
+  await drawBasemap(g,cv,pcx,pcy,scale);
+  const X=lo2=>(lon2px(lo2)-pcx)*scale+cv.width/2, Y=la2=>(lat2px(la2)-pcy)*scale+cv.height/2;
   function poly(pts){g.beginPath();pts.forEach((p,i)=>{const x=X(p[0]),y=Y(p[1]);i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();}
-  function hexAt(cx,cy,rad){g.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k-30),px=cx+rad*Math.cos(a),py=cy+rad*Math.sin(a);k?g.lineTo(px,py):g.moveTo(px,py);}g.closePath();}
-  cells.forEach(c=>{const sp=c.space||{}; const t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
-    if(sp.boundary&&sp.boundary.length){ poly(sp.boundary); }        // exact H3 cell → edge-to-edge tiling
-    else if(sp.centroid){ hexAt(X(sp.centroid[0]),Y(sp.centroid[1]),18); } else return;
-    g.fillStyle=color(L.color_scale,t); g.globalAlpha=.6; g.fill();   // translucent so the basemap reads through
-    g.globalAlpha=.9; g.strokeStyle='rgba(255,255,255,.35)'; g.lineWidth=1; g.stroke(); g.globalAlpha=1;});
+  cells.forEach(c=>{const sp=c.space||{}; if(!sp.boundary)return; const t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
+    poly(sp.boundary); g.fillStyle=color(L.color_scale,t); g.globalAlpha=.58; g.fill();
+    g.globalAlpha=.85; g.strokeStyle='rgba(255,255,255,.28)'; g.lineWidth=1; g.stroke(); g.globalAlpha=1;});
 }
+window.addEventListener('resize',()=>{ if(LAST) render(LAST.L,LAST.cells); });
 boot();
 </script>
