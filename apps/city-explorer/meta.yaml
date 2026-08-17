@@ -1,11 +1,11 @@
-# City Explorer (kind=app). Renders registry layers on a map. Sandboxed: it reaches data only through
-# the app-host bridge, as the signed-in USER, and only for its declared schemas.
+# City Explorer (kind=app). CATALOG-DRIVEN: it reads viz.layer to learn what layers exist, then renders
+# each layer's source_schema/value_field/color_scale. Sandboxed: reads only its declared schemas, as the user.
 component_id: ds:kmc:app/city-explorer
 kind: app
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: City Explorer
 entrypoint: index.html
 bundle: dist
 sandboxed: true
-required_schemas: [space.aoi, geo.terrain]
+required_schemas: [viz.layer, space.aoi, geo.terrain]

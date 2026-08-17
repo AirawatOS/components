@@ -1,56 +1,78 @@
-<!doctype html><meta charset="utf-8"><title>City Explorer — Terrain</title>
+<!doctype html><meta charset="utf-8"><title>City Explorer</title>
 <style>
   body{margin:0;font:14px system-ui,sans-serif;background:#0d1117;color:#e6edf3}
   header{padding:12px 16px;border-bottom:1px solid #21262d}
   h1{margin:0;font-size:16px} .sub{color:#8b949e;font-size:12px;margin-top:2px}
   #wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+  #tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 16px 0}
+  .tab{font-size:12px;padding:5px 11px;border:1px solid #21262d;border-radius:999px;color:#8b949e;cursor:pointer;background:#0b0f16}
+  .tab.on{color:#e6edf3;border-color:#3b82f6;background:#12203a}
   canvas{background:#0b0f16;border:1px solid #21262d;border-radius:8px}
   .legend{font-size:12px;color:#8b949e} .legend b{color:#e6edf3}
-  .bar{height:12px;width:180px;border-radius:3px;margin:6px 0;
-       background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725)}
+  .bar{height:12px;width:180px;border-radius:3px;margin:6px 0}
   .row{display:flex;justify-content:space-between;width:180px}
 </style>
-<header><h1>City Explorer — Terrain</h1><div class="sub" id="sub">loading the geo.terrain layer…</div></header>
+<header><h1>City Explorer</h1><div class="sub" id="sub">loading catalog…</div></header>
+<div id="tabs"></div>
 <div id="wrap">
   <canvas id="c" width="520" height="420"></canvas>
   <div class="legend">
-    <div><b>Elevation</b> (m)</div><div class="bar"></div>
+    <div><b id="lname">–</b> <span id="lunit"></span></div><div class="bar" id="bar"></div>
     <div class="row"><span id="lo">–</span><span id="hi">–</span></div>
-    <div style="margin-top:14px" id="stats"></div>
+    <div style="margin-top:12px;font-size:12px" id="interp"></div>
+    <div style="margin-top:12px" id="stats"></div>
   </div>
 </div>
 <script>
-// A sandboxed app asks its HOST for data (never the backend directly). The host attaches the user's
-// token and permits only this app's declared schemas (space.aoi, geo.terrain).
-function ask(op, msg){ return new Promise(res=>{
-  const id = Math.random().toString(36).slice(2);
-  window.addEventListener('message', function h(e){ if((e.data||{}).id===id){ window.removeEventListener('message',h); res(e.data);} });
-  parent.postMessage(Object.assign({id, op}, msg), '*');
-});}
-// viridis-ish ramp
-const STOPS=[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
-function ramp(t){ t=Math.max(0,Math.min(1,t)); const x=t*(STOPS.length-1), i=Math.floor(x), f=x-i;
-  const a=STOPS[i], b=STOPS[Math.min(i+1,STOPS.length-1)];
-  return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`; }
+function ask(op,msg){return new Promise(res=>{const id=Math.random().toString(36).slice(2);
+  window.addEventListener('message',function h(e){if((e.data||{}).id===id){window.removeEventListener('message',h);res(e.data);}});
+  parent.postMessage(Object.assign({id,op},msg),'*');});}
+function path(o,p){return p.split('.').reduce((a,k)=>a==null?a:a[k],o);}
+// four named ramps (viridis|reds|blues|aqi) — dependency-free, mirrors AirOS color scales
+const RAMPS={
+  viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],
+  reds:[[255,245,240],[252,187,161],[251,106,74],[203,24,29],[103,0,13]],
+  blues:[[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]],
+  aqi:[[0,153,102],[255,222,51],[255,153,51],[204,0,51],[126,0,35]]
+};
+function color(scale,t){const S=RAMPS[scale]||RAMPS.viridis;t=Math.max(0,Math.min(1,t));
+  const x=t*(S.length-1),i=Math.floor(x),f=x-i,a=S[i],b=S[Math.min(i+1,S.length-1)];
+  return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`;}
 
-(async function(){
-  const aoiRes = await ask('registry.query', {schema:'space.aoi', filter:{}});
-  const cellRes = await ask('registry.query', {schema:'geo.terrain', filter:{}});
-  const aoi = (aoiRes.result||[])[0]; const cells = cellRes.result||[];
-  if(!aoi || !cells.length){ document.getElementById('sub').textContent='no terrain layer found — run the terrain driver first'; return; }
-  const [w,s,e,n] = aoi.bbox;
-  const els = cells.map(c=>c.elevation_m); const lo=Math.min(...els), hi=Math.max(...els);
-  document.getElementById('sub').textContent = `${aoi.name} · ${cells.length} H3 cells · res ${aoi.h3_res}`;
-  document.getElementById('lo').textContent = lo.toFixed(0);
-  document.getElementById('hi').textContent = hi.toFixed(0);
-  const classes={}; cells.forEach(c=>classes[c.terrain_class]=(classes[c.terrain_class]||0)+1);
-  document.getElementById('stats').innerHTML = '<b>Terrain class</b><br>' +
-    Object.entries(classes).map(([k,v])=>`${k}: ${v}`).join('<br>');
-
-  const cv=document.getElementById('c'), g=cv.getContext('2d'), P=24;
-  const X=lon=>P+(lon-w)/(e-w)*(cv.width-2*P), Y=lat=>cv.height-P-(lat-s)/(n-s)*(cv.height-2*P);
-  const r=Math.max(6, (cv.width-2*P)/Math.sqrt(cells.length)/1.6);
-  cells.forEach(c=>{ const [lon,lat]=c.space.centroid; const t=(c.elevation_m-lo)/((hi-lo)||1);
-    g.beginPath(); g.arc(X(lon),Y(lat),r,0,7); g.fillStyle=ramp(t); g.globalAlpha=.92; g.fill(); });
-})();
-</script>
+let AOI=null, LAYERS=[], active=null;
+async function boot(){
+  const cat=(await ask('registry.query',{schema:'viz.layer',filter:{}})).result||[];
+  LAYERS=cat.filter(l=>l.enabled!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+  AOI=((await ask('registry.query',{schema:'space.aoi',filter:{}})).result||[])[0];
+  if(!LAYERS.length){document.getElementById('sub').textContent='no viz.layer catalog found';return;}
+  document.getElementById('sub').textContent=(AOI?AOI.name+' · ':'')+LAYERS.length+' layers in the catalog';
+  const tabs=document.getElementById('tabs');
+  LAYERS.forEach((l,i)=>{const b=document.createElement('div');b.className='tab';b.textContent=l.label;
+    b.onclick=()=>select(i);tabs.appendChild(l._el=b);});
+  select(0);
+}
+async function select(i){
+  active=LAYERS[i]; LAYERS.forEach(l=>l._el.classList.toggle('on',l===active));
+  const cells=(await ask('registry.query',{schema:active.source_schema,filter:active.filters||{}})).result||[];
+  render(active,cells);
+}
+function render(L,cells){
+  const vals=cells.map(c=>Number(path(c,L.value_field))).filter(v=>!isNaN(v));
+  const lo=Math.min(...vals),hi=Math.max(...vals);
+  document.getElementById('lname').textContent=L.label;
+  document.getElementById('lunit').textContent=L.unit?'('+L.unit+')':'';
+  document.getElementById('lo').textContent=lo.toFixed(1);
+  document.getElementById('hi').textContent=hi.toFixed(1);
+  document.getElementById('interp').textContent=L.interpretation||L.description||'';
+  const S=RAMPS[L.color_scale]||RAMPS.viridis;
+  document.getElementById('bar').style.background='linear-gradient(90deg,'+S.map(c=>`rgb(${c.join(',')})`).join(',')+')';
+  const cl={}; cells.forEach(c=>{const k=c.terrain_class||c.class; if(k)cl[k]=(cl[k]||0)+1;});
+  document.getElementById('stats').innerHTML=Object.keys(cl).length?('<b>class</b><br>'+Object.entries(cl).map(([k,v])=>`${k}: ${v}`).join('<br>')):'';
+  const cv=document.getElementById('c'),g=cv.getContext('2d'),P=24; g.clearRect(0,0,cv.width,cv.height);
+  const bb=AOI?AOI.bbox:[Math.min(...cells.map(c=>c.space.centroid[0])),Math.min(...cells.map(c=>c.space.centroid[1])),Math.max(...cells.map(c=>c.space.centroid[0])),Math.max(...cells.map(c=>c.space.centroid[1]))];
+  const [w,s,e,n]=bb, X=lon=>P+(lon-w)/(e-w)*(cv.width-2*P), Y=lat=>cv.height-P-(lat-s)/(n-s)*(cv.height-2*P);
+  const r=Math.max(6,(cv.width-2*P)/Math.sqrt(cells.length)/1.6);
+  cells.forEach(c=>{const ce=c.space&&c.space.centroid; if(!ce)return; let t=(Number(path(c,L.value_field))-lo)/((hi-lo)||1);
+    if(L.higher_is_worse===false){} g.beginPath();g.arc(X(ce[0]),Y(ce[1]),r,0,7);g.fillStyle=color(L.color_scale,t);g.globalAlpha=.92;g.fill();});
+}
+boot();
