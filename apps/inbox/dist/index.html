@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>Inbox</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:14px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px}
+  h1{margin:0;font-size:18px} .who{color:var(--dim);font-size:12px}
+  .wrap{max-width:760px;margin:0 auto;padding:14px 16px}
+  .item{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:9px}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none}
+  .task{background:#d29922} .notification{background:#3b82f6} .decision{background:#2ea043}
+  .it-title{font-weight:600} .it-body{color:var(--dim);font-size:13px;margin-top:2px}
+  .meta{color:#6e7681;font-size:11px;margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
+  .pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;text-transform:uppercase;letter-spacing:.04em}
+  .empty{color:var(--dim);text-align:center;padding:48px}
+  .count{margin-left:auto;color:var(--dim);font-size:12px}
+</style>
+<header><h1>Inbox</h1><span class="who" id="who">…</span><span class="count" id="count"></span></header>
+<div class="wrap" id="list"><div class="empty">loading…</div></div>
+<script>
+let APPID;
+async function query(schema,filter){
+  const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({app_id:APPID,schema,filter:filter||{}})});
+  if(!r.ok) throw new Error('bridge '+r.status);
+  return (await r.json()).results||[];
+}
+async function boot(){
+  const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
+  fetch('/session').then(r=>r.json()).then(se=>{document.getElementById('who').textContent=se.authenticated?se.sub:'';});
+  const items=await query('platform.inbox_item',{});
+  items.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  document.getElementById('count').textContent=items.length+' items';
+  const list=document.getElementById('list');
+  if(!items.length){list.innerHTML='<div class="empty">Nothing in your inbox.</div>';return;}
+  list.innerHTML=items.map(i=>`
+    <div class="item">
+      <span class="dot ${i.kind}"></span>
+      <div style="flex:1">
+        <div class="it-title">${esc(i.title)}</div>
+        ${i.body?`<div class="it-body">${esc(i.body)}</div>`:''}
+        <div class="meta"><span class="pill">${i.kind}</span>${i.source?`<span>${esc(i.source)}</span>`:''}${i.ref?`<span>${esc(i.ref)}</span>`:''}<span>${(i.created_at||'').replace('T',' ').replace('Z','')}</span></div>
+      </div>
+    </div>`).join('');
+}
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+boot();
+</script>

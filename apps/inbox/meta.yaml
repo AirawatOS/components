@@ -1,0 +1,11 @@
+# Unified Inbox (kind=app). Every task/notification/decision for the signed-in user, from any solution,
+# in one place. Reads platform.inbox_item as the user (host scopes to actor==sub).
+component_id: ds:kmc:app/inbox
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Inbox
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [platform.inbox_item]
