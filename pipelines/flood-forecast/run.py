@@ -114,7 +114,13 @@ def seed_reference():
         put({"schema": "platform.workflow", "tenant": TENANT, **w})
     for v in VIZ:
         put({"schema": "viz.layer", "enabled": True, **v})
-    print(f"  seeded {len(GUIDELINES)} guidelines + {len(WORKFLOWS)} SOP workflows + {len(VIZ)} viz.layer descriptors")
+    # the TRIGGER (data, not code): when a high/severe flood alert is written → fire the advisor
+    put({"schema": "platform.subscription", "id": f"ds:{TENANT}:subscription/flood-advise",
+         "name": "Flood alert → advise", "enabled": True,
+         "match": {"subject_schema": "signal.alert", "where": {"severity": ["high", "severe"]}},
+         "action": {"kind": "http", "url": os.environ.get("ADVISOR_URL", "http://localhost:8100/advise")},
+         "tenant": TENANT})
+    print(f"  seeded {len(GUIDELINES)} guidelines + {len(WORKFLOWS)} SOP workflows + {len(VIZ)} viz.layer + 1 subscription")
 
 
 def main():
@@ -155,52 +161,18 @@ def main():
     if not breached:
         print("   no cells breach threshold — no alert. (raise RAINFALL_MM to trigger)"); return 0
 
-    # 3) DETECT — threshold rule fires an alert
+    # 3) DETECT — threshold rule fires an alert (carries top cells + maxscore so the advisor needn't rescan).
+    #    The pipeline STOPS here: writing the alert emits a registry event → the automation service matches
+    #    the flood subscription → fires the ADVISE stage (flood advisor). No hard-coded call to advise.
     severity = "severe" if any(r["level"] == "severe" for r in breached) else "high"
-    case_id = f"ds:{TENANT}:case/flood-{run}"
-    task_id = f"ds:{TENANT}:task/flood-{run}"
     alert_id = f"ds:{TENANT}:signal/alert/flood-{run}"
     put({"schema": "signal.alert", "id": alert_id, "kind": "flood-risk", "severity": severity,
          "title": f"Flood risk — {len(breached)} low-lying cells", "area": f"AOI {AOI_ID} · {len(breached)} cells",
          "trigger": f"risk.flood.score >= {THRESHOLD}", "threshold": THRESHOLD, "count": len(breached),
-         "case": case_id, "status": "open", "opened_at": now(), "tenant": TENANT})
+         "top": top, "maxscore": maxscore, "status": "open", "opened_at": now(), "tenant": TENANT})
     print(f"3 DETECT  signal.alert {alert_id}  severity={severity}")
-
-    # 4) ADVISE — pull guidelines from the KB (trigger_level <= severity), emit a cited recommendation each
-    picked = [g for g in GUIDELINES if LEVEL_RANK[g["trigger_level"]] <= LEVEL_RANK[severity]]
-    picked.sort(key=lambda g: -g["confidence"])
-    rec_ids = []
-    for i, g in enumerate(picked):
-        rid = f"ds:{TENANT}:rec/flood-{run}-{i}"
-        put({"schema": "governance.recommendation", "id": rid, "case": case_id, "for_task": task_id,
-             "title": g["title"], "summary": g["proposed_action"], "proposed_action": g["proposed_action"],
-             "rationale": f"{len(breached)} cells breach risk>={THRESHOLD} (max {maxscore}); {g['citation']} prescribes this at {g['trigger_level']}+ risk.",
-             "evidence": [g["id"]] + top, "citation": g["citation"], "confidence": g["confidence"],
-             "method": "rule", "produced_by": "component://flood-advisor@0.1.0", "score": g["confidence"],
-             "sop_workflow": g["sop_workflow"], "created_at": now(), "tenant": TENANT})
-        rec_ids.append(rid)
-    print(f"4 ADVISE  {len(rec_ids)} recommendations from guidelines (cited): {[g['citation'] for g in picked]}")
-
-    # open the case + decision task + inbox item that the decision loop consumes
-    put({"schema": "platform.case", "id": case_id, "title": f"Flood response — {len(breached)} low-lying cells",
-         "service": f"ds:{TENANT}:solution/flood-response", "workflow": f"ds:{TENANT}:workflow/flood",
-         "status": "active", "current_step": "decide", "opened_by": "component://flood-advisor@0.1.0",
-         "opened_at": now(), "updated_at": now(), "subjects": top + [alert_id],
-         "history": [
-            {"at": now(), "event": "opened", "actor": "component://flood-advisor@0.1.0", "ref": alert_id, "summary": f"Opened from flood alert (severity {severity})"},
-            {"at": now(), "event": "predicted", "actor": "component://flood-risk@0.1.0", "ref": fc_id, "summary": f"{len(breached)} cells predicted >= {THRESHOLD} risk"},
-            {"at": now(), "event": "task_created", "actor": "component://flood-advisor@0.1.0", "summary": f"{len(rec_ids)} guideline-based recommendations generated"}],
-         "tenant": TENANT})
-    put({"schema": "platform.task", "id": task_id, "case": case_id, "verb": "decide",
-         "title": "Decide flood response — choose a course of action", "subjects": top,
-         "assignee": DECIDER, "workflow_step": "decide", "decision_kind": "select", "options": rec_ids,
-         "actions": ["approve", "reject"], "status": "open", "created_at": now(), "tenant": TENANT})
-    notify({"actor": DECIDER, "kind": "task", "tenant": TENANT,
-            "title": f"Decide flood response — {len(breached)} low-lying cells",
-            "body": f"Alert {severity}. {len(rec_ids)} guideline-based options await your decision.",
-            "ref": task_id, "source": "flood-forecast", "actions": ["approve", "reject"]})
-    print(f"   → case {case_id} + decision task {task_id} + inbox item for {DECIDER}")
-    print("DONE — the flood decision now awaits the authority in the Inbox (Slice C decides + signs it).")
+    print("   → event emitted; the automation subscription auto-fires the flood advisor (ADVISE).")
+    print("DONE — sense→predict→detect. Advise + decision follow via the event fabric.")
     return 0
 
 
