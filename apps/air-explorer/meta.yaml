@@ -1,7 +1,7 @@
 # A UI app (kind=app). It holds NO component run-token and NO registry handle: it runs in the browser
 # and calls the kernel under the SIGNED-IN USER's token, mediated by the app-host (PLAT-HOST-005).
 # It declares required_schemas (its DATA allow-list), not broker scopes.
-component_id: ds:kmc:app/air-explorer
+component_id: ds:airawat:app/air-explorer
 kind: app
 version: 0.1.0
 provider: ds:airawat:developer

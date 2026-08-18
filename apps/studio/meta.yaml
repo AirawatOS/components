@@ -1,0 +1,11 @@
+# Studio — the low-code configurator. Edits the DATA that drives the platform: platform.subscription
+# (triggers/automations) and platform.workflow (SOP DAGs). No code — just declarations, saved to the
+# registry via the host's admin-gated /bridge/save. Editing a subscription hot-reloads the automation.
+component_id: ds:airawat:app/studio    # published by the platform developer (NOT a tenant) — apps are airawat-stewarded; tenant DATA it authors stays ds:<tenant>:…
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Studio
+entrypoint: index.html
+required_schemas: [platform.subscription, platform.workflow]
+sandboxed: true

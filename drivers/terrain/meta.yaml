@@ -1,6 +1,6 @@
 # A DRIVER (kind=driver). Confined by the Component Host: its only I/O is the broker. It reads the AOI
 # (space.aoi) as CONTEXT, fills the bbox with H3 cells, and writes a geo.terrain measure per cell.
-component_id: ds:kmc:driver/terrain
+component_id: ds:airawat:driver/terrain
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer

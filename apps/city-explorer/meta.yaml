@@ -1,6 +1,6 @@
 # City Explorer (kind=app). CATALOG-DRIVEN: it reads viz.layer to learn what layers exist, then renders
 # each layer's source_schema/value_field/color_scale. Sandboxed: reads only its declared schemas, as the user.
-component_id: ds:kmc:app/city-explorer
+component_id: ds:airawat:app/city-explorer
 kind: app
 version: 0.2.0
 provider: ds:airawat:developer

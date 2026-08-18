@@ -1,4 +1,4 @@
-component_id: ds:kmc:app/rogue-app
+component_id: ds:acme:app/rogue-app
 kind: app
 version: 0.1.0
 provider: ds:evil:vendor

@@ -1,6 +1,6 @@
 # An INT-0001 analytics engine (kind=engine, SPEC-0004). Confined: reads facts + writes analyses/signals
 # ONLY through the broker. Climbs the ladder (descriptive → prescriptive) and emits a Recommendation.
-component_id: ds:kmc:engine/air-diagnosis
+component_id: ds:airawat:engine/air-diagnosis
 kind: engine
 version: 0.1.0
 provider: ds:airawat:developer
