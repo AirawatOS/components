@@ -87,21 +87,85 @@ async function select(c){
   const D=document.getElementById('detail');
   D.innerHTML=`<div style="font-weight:600;font-size:15px">${esc(c.title||c.id.split('/').pop())} <span class="tag">${esc(c.kind||'')}</span></div>
     <div class="cid">${esc(c.id)} · tenant ${esc(c.tenant||'')}</div>
-    <div class="tabs"><span class="tab on" data-t="settings">Settings</span><span class="tab" data-t="logs">Logs</span></div>
+    <div class="tabs"><span class="tab on" data-t="settings">Settings</span><span class="tab" data-t="schedule">Schedule</span><span class="tab" data-t="logs">Logs</span></div>
     <div id="tab-settings">
       <div class="lbl">Reads (registries)</div><div>${chips(c.reads)}</div>
       <div class="lbl">Writes (registries)</div><div>${chips(c.writes)}</div>
       <div class="lbl">Declared egress</div><div>${chips(c.egress)}</div>
       <div class="lbl">API keys</div><div id="keys"></div>
     </div>
+    <div id="tab-schedule" style="display:none">
+      <div class="lbl">Run</div>
+      <div class="keyrow"><button class="btn primary" id="runnow">▶ Run now</button>
+        <span class="muted">manually trigger one run — same confined path a schedule uses</span></div>
+      <div class="lbl">Schedules (cron)</div><div id="scheds"><div class="muted">loading…</div></div>
+      <div class="keyrow" style="margin-top:8px">
+        <select class="v" id="cronpreset" style="flex:none;min-width:150px">
+          <option value="">preset…</option><option value="*/15 * * * *">every 15 min</option>
+          <option value="0 * * * *">hourly</option><option value="0 2 * * *">daily 02:00</option>
+          <option value="0 3 * * 1">weekly Mon 03:00</option></select>
+        <input class="v" id="cronval" placeholder="min hour dom mon dow  (e.g. 0 2 * * *)">
+        <button class="btn primary" id="addsched">+ Add</button></div>
+      <div class="lbl">Recent runs</div><div id="runs"><div class="muted">—</div></div>
+    </div>
     <div id="tab-logs" style="display:none"><div class="lbl">External-call log</div><div id="log"><div class="muted">loading…</div></div></div>`;
   D.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{
     D.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); el.classList.add('on');
-    document.getElementById('tab-settings').style.display=el.dataset.t==='settings'?'':'none';
-    document.getElementById('tab-logs').style.display=el.dataset.t==='logs'?'':'none';
+    const t=el.dataset.t;
+    document.getElementById('tab-settings').style.display=t==='settings'?'':'none';
+    document.getElementById('tab-schedule').style.display=t==='schedule'?'':'none';
+    document.getElementById('tab-logs').style.display=t==='logs'?'':'none';
+    if(t==='schedule')loadSchedule();
   });
+  document.getElementById('runnow').onclick=runNow;
+  document.getElementById('cronpreset').onchange=e=>{if(e.target.value)document.getElementById('cronval').value=e.target.value;};
+  document.getElementById('addsched').onclick=addSchedule;
   await loadMoreLog();     // load first page of the log first (the keys nudge reads it)
   loadKeys();
+}
+async function loadSchedule(){
+  const S=document.getElementById('scheds');
+  try{
+    const d=await jget('/bridge/schedules?component='+encodeURIComponent(SEL.id));
+    const rows=d.schedules||[];
+    S.innerHTML=rows.length?('<table><tr><th>cron</th><th>enabled</th><th>last run</th><th>status</th><th>next run</th><th></th></tr>'+
+      rows.map(s=>`<tr><td>${esc(s.cron)}</td>
+        <td class="${s.enabled!==false?'allowed':'muted'}">${s.enabled!==false?'on':'off'}</td>
+        <td>${esc((s.last_run||'—').replace('T',' ').replace('Z',''))}</td>
+        <td class="${s.last_status==='ok'?'allowed':(s.last_status?'warn':'muted')}">${esc(s.last_status||'—')}</td>
+        <td>${esc((s.next_run||'—').replace('T',' ').replace('Z',''))}</td>
+        <td><button class="btn" data-tog="${esc(s.id)}" data-en="${s.enabled!==false}">${s.enabled!==false?'Disable':'Enable'}</button></td></tr>`).join('')+'</table>')
+      :'<span class="muted">no schedules — this component only runs manually or on an event</span>';
+    S.querySelectorAll('[data-tog]').forEach(b=>b.onclick=async()=>{
+      const s=rows.find(x=>x.id===b.dataset.tog);
+      const r=await jpost('/bridge/schedule',{id:s.id,component:s.component,cron:s.cron,enabled:!(s.enabled!==false),overlap:s.overlap});
+      r.ok?(toast('schedule updated'),loadSchedule()):toast(r.j.error||'failed',true);});
+  }catch(e){S.innerHTML='<span class="muted">scheduler unavailable</span>';}
+  loadRuns();
+}
+async function loadRuns(){
+  const R=document.getElementById('runs'); if(!R)return;
+  try{const d=await jget('/bridge/runs?component='+encodeURIComponent(SEL.id)+'&limit=10');
+    const rs=d.runs||[];
+    R.innerHTML=rs.length?('<table><tr><th>when</th><th>trigger</th><th>status</th></tr>'+
+      rs.map(r=>`<tr><td>${esc((r.at||'').replace('T',' ').replace('Z',''))}</td><td>${esc(r.reason||'')}</td>
+        <td class="${r.status==='ok'?'allowed':'warn'}" title="${esc(r.log||r.detail||'')}">${esc(r.status)}</td></tr>`).join('')+'</table>')
+      :'<span class="muted">no runs yet</span>';
+  }catch(e){R.innerHTML='<span class="muted">—</span>';}
+}
+async function runNow(){
+  const b=document.getElementById('runnow'); b.disabled=true; b.textContent='running…';
+  const r=await jpost('/bridge/run',{component:SEL.id});
+  b.disabled=false; b.textContent='▶ Run now';
+  r.ok?toast('run '+(r.j.status||'done')):toast(r.j.error||'run failed',true);
+  loadRuns();
+}
+async function addSchedule(){
+  const cron=document.getElementById('cronval').value.trim();
+  if(!cron)return toast('enter a cron expression',true);
+  const r=await jpost('/bridge/schedule',{component:SEL.id,cron,enabled:true});
+  if(r.ok){toast('schedule added');document.getElementById('cronval').value='';document.getElementById('cronpreset').value='';loadSchedule();}
+  else toast(r.j.error||'failed',true);
 }
 async function loadMoreLog(){
   const r=await jpost('/bridge/query',{app_id:APPID,schema:'prov.egress',filter:{component:SEL.id},paginate:true,limit:25,cursor:CUR});
