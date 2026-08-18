@@ -1,0 +1,11 @@
+# Marketplace Storefront (kind=app). Browse certified components + solutions; a tenant admin installs
+# them (install-as-grant). Uses the host bridge /bridge/market (browse) + /bridge/install (as the user).
+component_id: ds:kmc:app/storefront
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Marketplace
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: []
