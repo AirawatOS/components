@@ -1,0 +1,14 @@
+# Admin (kind=app). Tenant administration — assign users to roles and scope which roles see which apps.
+# A SYSTEM app (default-installed, undeletable) scoped to tenant_admin, so every tenant admin has it and
+# no ordinary user sees it. Uses the host role bridges (/bridge/roles, /bridge/role-grant, /bridge/app-install).
+component_id: ds:airawat:app/admin
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Admin
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: []
+system: true
+roles: [tenant_admin]
