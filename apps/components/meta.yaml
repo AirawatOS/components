@@ -1,0 +1,11 @@
+# Components — the tenant's console for installed components: see each one's external contract (declared
+# egress + secrets), CONFIGURE its API keys (set at install, rotate later — tenant-admin), and review its
+# EXTERNAL-CALL LOG (prov.egress). Distinct from a decision's audit trail (that's the case history/receipt).
+component_id: ds:airawat:app/components
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Components
+entrypoint: index.html
+required_schemas: [prov.egress]
+sandboxed: true
