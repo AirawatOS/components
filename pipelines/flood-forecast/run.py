@@ -51,15 +51,29 @@ def now():
 
 # ---- knowledge base + presentation (idempotent reference data) -------------------------------------
 GUIDELINES = [
-    {"id": f"ds:{TENANT}:knowledge/guideline/flood-desilt", "title": "Emergency desilting of primary drains",
-     "trigger_level": "moderate", "proposed_action": "Desilt primary drains in the affected catchment",
-     "citation": "KMC Drainage SOP §3.1", "confidence": 0.8},
+    {"id": f"ds:{TENANT}:knowledge/guideline/flood-response", "title": "Activate multi-agency flood response (SOP)",
+     "trigger_level": "high", "proposed_action": "Activate the flood-response SOP across Sanitation, Water and Disaster Mgmt",
+     "citation": "KMC IRS Activation SOP §2", "confidence": 0.9, "sop_workflow": f"ds:{TENANT}:workflow/flood-response"},
     {"id": f"ds:{TENANT}:knowledge/guideline/flood-pumping", "title": "Pre-position pumps at ponding hotspots",
      "trigger_level": "high", "proposed_action": "Deploy dewatering pumps to the highest-risk low-lying cells",
-     "citation": "KMC Monsoon SOP §4.2", "confidence": 0.9},
-    {"id": f"ds:{TENANT}:knowledge/guideline/flood-evacuate", "title": "Evacuate residents from severe-risk zones",
-     "trigger_level": "severe", "proposed_action": "Evacuate residents from severe-risk wards to relief centres",
-     "citation": "NDMA Urban Flooding Guidelines §7", "confidence": 0.75},
+     "citation": "KMC Monsoon SOP §4.2", "confidence": 0.85, "sop_workflow": f"ds:{TENANT}:workflow/pump-deployment"},
+    {"id": f"ds:{TENANT}:knowledge/guideline/flood-desilt", "title": "Emergency desilting of primary drains",
+     "trigger_level": "moderate", "proposed_action": "Desilt primary drains in the affected catchment",
+     "citation": "KMC Drainage SOP §3.1", "confidence": 0.8, "sop_workflow": f"ds:{TENANT}:workflow/drain-desilting"},
+]
+# SOP WORKFLOW declarations (domain data that rides on the generic engine) — ordered steps, each routed
+# to an agency role. The engine knows none of this; it just instantiates + routes.
+WORKFLOWS = [
+    {"id": f"ds:{TENANT}:workflow/flood-response", "title": "Flood response (multi-agency SOP)", "version": "1.0", "steps": [
+        {"step_id": "desilt",   "title": "Desilt primary drains in affected catchment", "verb": "fulfil", "assignee_role": "sanitation-officer"},
+        {"step_id": "pumps",    "title": "Deploy dewatering pumps to hotspots",          "verb": "fulfil", "assignee_role": "water-engineer"},
+        {"step_id": "advisory", "title": "Issue public advisory / prepare evacuation",   "verb": "fulfil", "assignee_role": "disaster-officer"}]},
+    {"id": f"ds:{TENANT}:workflow/pump-deployment", "title": "Pump deployment (Water Dept)", "version": "1.0", "steps": [
+        {"step_id": "mobilize", "title": "Mobilise pump units",              "verb": "fulfil", "assignee_role": "water-engineer"},
+        {"step_id": "deploy",   "title": "Deploy + commission pumps on site", "verb": "fulfil", "assignee_role": "water-engineer"}]},
+    {"id": f"ds:{TENANT}:workflow/drain-desilting", "title": "Drain desilting (Sanitation)", "version": "1.0", "steps": [
+        {"step_id": "mobilize", "title": "Mobilise desilting crew", "verb": "fulfil", "assignee_role": "sanitation-officer"},
+        {"step_id": "desilt",   "title": "Desilt primary drains",   "verb": "fulfil", "assignee_role": "sanitation-officer"}]},
 ]
 VIZ = [
     {"id": f"ds:{TENANT}:viz/layer/flood-risk", "layer_id": "flood-risk", "label": "Flood risk", "category": "natural",
@@ -80,16 +94,23 @@ VIZ = [
     {"id": f"ds:{TENANT}:viz/layer/rec-card", "layer_id": "rec-card", "label": "Recommendation", "order": 1,
      "source_schema": "governance.recommendation", "render": "card", "title_field": "title", "subtitle_field": "summary",
      "fields": [{"path": "proposed_action", "label": "Action"}, {"path": "confidence", "label": "Confidence"},
-                {"path": "method", "label": "Method"}, {"path": "citation", "label": "Cites"}, {"path": "produced_by", "label": "By"}]},
+                {"path": "method", "label": "Method"}, {"path": "citation", "label": "Cites"},
+                {"path": "sop_workflow", "label": "Triggers SOP"}, {"path": "produced_by", "label": "By"}]},
+    {"id": f"ds:{TENANT}:viz/layer/order-card", "layer_id": "order-card", "label": "Order", "order": 1,
+     "source_schema": "governance.order", "render": "card", "title_field": "title", "subtitle_field": "instruction",
+     "fields": [{"path": "status", "label": "Status"}, {"path": "directed_to", "label": "Directed to"},
+                {"path": "workflow", "label": "Workflow"}, {"path": "issued_by", "label": "Issued by"}, {"path": "signature.key_id", "label": "Signed by"}]},
 ]
 
 def seed_reference():
     for g in GUIDELINES:
         put({"schema": "knowledge.guideline", "applies_to": "flood", "source": "Municipal SOPs / NDMA",
-             "summary": g["proposed_action"], **{k: g[k] for k in ("id", "title", "trigger_level", "proposed_action", "citation")}, "tenant": TENANT})
+             "summary": g["proposed_action"], **{k: g[k] for k in ("id", "title", "trigger_level", "proposed_action", "citation", "sop_workflow")}, "tenant": TENANT})
+    for w in WORKFLOWS:
+        put({"schema": "platform.workflow", "tenant": TENANT, **w})
     for v in VIZ:
         put({"schema": "viz.layer", "enabled": True, **v})
-    print(f"  seeded {len(GUIDELINES)} guidelines (KB) + {len(VIZ)} viz.layer descriptors")
+    print(f"  seeded {len(GUIDELINES)} guidelines + {len(WORKFLOWS)} SOP workflows + {len(VIZ)} viz.layer descriptors")
 
 
 def main():
@@ -152,7 +173,7 @@ def main():
              "rationale": f"{len(breached)} cells breach risk>={THRESHOLD} (max {maxscore}); {g['citation']} prescribes this at {g['trigger_level']}+ risk.",
              "evidence": [g["id"]] + top, "citation": g["citation"], "confidence": g["confidence"],
              "method": "rule", "produced_by": "component://flood-advisor@0.1.0", "score": g["confidence"],
-             "created_at": now(), "tenant": TENANT})
+             "sop_workflow": g["sop_workflow"], "created_at": now(), "tenant": TENANT})
         rec_ids.append(rid)
     print(f"4 ADVISE  {len(rec_ids)} recommendations from guidelines (cited): {[g['citation'] for g in picked]}")
 

@@ -113,10 +113,16 @@ async function taskControls(b,task){
   const box=document.createElement('div'); box.className='controls';
   if(task.case){const cl=mkbtn('Open case ↗','btn',()=>push(task.case,{title:'Case'})); box.appendChild(cl);}
   b.appendChild(box);
+  if(task.order) b.appendChild(mkbtn('View order ↗','btn',()=>push(task.order,{title:'Order'})));
   if(task.status==='done'){
-    const d=document.createElement('div'); d.className='ok'; d.textContent='✓ Decided'; b.appendChild(d);
+    const d=document.createElement('div'); d.className='ok'; d.textContent=task.decision?'✓ Decided':'✓ Done'; b.appendChild(d);
     if(task.decision) b.appendChild(mkbtn('View decision (receipt) ↗','btn',()=>push(task.decision,{title:'Decision'})));
     return;
+  }
+  if(task.order){                                          // an SOP fulfilment task → mark it complete
+    const c=document.createElement('div'); c.className='controls';
+    c.appendChild(mkbtn('Mark complete','btn primary',()=>complete(task.id)));
+    b.appendChild(c); return;
   }
   if(task.decision_kind==='select' && (task.options||[]).length){
     const lab=document.createElement('div'); lab.className='lbl'; lab.textContent='Recommendations — choose one'; b.appendChild(lab);
@@ -149,6 +155,13 @@ async function decide(taskId,outcome,selected){
     +'<div class="ok">✓ recorded to case history · case closed</div>';
   b.appendChild(rc);
   loadList();                                             // task now done; a "Decision recorded" item appears
+}
+async function complete(taskId){
+  const r=await bpost('/bridge/complete',{task:taskId});
+  const b=document.getElementById('d-body');
+  const n=document.createElement('div'); n.className=r.ok?'ok':'note';
+  n.textContent=r.ok?('✓ Completed'+(r.json.case_closed?' — all steps done, case closed':'')):('Complete refused ('+r.status+')');
+  b.appendChild(n); loadList();
 }
 function mkbtn(label,cls,fn){const btn=document.createElement('button'); btn.className=cls; btn.textContent=label; btn.onclick=fn; return btn;}
 function renderSubject(o,viz){
