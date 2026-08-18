@@ -124,7 +124,7 @@ function byRole(){
   masterDetail({
     placeholder:'search roles…', hint:'Select a role to manage its members.',
     list:(q,p)=>`/bridge/roles?q=${enc(q)}&page=${p}&page_size=25`,
-    rows:d=>(d.roles||[]).map(r=>({key:r.role,name:r.role,sub:(r.source_apps||[]).length?('from '+r.source_apps.join(', ')):''})),
+    rows:d=>(d.roles||[]).map(r=>({key:r.role,name:r.role,sub:[r.domain?('· '+r.domain):'',(r.source||[]).length?('from '+r.source.join(', ')):''].filter(Boolean).join('  ')})),
     open:r=>roleDetail(r)
   });
 }
