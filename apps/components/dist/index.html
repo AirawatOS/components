@@ -21,8 +21,11 @@
   table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
   th{color:var(--dim);text-align:left;font-weight:500;padding:5px 8px;border-bottom:1px solid var(--line)}
   td{padding:4px 8px;border-bottom:1px solid #1a1f27;font-family:ui-monospace,Menlo,monospace}
-  .allowed{color:#3fb950} .denied{color:#e5484d}
+  .allowed{color:#3fb950} .denied{color:#e5484d} .warn{color:#e3a008}
   .muted{color:var(--dim);font-size:12px}
+  .badge{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;margin-left:8px;border:1px solid}
+  .badge.denied{color:#ff9b9b;border-color:#8b2c30;background:#3d1418}
+  .badge.warn{color:#e3a008;border-color:#9e6a03;background:#2b1d0e}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#132a17;border:1px solid #238636;color:#3fb950;padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s}
   .toast.show{opacity:1} .toast.err{background:#3d1418;border-color:#8b2c30;color:#ff9b9b}
   .empty{color:var(--dim);text-align:center;padding:40px}
@@ -37,6 +40,16 @@ async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content
 async function query(schema,filter){const r=await jpost('/bridge/query',{app_id:APPID,schema,filter:filter||{}});return r.ok?(r.j.results||[]):[];}
 function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2200);}
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+// turn a raw upstream status into an ACTION the tenant can take
+function statusInfo(s){
+  s=String(s==null?'':s);
+  if(/^2\d\d$/.test(s)) return {t:s,c:'allowed',hint:'ok'};
+  if(s==='401'||s==='403') return {t:s,c:'denied',hint:'key rejected — rotate it'};
+  if(s==='404') return {t:s,c:'warn',hint:'endpoint not found — check the component'};
+  if(/^5\d\d$/.test(s)) return {t:s,c:'warn',hint:'upstream error — retry later'};
+  if(s.startsWith('unreachable')) return {t:'unreachable',c:'muted',hint:'network / DNS — not a key issue'};
+  return {t:s||'—',c:'muted',hint:''};
+}
 
 async function boot(){
   const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
@@ -65,9 +78,13 @@ async function card(c, log){
     const setNames=new Set(status.map(s=>s.name));
     c.secrets.forEach(name=>{
       const ver=(status.find(s=>s.name===name)||{}).version;
+      // if the most recent call that used this key was rejected, nudge the admin to rotate it
+      const last=log.find(e=>e.secret===name && String(e.upstream_status||'').length);
+      const si=last?statusInfo(last.upstream_status):null;
+      const nudge=(si && (si.c==='denied')) ? `<span class="badge ${si.c}">⚠ last call ${si.t} — ${esc(si.hint)}</span>` : '';
       const row=document.createElement('div'); row.className='keyrow';
       row.innerHTML=`<span class="kn">${esc(name)}</span>`+(setNames.has(name)?`<span class="set">● set (v${ver})</span>`:`<span class="unset">○ not set</span>`)
-        +`<input type="text" placeholder="new value" data-v><button class="btn primary" data-do>${setNames.has(name)?'Rotate':'Set'}</button>`;
+        +nudge+`<input type="text" placeholder="new value" data-v><button class="btn primary" data-do>${setNames.has(name)?'Rotate':'Set'}</button>`;
       row.querySelector('[data-do]').onclick=async()=>{
         const val=row.querySelector('[data-v]').value; if(!val)return toast('enter a value',true);
         const act=setNames.has(name)?'rotate':'set';
@@ -82,9 +99,9 @@ async function card(c, log){
   if(!log.length){ lb.innerHTML='<span class="muted">no external calls recorded</span>'; }
   else {
     lb.innerHTML='<table><tr><th>when</th><th>host</th><th>path</th><th>secret</th><th>outcome</th><th>upstream</th></tr>'+
-      log.slice(0,12).map(e=>`<tr><td>${esc((e.at||'').replace('T',' ').replace('Z',''))}</td><td>${esc(e.host||'')}</td><td>${esc(e.path||'')}</td>
+      log.slice(0,12).map(e=>{const si=statusInfo(e.upstream_status);return `<tr><td>${esc((e.at||'').replace('T',' ').replace('Z',''))}</td><td>${esc(e.host||'')}</td><td>${esc(e.path||'')}</td>
         <td>${esc(e.secret||'')}</td><td class="${e.outcome==='allowed'?'allowed':'denied'}">${esc(e.outcome)}${e.reason?' ('+esc(e.reason)+')':''}</td>
-        <td>${esc(e.upstream_status||'')}</td></tr>`).join('')+'</table>';
+        <td class="${si.c}" title="${esc(si.hint)}">${esc(si.t)}${si.hint&&si.t!=='—'?' · '+esc(si.hint):''}</td></tr>`;}).join('')+'</table>';
   }
   return el;
 }
