@@ -10,4 +10,4 @@ bundle: dist
 sandboxed: true
 required_schemas: []
 system: true    # platform app — auto-installed for every tenant and cannot be uninstalled (the way in to install others)
-roles: [tenant_admin]    # the Marketplace is an ADMIN tool — only the tenant admin sees it, not ordinary users
+roles: [platform.tenant-admin]    # the Marketplace is an ADMIN tool — only the tenant admin sees it, not ordinary users

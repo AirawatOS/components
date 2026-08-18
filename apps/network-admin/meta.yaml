@@ -10,4 +10,4 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 required_schemas: []
-roles: [steward]
+roles: [platform.steward]

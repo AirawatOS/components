@@ -11,4 +11,4 @@ bundle: dist
 sandboxed: true
 required_schemas: []
 system: true
-roles: [tenant_admin]
+roles: [platform.tenant-admin]
