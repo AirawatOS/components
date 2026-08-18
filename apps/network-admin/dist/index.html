@@ -45,28 +45,32 @@ function boot(){
 }
 function render(){ TAB==='requests'?requests():TAB==='roles'?catalog('roles'):catalog('packs'); }
 
+const KICON={role:'👤',schema:'🧩',pack:'📦'};
 async function requests(){
   const W=document.getElementById('wrap'); W.innerHTML='<div class="empty">loading…</div>';
-  let d; try{ d=await jget('/bridge/role-requests'); }catch(e){ W.innerHTML='<div class="empty">not authorized — standards body only</div>'; return; }
-  const reqs=(d.requests||[]).sort((a,b)=>(a.status==='pending'?-1:1)-(b.status==='pending'?-1:1));
-  let html='<div class="lbl">Role change-requests</div><div class="hint">Requests filed by developers and tenant admins to add a canonical role. Approving SIGNS it into the vocabulary; rejecting records a reason. This decision is the authority act.</div>';
+  let d; try{ d=await jget('/bridge/change-requests'); }catch(e){ W.innerHTML='<div class="empty">not authorized — standards body only</div>'; return; }
+  const reqs=d.requests||[];
+  let html='<div class="lbl">Change requests — roles · schemas · domain packs</div><div class="hint">Proposals filed by developers and tenant admins to extend the specification. Approving SIGNS the role / schema / pack into the governed catalog; rejecting records a reason. This decision is the authority act.</div>';
   if(!reqs.length){ W.innerHTML=html+'<div class="muted">no requests</div>'; return; }
-  html+='<table><tr><th>role</th><th>domain</th><th>requested by</th><th>why</th><th>status</th><th></th></tr>'+
-    reqs.map(r=>`<tr><td class="mono">${esc(r.role)}</td><td>${esc(r.domain||'')}</td>
+  html+='<table><tr><th>kind</th><th>subject</th><th>detail</th><th>requested by</th><th>status</th><th></th></tr>'+
+    reqs.map((r,i)=>{
+      const detail=r.kind==='pack'?`${esc(r.domain||'')} · ${(r.roles||[]).length} role(s)`:r.kind==='schema'?esc((r.justification||'').slice(0,40)):esc(r.domain||'');
+      return `<tr><td>${KICON[r.kind]||''} ${esc(r.kind)}</td><td class="mono">${esc(r.subject)}</td>
+      <td class="muted" style="max-width:220px">${detail}</td>
       <td class="muted">${esc((r.requested_by||'').split('/').pop())}</td>
-      <td class="muted" style="max-width:220px">${esc(r.justification||'')}</td>
       <td><span class="pill ${r.status}">${r.status}</span></td>
       <td>${r.status==='pending'
-          ?`<button class="btn ok" data-ap="${esc(r.role)}">Approve</button><button class="btn no" data-rj="${esc(r.role)}">Reject</button>`
-          :`<span class="muted mono" style="font-size:11px">${esc((r.published||r.reason||'').split('/').pop())}</span>`}</td></tr>`).join('')+'</table>';
+          ?`<button class="btn ok" data-i="${i}" data-act="approve">Approve</button><button class="btn no" data-i="${i}" data-act="reject">Reject</button>`
+          :`<span class="muted mono" style="font-size:11px">${esc((r.published||r.reason||'').split('/').pop())}</span>`}</td></tr>`;
+    }).join('')+'</table>';
   W.innerHTML=html;
-  W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=async()=>{
-    const r=await jpost('/bridge/role-request-decide',{role:b.dataset.ap,decision:'approve'});
-    r.ok?(toast('approved + signed into the catalog'),requests()):toast(r.j.error||'refused',true);});
-  W.querySelectorAll('[data-rj]').forEach(b=>b.onclick=async()=>{
-    const reason=prompt('Reason for rejection?','')||''; if(reason===null)return;
-    const r=await jpost('/bridge/role-request-decide',{role:b.dataset.rj,decision:'reject',reason});
-    r.ok?(toast('rejected'),requests()):toast(r.j.error||'refused',true);});
+  W.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{
+    const r=reqs[+b.dataset.i], act=b.dataset.act;
+    let reason='';
+    if(act==='reject'){ reason=prompt('Reason for rejection?',''); if(reason===null)return; }
+    const res=await jpost('/bridge/change-request-decide',{kind:r.kind,subject:r.subject,decision:act,reason});
+    res.ok?(toast(act==='approve'?'approved + published':'rejected'),requests()):toast(res.j.error||'refused',true);
+  });
 }
 
 async function catalog(kind){
