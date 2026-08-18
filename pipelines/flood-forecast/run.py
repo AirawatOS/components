@@ -64,16 +64,20 @@ GUIDELINES = [
 # SOP WORKFLOW declarations (domain data that rides on the generic engine) — ordered steps, each routed
 # to an agency role. The engine knows none of this; it just instantiates + routes.
 WORKFLOWS = [
-    {"id": f"ds:{TENANT}:workflow/flood-response", "title": "Flood response (multi-agency SOP)", "version": "1.0", "steps": [
-        {"step_id": "desilt",   "title": "Desilt primary drains in affected catchment", "verb": "fulfil", "assignee_role": "sanitation-officer"},
-        {"step_id": "pumps",    "title": "Deploy dewatering pumps to hotspots",          "verb": "fulfil", "assignee_role": "water-engineer"},
-        {"step_id": "advisory", "title": "Issue public advisory / prepare evacuation",   "verb": "fulfil", "assignee_role": "disaster-officer"}]},
-    {"id": f"ds:{TENANT}:workflow/pump-deployment", "title": "Pump deployment (Water Dept)", "version": "1.0", "steps": [
-        {"step_id": "mobilize", "title": "Mobilise pump units",              "verb": "fulfil", "assignee_role": "water-engineer"},
-        {"step_id": "deploy",   "title": "Deploy + commission pumps on site", "verb": "fulfil", "assignee_role": "water-engineer"}]},
-    {"id": f"ds:{TENANT}:workflow/drain-desilting", "title": "Drain desilting (Sanitation)", "version": "1.0", "steps": [
+    # A DAG: assess → desilt → pumps (sequential chain); advisory in parallel after assess;
+    # standdown joins on [pumps, advisory]. The interpreter derives readiness from `after`.
+    {"id": f"ds:{TENANT}:workflow/flood-response", "title": "Flood response (multi-agency SOP)", "version": "2.0", "steps": [
+        {"step_id": "assess",    "title": "Assess ground situation + confirm hotspots", "verb": "fulfil", "assignee_role": "disaster-officer"},
+        {"step_id": "desilt",    "title": "Desilt primary drains in affected catchment", "verb": "fulfil", "assignee_role": "sanitation-officer", "after": ["assess"]},
+        {"step_id": "pumps",     "title": "Deploy dewatering pumps to hotspots",          "verb": "fulfil", "assignee_role": "water-engineer",     "after": ["desilt"]},
+        {"step_id": "advisory",  "title": "Issue public advisory / prepare evacuation",   "verb": "fulfil", "assignee_role": "disaster-officer",  "after": ["assess"]},
+        {"step_id": "standdown", "title": "Stand down + file response report",            "verb": "fulfil", "assignee_role": "disaster-officer",  "after": ["pumps", "advisory"]}]},
+    {"id": f"ds:{TENANT}:workflow/pump-deployment", "title": "Pump deployment (Water Dept)", "version": "2.0", "steps": [
+        {"step_id": "mobilize", "title": "Mobilise pump units",               "verb": "fulfil", "assignee_role": "water-engineer"},
+        {"step_id": "deploy",   "title": "Deploy + commission pumps on site",  "verb": "fulfil", "assignee_role": "water-engineer", "after": ["mobilize"]}]},
+    {"id": f"ds:{TENANT}:workflow/drain-desilting", "title": "Drain desilting (Sanitation)", "version": "2.0", "steps": [
         {"step_id": "mobilize", "title": "Mobilise desilting crew", "verb": "fulfil", "assignee_role": "sanitation-officer"},
-        {"step_id": "desilt",   "title": "Desilt primary drains",   "verb": "fulfil", "assignee_role": "sanitation-officer"}]},
+        {"step_id": "desilt",   "title": "Desilt primary drains",   "verb": "fulfil", "assignee_role": "sanitation-officer", "after": ["mobilize"]}]},
 ]
 VIZ = [
     {"id": f"ds:{TENANT}:viz/layer/flood-risk", "layer_id": "flood-risk", "label": "Flood risk", "category": "natural",
