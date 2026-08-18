@@ -14,155 +14,169 @@
   .pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;text-transform:uppercase;letter-spacing:.04em}
   .empty{color:var(--dim);text-align:center;padding:48px}
   .count{margin-left:auto;color:var(--dim);font-size:12px}
-  /* drawer */
-  .scrim{position:fixed;inset:0;background:rgba(1,4,9,.6);display:none}
-  .scrim.open{display:block}
+  .scrim{position:fixed;inset:0;background:rgba(1,4,9,.6);display:none}.scrim.open{display:block}
   .drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,92vw);background:var(--card);border-left:1px solid var(--line);
           transform:translateX(100%);transition:transform .18s ease;overflow:auto;box-shadow:-16px 0 40px rgba(0,0,0,.4)}
   .drawer.open{transform:translateX(0)}
   .dhead{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
   .dhead h2{margin:0;font-size:15px;flex:1} .x{cursor:pointer;color:var(--dim);font-size:20px;line-height:1}
   .dbody{padding:16px 18px}
-  .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 8px}
-  .subj{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
-        color:#c9d1d9;white-space:pre-wrap;word-break:break-word}
+  .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px}
+  .crumb{color:var(--accent);cursor:pointer;font-size:12px;margin-bottom:6px;display:inline-block}
+  .subj{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9d1d9;white-space:pre-wrap;word-break:break-word}
   .loc{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;margin-left:6px}
   .loc-local{background:#132a17;color:#3fb950;border:1px solid #238636}
   .loc-remote{background:#2b1d0e;color:#e3a008;border:1px solid #9e6a03}
   .loc-connector{background:#1a2233;color:#58a6ff;border:1px solid #1f6feb}
   .note{color:var(--dim);font-size:12px;margin-top:8px;line-height:1.5}
   .handler{color:#6e7681;font-size:11px;margin-top:12px;word-break:break-word}
-  /* generic render blocks (viz.layer) */
   .rblk{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:12px 13px;margin-bottom:10px}
   .rlabel{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;display:flex;gap:8px;align-items:center}
   .rk{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:9px;color:#6e7681;text-transform:lowercase;letter-spacing:0}
   .ctitle{font-weight:600;font-size:14px} .csub{color:var(--dim);font-size:12px;margin-top:1px;margin-bottom:6px}
   .field{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-top:1px solid #1a1f27;font-size:13px}
   .field:first-of-type{border-top:none} .fl{color:var(--dim)} .fv{text-align:right;word-break:break-word}
-  .tl{position:relative} .tl-row{display:flex;gap:10px;padding:4px 0}
+  .tl-row{display:flex;gap:10px;padding:4px 0}
   .tl-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:4px;flex:none;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
   .tl-ev{font-size:13px} .tl-meta{color:#6e7681;font-size:11px}
   .mapbox{display:block;background:#0a0e14;border:1px solid var(--line);border-radius:6px;margin-bottom:8px}
   .chip{display:inline-block;background:#161b22;border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:12px;margin-right:6px}
-  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .controls{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
   .btn{border:1px solid var(--line);background:#21262d;color:var(--ink);border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
   .btn.approve{background:#238636;border-color:#2ea043} .btn.reject{background:#3d1418;border-color:#8b2c30}
+  .btn.primary{background:var(--accent);border-color:var(--accent)}
+  .recopt{cursor:pointer;border:1px solid transparent;border-radius:9px;margin-bottom:8px}
+  .recopt .rblk{margin-bottom:0}
+  .recopt.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .receipt{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  .ev{font:11px ui-monospace,Menlo,monospace;color:var(--dim);padding:2px 0;word-break:break-word}
+  .ok{color:#3fb950;margin-top:10px;font-size:13px;font-weight:600}
 </style>
 <header><h1>Inbox</h1><span class="who" id="who">…</span><span class="count" id="count"></span></header>
 <div class="wrap" id="list"><div class="empty">loading…</div></div>
-
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer">
   <div class="dhead"><span class="dot" id="d-dot"></span><h2 id="d-title"></h2><span class="x" id="d-close">×</span></div>
   <div class="dbody" id="d-body"></div>
 </aside>
-
 <script>
-let APPID; let ITEMS=[];
+let APPID, ITEMS=[], NAV=[];
 const SCALE={viridis:'#5ec962',reds:'#e5484d',blues:'#4c8dff',aqi:'#f5a524'};
-async function query(schema,filter){
-  const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({app_id:APPID,schema,filter:filter||{}})});
-  if(!r.ok) throw new Error('bridge '+r.status);
-  return (await r.json()).results||[];
-}
-async function resolveRef(ref){
-  const r=await fetch('/bridge/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref})});
-  if(!r.ok) throw new Error('resolve '+r.status);
-  return await r.json();
-}
+async function bpost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return {ok:r.ok,status:r.status,json:await r.json().catch(()=>({}))};}
+async function query(schema,filter){const r=await bpost('/bridge/query',{app_id:APPID,schema,filter:filter||{}});if(!r.ok)throw new Error('bridge '+r.status);return r.json.results||[];}
+async function resolveRef(ref){const r=await bpost('/bridge/resolve',{ref});if(!r.ok)throw new Error('resolve '+r.status);return r.json;}
+
 async function boot(){
   const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
   fetch('/session').then(r=>r.json()).then(se=>{document.getElementById('who').textContent=se.authenticated?se.sub:'';});
+  await loadList();
+}
+async function loadList(){
   ITEMS=await query('platform.inbox_item',{});
   ITEMS.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
   document.getElementById('count').textContent=ITEMS.length+' items';
   const list=document.getElementById('list');
   if(!ITEMS.length){list.innerHTML='<div class="empty">Nothing in your inbox.</div>';return;}
   list.innerHTML=ITEMS.map((i,ix)=>`
-    <div class="item" data-ix="${ix}">
-      <span class="dot ${i.kind}"></span>
-      <div style="flex:1">
-        <div class="it-title">${esc(i.title)}</div>
+    <div class="item" data-ix="${ix}"><span class="dot ${i.kind}"></span>
+      <div style="flex:1"><div class="it-title">${esc(i.title)}</div>
         ${i.body?`<div class="it-body">${esc(i.body)}</div>`:''}
         <div class="meta"><span class="pill">${i.kind}</span>${i.source?`<span>${esc(i.source)}</span>`:''}${i.ref?`<span>${esc(i.ref)}</span>`:''}<span>${(i.created_at||'').replace('T',' ').replace('Z','')}</span></div>
-      </div>
-    </div>`).join('');
+      </div></div>`).join('');
   list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(ITEMS[+el.dataset.ix])));
 }
-// clicking an item resolves its subject and renders it GENERICALLY through the object's viz.layer
-// descriptor(s) (card/map/timeline) — the inbox knows no domain, only how to render whatever comes back.
-async function openItem(it){
-  document.getElementById('d-dot').className='dot '+it.kind;
-  document.getElementById('d-title').textContent=it.title||'(item)';
-  const b=document.getElementById('d-body');
-  b.innerHTML='<div class="lbl">Subject</div><div class="subj">resolving '+esc(it.ref||'—')+' …</div>';
-  openDrawer();
-  if(!it.ref){ b.innerHTML='<div class="note">This item has no linked subject.</div>'; renderActions(b,it); return; }
-  let res;
-  try{ res=await resolveRef(it.ref); }
-  catch(e){ b.innerHTML='<div class="note">Could not resolve '+esc(it.ref)+' ('+esc(e.message)+').</div>'; return; }
-  const loc=res.location||'?';
-  let html='<div class="lbl">Subject <span class="loc loc-'+loc+'">'+loc+'</span></div>';
-  if(loc==='local' && res.object)      html+=renderSubject(res.object, res.viz||[]);
-  else if(loc==='local')               html+='<div class="note">Local subject '+esc(it.ref)+' — not found (pending or not yet in the registry).</div>';
-  else if(loc==='remote')              html+='<div class="note">Held by <b>'+esc(res.steward||'?')+'</b>'+(res.resolve_via?' → resolve via <b>'+esc(res.resolve_via)+'</b>':'')+'.<br>'+esc(res.note||'')+'</div>';
-  else                                 html+='<div class="note">'+esc(res.note||'')+'</div>';
-  html+='<div class="handler">ref: '+esc(it.ref)+(res.object?' · '+esc(res.object.schema):'')+(it.source?' · from '+esc(it.source):'')+'</div>';
+function openItem(it){NAV=[]; document.getElementById('d-dot').className='dot '+it.kind; openDrawer(); push(it.ref,{title:it.title,source:it.source});}
+async function push(ref,ctx){NAV.push({ref,ctx:ctx||{}}); await render();}
+async function back(){NAV.pop(); await render();}
+// the drawer renders WHATEVER ref is on top of the nav stack, generically via viz.layer; a task also
+// gets its action controls (open case · pick a recommendation · decide). One code path, any domain.
+async function render(){
+  const {ref,ctx}=NAV[NAV.length-1], b=document.getElementById('d-body');
+  document.getElementById('d-title').textContent=ctx.title||ref||'(item)';
+  b.innerHTML='<div class="subj">resolving '+esc(ref||'—')+' …</div>';
+  if(!ref){b.innerHTML='<div class="note">No linked subject.</div>';return;}
+  let res; try{res=await resolveRef(ref);}catch(e){b.innerHTML='<div class="note">Could not resolve '+esc(ref)+' ('+esc(e.message)+').</div>';return;}
+  const loc=res.location||'?', o=res.object;
+  let html = NAV.length>1 ? '<span class="crumb" id="back">← back</span>' : '';
+  html+='<div class="lbl" style="margin-top:0">Subject <span class="loc loc-'+loc+'">'+loc+'</span></div>';
+  if(loc==='local'&&o) html+=renderSubject(o,res.viz||[]);
+  else if(loc==='local') html+='<div class="note">Local subject '+esc(ref)+' — not found (pending).</div>';
+  else if(loc==='remote') html+='<div class="note">Held by <b>'+esc(res.steward||'?')+'</b>'+(res.resolve_via?' → via <b>'+esc(res.resolve_via)+'</b>':'')+'.<br>'+esc(res.note||'')+'</div>';
+  else html+='<div class="note">'+esc(res.note||'')+'</div>';
+  html+='<div class="handler">ref: '+esc(ref)+(o?' · '+esc(o.schema):'')+(ctx.source?' · from '+esc(ctx.source):'')+'</div>';
   b.innerHTML=html;
-  renderActions(b,it);
+  if(NAV.length>1) document.getElementById('back').onclick=back;
+  if(o&&o.schema==='platform.task') await taskControls(b,o);
 }
-function renderSubject(o, viz){
-  if(!viz.length) return '<div class="rblk"><div class="rlabel">'+esc(o.schema)+' <span class="rk">no viz.layer</span></div>'
-    +'<div class="subj">'+esc(JSON.stringify(o,null,2))+'</div></div>';
-  return viz.map(L=>{
-    const k=L.render||'map';
-    if(k==='card'||k==='form'||k==='table') return renderCard(o,L);
-    if(k==='timeline') return renderTimeline(o,L);
-    if(k==='map') return renderMap(o,L);
-    return '';
-  }).join('');
+async function taskControls(b,task){
+  const box=document.createElement('div'); box.className='controls';
+  if(task.case){const cl=mkbtn('Open case ↗','btn',()=>push(task.case,{title:'Case'})); box.appendChild(cl);}
+  b.appendChild(box);
+  if(task.status==='done'){
+    const d=document.createElement('div'); d.className='ok'; d.textContent='✓ Decided'; b.appendChild(d);
+    if(task.decision) b.appendChild(mkbtn('View decision (receipt) ↗','btn',()=>push(task.decision,{title:'Decision'})));
+    return;
+  }
+  if(task.decision_kind==='select' && (task.options||[]).length){
+    const lab=document.createElement('div'); lab.className='lbl'; lab.textContent='Recommendations — choose one'; b.appendChild(lab);
+    let SEL=null; const cards=[];
+    for(const optRef of task.options){
+      let r; try{r=await resolveRef(optRef);}catch(e){continue;} if(!r.object) continue;
+      const el=document.createElement('div'); el.className='recopt'; el.innerHTML=renderSubject(r.object,r.viz||[]);
+      el.onclick=()=>{SEL=optRef; cards.forEach(c=>c.classList.remove('sel')); el.classList.add('sel'); go.disabled=false;};
+      b.appendChild(el); cards.push(el);
+    }
+    const go=mkbtn('Record decision','btn primary',()=>decide(task.id,'selected',SEL)); go.disabled=true; b.appendChild(go);
+  } else {
+    const acts=document.createElement('div'); acts.className='controls';
+    acts.appendChild(mkbtn('Approve','btn approve',()=>decide(task.id,'approved',null)));
+    acts.appendChild(mkbtn('Reject','btn reject',()=>decide(task.id,'rejected',null)));
+    b.appendChild(acts);
+  }
+}
+// the payoff: an action WRITES a governance.decision (evidence_manifest = receipt), the task closes,
+// and the event lands in the case history. We then render the decision itself — via its viz.layer.
+async function decide(taskId,outcome,selected){
+  const r=await bpost('/bridge/decide',{task:taskId,outcome,selected});
+  if(!r.ok){const b=document.getElementById('d-body'); const n=document.createElement('div'); n.className='note'; n.textContent='Decision refused ('+r.status+').'; b.appendChild(n); return;}
+  const dec=r.json.decision;
+  await push(dec.id,{title:'Decision recorded'});         // renders the decision via decision-card viz
+  const b=document.getElementById('d-body');
+  const rc=document.createElement('div'); rc.className='receipt';
+  rc.innerHTML='<div class="lbl" style="margin-top:0">Receipt — evidence relied on</div>'
+    +(dec.evidence_manifest||[]).map(e=>'<div class="ev">'+esc(e)+'</div>').join('')
+    +'<div class="ok">✓ recorded to case history · case closed</div>';
+  b.appendChild(rc);
+  loadList();                                             // task now done; a "Decision recorded" item appears
+}
+function mkbtn(label,cls,fn){const btn=document.createElement('button'); btn.className=cls; btn.textContent=label; btn.onclick=fn; return btn;}
+function renderSubject(o,viz){
+  if(!viz.length) return '<div class="rblk"><div class="rlabel">'+esc(o.schema)+' <span class="rk">no viz.layer</span></div><div class="subj">'+esc(JSON.stringify(o,null,2))+'</div></div>';
+  return viz.map(L=>{const k=L.render||'map'; return k==='card'||k==='form'||k==='table'?renderCard(o,L):k==='timeline'?renderTimeline(o,L):k==='map'?renderMap(o,L):'';}).join('');
 }
 function renderCard(o,L){
-  const title=L.title_field?path(o,L.title_field):(o.title||o.id);
-  const sub=L.subtitle_field?path(o,L.subtitle_field):'';
+  const title=L.title_field?path(o,L.title_field):(o.title||o.id), sub=L.subtitle_field?path(o,L.subtitle_field):'';
   const rows=(L.fields||[]).map(f=>{let v=path(o,f.path); if(v&&typeof v==='object') v=JSON.stringify(v);
     return '<div class="field"><span class="fl">'+esc(f.label||f.path)+'</span><span class="fv">'+esc(String(v==null?'—':v))+'</span></div>';}).join('');
-  return '<div class="rblk"><div class="rlabel">'+esc(L.label)+' <span class="rk">card</span></div>'
-    +'<div class="ctitle">'+esc(String(title||''))+'</div>'+(sub?'<div class="csub">'+esc(String(sub))+'</div>':'')+rows+'</div>';
+  return '<div class="rblk"><div class="rlabel">'+esc(L.label)+' <span class="rk">card</span></div><div class="ctitle">'+esc(String(title||''))+'</div>'+(sub?'<div class="csub">'+esc(String(sub))+'</div>':'')+rows+'</div>';
 }
 function renderTimeline(o,L){
-  const arr=path(o,L.event_path)||[]; const ef=L.event_fields||{};
-  if(!Array.isArray(arr)||!arr.length) return '';
+  const arr=path(o,L.event_path)||[], ef=L.event_fields||{}; if(!Array.isArray(arr)||!arr.length) return '';
   const rows=arr.map(e=>{const at=e[ef.at||'at']||'',lab=e[ef.label||'event']||'',who=e[ef.actor||'actor']||'';
-    return '<div class="tl-row"><span class="tl-dot"></span><div><div class="tl-ev">'+esc(String(lab))+'</div>'
-      +'<div class="tl-meta">'+esc(String(at).replace('T',' ').replace('Z',''))+(who?' · '+esc(String(who)):'')+'</div></div></div>';}).join('');
-  return '<div class="rblk"><div class="rlabel">'+esc(L.label)+' <span class="rk">timeline</span></div><div class="tl">'+rows+'</div></div>';
+    return '<div class="tl-row"><span class="tl-dot"></span><div><div class="tl-ev">'+esc(String(lab))+'</div><div class="tl-meta">'+esc(String(at).replace('T',' ').replace('Z',''))+(who?' · '+esc(String(who)):'')+'</div></div></div>';}).join('');
+  return '<div class="rblk"><div class="rlabel">'+esc(L.label)+' <span class="rk">timeline</span></div>'+rows+'</div>';
 }
 function renderMap(o,L){
-  const ring=(o.space||{}).boundary; let svg='';
-  const fill=SCALE[L.color_scale]||'#3b82f6';
+  const ring=(o.space||{}).boundary, fill=SCALE[L.color_scale]||'#3b82f6'; let svg='';
   if(Array.isArray(ring)&&ring.length){
-    const xs=ring.map(p=>p[0]),ys=ring.map(p=>p[1]);
-    const mnx=Math.min(...xs),mxx=Math.max(...xs),mny=Math.min(...ys),mxy=Math.max(...ys);
-    const W=260,H=150,pad=12;
+    const xs=ring.map(p=>p[0]),ys=ring.map(p=>p[1]),mnx=Math.min(...xs),mxx=Math.max(...xs),mny=Math.min(...ys),mxy=Math.max(...ys),W=260,H=140,pad=12;
     const sx=v=>pad+(v-mnx)/((mxx-mnx)||1)*(W-2*pad), sy=v=>H-pad-(v-mny)/((mxy-mny)||1)*(H-2*pad);
     const pts=ring.map(p=>sx(p[0]).toFixed(1)+','+sy(p[1]).toFixed(1)).join(' ');
     svg='<svg class="mapbox" viewBox="0 0 '+W+' '+H+'" width="100%"><polygon points="'+pts+'" fill="'+fill+'" fill-opacity="0.45" stroke="'+fill+'" stroke-width="1.5"/></svg>';
   }
-  let chip='';
-  if(L.value_field){const v=path(o,L.value_field); chip='<span class="chip" style="border-color:'+fill+'">'+esc(L.short_label||L.label)+': '+esc(String(v))+(L.unit?' '+esc(L.unit):'')+'</span>';}
-  return '<div class="rblk"><div class="rlabel">'+esc(L.label)+' <span class="rk">map</span></div>'+svg+'<div>'+chip+'</div>'
-    +(L.interpretation?'<div class="note">'+esc(L.interpretation)+'</div>':'')+'</div>';
-}
-function renderActions(b,it){
-  const acts=(it.actions&&it.actions.length)?it.actions:(it.kind==='task'?['approve','reject']:(it.kind==='decision'?['open','contest']:[]));
-  if(!acts.length) return;
-  const wrap=document.createElement('div'); wrap.className='acts';
-  acts.forEach(a=>{const btn=document.createElement('button'); btn.className='btn '+(a==='approve'?'approve':a==='reject'?'reject':'');
-    btn.textContent=a.charAt(0).toUpperCase()+a.slice(1);
-    btn.onclick=()=>{btn.disabled=true; btn.textContent=a+' → (decision→receipt: Slice C)';}; wrap.appendChild(btn);});
-  b.appendChild(wrap);
+  let chip=''; if(L.value_field){const v=path(o,L.value_field); chip='<span class="chip" style="border-color:'+fill+'">'+esc(L.short_label||L.label)+': '+esc(String(v))+(L.unit?' '+esc(L.unit):'')+'</span>';}
+  return '<div class="rblk"><div class="rlabel">'+esc(L.label)+' <span class="rk">map</span></div>'+svg+'<div>'+chip+'</div>'+(L.interpretation?'<div class="note">'+esc(L.interpretation)+'</div>':'')+'</div>';
 }
 function openDrawer(){document.getElementById('scrim').classList.add('open');document.getElementById('drawer').classList.add('open');}
 function closeDrawer(){document.getElementById('scrim').classList.remove('open');document.getElementById('drawer').classList.remove('open');}
