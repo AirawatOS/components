@@ -5,35 +5,70 @@
   header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px}
   h1{margin:0;font-size:18px} .who{color:var(--dim);font-size:12px}
   .wrap{max-width:760px;margin:0 auto;padding:14px 16px}
-  .item{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:9px}
+  .item{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:9px;cursor:pointer}
+  .item:hover{border-color:#30363d;background:#1a2029}
   .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none}
   .task{background:#d29922} .notification{background:#3b82f6} .decision{background:#2ea043}
   .it-title{font-weight:600} .it-body{color:var(--dim);font-size:13px;margin-top:2px}
-  .meta{color:#6e7681;font-size:11px;margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
+  .meta{color:#6e7681;font-size:11px;margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;text-transform:uppercase;letter-spacing:.04em}
   .empty{color:var(--dim);text-align:center;padding:48px}
   .count{margin-left:auto;color:var(--dim);font-size:12px}
+  /* detail drawer */
+  .scrim{position:fixed;inset:0;background:rgba(1,4,9,.6);display:none}
+  .scrim.open{display:block}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,92vw);background:var(--card);border-left:1px solid var(--line);
+          transform:translateX(100%);transition:transform .18s ease;overflow:auto;box-shadow:-16px 0 40px rgba(0,0,0,.4)}
+  .drawer.open{transform:translateX(0)}
+  .dhead{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
+  .dhead h2{margin:0;font-size:15px;flex:1} .x{cursor:pointer;color:var(--dim);font-size:20px;line-height:1}
+  .dbody{padding:16px 18px}
+  .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 5px}
+  .subj{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
+        color:#c9d1d9;white-space:pre-wrap;word-break:break-word}
+  .loc{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;margin-left:6px}
+  .loc-local{background:#132a17;color:#3fb950;border:1px solid #238636}
+  .loc-remote{background:#2b1d0e;color:#e3a008;border:1px solid #9e6a03}
+  .loc-connector{background:#1a2233;color:#58a6ff;border:1px solid #1f6feb}
+  .note{color:var(--dim);font-size:12px;margin-top:8px;line-height:1.5}
+  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .btn{border:1px solid var(--line);background:#21262d;color:var(--ink);border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+  .btn.approve{background:#238636;border-color:#2ea043} .btn.reject{background:#3d1418;border-color:#8b2c30}
+  .handler{color:var(--dim);font-size:11px;margin-top:10px}
 </style>
 <header><h1>Inbox</h1><span class="who" id="who">…</span><span class="count" id="count"></span></header>
 <div class="wrap" id="list"><div class="empty">loading…</div></div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead"><span class="dot" id="d-dot"></span><h2 id="d-title"></h2><span class="x" id="d-close">×</span></div>
+  <div class="dbody" id="d-body"></div>
+</aside>
+
 <script>
-let APPID;
+let APPID; let ITEMS=[];
 async function query(schema,filter){
   const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({app_id:APPID,schema,filter:filter||{}})});
   if(!r.ok) throw new Error('bridge '+r.status);
   return (await r.json()).results||[];
 }
+async function resolveRef(ref){
+  const r=await fetch('/bridge/resolve',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ref})});
+  if(!r.ok) throw new Error('resolve '+r.status);
+  return await r.json();
+}
 async function boot(){
   const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
   fetch('/session').then(r=>r.json()).then(se=>{document.getElementById('who').textContent=se.authenticated?se.sub:'';});
-  const items=await query('platform.inbox_item',{});
-  items.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
-  document.getElementById('count').textContent=items.length+' items';
+  ITEMS=await query('platform.inbox_item',{});
+  ITEMS.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  document.getElementById('count').textContent=ITEMS.length+' items';
   const list=document.getElementById('list');
-  if(!items.length){list.innerHTML='<div class="empty">Nothing in your inbox.</div>';return;}
-  list.innerHTML=items.map(i=>`
-    <div class="item">
+  if(!ITEMS.length){list.innerHTML='<div class="empty">Nothing in your inbox.</div>';return;}
+  list.innerHTML=ITEMS.map((i,ix)=>`
+    <div class="item" data-ix="${ix}">
       <span class="dot ${i.kind}"></span>
       <div style="flex:1">
         <div class="it-title">${esc(i.title)}</div>
@@ -41,7 +76,51 @@ async function boot(){
         <div class="meta"><span class="pill">${i.kind}</span>${i.source?`<span>${esc(i.source)}</span>`:''}${i.ref?`<span>${esc(i.ref)}</span>`:''}<span>${(i.created_at||'').replace('T',' ').replace('Z','')}</span></div>
       </div>
     </div>`).join('');
+  list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(ITEMS[+el.dataset.ix])));
 }
+// clicking an item opens its subject: the inbox is GENERIC — it resolves the ref (local / federated /
+// connector), then dispatches to the item's HANDLER for domain-specific actions. Real handlers come with
+// each solution's declaration (approve-plan, decide-flood…); here we render the resolved subject + the
+// actions the item declares.
+async function openItem(it){
+  const dot=document.getElementById('d-dot'); dot.className='dot '+it.kind;
+  document.getElementById('d-title').textContent=it.title||'(item)';
+  const b=document.getElementById('d-body');
+  b.innerHTML='<div class="lbl">Subject</div><div class="subj">resolving '+esc(it.ref||'—')+' …</div>';
+  openDrawer();
+  if(!it.ref){ b.innerHTML='<div class="note">This item has no linked subject.</div>'; renderActions(b,it); return; }
+  let res;
+  try{ res=await resolveRef(it.ref); }
+  catch(e){ b.innerHTML='<div class="note">Could not resolve '+esc(it.ref)+' ('+esc(e.message)+').</div>'; return; }
+  let loc=res.location||'?';
+  let badge='<span class="loc loc-'+loc+'">'+loc+'</span>';
+  let subj;
+  if(loc==='local' && res.object){ subj='<div class="subj">'+esc(JSON.stringify(res.object,null,2))+'</div>'; }
+  else if(loc==='local'){ subj='<div class="note">Local subject '+esc(it.ref)+' — not found (pending or not yet in the registry).</div>'; }
+  else if(loc==='remote'){ subj='<div class="note">Held by <b>'+esc(res.steward||'?')+'</b>'+(res.resolve_via?' → resolve via <b>'+esc(res.resolve_via)+'</b>':'')+'.<br>'+esc(res.note||'')+'</div>'; }
+  else { subj='<div class="note">'+esc(res.note||'')+'</div>'; }
+  b.innerHTML='<div class="lbl">Subject '+badge+'</div>'+subj
+             +'<div class="handler">ref: '+esc(it.ref)+(it.source?' · from '+esc(it.source):'')+'</div>';
+  renderActions(b,it);
+}
+// the item names its allowed actions (or the handler declares them). For a task these are the decision
+// verbs; each would post a decided change-request → decision → receipt (wired with the handler, M3).
+function renderActions(b,it){
+  const acts = (it.actions && it.actions.length) ? it.actions
+             : (it.kind==='task' ? ['approve','reject'] : (it.kind==='decision'?['open','contest']:[]));
+  if(!acts.length) return;
+  const wrap=document.createElement('div'); wrap.className='acts';
+  acts.forEach(a=>{ const btn=document.createElement('button');
+    btn.className='btn '+(a==='approve'?'approve':a==='reject'?'reject':'');
+    btn.textContent=a.charAt(0).toUpperCase()+a.slice(1);
+    btn.onclick=()=>{ btn.disabled=true; btn.textContent=a+' → (handler not wired: decision→receipt, M3)'; };
+    wrap.appendChild(btn); });
+  b.appendChild(wrap);
+}
+function openDrawer(){document.getElementById('scrim').classList.add('open');document.getElementById('drawer').classList.add('open');}
+function closeDrawer(){document.getElementById('scrim').classList.remove('open');document.getElementById('drawer').classList.remove('open');}
+document.getElementById('scrim').addEventListener('click',closeDrawer);
+document.getElementById('d-close').addEventListener('click',closeDrawer);
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 boot();
 </script>
