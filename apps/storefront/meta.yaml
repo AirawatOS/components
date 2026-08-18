@@ -9,3 +9,4 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 required_schemas: []
+system: true    # platform app — auto-installed for every tenant and cannot be uninstalled (the way in to install others)
