@@ -35,7 +35,7 @@
   .toast.show{opacity:1} .toast.err{background:#3d1418;border-color:#8b2c30;color:#ff9b9b}
 </style>
 <header><h1>🛡️ Admin</h1><span class="who" id="who"></span></header>
-<div class="tabs"><span class="tab on" data-t="user">By User</span><span class="tab" data-t="role">By Role</span><span class="tab" data-t="apps">App Access</span></div>
+<div class="tabs"><span class="tab on" data-t="user">By User</span><span class="tab" data-t="role">By Role</span><span class="tab" data-t="requests">Role Requests</span><span class="tab" data-t="apps">App Access</span></div>
 <div id="view"></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -54,7 +54,46 @@ function boot(){
   });
   render();
 }
-function render(){ TAB==='user'?byUser():TAB==='role'?byRole():apps(); }
+function render(){ TAB==='user'?byUser():TAB==='role'?byRole():TAB==='requests'?requests():apps(); }
+
+// ---- Role Requests: file a request for a new canonical role; the standards body decides -----------
+async function requests(){
+  const V=document.getElementById('view');
+  V.innerHTML='<div class="detail" style="height:calc(100vh - 98px);overflow:auto"><div class="empty">loading…</div></div>';
+  const D=V.querySelector('.detail');
+  let d; try{ d=await jget('/bridge/role-requests'); }catch(e){ D.innerHTML='<div class="empty">not authorized</div>'; return; }
+  const reqs=(d.requests||[]).sort((a,b)=>(a.status>b.status?1:-1));
+  let html=`<div class="lbl">Request a new role</div>
+    <div class="hint" style="color:var(--dim);font-size:12px;margin:-4px 0 12px">Roles are governed vocabulary. Ask the standards body (AirawatNetwork) to add one; it becomes usable once approved. You file — they decide.</div>
+    <div class="add" style="max-width:640px;flex-wrap:wrap;gap:8px">
+      <input id="rq-role" placeholder="role (e.g. flood-marshal)" style="flex:0 0 180px">
+      <input id="rq-domain" placeholder="domain (e.g. urban)" style="flex:0 0 130px">
+      <input id="rq-just" placeholder="why it's needed" style="flex:1;min-width:200px">
+      <button class="pbtn" id="rq-file">File request</button></div>
+    <div class="lbl" style="margin-top:22px">Requests</div>`;
+  if(!reqs.length) html+='<div class="muted">no requests yet</div>';
+  else{ html+='<table style="width:100%;max-width:820px"><tr><th>role</th><th>domain</th><th>status</th><th>requested by</th><th></th></tr>'+
+    reqs.map(r=>{
+      const badge=r.status==='approved'?'<span style="color:#3fb950">✓ approved</span>':r.status==='rejected'?`<span style="color:#ff9b9b">✗ rejected</span>`:'<span style="color:#e3a008">● pending</span>';
+      const act=r.status==='pending'?`<button class="pbtn" data-ap="${esc(r.role)}">Approve</button> <button class="pbtn" data-rj="${esc(r.role)}">Reject</button>`:esc(r.reason||r.published||'');
+      return `<tr><td style="font-family:ui-monospace,Menlo,monospace">${esc(r.role)}</td><td>${esc(r.domain||'')}</td><td>${badge}</td><td class="muted" style="font-size:12px">${esc((r.requested_by||'').split('/').pop())}</td><td>${act}</td></tr>`;
+    }).join('')+'</table>'; }
+  D.innerHTML=html;
+  D.querySelector('#rq-file').onclick=async()=>{
+    const role=D.querySelector('#rq-role').value.trim(), domain=D.querySelector('#rq-domain').value.trim(), just=D.querySelector('#rq-just').value.trim();
+    if(!role)return toast('enter a role',true);
+    const r=await jpost('/bridge/role-request',{role,domain,justification:just});
+    r.ok?(toast('filed — awaiting the standards body'),requests()):toast(r.j.error||'failed',true);
+  };
+  D.querySelectorAll('[data-ap]').forEach(b=>b.onclick=async()=>{
+    const r=await jpost('/bridge/role-request-decide',{role:b.dataset.ap,decision:'approve'});
+    r.ok?(toast('approved + published'),requests()):toast(r.j.error||'refused',true);
+  });
+  D.querySelectorAll('[data-rj]').forEach(b=>b.onclick=async()=>{
+    const r=await jpost('/bridge/role-request-decide',{role:b.dataset.rj,decision:'reject',reason:'not needed'});
+    r.ok?(toast('rejected'),requests()):toast(r.j.error||'refused',true);
+  });
+}
 
 // ---- generic searchable+paginated master list (left column) -------------------------------------
 function masterDetail(cfg){
