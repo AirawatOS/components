@@ -43,7 +43,7 @@ async function query(schema, filter){
 async function boot(){
   try{
     const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
-    LAYERS=(await query('viz.layer',{})).filter(l=>l.enabled!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+    LAYERS=(await query('viz.layer',{})).filter(l=>l.enabled!==false && (l.render||'map')==='map').sort((a,b)=>(a.order||0)-(b.order||0));
     AOI=(await query('space.aoi',{}))[0];
     if(!LAYERS.length){document.getElementById('sub').textContent='no viz.layer catalog found';return;}
     document.getElementById('sub').textContent=(AOI?AOI.name+' · ':'')+LAYERS.length+' layers';

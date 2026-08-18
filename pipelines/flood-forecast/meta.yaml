@@ -1,0 +1,17 @@
+# The flood-forecast PIPELINE — the front half of the flood decision loop (sense -> predict -> detect ->
+# advise). Modelled as one runnable pipeline here; production = separate certified components (a weather
+# driver, a flood-risk engine, a threshold rule, a guideline/advisor engine) chained by events.
+component_id: ds:kmc:pipeline/flood-forecast
+kind: pipeline
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Flood-forecast pipeline (sense → predict → detect → advise)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi, geo.terrain, knowledge.guideline]
+writes: [met.forecast, risk.flood, signal.alert, governance.recommendation, platform.case, platform.task, platform.inbox_item]
+stages:
+  - { stage: sense,   component: weather-driver,  writes: met.forecast }
+  - { stage: predict, component: flood-risk,      writes: risk.flood }
+  - { stage: detect,  component: threshold-rule,  writes: signal.alert }
+  - { stage: advise,  component: flood-advisor,   writes: [governance.recommendation, platform.case, platform.task] }
