@@ -8,7 +8,7 @@ missing/rejected or OpenAQ is unreachable it FAILS (writes nothing, non-zero exi
 no stations in the AOI it reports 0 written. Point measures carry the ADR-0053 space block; valid-time is
 the observation's own datetime.
 """
-import json, os, urllib.request
+import json, os, random, time, urllib.request, urllib.error
 import h3
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
@@ -26,16 +26,38 @@ def _call(path, body):
     return json.loads(urllib.request.urlopen(req, timeout=30).read())
 
 
-def _fetch(url):
-    """Brokered egress to OpenAQ (key injected + audited). Returns (status, parsed_json_or_None)."""
-    r = _call("/v1/fetch", {"url": url, "inject": _INJECT})
-    st = r.get("upstream_status")
-    if st == 200:
+def _reset_wait(hdrs, attempt):
+    ra = hdrs.get("retry-after")
+    if ra and str(ra).isdigit():
+        return min(int(ra), 30)
+    return min(2 ** attempt + random.random(), 30)         # exp backoff + jitter, capped
+
+
+def _fetch(url, tries=5):
+    """Brokered egress to OpenAQ with BACKOFF — a good citizen (OpenAQ suspends keys for repeated rate
+    hits). Backs off on the BROKER's 429 (its enforced per-host limit) AND the VENDOR's 429 (respecting
+    Retry-After / x-ratelimit-reset), with a small inter-call throttle. Returns (status, json|None)."""
+    for attempt in range(tries):
         try:
-            return st, json.loads(r.get("body") or "{}")
-        except Exception:
-            return st, None
-    return st, None
+            r = _call("/v1/fetch", {"url": url, "inject": _INJECT})
+        except urllib.error.HTTPError as e:
+            if e.code == 429:                              # the broker throttled us — back off, don't hammer
+                wait = min(int(e.headers.get("Retry-After") or 2 ** attempt), 15)
+                print(f"  broker rate limit → waiting {wait}s"); time.sleep(wait); continue
+            raise
+        st = r.get("upstream_status"); hdrs = r.get("headers") or {}
+        if st == 429:                                      # the VENDOR rate-limited us
+            wait = _reset_wait(hdrs, attempt)
+            print(f"  OpenAQ 429 → waiting {wait}s (remaining {hdrs.get('x-ratelimit-remaining', '?')})")
+            time.sleep(wait); continue
+        time.sleep(0.3)                                    # polite spacing, well under the vendor limit
+        if st == 200:
+            try:
+                return st, json.loads(r.get("body") or "{}")
+            except Exception:
+                return st, None
+        return st, None
+    return 429, None
 
 
 def main():
