@@ -1,0 +1,18 @@
+# A DRIVER (kind=driver). Confined by the Component Host — its only I/O is the broker. It reads the AOI
+# (space.aoi) for the bbox and ingests POINT air-quality observations from the ground-station networks
+# into air.sensor_reading. Real mode egresses to CPCB (data.gov.in) + OpenAQ with tenant keys the broker
+# injects; the reference build synthesizes a plausible station field offline so the vertical runs keyless.
+component_id: ds:airawat:driver/air-sensors
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Air sensors (ground stations → points) driver
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi]
+writes: [air.sensor_reading]
+egress: [api.openaq.org, api.data.gov.in]
+secrets: [OPENAQ_API_KEY, CPCB_API_KEY]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: air.sensor_reading, tenant: kmc }
