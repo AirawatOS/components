@@ -188,17 +188,22 @@ async function loadKeys(){
   const status=(await jpost('/bridge/secret',{action:'status',component:SEL.id})).j.secrets_set||[];
   const setNames=new Map(status.map(s=>[s.name,s.version]));
   K.innerHTML='';
-  SEL.secrets.forEach(name=>{
+  SEL.secrets.forEach(sec=>{
+    const s=(typeof sec==='string')?{name:sec}:sec;           // tolerate bare-name or rich {name,label,description,url}
+    const name=s.name;
     const last=LOG.find(e=>e.secret===name && String(e.upstream_status||'').length);
     const si=last?statusInfo(last.upstream_status):null;
     const nudge=(si&&si.c==='denied')?`<span class="badge ${si.c}">⚠ last call ${si.t} — ${esc(si.hint)}</span>`:'';
+    const wrap=document.createElement('div');wrap.style.cssText='margin:0 0 14px';
+    const getlink=s.url?` · <a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--accent)">Get key ↗</a>`:'';
+    const desc=(s.description||s.label)?`<div style="color:var(--dim);font-size:12px;margin:2px 0 6px;max-width:520px">${esc(s.label?(s.label+' — '):'')}${esc(s.description||'')}${getlink}</div>`:'';
     const row=document.createElement('div');row.className='keyrow';
     row.innerHTML=`<span class="kn">${esc(name)}</span>`+(setNames.has(name)?`<span class="set">● set (v${setNames.get(name)})</span>`:`<span class="unset">○ not set</span>`)
       +nudge+`<input class="v" type="text" placeholder="new value" data-v><button class="btn primary" data-do>${setNames.has(name)?'Rotate':'Set'}</button>`;
     row.querySelector('[data-do]').onclick=async()=>{const val=row.querySelector('[data-v]').value;if(!val)return toast('enter a value',true);
       const act=setNames.has(name)?'rotate':'set';const r=await jpost('/bridge/secret',{action:act,component:SEL.id,name,value:val});
       r.ok?(toast(name+' '+act+'d'),loadKeys()):toast(r.j.error||('failed '+r.status),true);};
-    K.appendChild(row);
+    wrap.innerHTML=desc; wrap.appendChild(row); K.appendChild(wrap);
   });
 }
 boot();
