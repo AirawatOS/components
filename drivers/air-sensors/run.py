@@ -45,11 +45,29 @@ def synth_stations(bbox, n):
     return out
 
 
+def vendor_probe(bbox):
+    """Query the sensor vendor for stations in the AOI THROUGH the broker — a real authenticated egress the
+    broker injects the tenant's key into and AUDITS to prov.egress (the key never reaches this code). The
+    reference /fetch returns status only, so we still SYNTHESIZE the readings below; but the egress + secret
+    injection + audit are REAL — so setting/rotating the key is visible in the Components 'Logs' tab
+    (200 = key accepted, 401 = key rejected → the rotate nudge). No key configured → the broker refuses and
+    we just synthesize."""
+    w, s, e, n = bbox
+    url = f"https://api.openaq.org/v3/locations?bbox={w},{s},{e},{n}&limit=100"
+    try:
+        r = _call("/v1/fetch", {"url": url,
+                  "inject": {"name": "OPENAQ_API_KEY", "as": "header", "header": "X-API-Key", "prefix": ""}})
+        print(f"  vendor probe: openaq → status {r.get('upstream_status')} (key {r.get('key_used')})")
+    except Exception as ex:
+        print(f"  vendor probe skipped (no key configured / broker): {ex}")
+
+
 def main():
     aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
     if not aoi:
         print(f"no AOI at {AOI_ID}"); return 1
     bbox, res = aoi["bbox"], aoi["h3_res"]
+    vendor_probe(bbox)                                     # real egress + secret + audit (if a key is set)
     stations = synth_stations(bbox, N_STATIONS)
     for st in stations:
         cell = h3.latlng_to_cell(st["lat"], st["lng"], res)
