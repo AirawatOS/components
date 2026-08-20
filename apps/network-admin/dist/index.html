@@ -26,9 +26,32 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:10px}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#0f2417;border:1px solid #1a5a2e;color:#3fb950;padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s}
   .toast.show{opacity:1} .toast.err{background:#241013;border-color:#5a2327;color:#ff9b9b}
+  /* Specifications: IDE-like left nav + right detail */
+  .ide{display:flex;height:calc(100vh - 98px)}
+  .nav{width:280px;min-width:280px;border-right:1px solid var(--line);overflow:auto;padding:8px 0;background:#0c1119}
+  .nav .srch{margin:4px 10px 8px;width:calc(100% - 20px);background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12px}
+  .grp{margin:2px 0}
+  .grp>.gh{display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:pointer;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;user-select:none}
+  .grp>.gh:hover{color:var(--ink)} .grp .caret{transition:transform .12s;font-size:9px} .grp.closed .caret{transform:rotate(-90deg)} .grp.closed .items{display:none}
+  .sit{padding:5px 12px 5px 26px;cursor:pointer;font-size:12.5px;display:flex;align-items:center;gap:7px;border-left:2px solid transparent}
+  .sit:hover{background:#111823} .sit.on{background:#16202e;border-left-color:var(--accent);color:var(--ink)}
+  .sit .sv{margin-left:auto;color:var(--dim);font-size:10px}
+  .det{flex:1;overflow:auto;padding:18px 22px}
+  .det h2{margin:0 0 2px;font-size:17px;font-family:ui-monospace,Menlo,monospace}
+  .det .meta{color:var(--dim);font-size:12px;margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sec{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px;border-bottom:1px solid #171f2a;padding-bottom:5px}
+  pre.defn{background:#0c1119;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.55;max-width:820px;color:#c9d4e0}
+  .tl{list-style:none;padding:0;margin:0;max-width:640px}
+  .tl li{position:relative;padding:0 0 14px 20px;border-left:1px solid var(--line)}
+  .tl li:last-child{border-left-color:transparent} .tl .dot{position:absolute;left:-5px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--dim);border:2px solid var(--bg)}
+  .tl .dot.approved{background:#3fb950} .tl .dot.rejected{background:#ff9b9b} .tl .dot.proposed{background:var(--accent)}
+  .tl .ev{font-size:13px} .tl .ev .t{text-transform:capitalize;font-weight:500} .tl .when{color:var(--dim);font-size:11px;margin-left:6px}
+  .tl .by{color:var(--dim);font-size:12px} .tl .note{color:#a9b6c4;font-size:12px;font-style:italic;margin-top:2px}
+  .sens{border:1px solid} .sens.public{color:#3fb950;border-color:#1a5a2e;background:#0f2417}
+  .sens.internal{color:var(--accent);border-color:#2b3a4d;background:#16202e} .sens.sensitive{color:var(--gold);border-color:#6b5316;background:#241d0c}
 </style>
 <header><h1>🌐 Airawat<b>Network</b></h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
-<div class="tabs"><span class="tab on" data-t="requests">Change Requests</span><span class="tab" data-t="roles">Roles</span><span class="tab" data-t="packs">Domain Packs</span></div>
+<div class="tabs"><span class="tab on" data-t="requests">Change Requests</span><span class="tab" data-t="specs">Specifications</span><span class="tab" data-t="roles">Roles</span><span class="tab" data-t="packs">Domain Packs</span></div>
 <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -43,11 +66,71 @@ function boot(){
   document.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));el.classList.add('on');TAB=el.dataset.t;render();});
   render();
 }
-function render(){ TAB==='requests'?requests():TAB==='roles'?catalog('roles'):catalog('packs'); }
+function render(){ TAB==='requests'?requests():TAB==='specs'?specs():TAB==='roles'?catalog('roles'):catalog('packs'); }
+
+// --- Specifications: IDE-like left nav (schemas by domain) + right panel (definition + history) -------
+let SPEC_SEL=null;
+async function specs(){
+  const W=document.getElementById('wrap'); W.className=''; W.innerHTML='<div class="empty">loading…</div>';
+  let d; try{ d=await jpost('/bridge/schemas',{}); if(!d.ok)throw 0; d=d.j; }catch(e){ W.innerHTML='<div class="empty">could not load the catalog</div>'; return; }
+  const schemas=(d.schemas||[]).slice().sort((a,b)=>(a.schema_id||'').localeCompare(b.schema_id||''));
+  const pend=d.pending||[];
+  const by={}; schemas.forEach(s=>{const k=(s.schema_id||'').split('.')[0]||'other';(by[k]=by[k]||[]).push(s);});
+  const domains=Object.keys(by).sort();
+  W.innerHTML=`<div class="ide">
+    <div class="nav">
+      <input class="srch" id="ssrch" placeholder="filter ${schemas.length} schemas…">
+      <div id="tree"></div></div>
+    <div class="det" id="sdet"><div class="empty">Select a specification to view its definition and history.</div>
+      ${pend.length?`<div class="sec" style="margin-top:0">${pend.length} pending proposal(s)</div>`:''}</div>
+  </div>`;
+  function drawTree(q){
+    const t=document.getElementById('tree'); q=(q||'').toLowerCase();
+    t.innerHTML=domains.map(dom=>{
+      const items=by[dom].filter(s=>!q||(s.schema_id||'').toLowerCase().includes(q));
+      if(!items.length)return '';
+      return `<div class="grp" data-dom="${esc(dom)}"><div class="gh"><span class="caret">▼</span>🧩 ${esc(dom)} <span class="muted" style="margin-left:auto">${items.length}</span></div>
+        <div class="items">${items.map(s=>{
+          const p=pend.some(r=>r.schema_id===s.schema_id);
+          return `<div class="sit${SPEC_SEL===s.schema_id?' on':''}" data-sid="${esc(s.schema_id)}">${esc(s.schema_id)}${p?' <span class="pill pending" style="font-size:9px;padding:0 6px">upd</span>':''}<span class="sv">v${esc(s.version||'')}</span></div>`;
+        }).join('')}</div></div>`;
+    }).join('')||'<div class="empty" style="padding:20px">no match</div>';
+    t.querySelectorAll('.gh').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('closed'));
+    t.querySelectorAll('.sit').forEach(el=>el.onclick=()=>{SPEC_SEL=el.dataset.sid;t.querySelectorAll('.sit').forEach(x=>x.classList.remove('on'));el.classList.add('on');showSpec(el.dataset.sid);});
+  }
+  drawTree('');
+  document.getElementById('ssrch').oninput=e=>drawTree(e.target.value);
+  if(SPEC_SEL){ const el=document.querySelector(`.sit[data-sid="${CSS.escape(SPEC_SEL)}"]`); if(el){el.classList.add('on');showSpec(SPEC_SEL);} }
+}
+async function showSpec(sid){
+  const D=document.getElementById('sdet'); D.innerHTML='<div class="empty">loading…</div>';
+  const [rec,hist]=await Promise.all([
+    jpost('/bridge/schema-resolve',{schema_id:sid}).then(r=>r.j).catch(()=>({})),
+    jpost('/bridge/schema-history',{schema_id:sid}).then(r=>r.j).catch(()=>({versions:[],events:[]}))
+  ]);
+  const sens=rec.sensitivity||'internal';
+  const defn=rec.definition||{};
+  const versions=hist.versions||[]; const events=hist.events||[];
+  D.innerHTML=`<h2>${esc(sid)}</h2>
+    <div class="meta"><span class="pill sens ${sens}">${sens}</span>
+      <span>latest <b>v${esc(rec.version||'—')}</b></span>
+      <span>· ${versions.length} version(s)</span>
+      <span>· issued by ${esc((rec.issued_by||'').split('/').pop()||'—')}</span>
+      ${rec.definition_digest?`<span class="mono" style="font-size:10px" title="${esc(rec.definition_digest)}">· ${esc((rec.definition_digest||'').slice(0,18))}…</span>`:''}</div>
+    <div class="sec">Definition (JSON Schema)</div>
+    <pre class="defn">${esc(JSON.stringify(defn,null,2))}</pre>
+    <div class="sec">History — governance provenance</div>
+    ${events.length?`<ul class="tl">${events.map(ev=>`<li><span class="dot ${ev.type}"></span>
+        <div class="ev"><span class="t">${esc(ev.type)}</span> <span class="mono">v${esc(ev.version||'')}</span><span class="when">${fmt(ev.at)}</span></div>
+        <div class="by">${ev.type==='proposed'?'by ':'by '}${esc((ev.actor||'').replace(/^user:\/\//,''))}</div>
+        ${ev.justification?`<div class="note">“${esc(ev.justification)}”</div>`:''}${ev.reason?`<div class="note">${esc(ev.reason)}</div>`:''}</li>`).join('')}</ul>`
+      :'<div class="muted">no recorded change-requests — this schema predates the request ledger.</div>'}`;
+}
+function fmt(iso){ if(!iso)return ''; try{return new Date(iso).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});}catch(e){return iso;} }
 
 const KICON={role:'👤',schema:'🧩',pack:'📦'};
 async function requests(){
-  const W=document.getElementById('wrap'); W.innerHTML='<div class="empty">loading…</div>';
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
   let d; try{ d=await jget('/bridge/change-requests'); }catch(e){ W.innerHTML='<div class="empty">not authorized — standards body only</div>'; return; }
   const reqs=d.requests||[];
   let html='<div class="lbl">Change requests — roles · schemas · domain packs</div><div class="hint">Proposals filed by developers and tenant admins to extend the specification. Approving SIGNS the role / schema / pack into the governed catalog; rejecting records a reason. This decision is the authority act.</div>';
@@ -74,7 +157,7 @@ async function requests(){
 }
 
 async function catalog(kind){
-  const W=document.getElementById('wrap'); W.innerHTML='<div class="empty">loading…</div>';
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
   let d; try{ d=await jget('/bridge/catalog?kind='+kind); }catch(e){ W.innerHTML='<div class="empty">could not load</div>'; return; }
   if(kind==='roles'){
     const roles=d.roles||[];
