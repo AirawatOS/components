@@ -51,7 +51,7 @@
   .sens.internal{color:var(--accent);border-color:#2b3a4d;background:#16202e} .sens.sensitive{color:var(--gold);border-color:#6b5316;background:#241d0c}
 </style>
 <header><h1>🌐 Airawat<b>Network</b></h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
-<div class="tabs"><span class="tab on" data-t="requests">Change Requests</span><span class="tab" data-t="specs">Specifications</span><span class="tab" data-t="roles">Roles</span><span class="tab" data-t="packs">Domain Packs</span></div>
+<div class="tabs"><span class="tab on" data-t="requests">Change Requests</span><span class="tab" data-t="specs">Specifications</span><span class="tab" data-t="participants">Participants</span><span class="tab" data-t="roles">Roles</span><span class="tab" data-t="packs">Domain Packs</span></div>
 <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -66,7 +66,72 @@ function boot(){
   document.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));el.classList.add('on');TAB=el.dataset.t;render();});
   render();
 }
-function render(){ TAB==='requests'?requests():TAB==='specs'?specs():TAB==='roles'?catalog('roles'):catalog('packs'); }
+function render(){ TAB==='requests'?requests():TAB==='specs'?specs():TAB==='participants'?participants():TAB==='roles'?catalog('roles'):catalog('packs'); }
+
+// --- Participant Directory: the network's roster of admitted participants (left nav by kind + detail) --
+const PKIND={developer:'🛠️',vendor:'🏭',steward:'🏛️',operator:'⚙️',participant:'🔗'};
+let PART_SEL=null;
+function pkindOf(p){ const k=(p.kind||'participant'); if(k!=='participant')return k;
+  const seg=(p.participant_id||'').split(':')[2]||''; return seg.split('/')[0]||'participant'; }
+async function participants(){
+  const W=document.getElementById('wrap'); W.className=''; W.innerHTML='<div class="empty">loading…</div>';
+  let d; try{ d=await jpost('/bridge/participants',{}); if(!d.ok)throw new Error(d.j.error||''); d=d.j; }
+  catch(e){ W.innerHTML='<div class="empty">'+(esc(e.message)||'could not load the directory')+'</div>'; return; }
+  const parts=(d.participants||[]).slice().sort((a,b)=>(a.participant_id||'').localeCompare(b.participant_id||''));
+  const by={}; parts.forEach(p=>{const k=pkindOf(p);(by[k]=by[k]||[]).push(p);});
+  const kinds=Object.keys(by).sort();
+  W.innerHTML=`<div class="ide">
+    <div class="nav">
+      <input class="srch" id="psrch" placeholder="filter ${parts.length} participants…">
+      <div id="ptree"></div></div>
+    <div class="det" id="pdet"><div class="empty">Select a participant to view its directory entry and keys.</div></div>
+  </div>`;
+  function drawTree(q){
+    const t=document.getElementById('ptree'); q=(q||'').toLowerCase();
+    t.innerHTML=kinds.map(k=>{
+      const items=by[k].filter(p=>!q||(p.participant_id||'').toLowerCase().includes(q));
+      if(!items.length)return '';
+      return `<div class="grp"><div class="gh"><span class="caret">▼</span>${PKIND[k]||'🔗'} ${esc(k)} <span class="muted" style="margin-left:auto">${items.length}</span></div>
+        <div class="items">${items.map(p=>{
+          const short=(p.participant_id||'').split(':').slice(1).join(':');
+          const bad=p.certificate_status&&p.certificate_status!=='valid';
+          return `<div class="sit${PART_SEL===p.participant_id?' on':''}" data-pid="${esc(p.participant_id)}" title="${esc(p.participant_id)}">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(short)}</span>
+            <span class="sv" style="color:${bad?'#ff9b9b':'#3fb950'}">${bad?'✕':'✓'}</span></div>`;
+        }).join('')}</div></div>`;
+    }).join('')||'<div class="empty" style="padding:20px">no match</div>';
+    t.querySelectorAll('.gh').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('closed'));
+    t.querySelectorAll('.sit').forEach(el=>el.onclick=()=>{PART_SEL=el.dataset.pid;t.querySelectorAll('.sit').forEach(x=>x.classList.remove('on'));el.classList.add('on');showPart(el.dataset.pid);});
+  }
+  drawTree('');
+  document.getElementById('psrch').oninput=e=>drawTree(e.target.value);
+  if(PART_SEL){ const el=document.querySelector(`.sit[data-pid="${CSS.escape(PART_SEL)}"]`); if(el){el.classList.add('on');showPart(PART_SEL);} }
+}
+async function showPart(pid){
+  const D=document.getElementById('pdet'); D.innerHTML='<div class="empty">loading…</div>';
+  const rec=await jpost('/bridge/participant-resolve',{participant_id:pid}).then(r=>r.ok?r.j:null).catch(()=>null);
+  if(!rec){ D.innerHTML='<div class="empty">could not resolve this participant</div>'; return; }
+  const kind=rec.kind||'participant';
+  const cs=rec.certificate_status||'unknown'; const csBad=cs!=='valid';
+  const keys=rec.keys||[];
+  D.innerHTML=`<h2>${esc((pid.split(':').slice(1).join(':')))}</h2>
+    <div class="meta"><span class="pill" style="border:1px solid #2b3a4d;color:var(--accent);background:#16202e">${PKIND[pkindOf(rec)]||'🔗'} ${esc(kind)}</span>
+      <span class="pill ${csBad?'rejected':'approved'}">cert ${esc(cs)}</span>
+      ${rec.jurisdiction?`<span>· jurisdiction <b>${esc(rec.jurisdiction)}</b></span>`:''}
+      <span>· ${keys.length} key(s)</span></div>
+    <div class="sec">Keys</div>
+    ${keys.length?keys.map(k=>`<div class="card"><div class="mono" style="font-size:11px;color:var(--dim)">${esc(k.id||'')}</div>
+      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="pill" style="border:1px solid var(--line);color:var(--dim)">${esc(k.algorithm||'')}</span>
+        <span class="pill ${(k.status==='active')?'approved':'rejected'}">${esc(k.status||'')}</span>
+        <span class="muted" style="font-size:11px">v${esc(k.version||'')}${k.valid_time&&k.valid_time.from?' · from '+esc(k.valid_time.from):''}</span></div>
+      <div class="mono" style="margin-top:8px;font-size:11px;word-break:break-all;color:#a9b6c4">${esc(k.public_key||'')}</div></div>`).join('')
+    :'<div class="muted">no keys</div>'}
+    <div class="sec">Authority signature</div>
+    <div class="card mono" style="font-size:11px;word-break:break-all;color:#a9b6c4">${esc(rec.signature||'—')}</div>
+    <div class="sec">Signed directory entry</div>
+    <pre class="defn">${esc(JSON.stringify(rec,null,2))}</pre>`;
+}
 
 // --- Specifications: IDE-like left nav (schemas by domain) + right panel (definition + history) -------
 let SPEC_SEL=null;
