@@ -75,9 +75,10 @@ async function q(schema){try{return (await fetch('/bridge/query',{method:'POST',
 async function save(obj){return fetch('/bridge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:obj.id,object:obj})}).then(r=>r.json());}
 async function post(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
-let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},TABS=[],ACTIVE=null;
+let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},TABS=[],ACTIVE=null,TENANT='kmc';
 
 async function boot(){
+  try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;}catch(e){}  // build in the DEVELOPER's own tenant
   PROJECTS=await q('studio.project');
   try{MARKET=await fetch('/bridge/market').then(r=>r.json());}catch(e){}
   const sel=$('proj'); sel.innerHTML=PROJECTS.map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')||'<option>— no projects —</option>';
@@ -195,7 +196,7 @@ function expandAI(){const R=$('right');R.classList.remove('collapsed');
   if(!AIHIST.length)aiSay('expert','Tell me what you want to build. I check the Marketplace + schema catalog and reuse before building — and every step is yours to confirm.');
 }
 function aiSay(role,html){const log=$('ailog');if(!log)return null;const d=document.createElement('div');d.className='msg';d.innerHTML=`<div class="who">${role==='user'?'You':'Solution Expert'}</div><div class="card">${html}</div>`;log.appendChild(d);log.scrollTop=log.scrollHeight;return d.querySelector('.card');}
-async function aiSend(msg){if(!msg||!SEL)return;$('aiq').value='';aiSay('user',esc(msg));AIHIST.push({role:'user',content:msg});
+async function aiSend(msg){if(!msg)return;if(!SEL){aiSay('expert','Create or pick a project first (top-left “New”), then tell me what to build.');return;}$('aiq').value='';aiSay('user',esc(msg));AIHIST.push({role:'user',content:msg});
   const tip=aiSay('expert','<span class="sub">thinking…</span>');
   const r=await post('/bridge/solution-expert',{message:msg,project:SEL.id,history:AIHIST});
   if(r.error){tip.innerHTML='<span style="color:var(--err)">'+esc(r.error)+'</span>';return;}
@@ -212,12 +213,12 @@ function aiCard(a){const t=a.type;const head=t==='add_component'?'♻️ Reuse '
   };return el;}
 // ---------- MODALS ----------
 function newProject(){const m=modal(`<h3>New Project</h3><label class="sub">Name</label><input class="in" id="t"><label class="sub">Goal</label><textarea class="in" id="g" rows="3"></textarea><div style="text-align:right;margin-top:10px"><button class="btn" id="x">Cancel</button> <button class="btn primary" id="ok">Create</button></div>`);
-  m.q('#x').onclick=m.close;m.q('#ok').onclick=async()=>{const t=m.q('#t').value.trim();if(!t)return;const id='ds:kmc:studio/project/'+t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),status:'active',members:[],tenant:'kmc'});m.close();await boot();};}
+  m.q('#x').onclick=m.close;m.q('#ok').onclick=async()=>{const t=m.q('#t').value.trim();if(!t)return;const id='ds:'+TENANT+':studio/project/'+t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),status:'active',members:[],tenant:TENANT});m.close();await boot();};}
 function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind===kind);
   const m=modal(`<h3>Add ${kind==='agent'?'AI Expert':pretty(kind)}</h3><div class="sub">Reuse an existing one (recommended) or create a new one to build.</div>
     <label class="sub" style="margin-top:8px">Reuse existing</label><select class="in" id="ex"><option value="">— choose —</option>${comps.map(c=>`<option value="${esc(c.component_id)}">${esc(nameOf(c))}${c.certified?' ✓':''}</option>`).join('')}</select>
     <div style="text-align:right"><button class="btn primary sm" id="addex">Add (reuse)</button></div><hr style="border-color:var(--line)">
-    <label class="sub">New — id</label><input class="in" id="nn" placeholder="ds:airawat:${kind}/my-thing">
+    <label class="sub">New — id</label><input class="in" id="nn" placeholder="ds:${TENANT}:${kind}/my-thing" value="ds:${TENANT}:${kind}/">
     <div style="text-align:right"><button class="btn" id="x">Cancel</button> <button class="btn" id="addnew">Add + scaffold</button></div>`);
   m.q('#x').onclick=m.close;
   m.q('#addex').onclick=async()=>{const ref=m.q('#ex').value;if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'existing',status:'published'});await save(SEL);m.close();OPENK['k:'+kind]=true;tree();};
