@@ -1,0 +1,26 @@
+# A SKILL (kind=skill, INT-0002). Facts × Rules → cited governance.recommendation, for FLOOD. Hybrid
+# reasoning: a deterministic core selects the governing governance.rule that fires against the AOI's
+# predicted risk.flood (worst-cell ponding-risk score), and the LLM writes the advisory grounded ONLY in
+# that fired rule + the prediction. Confined: broker only. AI recommends; an authority decides downstream
+# (decision-router → inbox → governance.decision). No synthetic data.
+component_id: ds:airawat:skill/flood-advisory
+kind: skill
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Flood Advisory
+entrypoint: run.py
+confinement_min: L1
+domain: flood
+applies_to_facts: [risk.flood]
+rules_domain: risk.flood
+metric: score
+reasoning: hybrid
+triggers: [manual, schedule, on-fact-change]
+instructions: SKILL.md
+reads: [space.aoi, governance.rule, risk.flood]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: governance.rule }
+  - { verb: read,  scope: risk.flood }
+  - { verb: write, scope: governance.recommendation, tenant: kmc }

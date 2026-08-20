@@ -1,0 +1,13 @@
+# A UI app (kind=app). The Knowledge console: browse the ingested corpus (documents + their Merkle versions
+# + content-addressed chunks), run SEMANTIC search that returns CITED passages you can VERIFY (re-hash the
+# frozen text), and review the governance.rule PROPOSALS extracted from documents (each cited to its source).
+# Reads are host-mediated under the signed-in user; search + citation-verify go through the app-host bridges.
+component_id: ds:airawat:app/knowledge
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Knowledge
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [knowledge.document, knowledge.version, knowledge.chunk, governance.rule]

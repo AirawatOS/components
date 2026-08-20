@@ -26,10 +26,10 @@ def main():
         urllib.request.Request(API + "/v1/context", headers={"X-Run-Token": TOKEN})).read())
     print(f"engine run: {ctx['component_id']}  caps={[c['verb']+':'+c['scope'] for c in ctx['effective_capabilities']]}")
 
-    fact = _call("/v1/read", {"scope": "air.station_reading", "id": STATION})["object"]
+    fact = _call("/v1/read", {"scope": "air.sensor_reading", "id": STATION})["object"]
     if not fact:
         print(f"no fact at {STATION}"); return 1
-    pm25 = float(fact["value"]); band = aqi_band(pm25)
+    pm25 = float(fact["pm25"]); band = aqi_band(pm25)
     method = {"ref": {"id": "ds:kmc:method/aqi-band", "version": "1.0"}}
     unc = {"id": f"ds:kmc:uncertainty/air-diag/{STATION.rsplit('/',1)[-1]}"}
     base = STATION.rsplit("/", 1)[-1]

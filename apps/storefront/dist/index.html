@@ -5,11 +5,16 @@
   header{padding:16px 20px;border-bottom:1px solid var(--line)} h1{margin:0;font-size:18px}
   .sub{color:var(--dim);font-size:12px;margin-top:3px}
   .wrap{max-width:920px;margin:0 auto;padding:16px}
+  .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
+  .chip{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer;text-transform:capitalize}
+  .chip.on{background:#1b2530;color:var(--ink);border-color:#2f3d4d}
+  .count{margin-left:auto;color:var(--dim);font-size:12px}
   h2{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
   .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
   .name{font-weight:600;margin:8px 0 2px} .prov{color:var(--dim);font-size:12px}
+  .cid{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace;word-break:break-all;margin-top:2px}
   .row{display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap}
   .price{font-size:12px} .free{color:var(--accent)} .paid{color:#d29922}
   .cert{font-size:11px;color:var(--accent)} .cert.bad{color:#f85149}
@@ -17,53 +22,108 @@
   button:disabled{background:#30363d;color:var(--dim);cursor:default}
   .members{color:var(--dim);font-size:11px;margin-top:6px}
   #msg{margin:10px 0;color:var(--dim);font-size:12px;min-height:16px}
+  .pager{display:flex;align-items:center;gap:10px;justify-content:center;margin:16px 0;color:var(--dim);font-size:12px}
+  .pbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:7px;padding:5px 12px;cursor:pointer}
+  .pbtn:disabled{opacity:.4;cursor:default}
+  .empty{color:var(--dim);text-align:center;padding:36px}
 </style>
 <header><h1>Marketplace</h1><div class="sub" id="who">…</div></header>
 <div class="wrap">
+  <div class="bar" id="filters"></div>
   <div id="msg"></div>
-  <h2>Solutions</h2><div class="grid" id="sols"></div>
-  <h2>Components</h2><div class="grid" id="comps"></div>
+  <div id="solsWrap"><h2>Solutions</h2><div class="grid" id="sols"></div></div>
+  <div id="compsWrap"><h2 id="compsHd">Components</h2><div class="grid" id="comps"></div>
+    <div class="pager" id="pager"></div></div>
 </div>
 <script>
-let INSTALLED=[];
+let INSTALLED=[], DATA={components:[],solutions:[]}, FILTER='all', PAGE=0; const SIZE=12;
+// One consistent display name for ANY listing: its declared title, else the id's final segment prettified
+// (never the raw "kind/name" path). e.g. ds:airawat:app/air-explorer → "Air Explorer".
+function pretty(s){return (s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+const KIND={agent:'AI Expert',skill:'Skill',engine:'Engine',driver:'Driver',model:'Model',app:'App',service:'Service',pipeline:'Pipeline'};
+function kindLabel(k){return KIND[k]||k;}
+function niceName(o){ if(o.title) return o.title; const id=o.component_id||o.solution_id||''; return pretty(id.split(':').pop().split('/').pop()); }
 function priceLabel(p){ p=p||{}; if(p.model==='free'||!p.model) return '<span class="price free">Free</span>';
   if(p.model==='licensed') return `<span class="price paid">Licensed · ${p.price||''} ${p.currency||''}/${p.unit||'yr'}</span>`;
   if(p.model==='metered') return `<span class="price paid">Metered · ${p.price||''} ${p.currency||''}/${p.unit||'call'}</span>`;
   return `<span class="price">${p.model}</span>`; }
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-async function market(){ return fetch('/bridge/market').then(r=>r.json()); }
 async function install(kind,id,btn){
   btn.disabled=true; btn.textContent='Installing…';
   const r=await fetch('/bridge/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,id})}).then(r=>r.json());
   const m=document.getElementById('msg');
   if(r.error){ m.textContent='✗ '+r.error+' (install needs a tenant-admin session)'; btn.disabled=false; btn.textContent='Install'; }
-  else { m.textContent='✓ installed '+id.split(':').pop()+(r.grant?.issued?' · grant '+r.grant.issued.split('/').pop():'')+(r.grants?' · '+r.grants.filter(g=>g.issued).length+' grants':''); btn.textContent='Installed'; }
+  else {
+    const n=(r.members||[]).filter(x=>!x.error).length;   // an AI Expert fans out to its Skills
+    m.textContent='✓ installed '+pretty(id.split('/').pop())+(n?` + ${n} skill${n>1?'s':''}`:'');
+    btn.textContent='Installed';
+  }
 }
 function compCard(c){
   const installed=INSTALLED.includes(c.component_id);
+  const installable = c.certified && c.serveable!==false;   // apps must be digest-verified serveable by the host
+  const badge = c.certified ? '<span class="cert">✓ certified</span>'
+              : c.cert_note ? '<span class="cert bad">⚠ cert stale</span>'
+              : '<span class="cert bad">uncertified</span>';
+  const mem=(c.members||[]);   // an AI Expert (kind=agent) bundles Skills — installing it fans out to them
   const el=document.createElement('div'); el.className='card';
-  el.innerHTML=`<span class="k">${c.kind}</span>
-    <div class="name">${esc(c.title||c.component_id.split(':').pop())}</div>
+  el.innerHTML=`<span class="k">${esc(kindLabel(c.kind))}</span>
+    <div class="name">${esc(niceName(c))}</div>
     <div class="prov">${esc(c.provider||'')} · v${c.version}</div>
-    <div class="row">${priceLabel(c.pricing)}<span class="cert ${c.certified?'':'bad'}">${c.certified?'✓ certified':'uncertified'}</span></div>
+    <div class="cid">${esc(c.component_id)}</div>
+    ${mem.length?`<div class="members">Includes ${mem.length} skill${mem.length>1?'s':''}: ${mem.map(m=>pretty(m.split('/').pop())).join(' · ')}</div>`:''}
+    <div class="row">${priceLabel(c.pricing)}${badge}</div>
+    ${c.cert_note?`<div class="prov" style="color:#d29922">${esc(c.cert_note)}</div>`:''}
     <div class="row"></div>`;
-  const b=document.createElement('button'); b.textContent=installed?'Installed':'Install'; b.disabled=installed;
-  b.onclick=()=>install('component',c.component_id,b); el.querySelector('.row:last-child').appendChild(b);
+  const b=document.createElement('button');
+  const label=mem.length?'Install Expert':'Install';
+  b.textContent=installed?'Installed':(installable?label:'Unavailable');
+  b.disabled=installed||!installable;
+  if(installable&&!installed) b.onclick=()=>install('component',c.component_id,b);
+  el.querySelector('.row:last-child').appendChild(b);
   return el;
 }
 function solCard(s){
   const el=document.createElement('div'); el.className='card';
   el.innerHTML=`<span class="k">solution</span>
-    <div class="name">${esc(s.title||s.solution_id)}</div><div class="prov">v${s.version} · ${s.members.length} components</div>
-    <div class="members">${s.members.map(m=>m.split('/').pop()).join(' · ')}</div><div class="row"></div>`;
+    <div class="name">${esc(niceName(s))}</div><div class="prov">v${s.version} · ${s.members.length} components</div>
+    <div class="members">${s.members.map(m=>pretty(m.split('/').pop())).join(' · ')}</div><div class="row"></div>`;
   const b=document.createElement('button'); b.textContent='Install'; b.onclick=()=>install('solution',s.solution_id,b);
   el.querySelector('.row').appendChild(b); return el;
 }
+function renderFilters(){
+  const kinds=[...new Set(DATA.components.map(c=>c.kind))].sort();
+  if((DATA.solutions||[]).length) kinds.push('solution');
+  const F=document.getElementById('filters');
+  F.innerHTML=['all',...kinds].map(k=>`<span class="chip ${FILTER===k?'on':''}" data-k="${k}">${k==='all'?'all':esc(kindLabel(k))}</span>`).join('');
+  F.querySelectorAll('.chip').forEach(el=>el.onclick=()=>{FILTER=el.dataset.k;PAGE=0;render();});
+}
+function render(){
+  renderFilters();
+  const showSols=(FILTER==='all'||FILTER==='solution');
+  document.getElementById('solsWrap').style.display=showSols&&(DATA.solutions||[]).length?'':'none';
+  const ss=document.getElementById('sols'); ss.innerHTML='';
+  if(showSols)(DATA.solutions||[]).forEach(s=>ss.appendChild(solCard(s)));
+  const showComps=(FILTER!=='solution');
+  document.getElementById('compsWrap').style.display=showComps?'':'none';
+  const cs=document.getElementById('comps'); cs.innerHTML='';
+  let comps=DATA.components.slice().sort((a,b)=>(a.kind+niceName(a)).localeCompare(b.kind+niceName(b)));
+  if(FILTER!=='all') comps=comps.filter(c=>c.kind===FILTER);
+  document.getElementById('compsHd').textContent=`Components (${comps.length})`;
+  const total=comps.length, a=total?PAGE*SIZE:0, b=Math.min((PAGE+1)*SIZE,total);
+  if(!total) cs.innerHTML='<div class="empty">no components of this type</div>';
+  else comps.slice(a,b).forEach(c=>cs.appendChild(compCard(c)));
+  document.getElementById('pager').innerHTML= total>SIZE
+    ? `<button class="pbtn" id="prev" ${PAGE<=0?'disabled':''}>‹ Prev</button><span>${a+1}–${b} of ${total}</span><button class="pbtn" id="next" ${b>=total?'disabled':''}>Next ›</button>`
+    : '';
+  const p=document.getElementById('prev'), n=document.getElementById('next');
+  if(p)p.onclick=()=>{if(PAGE>0){PAGE--;render();}}; if(n)n.onclick=()=>{PAGE++;render();};
+  document.getElementById('count')&&(document.getElementById('count').textContent='');
+}
 (async function(){
   fetch('/session').then(r=>r.json()).then(se=>document.getElementById('who').textContent=se.authenticated?('signed in as '+se.sub+(se.roles?' · '+se.roles.join(','):'')):'not signed in');
-  const d=await market(); INSTALLED=d.installed||[];
-  const cs=document.getElementById('comps'), ss=document.getElementById('sols');
-  (d.solutions||[]).forEach(s=>ss.appendChild(solCard(s)));
-  (d.components||[]).sort((a,b)=>(a.kind+a.component_id).localeCompare(b.kind+b.component_id)).forEach(c=>cs.appendChild(compCard(c)));
+  const d=await fetch('/bridge/market').then(r=>r.json());
+  INSTALLED=d.installed||[]; DATA={components:d.components||[],solutions:d.solutions||[]};
+  render();
 })();
 </script>

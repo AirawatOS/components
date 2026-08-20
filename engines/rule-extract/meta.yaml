@@ -1,0 +1,19 @@
+# An analytics ENGINE (kind=engine). Confined — its only I/O is the broker. The guideline→RULE compiler:
+# the bridge between the Knowledge track and the Rules track. It reads a knowledge.document's chunks and,
+# via the broker LLM capability (/v1/complete → the pluggable model gateway), extracts enforceable
+# threshold rules, writing each as a governance.rule PROPOSAL — CITED to the exact source chunk (chunk_hash,
+# resolvable + tamper-evident) and carrying the document's legal_force (a binding order ⇒ mandatory rule).
+# Proposals; a human approves before they go live to the rules-evaluation engine. AI proposes, never enacts.
+component_id: ds:airawat:engine/rule-extract
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Guideline → Rule Extractor
+entrypoint: run.py
+confinement_min: L1
+reads: [knowledge.document, knowledge.chunk]
+writes: [governance.rule]
+scopes:
+  - { verb: read,  scope: knowledge.document }
+  - { verb: read,  scope: knowledge.chunk }
+  - { verb: write, scope: governance.rule, tenant: kmc }

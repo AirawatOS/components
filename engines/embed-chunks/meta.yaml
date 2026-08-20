@@ -1,0 +1,18 @@
+# A Language Embedding ENGINE (kind=engine). Confined — its only I/O is the broker. It reads
+# knowledge.chunk records and turns each into a vector via the broker /v1/embed capability (the model lives
+# behind the broker, metered; the engine never holds it), writing a knowledge.embedding keyed by
+# (chunk_hash, model). Idempotent + model-honest. These vectors power dense/semantic retrieval (S4b);
+# a vector DB is only a scale optimization — brute-force cosine over the tenant's vectors suffices here.
+component_id: ds:airawat:engine/embed-chunks
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Language Embedding Engine
+entrypoint: run.py
+confinement_min: L1
+reads: [knowledge.chunk, knowledge.embedding]
+writes: [knowledge.embedding]
+scopes:
+  - { verb: read,  scope: knowledge.chunk }
+  - { verb: read,  scope: knowledge.embedding }
+  - { verb: write, scope: knowledge.embedding, tenant: kmc }

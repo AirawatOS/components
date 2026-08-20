@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>Roads Viewer</title>
+<style>body{font-family:-apple-system,system-ui,sans-serif;margin:24px;background:#0d1117;color:#e6edf3}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #21262d;padding:8px;text-align:left;font-size:13px}th{color:#8b949e}</style>
+<h2>Roads Viewer</h2><div id="app">loading…</div>
+<script>
+// This app reads a GOVERNED schema through the host bridge. Set SCHEMA + declare it in meta.yaml required_schemas.
+const SCHEMA='geo.osm_feature';
+async function boot(){
+  const d=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:'roads-viewer',schema:SCHEMA})}).then(r=>r.json());
+  const rows=d.results||[];
+  document.getElementById('app').innerHTML = rows.length
+    ? '<table><tr><th>id</th><th>record</th></tr>'+rows.slice(0,50).map(r=>`<tr><td>${(r.id||'').split(':').pop()}</td><td>${JSON.stringify(r).slice(0,140)}</td></tr>`).join('')+'</table>'
+    : '<p>No '+SCHEMA+' records yet — declare it in meta.yaml required_schemas and ingest some data.</p>';
+}
+boot();
+</script>

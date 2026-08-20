@@ -1,0 +1,23 @@
+# An analytics ENGINE (kind=engine). Confined — its only I/O is the broker. The CHUNK + MERKLE-VERSION
+# stage of the Knowledge track: it reads a knowledge.document's raw blob (broker /v1/file/get), chunks it
+# STRUCTURE-AWARE by the doc's citation_style (stage/section/paragraph), CONTENT-ADDRESSES each chunk
+# (sha2-256 → /v1/file/put + a knowledge.chunk record whose id derives from the hash, so identical text is
+# stored once and SHARED across versions), and writes a knowledge.version = an ordered Merkle manifest of
+# chunk hashes whose root_hash IS the version identity. Re-ingesting a changed doc mints new blobs only for
+# changed chunks; unchanged chunks keep their hash → storage proportional to what changed (git-tree).
+component_id: ds:airawat:engine/doc-chunk-version
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Document Chunk + Merkle Version
+entrypoint: run.py
+confinement_min: L1
+reads: [knowledge.document, knowledge.version]
+writes: [knowledge.chunk, knowledge.version, knowledge.document]
+files: [get, put]
+scopes:
+  - { verb: read,  scope: knowledge.document }
+  - { verb: read,  scope: knowledge.version }
+  - { verb: write, scope: knowledge.chunk,    tenant: kmc }
+  - { verb: write, scope: knowledge.version,  tenant: kmc }
+  - { verb: write, scope: knowledge.document, tenant: kmc }

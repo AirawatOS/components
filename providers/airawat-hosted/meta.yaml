@@ -1,0 +1,15 @@
+# A model PROVIDER component (kind=provider). It doesn't run — it's a credential + config holder that makes
+# a model endpoint pluggable: install it into a tenant, then set its API key in the Components app (Settings
+# → API keys), exactly like a driver's key. The model-gateway routes /v1/embed and /v1/complete to this
+# provider's base_url and reads THIS key from the per-component secret path — the component/agent calling
+# the broker never sees it. The matching intelligence.provider record carries the routing (base_url, models).
+component_id: ds:airawat:provider/airawat-hosted
+kind: provider
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Airawat Hosted (kimi-k3 + bge-m3)
+secrets:
+  - name: AIRAWAT_LLM_KEY
+    label: Airawat LLM API key
+    description: Key for the Airawat-hosted OpenAI-compatible endpoint (serves bge-m3 embeddings + kimi-k3 chat)
+    url: https://llm.airawat.org

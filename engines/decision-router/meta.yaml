@@ -1,0 +1,21 @@
+# An analytics ENGINE (kind=engine). Confined — its only I/O is the broker. The ADMIT-ROUTING step of the
+# Decision spine (ADR-0029): AI never decides. It takes actionable governance.recommendation[] and opens the
+# decision loop for a human AUTHORITY — a platform.case, a platform.task (verb=decide, options=the
+# recommendations), and a platform.inbox_item addressed to the deciding ROLE so it surfaces in that
+# person's Inbox. The authority then admits/rejects it (decision-service → signed governance.decision).
+# Domain-agnostic: routes ANY recommendation, not just air quality. Idempotent (deterministic case/task ids).
+component_id: ds:airawat:engine/decision-router
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Decision Router (recommendation → inbox)
+entrypoint: run.py
+confinement_min: L1
+reads: [governance.recommendation, platform.task]
+writes: [platform.case, platform.task, platform.inbox_item]
+scopes:
+  - { verb: read,  scope: governance.recommendation }
+  - { verb: read,  scope: platform.task }
+  - { verb: write, scope: platform.case,       tenant: kmc }
+  - { verb: write, scope: platform.task,       tenant: kmc }
+  - { verb: write, scope: platform.inbox_item, tenant: kmc }

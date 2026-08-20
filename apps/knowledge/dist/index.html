@@ -1,0 +1,230 @@
+<!doctype html><meta charset="utf-8"><title>Knowledge Library</title>
+<style>
+  :root{--bg:#0f1420;--card:#161c28;--line:#232b3a;--ink:#e8eef6;--dim:#93a1b5;--accent:#3b82f6;--good:#3fb950;--warn:#e3a008;--bad:#f85149}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:14px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px}
+  h1{margin:0;font-size:17px} .nav{display:flex;gap:6px}
+  .nav a{font-size:13px;color:var(--dim);padding:6px 13px;border-radius:8px;cursor:pointer}
+  .nav a.on{background:#1a2436;color:#fff} .who{margin-left:auto;color:var(--dim);font-size:12px}
+  .btn{border:1px solid var(--line);background:#1a2130;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff} .btn.good{border-color:#238636;color:#3fb950}
+  .btn:disabled{opacity:.5;cursor:default}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .search{background:#0f1420;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px 13px;font-size:14px;flex:1}
+  table{width:100%;border-collapse:collapse} th{text-align:left;color:var(--dim);font-weight:500;font-size:12px;padding:8px 12px;border-bottom:1px solid var(--line)}
+  td{padding:12px;border-bottom:1px solid #1b2230}
+  tr.doc{cursor:pointer} tr.doc:hover td{background:#161c28}
+  .name{font-weight:600} .sub{color:var(--dim);font-size:12px}
+  .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:11px;border:1px solid var(--line);color:var(--dim)}
+  .force-mandatory{color:#ff9b9b;border-color:#8b2c30;background:#3d1418}
+  .force-advisory{color:#e3a008;border-color:#7a5306;background:#2b1d0e}
+  .force-adjudicative{color:#d2a8ff;border-color:#6e40c9;background:#241633}
+  .force-informational,.force-reference{color:var(--dim)}
+  .st-active{color:#3fb950} .st-processing{color:#e3a008} .st-failed{color:#f85149}
+  .pager{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:16px;color:var(--dim);font-size:13px}
+  .empty{color:var(--dim);text-align:center;padding:52px}
+  /* detail */
+  .back{color:var(--accent);cursor:pointer;font-size:13px;margin-bottom:10px;display:inline-block}
+  .dtitle{font-size:20px;font-weight:650} .meta{color:var(--dim);font-size:13px;margin:6px 0 4px}
+  .tabs{display:flex;gap:6px;margin:16px 0 14px;border-bottom:1px solid var(--line)}
+  .tab{padding:9px 16px;color:var(--dim);cursor:pointer;font-size:14px;border-bottom:2px solid transparent}
+  .tab.on{color:#fff;border-bottom-color:var(--accent)}
+  .kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:14px;margin:10px 0}
+  .kv .k{color:var(--dim)}
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin:0 0 12px}
+  .sec h4{margin:0 0 6px;font-size:14px} .sec p{margin:0;color:#c6d0dd;white-space:pre-wrap}
+  .rev{display:flex;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid #1b2230;font-size:14px}
+  .rev .n{font-weight:600;min-width:90px} .rev .c{color:var(--dim);font-size:12px}
+  .rule{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin:0 0 12px}
+  .trigger{font-size:15px;font-weight:600;margin:4px 0} .action{color:#c6d0dd}
+  .src{margin-top:9px;font-size:12px;color:var(--dim);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  pre.q{background:#0f1420;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;padding:10px 12px;white-space:pre-wrap;color:#c6d0dd;font:13px/1.5 system-ui;margin:8px 0}
+  .ok{color:var(--good)} .badc{color:var(--bad)}
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(4,7,12,.6);display:flex;align-items:center;justify-content:center;z-index:20}
+  .sheet{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;width:600px;max-width:94vw;max-height:90vh;overflow:auto}
+  .sheet h3{margin:0 0 14px} label{display:block;color:var(--dim);font-size:12px;margin:12px 0 5px}
+  .in{width:100%;background:#0f1420;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px 11px;font-size:14px}
+  textarea.in{min-height:170px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  .rowe{display:flex;gap:10px} .rowe>div{flex:1}
+</style>
+<header><h1>📚 Knowledge Library</h1>
+  <div class="nav"><a data-n="docs" class="on">Documents</a><a data-n="search">Search</a></div>
+  <span class="who" id="who"></span></header>
+<div class="wrap" id="wrap"></div>
+<script>
+let APPID, NAV='docs', PAGE=0, SIZE=10, Q='', DOCS=[], SEL=null, DTAB='doc', POLL=null;
+const SIZE_R=8;
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+async function query(schema,filter){const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:APPID,schema,filter:filter||{}})});return (await r.json()).results||[];}
+async function post(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
+const TYPE={law:'Law',act:'Act',rule:'Rule',regulation:'Regulation',order:'Order',notification:'Notification',standard:'Standard',guideline:'Guideline',circular:'Circular',judgment:'Court judgment',reference:'Reference'};
+const FORCE={mandatory:'Mandatory',advisory:'Advisory',adjudicative:'Binding order',informational:'For reference',reference:'For reference'};
+function forcePill(f){return `<span class="pill force-${esc(f)}">${esc(FORCE[f]||f||'')}</span>`;}
+function docStatus(d){const s=d.status; if(s==='processing')return '<span class="st-processing">● Processing…</span>'; if(s==='failed')return '<span class="st-failed" title="'+esc(d.error||'processing failed')+'">● Failed</span>'; return '<span class="st-active">● Active</span>';}
+const RTYPE={threshold:'Threshold',requirement:'Requirement',prohibition:'Prohibition',permission:'Permission'};
+function ruleLabel(r){return `<span class="pill">${esc(RTYPE[r.rule_type]||'Rule')}</span>`;}
+function ruleTrigger(r){
+  if(r.operator&&r.value!=null){                       // quantitative → machine-readable trigger
+    const subj=String(r.subject||r.metric||'value').replace(/_/g,' ').replace(/\bpm25\b/i,'PM2.5');
+    const v=Array.isArray(r.value)?`${r.value[0]} and ${r.value[1]}`:r.value;
+    const op={'>':'above','>=':'at or above','<':'below','<=':'at or below','==':'is','!=':'is not','between':'between'}[r.operator]||r.operator;
+    return `When ${esc(subj)} is ${op} ${esc(v)} ${esc(r.unit||'')}`.replace(/\s+/g,' ').trim();
+  }
+  return esc(r.statement||r.title||'');                 // qualitative → the rule statement itself
+}
+
+async function boot(){
+  const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
+  fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub.split('/').pop()):'';}).catch(()=>{});
+  document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('on'));a.classList.add('on');NAV=a.dataset.n;SEL=null;render();});
+  render();
+}
+function render(){ if(NAV==='search') return renderSearch(); if(SEL) return renderDetail(); return renderList(); }
+
+async function renderList(){
+  const W=document.getElementById('wrap');
+  W.innerHTML=`<div class="toolbar"><input class="search" id="q" placeholder="Search documents…" value="${esc(Q)}"><button class="btn primary" id="add">+ Add Document</button></div><div id="tbl"><div class="empty">loading…</div></div>`;
+  document.getElementById('add').onclick=addModal;
+  let t;document.getElementById('q').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{Q=e.target.value.trim().toLowerCase();PAGE=0;renderList();},200);};
+  DOCS=await query('knowledge.document');
+  let rows=DOCS.filter(d=>!Q||(d.title||'').toLowerCase().includes(Q)||(d.issuer||'').toLowerCase().includes(Q));
+  rows.sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  const total=rows.length,a=total?PAGE*SIZE:0,b=Math.min((PAGE+1)*SIZE,total);
+  const T=document.getElementById('tbl');
+  if(!total){T.innerHTML='<div class="empty">No documents yet. Click <b>+ Add Document</b> to add a law, order, guideline, or reference.</div>';return;}
+  T.innerHTML=`<table><tr><th>Document</th><th>Type</th><th>Issued by</th><th>Status</th></tr>
+    ${rows.slice(a,b).map(d=>`<tr class="doc" data-id="${esc(d.doc_id)}"><td><div class="name">${esc(d.title)}</div><div class="sub">${forcePill(d.legal_force)}</div></td>
+      <td>${esc(TYPE[d.doc_class]||d.doc_class||'')}</td><td>${esc(d.issuer||'—')}</td><td>${docStatus(d)}</td></tr>`).join('')}</table>
+    <div class="pager"><button class="btn" id="pv" ${PAGE<=0?'disabled':''}>‹ Prev</button><span>${a+1}–${b} of ${total}</span><button class="btn" id="nx" ${b>=total?'disabled':''}>Next ›</button></div>`;
+  T.querySelectorAll('tr.doc').forEach(tr=>tr.onclick=()=>{SEL=DOCS.find(d=>d.doc_id===tr.dataset.id);DTAB='doc';render();});
+  const pv=document.getElementById('pv'),nx=document.getElementById('nx');
+  if(pv)pv.onclick=()=>{if(PAGE>0){PAGE--;renderList();}}; if(nx)nx.onclick=()=>{PAGE++;renderList();};
+  // poll while anything is processing
+  const anyProc=DOCS.some(d=>d.status==='processing');
+  if(anyProc&&!POLL){POLL=setInterval(()=>{if(NAV==='docs'&&!SEL)renderList();else{clearInterval(POLL);POLL=null;}},3000);}
+  if(!anyProc&&POLL){clearInterval(POLL);POLL=null;}
+}
+
+async function renderDetail(){
+  const W=document.getElementById('wrap'); const d=SEL;
+  W.innerHTML=`<span class="back" id="back">‹ All documents</span>
+    <div class="dtitle">${esc(d.title)}</div>
+    <div class="meta">${forcePill(d.legal_force)} · ${esc(TYPE[d.doc_class]||d.doc_class||'')} · ${docStatus(d)}</div>
+    ${d.status==='failed'?`<div class="sec" style="border-color:#7a2f2f"><b class="st-failed">Processing didn't finish.</b> <span class="sub">${esc(d.error||'a step failed')}. The original file is safely stored — you can retry without re-uploading.</span><div style="margin-top:8px"><button class="btn primary" id="retry">Retry processing</button></div></div>`:''}
+    <div class="tabs"><span class="tab ${DTAB==='doc'?'on':''}" data-t="doc">Document</span><span class="tab ${DTAB==='rules'?'on':''}" data-t="rules">Rules</span></div>
+    <div id="body"><div class="empty">loading…</div></div>`;
+  document.getElementById('back').onclick=()=>{SEL=null;render();};
+  const rb=document.getElementById('retry'); if(rb)rb.onclick=async()=>{rb.disabled=true;rb.textContent='Retrying…';const r=await post('/bridge/reprocess',{doc_id:d.doc_id});if(r.error){rb.disabled=false;rb.textContent='Retry processing';rb.insertAdjacentHTML('afterend',' <span class="badc">'+esc(r.error)+'</span>');}else{SEL=null;NAV='docs';PAGE=0;render();}};
+  W.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{DTAB=t.dataset.t;renderDetail();});
+  if(DTAB==='doc') return renderDocTab(d);
+  return renderRulesTab(d);
+}
+async function renderDocTab(d){
+  const B=document.getElementById('body');
+  const vers=(await query('knowledge.version',{doc_id:d.doc_id})).sort((a,b)=>a.version_no-b.version_no);
+  const chunks=await query('knowledge.chunk',{doc_id:d.doc_id});
+  const byHash={}; chunks.forEach(c=>byHash[c.chunk_hash]=c);
+  const cur=vers[vers.length-1];
+  const changed=(v,i)=>{if(i===0)return v.chunks.length+' sections'; const prev=new Set(vers[i-1].chunks.map(c=>c.chunk_hash)); const nu=v.chunks.filter(c=>!prev.has(c.chunk_hash)).length; return `${v.chunks.length} sections · ${nu} updated`;};
+  B.innerHTML=`<div class="kv">
+      <div class="k">Type</div><div>${esc(TYPE[d.doc_class]||d.doc_class||'')}</div>
+      <div class="k">Legal force</div><div>${forcePill(d.legal_force)} <span class="sub">${d.legal_force==='mandatory'?'legally binding':d.legal_force==='advisory'?'recommended':'informational'}</span></div>
+      <div class="k">Issued by</div><div>${esc(d.issuer||'—')}</div>
+      <div class="k">Jurisdiction</div><div>${esc((d.jurisdiction&&(d.jurisdiction.level||d.jurisdiction.code))||'—')}</div>
+      ${d.effective_from?`<div class="k">Effective from</div><div>${esc(d.effective_from)}</div>`:''}
+      <div class="k">Added by</div><div>${esc((d.source&&d.source.added_by||'').split('/').pop()||'—')}</div>
+      ${d.source&&d.source.url?`<div class="k">Source</div><div><a href="${esc(d.source.url)}" target="_blank" rel="noopener">${esc(d.source.url)}</a></div>`:(d.source_filename?`<div class="k">Source</div><div>Uploaded file</div>`:'')}
+      ${(d.source_blob||d.blob)?`<div class="k">Original file</div><div><a href="/bridge/original?doc=${encodeURIComponent(d.doc_id)}" target="_blank" rel="noopener">${esc(d.source_filename||(d.doc_id+'.'+(d.source_format||'txt')))}</a> <span class="sub">${d.source_format?('· '+esc(String(d.source_format).toUpperCase())):''}${d.source_bytes?(' · '+ (d.source_bytes>=1048576?(d.source_bytes/1048576).toFixed(1)+' MB':Math.max(1,Math.round(d.source_bytes/1024))+' KB')):''} · kept as-is</span></div>`:''}
+      ${(d.produced_by&&d.produced_by.component)||(d.source&&d.source.driver)?`<div class="k">Processed by</div><div><span class="sub">${esc(((d.produced_by&&d.produced_by.component)||(d.source&&d.source.driver&&d.source.driver.id)||'').split('/').pop())}${(d.produced_by&&d.produced_by.version)||(d.source&&d.source.driver&&d.source.driver.version)?(' v'+esc((d.produced_by&&d.produced_by.version)||(d.source.driver.version))):''}</span></div>`:''}</div>
+    ${vers.length?`<div class="meta" style="margin-top:16px"><b>Version history</b></div>${vers.slice().reverse().map((v,ri)=>{const i=vers.length-1-ri;return `<div class="rev"><span class="n">Version ${v.version_no}${v===cur?' (current)':''}</span><span class="c">${changed(v,i)}${v.created_at?' · '+esc(v.created_at.slice(0,10)):''}</span></div>`;}).join('')}`:''}
+    <div class="meta" style="margin-top:18px"><b>Contents</b></div>
+    ${cur?cur.chunks.map(m=>{const c=byHash[m.chunk_hash]||{};return `<div class="sec"><h4>${esc(m.locator&&m.locator.label||('Section '+(m.index+1)))}</h4><p>${esc((c.text||'').slice(0,600))}${(c.text||'').length>600?'…':''}</p></div>`;}).join(''):'<div class="empty">This document is still processing…</div>'}`;
+}
+async function renderRulesTab(d){
+  const B=document.getElementById('body');
+  const all=await query('governance.rule');
+  const rules=all.filter(r=>r.source&&r.source.doc===d.id);
+  if(!rules.length){B.innerHTML=`<div class="empty">${d.status==='processing'?'Rules are being extracted from this document…':'No rules derived from this document.'}</div>`;return;}
+  const draft=rules.filter(r=>r.status==='proposed'),live=rules.filter(r=>r.status!=='proposed');
+  const card=r=>`<div class="rule">
+    <div>${forcePill(r.binding)} ${ruleLabel(r)} ${r.status==='proposed'?'<span class="pill" style="color:#e3a008;border-color:#7a5306">Draft — needs approval</span>':'<span class="pill" style="color:#3fb950;border-color:#238636">Active</span>'}${r.produced_by&&r.produced_by.model?' <span class="pill">AI-suggested</span>':''}</div>
+    <div class="trigger">${ruleTrigger(r)}</div>
+    ${r.condition?`<div class="sub" style="margin:2px 0 4px">Applies to: ${esc(r.condition)}</div>`:''}
+    ${r.proposed_action?`<div class="action">→ ${esc(r.proposed_action)}</div>`:''}
+    <div class="src">${r.source&&r.source.citation?'Source: '+esc(r.source.citation):''}${r.approved_by?' · approved by '+esc(r.approved_by.split('/').pop()):''}
+      ${r.source&&r.source.chunk_hash?`<button class="btn" data-src="${esc(r.source.chunk_hash)}" data-id="${esc(r.rule_id)}">View source</button> <span id="s-${esc(r.rule_id)}"></span>`:''}
+      ${r.status==='proposed'?`<button class="btn good" data-appr="${esc(r.id)}">Approve</button>`:''}</div></div>`;
+  B.innerHTML=(draft.length?`<div class="meta" style="display:flex;align-items:center;gap:10px"><b>Awaiting approval</b> <span class="sub">— the AI suggested these from the document; approve to make them active.</span><button class="btn good" id="appr-all" style="margin-left:auto">Approve all (${draft.length})</button></div>${draft.map(card).join('')}`:'')
+    +(live.length?`<div class="meta" style="margin-top:14px"><b>Active rules</b></div>${live.map(card).join('')}`:'');
+  const aa=document.getElementById('appr-all'); if(aa)aa.onclick=async()=>{aa.disabled=true;aa.textContent='Approving all…';
+    const v=await post('/bridge/approve-rules',{doc:d.id}); if(v.approved!==undefined)renderRulesTab(d); else{aa.disabled=false;aa.textContent='Approve all ('+draft.length+')';aa.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}};
+  B.querySelectorAll('[data-src]').forEach(b=>b.onclick=async()=>{const v=await post('/bridge/resolve-citation',{chunk_hash:b.dataset.src});
+    document.getElementById('s-'+b.dataset.id).innerHTML=v.verified?`<span class="ok">✓ confirmed</span>`:'<span class="badc">✗ not found</span>';
+    if(v.verified){b.insertAdjacentHTML('afterend','<pre class="q">'+esc(v.text)+'</pre>');b.style.display='none';}});
+  B.querySelectorAll('[data-appr]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='Approving…';
+    const v=await post('/bridge/approve-rule',{id:b.dataset.appr}); if(v.approved)renderRulesTab(d); else{b.disabled=false;b.textContent='Approve';b.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}});
+}
+function renderSearch(){
+  const W=document.getElementById('wrap');
+  W.innerHTML=`<div class="meta"><b>Ask the library</b> — search across all documents; each answer shows its source, which you can confirm against the original.</div>
+    <input class="search" id="q" placeholder="e.g. when must construction be stopped?" style="width:100%;margin:10px 0"><div id="res"></div>`;
+  const box=document.getElementById('q');
+  box.onkeydown=async e=>{if(e.key!=='Enter')return;const query=box.value.trim();if(!query)return;
+    document.getElementById('res').innerHTML='<div class="empty">Searching…</div>';
+    const r=await post('/bridge/retrieve',{query,k:6}); const R=document.getElementById('res');
+    if(r.error){R.innerHTML='<div class="badc">'+esc(r.error)+'</div>';return;}
+    if(!r.results.length){R.innerHTML='<div class="empty">No matching passages.</div>';return;}
+    R.innerHTML=r.results.map((h,i)=>{const c=h.citation;return `<div class="rule">
+      <div>${forcePill(c.legal_force)} <b>${esc(c.title||'')}</b> <span class="sub">· ${esc(c.locator&&c.locator.label||'')}</span></div>
+      <pre class="q">${esc((h.text||'').slice(0,360))}${(h.text||'').length>360?'…':''}</pre>
+      <div class="src"><button class="btn" data-h="${esc(h.chunk_hash)}" data-i="${i}">Confirm source</button> <span id="cs${i}"></span></div></div>`;}).join('');
+    R.querySelectorAll('[data-h]').forEach(b=>b.onclick=async()=>{const v=await post('/bridge/resolve-citation',{chunk_hash:b.dataset.h});
+      document.getElementById('cs'+b.dataset.i).innerHTML=v.verified?'<span class="ok">✓ confirmed against the original document</span>':'<span class="badc">✗ could not confirm</span>';});
+  };
+}
+function addModal(){
+  const m=document.createElement('div'); m.className='modal';
+  m.innerHTML=`<div class="sheet"><h3>Add a document</h3>
+    <label>Document name</label><input class="in" id="f-title" placeholder="e.g. CPCB National Air Quality Index (PM2.5 breakpoints)">
+    <div class="rowe"><div><label>Type</label><select class="in" id="f-class">${Object.entries(TYPE).map(([k,v])=>`<option value="${k}"${k==='guideline'?' selected':''}>${v}</option>`).join('')}</select></div>
+      <div><label>Legal force</label><select class="in" id="f-force"><option value="advisory">Advisory (recommended)</option><option value="mandatory">Mandatory (legally binding)</option><option value="adjudicative">Binding order</option><option value="reference">For reference</option></select></div></div>
+    <div class="rowe"><div><label>Issued by</label><input class="in" id="f-issuer" placeholder="e.g. CPCB"></div>
+      <div><label>Section style</label><select class="in" id="f-cite"><option value="paragraph">Paragraphs</option><option value="stage">Stages</option><option value="section">Sections/Clauses</option></select></div></div>
+    <label>Source</label>
+    <div class="seg" style="display:flex;gap:8px;margin-bottom:6px">
+      <button type="button" class="btn segbtn primary" id="s-url" style="flex:1">🔗 Web link</button>
+      <button type="button" class="btn segbtn" id="s-file" style="flex:1">⬆ Upload a file</button></div>
+    <div id="p-url"><input class="in" id="f-url" placeholder="https://…  (a web page, PDF, or text file)"></div>
+    <div id="p-file" style="display:none">
+      <input type="file" id="f-file" accept=".pdf,.html,.htm,.txt,.md,.markdown" style="width:100%;padding:9px 0">
+      <div class="sub">PDF (text-based, not scanned), web page, or plain-text / Markdown.</div></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="f-cancel">Cancel</button><button class="btn primary" id="f-go">Add &amp; Process</button></div>
+    <div id="f-msg" class="sub" style="margin-top:8px"></div></div>`;
+  document.body.appendChild(m);
+  let SRC='url';
+  const setSrc=k=>{SRC=k;
+    m.querySelector('#s-url').classList.toggle('primary',k==='url'); m.querySelector('#s-file').classList.toggle('primary',k==='file');
+    m.querySelector('#p-url').style.display=k==='url'?'':'none'; m.querySelector('#p-file').style.display=k==='file'?'':'none';};
+  m.querySelector('#s-url').onclick=()=>setSrc('url'); m.querySelector('#s-file').onclick=()=>setSrc('file');
+  m.querySelector('#f-cancel').onclick=()=>m.remove();
+  m.onclick=e=>{if(e.target===m)m.remove();};
+  const readB64=f=>new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result));fr.onerror=rej;fr.readAsDataURL(f);});
+  m.querySelector('#f-go').onclick=async()=>{
+    const msg=m.querySelector('#f-msg'), go=m.querySelector('#f-go');
+    const b={title:m.querySelector('#f-title').value.trim(),doc_class:m.querySelector('#f-class').value,legal_force:m.querySelector('#f-force').value,issuer:m.querySelector('#f-issuer').value.trim(),citation_style:m.querySelector('#f-cite').value,source_kind:SRC};
+    if(!b.title){msg.innerHTML='<span class="badc">Please give the document a name.</span>';return;}
+    if(SRC==='url'){b.url=m.querySelector('#f-url').value.trim(); if(!/^https?:\/\//.test(b.url)){msg.innerHTML='<span class="badc">Enter a valid web link (http/https).</span>';return;}}
+    else{const f=m.querySelector('#f-file').files[0]; if(!f){msg.innerHTML='<span class="badc">Choose a file to upload.</span>';return;}
+      if(f.size>100*1024*1024){msg.innerHTML='<span class="badc">That file is very large ('+(f.size/1048576).toFixed(0)+' MB). Please upload a document under 100 MB.</span>';return;}
+      msg.textContent='Reading file…'; b.filename=f.name; b.content_b64=await readB64(f);}
+    go.disabled=true; msg.textContent='Uploading + starting processing…';
+    const r=await post('/bridge/ingest-document',b);
+    if(r.error){msg.innerHTML='<span class="badc">'+esc(r.error)+'</span>';go.disabled=false;return;}
+    m.remove(); NAV='docs'; SEL=null; PAGE=0; renderList();
+  };
+}
+boot();
+</script>

@@ -1,0 +1,18 @@
+# An analytics ENGINE (kind=engine, SPEC-0004). Confined by the Component Host — its only I/O is the broker
+# (NO egress: pure computation over registry facts). It fills an AOI's H3 cells with air quality by spatially
+# INTERPOLATING the ground-station point readings (air.sensor_reading) via inverse-distance weighting (IDW),
+# writing an air.quality cell-measure per cell (with method + a distance-based confidence). This is the
+# second half of the lean air-quality vertical: air-sensors (points) → station-interpolation (surface).
+component_id: ds:airawat:engine/station-interpolation
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Station Interpolation (IDW)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi, air.sensor_reading]
+writes: [air.quality]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: air.sensor_reading }
+  - { verb: write, scope: air.quality, tenant: kmc }

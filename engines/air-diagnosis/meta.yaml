@@ -7,9 +7,9 @@ provider: ds:airawat:developer
 display_name: Air-Quality Diagnosis Engine
 entrypoint: run.py          # what the Component Host launches (platform-spec PLAT-HOST-008)
 confinement_min: L1         # minimum host confinement level this component must run under
-reads: [air.station_reading]
+reads: [air.sensor_reading]
 writes: [intelligence.analysis, intelligence.signal]
 scopes:
-  - { verb: read,  scope: air.station_reading }
+  - { verb: read,  scope: air.sensor_reading }
   - { verb: write, scope: intelligence.analysis, tenant: kmc }
   - { verb: write, scope: intelligence.signal,   tenant: kmc }

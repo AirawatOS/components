@@ -1,0 +1,15 @@
+# A UI app (kind=app). It lets a signed-in user BROWSE the data they have access to — every read is
+# mediated by the app-host under the USER's token (so it shows only what they may see), and the app-host
+# returns, alongside the records, the resolved `attributions` for the data sources behind them. The app
+# renders those credits inline where the data is shown — discharging the licence/attribution obligation
+# in context (the platform decides what to credit; the app cannot omit it). It declares required_schemas
+# (its DATA allow-list) — the datasets it may browse.
+component_id: ds:airawat:app/data
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Data
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [air.sensor_reading, air.quality, demographics.population, space.aoi, ref.source]

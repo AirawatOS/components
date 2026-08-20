@@ -1,0 +1,31 @@
+# A DRIVER (kind=driver). Confined by the Component Host — its only I/O is the broker. Ingests the Kanpur
+# iDSS low-cost sensor network (a district-scoped vendor API with LOGIN/JWT auth) into air.sensor_reading
+# POINTS. The broker performs the login (username/password from Vault) + caches and injects the bearer
+# token per this driver's egress AUTH PROFILE — this code never sees the credentials or the token. Kanpur-
+# specific (iDSS is deployed only in Kanpur), so this is the real-data source for the air-quality vertical.
+component_id: ds:airawat:driver/kanpur-idss
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Kanpur iDSS Sensors
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi]
+writes: [air.sensor_reading]
+# Structured egress: rate cap + identifying UA + a broker-side login/JWT AUTH PROFILE. The $refs name Vault
+# secrets (set at install) — no credential value lives in the manifest/listing. The broker logs in, caches
+# the JWT (per its exp), and injects `Authorization: Bearer <token>` on every data call.
+egress:
+  - host: 13.205.88.131
+    rate_per_min: 40
+    user_agent: "AirawatOS/kanpur-idss (+https://airawat.org)"
+    auth:
+      login_url: http://13.205.88.131:3001/auth/login
+      method: POST
+      body: { username: $IDSS_USERNAME, password: $IDSS_PASSWORD }
+      token_path: token
+      present: { header: Authorization, prefix: "Bearer " }
+secrets: [IDSS_USERNAME, IDSS_PASSWORD]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: air.sensor_reading, tenant: kmc }

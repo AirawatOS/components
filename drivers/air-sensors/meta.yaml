@@ -6,13 +6,22 @@ component_id: ds:airawat:driver/air-sensors
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer
-display_name: Air sensors (ground stations → points) driver
+display_name: Air Sensors
 entrypoint: run.py
 confinement_min: L1
 reads: [space.aoi]
 writes: [air.sensor_reading]
-egress: [api.openaq.org, api.data.gov.in]
+# Structured egress: the broker enforces the per-host rate cap AND presents the declared User-Agent to
+# the vendor (PLAT-EGRESS-004 — identify yourself; OpenAQ suspends anonymous/abusive clients).
+egress:
+  - { host: api.openaq.org,  rate_per_min: 60, user_agent: "AirawatOS/air-sensors (+https://airawat.org; contact@airawat.org)" }
+  - { host: api.data.gov.in, rate_per_min: 40, user_agent: "AirawatOS/air-sensors (+https://airawat.org; contact@airawat.org)" }
 secrets: [OPENAQ_API_KEY, CPCB_API_KEY]
+# Data-source DISCLOSURE: which governed ref.source each egress feeds. The platform renders these records'
+# attribution/licence wherever the derived data is shown (Component app tab; app-host chrome; Data App).
+sources:
+  - { ref: "ds:airawat:ref/source/openaq", host: api.openaq.org,  provides: [air.sensor_reading] }
+  - { ref: "ds:airawat:ref/source/cpcb",   host: api.data.gov.in, provides: [air.sensor_reading] }
 scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: write, scope: air.sensor_reading, tenant: kmc }

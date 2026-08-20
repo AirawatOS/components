@@ -1,0 +1,18 @@
+# A DRIVER (kind=driver). Confined — its only I/O is the broker. The ACQUIRE stage of the Knowledge track:
+# it takes a document from an external URL (broker /v1/fetch) OR provided bytes, stores the raw bytes in the
+# content-addressed filestore (broker /v1/file/put — the blob id IS the sha2-256), and writes a
+# knowledge.document registry record with the document-variety metadata (doc_class, legal_force, issuer,
+# jurisdiction, citation_style). Generic + metadata-driven: one driver acquires any instrument. It never
+# extracts/chunks — that's the S3 engine reading this doc's blob.
+component_id: ds:airawat:driver/doc-acquire
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Document Acquire
+entrypoint: run.py
+confinement_min: L1
+reads: []
+writes: [knowledge.document]
+files: [put]                      # declares it stores blobs (forward-compat with per-component file capability)
+scopes:
+  - { verb: write, scope: knowledge.document, tenant: kmc }

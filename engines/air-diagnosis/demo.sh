@@ -8,7 +8,7 @@ j() { curl -sf -H 'Content-Type: application/json' "$@"; }
 
 echo "1) certify + publish the engine (with read+write scopes) to the network store"
 j -X POST "$N/v1/certify" -d "{\"subject_id\":\"$CID\",\"subject_kind\":\"component\",\"evidence\":{\"conformance\":\"INT-0001 analysis-producer + signal-publisher\"}}" >/dev/null
-j -X POST "$N/v1/store/publish" -d "{\"component_id\":\"$CID\",\"kind\":\"engine\",\"version\":\"0.1.0\",\"provider\":\"ds:airawat:developer\",\"scopes\":[{\"verb\":\"read\",\"scope\":\"air.station_reading\"},{\"verb\":\"write\",\"scope\":\"intelligence.analysis\",\"tenant\":\"kmc\"},{\"verb\":\"write\",\"scope\":\"intelligence.signal\",\"tenant\":\"kmc\"}]}" >/dev/null
+j -X POST "$N/v1/store/publish" -d "{\"component_id\":\"$CID\",\"kind\":\"engine\",\"version\":\"0.1.0\",\"provider\":\"ds:airawat:developer\",\"scopes\":[{\"verb\":\"read\",\"scope\":\"air.sensor_reading\"},{\"verb\":\"write\",\"scope\":\"intelligence.analysis\",\"tenant\":\"kmc\"},{\"verb\":\"write\",\"scope\":\"intelligence.signal\",\"tenant\":\"kmc\"}]}" >/dev/null
 echo "   published + certified."
 
 echo "2) install into the kernel (cert verified point-of-use) → mints the engine run-token"
@@ -17,7 +17,7 @@ echo "   run-token=$TOK"
 
 echo "3) seed an unhealthy pm2.5 reading (a driver writes the fact the engine will read)"
 j -X POST "$K/v1/write" -H "X-Run-Token: dev-run-air" \
-  -d "{\"scope\":\"air.station_reading\",\"id\":\"$STATION\",\"object\":{\"kind\":\"assertion\",\"pollutant\":\"pm25\",\"station\":\"station-7\",\"value\":82},\"valid_time\":{\"from\":\"2025-05-12T00:00:00Z\"},\"asserted_at\":\"2025-05-12T06:00:00Z\"}" >/dev/null
+  -d "{\"scope\":\"air.sensor_reading\",\"id\":\"$STATION\",\"object\":{\"kind\":\"assertion\",\"pollutant\":\"pm25\",\"station\":\"station-7\",\"value\":82},\"valid_time\":{\"from\":\"2025-05-12T00:00:00Z\"},\"asserted_at\":\"2025-05-12T06:00:00Z\"}" >/dev/null
 echo "   seeded pm25=82 at $STATION"
 
 echo "4) run the CONFINED engine (its only I/O is the broker)"

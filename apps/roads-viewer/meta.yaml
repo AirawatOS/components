@@ -1,0 +1,12 @@
+# An APP (kind=app) — a sandboxed UI served by the host. It reads governed data via the host
+# bridge /bridge/query (declare the schemas it reads in required_schemas). Edit dist/index.html.
+component_id: ds:airawat:app/roads-viewer
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Roads Viewer
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [geo.osm_feature]   # the governed schemas this app reads
+roles: []

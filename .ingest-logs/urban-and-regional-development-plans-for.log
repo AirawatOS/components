@@ -1,0 +1,69 @@
+### engines/doc-chunk-version rc=0
+urban-and-regional-development-plans-for: unchanged (root sha2-256:ea7e2a3d0a0ff…) — no new version
+
+### engines/embed-chunks rc=0
+embedded 849 new chunk(s) with model 'bge-m3' (dim 1024); 693 already current.
+
+### engines/rule-extract rc=0
+NOTE: 1509 sections; extracting rules from the first 60 only (MAX_EXTRACT_CHUNKS). Raise the cap or trigger targeted extraction for full coverage of a large document.
+  chars 1175200-1176200: 0 rule(s) extracted + cited
+  chars 887200-888200: 0 rule(s) extracted + cited
+  chars 1054400-1055400: 0 rule(s) extracted + cited
+  chars 204000-205000: 0 rule(s) extracted + cited
+  chars 966400-967400: 0 rule(s) extracted + cited
+  chars 324800-325800: 0 rule(s) extracted + cited
+  chars 446400-447400: 0 rule(s) extracted + cited
+  chars 708800-709800: 0 rule(s) extracted + cited
+  chars 533600-534600: 0 rule(s) extracted + cited
+  chars 831200-832200: 0 rule(s) extracted + cited
+  chars 64000-65000: 0 rule(s) extracted + cited
+  chars 1204800-1205800: 0 rule(s) extracted + cited
+  chars 696000-697000: 0 rule(s) extracted + cited
+  chars 582400-583400: 0 rule(s) extracted + cited
+  chars 981600-982600: 0 rule(s) extracted + cited
+  chars 230400-231400: 0 rule(s) extracted + cited
+  chars 437600-438600: 0 rule(s) extracted + cited
+  chars 294400-295400: 0 rule(s) extracted + cited
+  chars 95200-96200: 0 rule(s) extracted + cited
+  chars 873600-874600: 0 rule(s) extracted + cited
+  chars 1019200-1020200: 0 rule(s) extracted + cited
+  chars 215200-216200: 0 rule(s) extracted + cited
+  chars 492000-493000: 0 rule(s) extracted + cited
+  chars 1004800-1005800: 0 rule(s) extracted + cited
+  chars 1183200-1184200: 0 rule(s) extracted + cited
+  chars 325600-326600: 0 rule(s) extracted + cited
+  chars 740800-741800: 0 rule(s) extracted + cited
+  chars 677600-678600: 0 rule(s) extracted + cited
+  chars 370400-371400: 0 rule(s) extracted + cited
+  chars 868800-869800: 0 rule(s) extracted + cited
+  chars 939200-940200: 0 rule(s) extracted + cited
+  chars 54400-55400: 0 rule(s) extracted + cited
+  chars 1028800-1029800: 0 rule(s) extracted + cited
+  chars 414400-415400: 0 rule(s) extracted + cited
+  chars 316000-317000: 0 rule(s) extracted + cited
+  chars 958400-959400: 0 rule(s) extracted + cited
+  chars 888000-889000: 0 rule(s) extracted + cited
+  chars 382400-383400: 0 rule(s) extracted + cited
+  chars 789600-790600: 0 rule(s) extracted + cited
+  chars 767200-768200: 0 rule(s) extracted + cited
+  chars 63200-64200: 0 rule(s) extracted + cited
+  chars 800-1800: 0 rule(s) extracted + cited
+  chars 521600-522600: 0 rule(s) extracted + cited
+  chars 724000-725000: 0 rule(s) extracted + cited
+  chars 1130400-1131400: 0 rule(s) extracted + cited
+  chars 810400-811400: 0 rule(s) extracted + cited
+  chars 240000-241000: 0 rule(s) extracted + cited
+  chars 469600-470600: 0 rule(s) extracted + cited
+  chars 1146400-1147400: 0 rule(s) extracted + cited
+  chars 236800-237800: 0 rule(s) extracted + cited
+  chars 726400-727400: 0 rule(s) extracted + cited
+  chars 81600-82600: 0 rule(s) extracted + cited
+  chars 319200-320200: 0 rule(s) extracted + cited
+  chars 518400-519400: 0 rule(s) extracted + cited
+  chars 431200-432200: 0 rule(s) extracted + cited
+  chars 920800-921800: 0 rule(s) extracted + cited
+  chars 986400-987400: 0 rule(s) extracted + cited
+  chars 1000800-1001800: 0 rule(s) extracted + cited
+  chars 260800-261800: 0 rule(s) extracted + cited
+  chars 899200-900200: 0 rule(s) extracted + cited
+extracted 0 PROPOSED governance.rule from 'URBAN AND REGIONAL DEVELOPMENT PLANS FORMULATION AND IMPLEMENTATION (URDPFI) GUIDELINES' (model kimi-k3); each cited to a chunk_hash, binding=advisory. Awaiting human approval → live.

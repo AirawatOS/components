@@ -52,7 +52,8 @@ let APPID, Q='', PAGE=0, SIZE=20, SEL=null, LOG=[], CUR=null;
 async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
 async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
 function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2200);}
-function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function egressHosts(a){return (a||[]).map(e=>(e&&typeof e==='object')?(e.host+(e.auth?' · login':'')):e);}
 function statusInfo(s){s=String(s==null?'':s);
   if(/^2\d\d$/.test(s))return{t:s,c:'allowed',hint:'ok'};
   if(s==='401'||s==='403')return{t:s,c:'denied',hint:'key rejected — rotate it'};
@@ -87,11 +88,11 @@ async function select(c){
   const D=document.getElementById('detail');
   D.innerHTML=`<div style="font-weight:600;font-size:15px">${esc(c.title||c.id.split('/').pop())} <span class="tag">${esc(c.kind||'')}</span></div>
     <div class="cid">${esc(c.id)} · tenant ${esc(c.tenant||'')}</div>
-    <div class="tabs"><span class="tab on" data-t="settings">Settings</span><span class="tab" data-t="schedule">Schedule</span><span class="tab" data-t="logs">Logs</span></div>
+    <div class="tabs"><span class="tab on" data-t="settings">Settings</span><span class="tab" data-t="sources">Sources &amp; Attribution</span><span class="tab" data-t="schedule">Schedule</span><span class="tab" data-t="logs">Logs</span></div>
     <div id="tab-settings">
       <div class="lbl">Reads (registries)</div><div>${chips(c.reads)}</div>
       <div class="lbl">Writes (registries)</div><div>${chips(c.writes)}</div>
-      <div class="lbl">Declared egress</div><div>${chips(c.egress)}</div>
+      <div class="lbl">Declared egress</div><div>${chips(egressHosts(c.egress))}</div>
       <div class="lbl">API keys</div><div id="keys"></div>
     </div>
     <div id="tab-schedule" style="display:none">
@@ -108,20 +109,38 @@ async function select(c){
         <button class="btn primary" id="addsched">+ Add</button></div>
       <div class="lbl">Recent runs</div><div id="runs"><div class="muted">—</div></div>
     </div>
+    <div id="tab-sources" style="display:none"><div class="lbl">Data sources &amp; attribution</div><div id="sources"><div class="muted">—</div></div></div>
     <div id="tab-logs" style="display:none"><div class="lbl">External-call log</div><div id="log"><div class="muted">loading…</div></div></div>`;
   D.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{
     D.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); el.classList.add('on');
     const t=el.dataset.t;
     document.getElementById('tab-settings').style.display=t==='settings'?'':'none';
+    document.getElementById('tab-sources').style.display=t==='sources'?'':'none';
     document.getElementById('tab-schedule').style.display=t==='schedule'?'':'none';
     document.getElementById('tab-logs').style.display=t==='logs'?'':'none';
     if(t==='schedule')loadSchedule();
+    if(t==='sources')renderSources();
   });
   document.getElementById('runnow').onclick=runNow;
   document.getElementById('cronpreset').onchange=e=>{if(e.target.value)document.getElementById('cronval').value=e.target.value;};
   document.getElementById('addsched').onclick=addSchedule;
   await loadMoreLog();     // load first page of the log first (the keys nudge reads it)
   loadKeys();
+}
+function renderSources(){
+  const S=document.getElementById('sources'); if(!S)return;
+  const srcs=(SEL&&SEL.sources)||[];
+  if(!srcs.length){S.innerHTML='<span class="muted">this component declares no external data sources — nothing to attribute</span>';return;}
+  const lk=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px">${t} ↗</a>`:'';
+  S.innerHTML=srcs.map(s=>{const lic=s.license||{};
+    const rl=s.rate_limit?[s.rate_limit.per_min?s.rate_limit.per_min+'/min':'',s.rate_limit.per_hour?s.rate_limit.per_hour+'/hr':''].filter(Boolean).join(' · '):'';
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 12px;background:var(--card)">
+      <div style="font-weight:600">${esc(s.name||s.source_id||'')}${s.provider?` <span class="muted" style="font-weight:400">· ${esc(s.provider)}</span>`:''}</div>
+      <div style="margin:8px 0">${esc(s.attribution||'')}</div>
+      <div class="keyrow" style="gap:14px">${lic.id?`<span class="chip">${esc(lic.id)}</span>`:''}${lk(lic.url,'licence')}${lk(s.terms_url,'terms')}${lk(s.url,'source')}</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">${rl?('rate limit '+esc(rl)+' · '):''}${s.user_agent?('UA '+esc(s.user_agent)):''}</div>
+    </div>`;}).join('')
+    +`<div class="muted" style="font-size:12px;margin-top:4px">Resolved by the platform from each fact's source — the same credits appear wherever this data is shown.</div>`;
 }
 async function loadSchedule(){
   const S=document.getElementById('scheds');

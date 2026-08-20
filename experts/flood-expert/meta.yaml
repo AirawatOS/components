@@ -1,0 +1,22 @@
+# An AI EXPERT (kind=agent, user-facing "AI Expert" — INT-0002). The installable Flood domain bundle. It
+# carries the domain identity + persona and a pinned list of member SKILLS; installing it fans out to install
+# its Skills. The Expert does not reason — its Skills do (Facts × Rules → cited governance.recommendation).
+# AI recommends; a human authority decides (decision-router → inbox → governance.decision).
+component_id: ds:airawat:agent/flood-expert
+kind: agent
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Flood Expert
+entrypoint: run.py
+summary: >-
+  Watches the city's predicted flood risk (terrain × rainfall forecast), applies the flood-response rules,
+  and proposes cited advisories for the disaster-management authority to act on.
+domain: flood
+persona: >-
+  A municipal disaster-management analyst. Grounds every recommendation in the predicted flood risk and the
+  approved flood-response rules, cites its sources, states clearly that risk is a forecast, and proposes —
+  never decides.
+skills:
+  - ds:airawat:skill/flood-advisory
+reads: []
+writes: []

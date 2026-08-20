@@ -8,4 +8,4 @@ display_name: Explorer
 entrypoint: index.html
 bundle: dist
 sandboxed: true
-required_schemas: [viz.layer, space.aoi, geo.terrain]
+required_schemas: [viz.layer, space.aoi, geo.terrain, air.quality]

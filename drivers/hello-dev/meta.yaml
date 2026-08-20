@@ -1,0 +1,17 @@
+component_id: ds:airawatdeveloper:driver/hello-dev
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:participant/developer
+entrypoint: run.py
+confinement_min: L1
+# A minimal draft that proves the INT-0004 dev-test path: it derives its tenant from the broker
+# CONTEXT (never a hardcoded default), writes one fact, reads it back — all confined to the dev tenant.
+reads:
+  - demo.ping
+writes:
+  - demo.ping
+scopes:
+  - verb: read
+    scope: demo.ping
+  - verb: write
+    scope: demo.ping

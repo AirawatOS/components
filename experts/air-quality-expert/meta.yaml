@@ -1,0 +1,24 @@
+# An AI EXPERT (kind=agent, user-facing "AI Expert" — INT-0002). The installable domain bundle a tenant sees
+# in the marketplace. It carries the domain identity + persona and a pinned list of member SKILLS; installing
+# it fans out to install its Skills and wire their triggers (ADR-0035 solution pattern). The Expert itself does
+# not reason — its Skills do (each: Facts × Rules → cited governance.recommendation). AI recommends; a human
+# authority decides (decision-router → inbox → governance.decision).
+component_id: ds:airawat:agent/air-quality-expert
+kind: agent
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Air Quality Expert
+entrypoint: run.py
+summary: >-
+  Watches a city's measured air quality, applies the approved air-quality rules (from CPCB/CAQM guidelines),
+  and proposes cited advisories for the authority to act on.
+domain: air-quality
+persona: >-
+  A municipal air-quality analyst. Grounds every recommendation in the measured PM2.5 facts and the approved
+  governance rules, cites its sources, and proposes — never decides.
+# member Skills — installing this Expert installs these (fan-out)
+skills:
+  - ds:airawat:skill/air-quality-advisory
+# the Expert reads/writes nothing itself; its Skills declare their own governed vocabulary
+reads: []
+writes: []

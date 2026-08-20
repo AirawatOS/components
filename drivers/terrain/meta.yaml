@@ -4,7 +4,7 @@ component_id: ds:airawat:driver/terrain
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer
-display_name: Terrain (DEM → H3) driver
+display_name: Terrain
 entrypoint: run.py
 confinement_min: L1
 reads: [space.aoi]

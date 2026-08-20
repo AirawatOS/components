@@ -1,0 +1,19 @@
+component_id: ds:airawat:driver/osm-roads
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+entrypoint: run.py
+confinement_min: L1
+reads:
+  - space.aoi
+writes:
+  - geo.osm_feature
+scopes:
+  - verb: read
+    scope: space.aoi
+    tenant: kmc
+  - verb: write
+    scope: geo.osm_feature
+    tenant: kmc
+egress:
+  - overpass-api.de

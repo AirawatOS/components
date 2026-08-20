@@ -1,126 +1,240 @@
 <!doctype html><meta charset="utf-8"><title>Studio</title>
 <style>
-  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6}
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
-  h1{margin:0;font-size:17px}
-  .tabs{display:flex;gap:4px;margin-left:8px}
-  .tab{padding:6px 14px;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--dim);font-size:13px}
-  .tab.on{background:#1b2530;color:var(--ink);border-color:#2f3d4d}
-  .who{margin-left:auto;color:var(--dim);font-size:12px}
-  .wrap{max-width:820px;margin:0 auto;padding:18px 16px}
-  .newbtn{border:1px solid var(--line);background:#1b2530;color:var(--ink);border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer;margin-bottom:14px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
-  .card h3{margin:0 0 2px;font-size:14px} .cid{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace;margin-bottom:10px;word-break:break-all}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:7px 0}
-  label{color:var(--dim);font-size:12px;min-width:96px}
-  input[type=text],textarea,select{background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font:13px ui-monospace,Menlo,monospace;flex:1;min-width:120px}
-  textarea{width:100%;min-height:44px;resize:vertical}
-  .sw{display:flex;align-items:center;gap:6px} .pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim)}
-  .pill.on{color:#3fb950;border-color:#238636} .pill.off{color:#e5484d;border-color:#8b2c30}
-  .steps{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px}
-  .steps th{color:var(--dim);text-align:left;font-weight:500;padding:4px 6px;border-bottom:1px solid var(--line)}
-  .steps td{padding:3px 6px;border-bottom:1px solid #1a1f27} .steps input{font-size:12px;padding:4px 6px}
-  .act{display:flex;gap:8px;margin-top:12px}
-  .btn{border:1px solid var(--line);background:#21262d;color:var(--ink);border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
-  .btn.primary{background:var(--accent);border-color:var(--accent)} .btn.mini{padding:3px 8px;font-size:12px}
-  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#132a17;border:1px solid #238636;color:#3fb950;padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s}
-  .toast.show{opacity:1} .toast.err{background:#3d1418;border-color:#8b2c30;color:#ff9b9b}
-  .empty{color:var(--dim);text-align:center;padding:40px}
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141a;--line:#21262d;--txt:#e6edf3;--dim:#8b949e;--accent:#2f81f7;--good:#3fb950;--warn:#d29922;--err:#f85149}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+  .hbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
+  .hbar .t{font-weight:650} .hbar select{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+  .ic{cursor:pointer;color:var(--dim);border:1px solid transparent;border-radius:6px;padding:3px 7px;user-select:none}
+  .ic:hover{background:var(--bg);border-color:var(--line);color:var(--txt)}
+  .body{flex:1;display:flex;min-height:0}
+  .left{width:230px;background:var(--panel2);border-right:1px solid var(--line);overflow:auto;flex:0 0 auto;padding:4px 0}
+  .left.collapsed{display:none}
+  .center{flex:1;display:flex;flex-direction:column;min-width:0}
+  .right{width:340px;background:var(--panel2);border-left:1px solid var(--line);flex:0 0 auto;display:flex;flex-direction:column}
+  .right.collapsed{width:34px}
+  .tabs{display:flex;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;flex:0 0 auto}
+  .tab{padding:6px 12px;border-right:1px solid var(--line);cursor:pointer;white-space:nowrap;color:var(--dim);display:flex;gap:6px;align-items:center}
+  .tab.on{background:var(--bg);color:var(--txt)} .tab .x{opacity:.6} .tab .x:hover{opacity:1;color:var(--err)} .tab .dot{color:var(--warn)}
+  .edit{flex:1;min-height:0;display:flex;flex-direction:column}
+  .edtoolbar{display:flex;gap:6px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
+  textarea.code{flex:1;width:100%;resize:none;background:var(--bg);color:var(--txt);border:0;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.55;outline:none}
+  .welcome{flex:1;display:grid;place-items:center;color:var(--dim);text-align:center;padding:30px}
+  .bottom{height:0;background:var(--panel2);border-top:1px solid var(--line);overflow:auto;flex:0 0 auto;transition:height .12s}
+  .bottom.open{height:210px} .bottom .bh{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+  .bottom pre{margin:0;padding:8px 12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  /* tree */
+  .node{padding:2px 6px 2px 0;cursor:pointer;white-space:nowrap;user-select:none;display:flex;align-items:center;gap:4px}
+  .node:hover{background:#1b222c} .tw{display:inline-block;width:12px;color:var(--dim);text-align:center}
+  .k{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:auto}
+  .st{width:7px;height:7px;border-radius:50%;display:inline-block;margin-left:6px}
+  .st-draft{background:#6e7681}.st-scaffolded{background:#8b949e}.st-tested{background:#58a6ff}.st-certified{background:#d29922}.st-published{background:#3fb950}
+  /* right AI */
+  .aistrip{writing-mode:vertical-rl;text-orientation:mixed;padding:10px 6px;cursor:pointer;color:var(--dim);font-weight:600}
+  .aihead{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .ailog{flex:1;overflow:auto;padding:8px} .aiin{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line)}
+  .aiin textarea{flex:1;resize:none;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;max-height:90px}
+  .msg{margin:6px 0} .msg .who{color:var(--dim);font-size:11px} .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:3px 0;white-space:pre-wrap}
+  .act{border-color:var(--accent)!important}
+  .btn{background:#21262d;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:5px 11px;font:inherit;cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff} .btn.good{background:#238636;border-color:#2ea043;color:#fff} .btn:disabled{opacity:.5}
+  .btn.sm{padding:3px 8px;font-size:12px}
+  .menu{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px;z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.4);min-width:150px}
+  .menu div{padding:6px 10px;cursor:pointer;border-radius:6px;font-size:12.5px} .menu div:hover{background:var(--accent);color:#fff}
+  .modal{position:fixed;inset:0;background:rgba(4,7,12,.6);display:flex;align-items:center;justify-content:center;z-index:60}
+  .sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:560px;max-width:92vw;max-height:88vh;overflow:auto}
+  input.in,select.in,textarea.in{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;margin:3px 0}
+  .sub{color:var(--dim);font-size:12px}
 </style>
-<header>
-  <h1>🛠️ Studio</h1>
-  <div class="tabs"><span class="tab on" data-t="subs">Triggers</span><span class="tab" data-t="wf">Workflows</span></div>
-  <span class="who" id="who"></span>
-</header>
-<div class="wrap" id="wrap"><div class="empty">loading…</div></div>
-<div class="toast" id="toast"></div>
+<div class="hbar">
+  <span class="ic" id="tgLeft" title="Toggle explorer">☰</span>
+  <span class="t">🛠 Studio</span>
+  <select id="proj"></select>
+  <span class="ic" id="newProj">＋ Project</span>
+  <span style="margin-left:auto"></span>
+  <span class="ic" id="reqSchema">Request schema</span>
+  <span class="ic" id="composeBtn">Compose → Solution</span>
+</div>
+<div class="body">
+  <div class="left" id="left"></div>
+  <div class="center">
+    <div class="tabs" id="tabs"></div>
+    <div class="edit" id="edit"><div class="welcome" id="welcome">Select a project, then open a file from the explorer.<br><span class="sub">Right-click a kind folder to add a component · right-click a component for actions.</span></div></div>
+    <div class="bottom" id="bottom"></div>
+  </div>
+  <div class="right collapsed" id="right"></div>
+</div>
 <script>
-let APPID, TAB='subs';
-async function q(schema){const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:APPID,schema,filter:{}})});if(!r.ok)throw new Error('query '+r.status);return (await r.json()).results||[];}
-async function save(object){const r=await fetch('/bridge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({object})});const j=await r.json().catch(()=>({}));return {ok:r.ok,status:r.status,j};}
-function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2200);}
-function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pretty=s=>(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const KINDLABEL={app:'Apps',driver:'Drivers',engine:'Engines',skill:'Skills',agent:'AI Experts',pipeline:'Pipelines'};
+const KINDS=['app','driver','engine','skill','agent','pipeline'];
+const nameOf=o=>o.title||pretty((o.component_id||o.ref||'').split('/').pop());
+async function q(schema){try{return (await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:'studio',schema})}).then(r=>r.json())).results||[];}catch(e){return[];}}
+async function save(obj){return fetch('/bridge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:obj.id,object:obj})}).then(r=>r.json());}
+async function post(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
+
+let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},TABS=[],ACTIVE=null;
 
 async function boot(){
-  const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
-  fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';});
-  document.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));el.classList.add('on');TAB=el.dataset.t;render();});
-  render();
+  PROJECTS=await q('studio.project');
+  try{MARKET=await fetch('/bridge/market').then(r=>r.json());}catch(e){}
+  const sel=$('proj'); sel.innerHTML=PROJECTS.map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')||'<option>— no projects —</option>';
+  sel.onchange=()=>{SEL=PROJECTS.find(p=>p.id===sel.value);TABS=[];ACTIVE=null;FILES={};renderTabs();renderEdit();tree();};
+  SEL=PROJECTS[0]||null; if(SEL)sel.value=SEL.id;
+  tree();
+  $('tgLeft').onclick=()=>$('left').classList.toggle('collapsed');
+  $('newProj').onclick=newProject;
+  $('reqSchema').onclick=requestSchema;
+  $('composeBtn').onclick=composeSolution;
+  buildRight();
 }
-async function render(){ TAB==='subs'?renderSubs():renderWorkflows(); }
-
-/* ---- TRIGGERS (platform.subscription) ---- */
-async function renderSubs(){
-  const w=document.getElementById('wrap'); w.innerHTML='<div class="empty">loading triggers…</div>';
-  let subs; try{subs=await q('platform.subscription');}catch(e){w.innerHTML='<div class="empty">'+esc(e.message)+'</div>';return;}
-  const nb=document.createElement('button'); nb.className='newbtn'; nb.textContent='+ New trigger';
-  nb.onclick=()=>subCard({id:'ds:kmc:subscription/'+Date.now().toString(36),name:'',enabled:true,match:{subject_schema:'',where:{}},action:{kind:'http',url:''}},true);
-  w.innerHTML=''; w.appendChild(nb);
-  if(!subs.length) w.insertAdjacentHTML('beforeend','<div class="empty">No triggers yet.</div>');
-  subs.forEach(s=>subCard(s,false));
+// ---------- LEFT TREE ----------
+function tree(){
+  const L=$('left'); if(!SEL){L.innerHTML='<div class="sub" style="padding:10px">No project.</div>';return;}
+  const byKind={}; (SEL.members||[]).forEach(m=>{(byKind[m.kind]=byKind[m.kind]||[]).push(m);});
+  let html='';
+  KINDS.forEach(k=>{
+    const mem=byKind[k]||[]; const open=OPENK['k:'+k];
+    html+=`<div class="node" data-kfolder="${k}" style="padding-left:6px"><span class="tw">${open?'▾':'▸'}</span>📁 ${KINDLABEL[k]} <span class="sub">(${mem.length})</span></div>`;
+    if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 30px">— empty —</div>`;
+      mem.forEach((m,mi)=>{const key='c:'+m.ref; const co=OPENK[key];
+        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px"><span class="tw">${co?'▾':'▸'}</span>📦 ${esc(nameOf(m))}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
+        if(co){ const fs=FILES[m.ref];
+          if(!fs) html+=`<div class="sub" style="padding-left:44px">loading…</div>`;
+          else Object.keys(fs).forEach(fp=>{ html+=`<div class="node" data-file="${esc(m.ref)}::${esc(fp)}" style="padding-left:40px"><span class="tw"></span>📄 ${esc(fp)}</div>`;});
+        }});
+    }
+  });
+  L.innerHTML=html;
+  L.querySelectorAll('[data-kfolder]').forEach(el=>{el.onclick=()=>{OPENK['k:'+el.dataset.kfolder]=!OPENK['k:'+el.dataset.kfolder];tree();};
+    el.oncontextmenu=e=>{e.preventDefault();ctxKind(el.dataset.kfolder,e);};});
+  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
+    el.oncontextmenu=e=>{e.preventDefault();ctxComp(ref0(el),e);};});
+  L.querySelectorAll('[data-file]').forEach(el=>{el.onclick=()=>{const [ref,fp]=el.dataset.file.split('::');openFile(ref,fp);};});
+  function ref0(el){return el.dataset.comp;}
 }
-function subCard(s,isNew){
-  const w=document.getElementById('wrap'); const c=document.createElement('div'); c.className='card';
-  const en=s.enabled!==false;
-  c.innerHTML=`<h3>${esc(s.name||'(unnamed trigger)')} <span class="pill ${en?'on':'off'}" data-en>${en?'enabled':'disabled'}</span></h3>
-    <div class="cid">${esc(s.id)}</div>
-    <div class="row"><label>Name</label><input type="text" data-f="name" value="${esc(s.name||'')}"></div>
-    <div class="row"><label>When schema</label><input type="text" data-f="ss" value="${esc((s.match||{}).subject_schema||'')}" placeholder="signal.alert"></div>
-    <div class="row"><label>Where (JSON)</label><textarea data-f="where">${esc(JSON.stringify((s.match||{}).where||{}))}</textarea></div>
-    <div class="row"><label>Then POST</label><input type="text" data-f="url" value="${esc((s.action||{}).url||'')}" placeholder="http://…/advise"></div>
-    <div class="act">
-      <button class="btn" data-toggle>${en?'Disable':'Enable'}</button>
-      <button class="btn primary" data-save>Save</button>
-    </div>`;
-  let enabled=en;
-  c.querySelector('[data-toggle]').onclick=()=>{enabled=!enabled;c.querySelector('[data-toggle]').textContent=enabled?'Disable':'Enable';const p=c.querySelector('[data-en]');p.textContent=enabled?'enabled':'disabled';p.className='pill '+(enabled?'on':'off');};
-  c.querySelector('[data-save]').onclick=async()=>{
-    let where; try{where=JSON.parse(c.querySelector('[data-f=where]').value||'{}');}catch(e){return toast('Where must be valid JSON',true);}
-    const obj={schema:'platform.subscription',id:s.id,name:c.querySelector('[data-f=name]').value,enabled:enabled,
-      match:{subject_schema:c.querySelector('[data-f=ss]').value,where},action:{kind:'http',url:c.querySelector('[data-f=url]').value}};
-    const r=await save(obj); r.ok?toast('Saved — automation will reload'):toast(r.j.error||('save '+r.status),true);
-  };
-  isNew ? w.insertBefore(c,w.children[1]||null) : w.appendChild(c);
+function memberFor(ref){return (SEL.members||[]).find(m=>m.ref===ref);}
+// ---------- CONTEXT MENUS ----------
+function menu(x,y,items){document.querySelectorAll('.menu').forEach(m=>m.remove());const m=document.createElement('div');m.className='menu';m.style.left=x+'px';m.style.top=y+'px';
+  items.forEach(([label,fn])=>{const d=document.createElement('div');d.textContent=label;d.onclick=()=>{m.remove();fn();};m.appendChild(d);});
+  document.body.appendChild(m);setTimeout(()=>document.addEventListener('click',()=>m.remove(),{once:true}),0);}
+function ctxKind(kind,e){menu(e.clientX,e.clientY,[['＋ New '+ (kind==='agent'?'AI Expert':pretty(kind)),()=>addComponent(kind)]]);}
+function ctxComp(ref,e){const m=memberFor(ref);const isApp=m&&m.kind==='app';
+  menu(e.clientX,e.clientY,[
+    ['Open '+(isApp?'index.html':'run.py'),()=>openFile(ref,isApp?'dist/index.html':'run.py')],
+    ['Open meta.yaml',()=>openFile(ref,'meta.yaml')],
+    [isApp?'Preview':'Test',()=>isApp?window.open('/bridge/component-preview?component='+encodeURIComponent(ref),'_blank'):testComp(ref)],
+    ['Publish',()=>publishComp(ref)],
+    ['✨ Generate code (AI)',()=>{openFile(ref, m.kind==='app'?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}],
+    ['Remove from project',async()=>{SEL.members=SEL.members.filter(x=>x.ref!==ref);await save(SEL);delete FILES[ref];TABS=TABS.filter(t=>t.ref!==ref);renderTabs();renderEdit();tree();}],
+  ]);}
+// ---------- TABS + EDITOR ----------
+async function openFile(ref,path){
+  let fs=FILES[ref]; if(!fs){const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};}
+  if(fs[path]===undefined){ // e.g. app has no run.py; fall back
+    const alt=Object.keys(fs)[0]; if(!alt){bottom('No files — scaffold the component first.');return;} path=alt;}
+  let t=TABS.find(t=>t.ref===ref&&t.path===path);
+  if(!t){t={ref,path,content:fs[path],dirty:false};TABS.push(t);}
+  ACTIVE=t; renderTabs(); renderEdit();
 }
-
-/* ---- WORKFLOWS (platform.workflow) ---- */
-async function renderWorkflows(){
-  const w=document.getElementById('wrap'); w.innerHTML='<div class="empty">loading workflows…</div>';
-  let wfs; try{wfs=await q('platform.workflow');}catch(e){w.innerHTML='<div class="empty">'+esc(e.message)+'</div>';return;}
-  const nb=document.createElement('button'); nb.className='newbtn'; nb.textContent='+ New workflow';
-  nb.onclick=()=>wfCard({id:'ds:kmc:workflow/'+Date.now().toString(36),title:'',steps:[]},true);
-  w.innerHTML=''; w.appendChild(nb);
-  if(!wfs.length) w.insertAdjacentHTML('beforeend','<div class="empty">No workflows yet.</div>');
-  wfs.forEach(x=>wfCard(x,false));
+function renderTabs(){$('tabs').innerHTML=TABS.map((t,i)=>`<div class="tab ${t===ACTIVE?'on':''}" data-ti="${i}"><span>${t.dirty?'<span class="dot">●</span>':''}${esc(t.path.split('/').pop())} <span class="sub">${esc(nameOf({ref:t.ref}))}</span></span><span class="x" data-tx="${i}">✕</span></div>`).join('');
+  $('tabs').querySelectorAll('[data-ti]').forEach(el=>el.onclick=e=>{if(e.target.dataset.tx!==undefined)return;ACTIVE=TABS[+el.dataset.ti];renderTabs();renderEdit();});
+  $('tabs').querySelectorAll('[data-tx]').forEach(el=>el.onclick=e=>{e.stopPropagation();const i=+el.dataset.tx;const cl=TABS[i]===ACTIVE;TABS.splice(i,1);if(cl)ACTIVE=TABS[0]||null;renderTabs();renderEdit();});
 }
-function wfCard(wf,isNew){
-  const w=document.getElementById('wrap'); const c=document.createElement('div'); c.className='card';
-  let steps=JSON.parse(JSON.stringify(wf.steps||[]));
-  c.innerHTML=`<h3><input type="text" data-f="title" value="${esc(wf.title||'')}" placeholder="Workflow title" style="font-size:14px;font-weight:600"></h3>
-    <div class="cid">${esc(wf.id)}</div><div data-tbl></div>
-    <div class="act"><button class="btn mini" data-add>+ Step</button><button class="btn primary" data-save>Save</button></div>`;
-  const tbl=c.querySelector('[data-tbl]');
-  function drawTable(){
-    tbl.innerHTML='<table class="steps"><tr><th>step_id</th><th>title</th><th>role</th><th>after (csv)</th><th></th></tr>'+
-      steps.map((s,i)=>`<tr>
-        <td><input type="text" data-s="${i}" data-k="step_id" value="${esc(s.step_id||'')}"></td>
-        <td><input type="text" data-s="${i}" data-k="title" value="${esc(s.title||'')}"></td>
-        <td><input type="text" data-s="${i}" data-k="assignee_role" value="${esc(s.assignee_role||'')}"></td>
-        <td><input type="text" data-s="${i}" data-k="after" value="${esc((s.after||[]).join(','))}"></td>
-        <td><button class="btn mini" data-del="${i}">✕</button></td></tr>`).join('')+'</table>';
-    tbl.querySelectorAll('input[data-s]').forEach(inp=>inp.oninput=()=>{const i=+inp.dataset.s,k=inp.dataset.k;
-      if(k==='after') steps[i][k]=inp.value.split(',').map(x=>x.trim()).filter(Boolean); else steps[i][k]=inp.value;});
-    tbl.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{steps.splice(+b.dataset.del,1);drawTable();});
-  }
-  drawTable();
-  c.querySelector('[data-add]').onclick=()=>{steps.push({step_id:'step'+(steps.length+1),title:'',verb:'fulfil',assignee_role:'',after:[]});drawTable();};
-  c.querySelector('[data-save]').onclick=async()=>{
-    const obj={schema:'platform.workflow',id:wf.id,title:c.querySelector('[data-f=title]').value,version:wf.version||'1.0',steps};
-    const r=await save(obj); r.ok?toast('Workflow saved'):toast(r.j.error||('save '+r.status),true);
-  };
-  isNew ? w.insertBefore(c,w.children[1]||null) : w.appendChild(c);
+function renderEdit(){
+  const E=$('edit');
+  if(!ACTIVE){E.innerHTML='<div class="welcome" id="welcome">Open a file from the explorer, or right-click a component.</div>';return;}
+  const t=ACTIVE, isCode=t.path==='run.py', m=memberFor(t.ref);
+  E.innerHTML=`<div class="edtoolbar"><span class="sub">${esc(t.ref)} / ${esc(t.path)}</span>
+      ${isCode?'<button class="btn sm" id="genBtn">✨ Generate with AI</button>':''}
+      <span style="margin-left:auto"></span>
+      ${m&&m.kind!=='app'?'<button class="btn sm" id="tBtn">Test</button>':m?'<button class="btn sm" id="pvBtn">Preview</button>':''}
+      <button class="btn sm good" id="pubBtn">Publish</button>
+      <button class="btn sm primary" id="saveBtn">Save</button></div>
+    <textarea class="code" id="code" spellcheck="false">${esc(t.content)}</textarea>`;
+  const ta=$('code'); ta.oninput=()=>{t.content=ta.value;if(!t.dirty){t.dirty=true;renderTabs();}};
+  ta.onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveActive();}};
+  $('saveBtn').onclick=saveActive;
+  $('pubBtn').onclick=()=>publishComp(t.ref);
+  if($('tBtn'))$('tBtn').onclick=()=>testComp(t.ref);
+  if($('pvBtn'))$('pvBtn').onclick=()=>window.open('/bridge/component-preview?component='+encodeURIComponent(t.ref),'_blank');
+  if($('genBtn'))$('genBtn').onclick=()=>generateInto(t);
 }
+async function saveActive(){const t=ACTIVE;if(!t)return;await post('/bridge/component-save',{component:t.ref,path:t.path,content:t.content});t.dirty=false;FILES[t.ref][t.path]=t.content;renderTabs();bottom('✓ saved '+t.path);}
+async function generateInto(t){
+  const req=prompt('Describe what this component should do (the AI will write the code):');if(!req)return;
+  bottom('✨ Generating '+t.ref+' … (this can take ~1–2 min)');
+  const m=memberFor(t.ref);
+  const g=await post('/bridge/solution-generate',{component:t.ref,requirement:req,reads:(m&&m.reads)||'',writes:(m&&m.writes)||''});
+  if(g.files){FILES[t.ref]=Object.assign(FILES[t.ref]||{},g.files);
+    TABS.filter(x=>x.ref===t.ref).forEach(x=>{if(g.files[x.path]!==undefined){x.content=g.files[x.path];x.dirty=false;}});
+    if(ACTIVE&&g.files[ACTIVE.path]!==undefined)$('code').value=g.files[ACTIVE.path];
+    bottom('✓ generated by '+(g.model||'AI')+'. Review the code, then Test, then Publish.');renderTabs();
+  }else bottom('✗ '+(g.error||'generation failed'));
+}
+async function testComp(ref){bottom('Running '+ref+' …');const r=await post('/bridge/project-test',{component:ref});
+  const ok=r.status==='ok'; bottom((ok?'✓ ran OK\n':'✗ '+(r.status||r.error||'failed')+'\n')+(r.log||r.error||''));
+  const m=memberFor(ref); if(m&&ok&&(m.status==='draft'||m.status==='scaffolded')){m.status='tested';await save(SEL);tree();}}
+async function publishComp(ref){bottom('Publishing '+ref+' …');const r=await post('/bridge/project-publish',{component:ref});
+  if(r.published){const m=memberFor(ref);if(m){m.status='published';await save(SEL);tree();}bottom('✓ certified (verified='+r.verified+') + published to the Marketplace');}
+  else bottom('✗ '+(r.error||'publish failed')+(r.detail?'\n'+r.detail:''));}
+// ---------- BOTTOM PANEL ----------
+function bottom(text){const B=$('bottom');B.classList.add('open');B.innerHTML=`<div class="bh"><b>Output</b><span style="margin-left:auto"></span><span class="ic" id="bx">✕</span></div><pre>${esc(text)}</pre>`;$('bx').onclick=()=>B.classList.remove('open');}
+// ---------- RIGHT AI PANEL ----------
+let AIHIST=[];
+function buildRight(){const R=$('right');R.innerHTML=`<div class="aistrip" id="aistrip">🧠 Solution Expert</div>`;$('aistrip').onclick=expandAI;}
+function expandAI(){const R=$('right');R.classList.remove('collapsed');
+  R.innerHTML=`<div class="aihead">🧠 <b>Solution Expert</b><span style="margin-left:auto"></span><span class="ic" id="aiclose">⟩</span></div>
+    <div class="ailog" id="ailog"></div>
+    <div class="aiin"><textarea id="aiq" rows="2" placeholder="Describe what to build; I reuse first, then propose confirm-gated steps"></textarea><button class="btn primary" id="aisend">Send</button></div>`;
+  $('aiclose').onclick=()=>{R.classList.add('collapsed');buildRight();};
+  $('aisend').onclick=()=>aiSend($('aiq').value.trim());
+  $('aiq').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();aiSend($('aiq').value.trim());}};
+  if(!AIHIST.length)aiSay('expert','Tell me what you want to build. I check the Marketplace + schema catalog and reuse before building — and every step is yours to confirm.');
+}
+function aiSay(role,html){const log=$('ailog');if(!log)return null;const d=document.createElement('div');d.className='msg';d.innerHTML=`<div class="who">${role==='user'?'You':'Solution Expert'}</div><div class="card">${html}</div>`;log.appendChild(d);log.scrollTop=log.scrollHeight;return d.querySelector('.card');}
+async function aiSend(msg){if(!msg||!SEL)return;$('aiq').value='';aiSay('user',esc(msg));AIHIST.push({role:'user',content:msg});
+  const tip=aiSay('expert','<span class="sub">thinking…</span>');
+  const r=await post('/bridge/solution-expert',{message:msg,project:SEL.id,history:AIHIST});
+  if(r.error){tip.innerHTML='<span style="color:var(--err)">'+esc(r.error)+'</span>';return;}
+  tip.innerHTML=esc(r.answer||'');AIHIST.push({role:'assistant',content:r.answer||''});
+  (r.actions||[]).forEach(a=>tip.parentElement.appendChild(aiCard(a)));$('ailog').scrollTop=$('ailog').scrollHeight;}
+function aiCard(a){const t=a.type;const head=t==='add_component'?'♻️ Reuse '+esc(a.title||a.ref):t==='request_schema'?'📐 Request schema '+esc(a.schema_id):t==='scaffold'?'🧱 Build new '+esc(a.title||a.component):esc(t);
+  const el=document.createElement('div');el.className='card act';el.innerHTML=`<b>${head}</b><div class="sub">${esc(a.reason||'')}</div><div class="row" style="text-align:right;margin-top:5px"><button class="btn sm good" id="ok">Confirm</button></div>`;
+  el.querySelector('#ok').onclick=async()=>{const b=el.querySelector('#ok');b.disabled=true;b.textContent='…';
+    try{ if(t==='add_component'){SEL.members=SEL.members||[];SEL.members.push({ref:a.ref,kind:a.kind,title:a.title,origin:'existing',status:'published'});await save(SEL);}
+      else if(t==='request_schema'){await post('/bridge/schema-request',{schema_id:a.schema_id,version:a.version||'0.1.0',definition:a.definition||{},justification:a.reason||''});}
+      else if(t==='scaffold'){SEL.members=SEL.members||[];SEL.members.push({ref:a.component,kind:a.kind,title:a.title,origin:'new',status:'draft'});await save(SEL);await post('/bridge/component-scaffold',{component:a.component,kind:a.kind,writes:a.writes,egress:a.egress,title:a.title});}
+      b.textContent='✓ done';OPENK['k:'+(a.kind||'')]=true;tree();
+    }catch(e){b.disabled=false;b.textContent='Confirm';}
+  };return el;}
+// ---------- MODALS ----------
+function newProject(){const m=modal(`<h3>New Project</h3><label class="sub">Name</label><input class="in" id="t"><label class="sub">Goal</label><textarea class="in" id="g" rows="3"></textarea><div style="text-align:right;margin-top:10px"><button class="btn" id="x">Cancel</button> <button class="btn primary" id="ok">Create</button></div>`);
+  m.q('#x').onclick=m.close;m.q('#ok').onclick=async()=>{const t=m.q('#t').value.trim();if(!t)return;const id='ds:kmc:studio/project/'+t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),status:'active',members:[],tenant:'kmc'});m.close();await boot();};}
+function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind===kind);
+  const m=modal(`<h3>Add ${kind==='agent'?'AI Expert':pretty(kind)}</h3><div class="sub">Reuse an existing one (recommended) or create a new one to build.</div>
+    <label class="sub" style="margin-top:8px">Reuse existing</label><select class="in" id="ex"><option value="">— choose —</option>${comps.map(c=>`<option value="${esc(c.component_id)}">${esc(nameOf(c))}${c.certified?' ✓':''}</option>`).join('')}</select>
+    <div style="text-align:right"><button class="btn primary sm" id="addex">Add (reuse)</button></div><hr style="border-color:var(--line)">
+    <label class="sub">New — id</label><input class="in" id="nn" placeholder="ds:airawat:${kind}/my-thing">
+    <div style="text-align:right"><button class="btn" id="x">Cancel</button> <button class="btn" id="addnew">Add + scaffold</button></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#addex').onclick=async()=>{const ref=m.q('#ex').value;if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'existing',status:'published'});await save(SEL);m.close();OPENK['k:'+kind]=true;tree();};
+  m.q('#addnew').onclick=async()=>{const ref=m.q('#nn').value.trim();if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'new',status:'draft'});await save(SEL);await post('/bridge/component-scaffold',{component:ref,kind});delete FILES[ref];m.close();OPENK['k:'+kind]=true;OPENK['c:'+ref]=true;tree();};}
+async function composeSolution(){if(!SEL)return;const pub=(SEL.members||[]).filter(x=>x.status==='published').length;if(!pub){bottom('Publish at least one component before composing.');return;}
+  bottom('Composing '+SEL.title+' → solution …');const r=await post('/bridge/project-compose',{project:SEL.id});
+  if(r.solution){SEL.target_solution=r.solution;bottom('✓ composed '+r.solution+' ('+r.members.length+' members, verified='+r.verified+') → published to the Marketplace (one install brings all members)');}
+  else bottom('✗ '+(r.error||'compose failed'));}
+async function requestSchema(){let SCH=[];try{SCH=((await post('/bridge/schemas',{})).schemas||[]).map(s=>s.schema_id||s).filter(Boolean);}catch(e){}
+  const tmpl=sid=>JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid||"domain.subject","type":"object","required":["schema","id"],"additionalProperties":true,"properties":{"schema":{"const":sid||"domain.subject"},"id":{"type":"string"}}},null,2);
+  const m=modal(`<h3>Request a schema</h3><div class="sub">Reuse-first — existing (${SCH.length}): ${esc([...new Set(SCH)].slice(0,40).join(', '))||'none'}</div>
+    <div class="row" style="gap:8px"><div style="flex:2"><label class="sub">schema id</label><input class="in" id="sid" placeholder="geo.osm_feature"></div><div style="flex:1"><label class="sub">version</label><input class="in" id="ver" value="0.1.0"></div></div>
+    <label class="sub">definition</label><textarea class="in" id="def" rows="10" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(tmpl(''))}</textarea>
+    <div style="text-align:right"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="file">File request</button></div>`);
+  m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim());};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
+  m.q('#x').onclick=m.close;m.q('#file').onclick=async()=>{let d;try{d=JSON.parse(m.q('#def').value);}catch(e){m.q('#rm').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
+    const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d});m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — approve in Network-admin</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1200);};}
+function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return {q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>

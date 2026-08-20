@@ -1,0 +1,14 @@
+# Chat app (kind=app, INT-0002). Converse with the installed AI Experts. Every answer is GROUNDED — built
+# from the Expert's own recommendations, the governance rules in force, and cited knowledge — and shows its
+# sources; the Expert proposes and informs, it never decides. Uses /bridge/expert-chat + /bridge/market.
+component_id: ds:airawat:app/chat
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Chat
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: []
+system: true          # first-party Airawat app — present for every tenant (the way in to talk to Experts)
+roles: []             # available to everyone in the tenant

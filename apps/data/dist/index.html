@@ -1,0 +1,101 @@
+<!doctype html><meta charset="utf-8"><title>Data</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6;--good:#3fb950}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  h1{margin:0;font-size:16px} .who{margin-left:auto;color:var(--dim);font-size:12px}
+  .layout{display:flex;height:calc(100vh - 49px)}
+  .list{width:280px;flex:none;border-right:1px solid var(--line);overflow:auto}
+  .it{padding:11px 14px;border-bottom:1px solid #1a1f27;cursor:pointer}
+  .it:hover{background:#161b22} .it.sel{background:#1b2530;border-left:2px solid var(--accent)}
+  .it .nm{font-weight:600;font-size:13px} .it .sub{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+  .detail{flex:1;overflow:auto;padding:18px 20px}
+  .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px}
+  /* the inline attribution surface — shown WITH the data, in context */
+  .attrib{border:1px solid #24304a;background:#0f1723;border-radius:10px;padding:12px 14px;margin:0 0 16px}
+  .attrib .hd{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+  .src{margin:0 0 8px} .src:last-child{margin:0}
+  .src .cred{color:var(--ink)} .src .meta{font-size:12px;color:var(--dim);margin-top:2px}
+  .src a{color:var(--accent);font-size:12px;text-decoration:none;margin-right:12px}
+  .chip{display:inline-block;background:#0d1117;border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;margin-right:8px;font-family:ui-monospace,Menlo,monospace}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+  th{color:var(--dim);text-align:left;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg)}
+  td{padding:5px 8px;border-bottom:1px solid #1a1f27;font-family:ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
+  .empty{color:var(--dim);text-align:center;padding:48px}
+  .pager{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--dim);font-size:12px}
+  .pbtn{border:1px solid var(--line);background:#161b22;color:var(--ink);border-radius:6px;padding:3px 9px;cursor:pointer}
+  .pbtn:disabled{opacity:.4;cursor:default}
+</style>
+<header><h1>📂 Data</h1><span class="who" id="who"></span></header>
+<div class="layout">
+  <div class="list" id="list"></div>
+  <div class="detail" id="detail"><div class="empty">Select a dataset to browse the data you have access to.</div></div>
+</div>
+<script>
+// The datasets this app may browse (its required_schemas allow-list). The user only SEES rows the
+// app-host returns under their token — access is enforced at the boundary, not here.
+const DATASETS=[
+  {schema:'air.sensor_reading', name:'Air — sensor readings', sub:'ground-station observations'},
+  {schema:'air.quality',        name:'Air — quality (cells)', sub:'interpolated / fused'},
+  {schema:'demographics.population', name:'Population', sub:'per-cell population'},
+  {schema:'space.aoi',          name:'Areas of interest', sub:'AOIs / bboxes'},
+  {schema:'ref.source',         name:'Data sources (catalogue)', sub:'governed attribution records'},
+];
+let APPID, SEL=null, CUR=null, PAGE=[];
+async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+async function boot(){
+  const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
+  fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
+  document.getElementById('list').innerHTML=DATASETS.map(d=>`<div class="it" data-s="${esc(d.schema)}">
+    <div class="nm">${esc(d.name)}</div><div class="sub">${esc(d.schema)}</div></div>`).join('');
+  document.querySelectorAll('.it').forEach(el=>el.onclick=()=>{
+    document.querySelectorAll('.it').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
+    SEL=DATASETS.find(d=>d.schema===el.dataset.s); CUR=null; PAGE=[]; load(true);});
+}
+function attribBox(attr){
+  if(!attr||!attr.length) return '<div class="attrib"><div class="hd">Data sources</div><div class="meta" style="color:var(--dim)">no external-source attribution recorded for this data</div></div>';
+  const lk=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${t} ↗</a>`:'';
+  return `<div class="attrib"><div class="hd">Data sources — attribution &amp; licence</div>`+
+    attr.map(s=>`<div class="src"><div class="cred">${esc(s.attribution||s.source_id)}</div>
+      <div class="meta">${s.license&&s.license.id?`<span class="chip">${esc(s.license.id)}</span>`:''}${lk(s.license&&s.license.url,'licence')}${lk(s.terms_url,'terms')}${lk(s.url,'source')}</div></div>`).join('')+
+    `</div>`;
+}
+function columns(rows){
+  const skip=new Set(['schema','conforms_to','prov']); const cols=[];
+  for(const r of rows.slice(0,20)) for(const k of Object.keys(r)){
+    const v=r[k]; if(skip.has(k)||cols.includes(k)) continue;
+    if(v==null||typeof v==='object') { if(k!=='space') continue; } cols.push(k);
+  }
+  const ordered=['id',...cols.filter(c=>c!=='id')]; return ordered.slice(0,7);
+}
+function cell(v){ if(v==null)return ''; if(typeof v==='object'){ if(v.h3)return v.h3; if(Array.isArray(v))return v.join(','); return JSON.stringify(v).slice(0,40);} return String(v); }
+function showRec(i){
+  const o=PAGE[i]; if(!o)return;
+  const R=document.getElementById('rec'); if(!R)return;
+  // the FULL record — every field, including arrays/objects the summary table omits (e.g. bbox, space)
+  R.innerHTML=`<div class="lbl">Record — full detail</div>
+    <pre style="background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--ink);white-space:pre;max-height:340px">${esc(JSON.stringify(o,null,2))}</pre>`;
+  R.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function load(reset){
+  const D=document.getElementById('detail');
+  const r=await jpost('/bridge/query',{app_id:APPID,schema:SEL.schema,paginate:true,limit:25,cursor:reset?null:CUR});
+  if(!r.ok){D.innerHTML=`<div class="empty">could not read ${esc(SEL.schema)} (${r.status})</div>`;return;}
+  const rows=(r.j.results||[]).map(x=>x.object||x); PAGE=reset?rows:PAGE.concat(rows); CUR=r.j.next_cursor||null;
+  const cols=columns(PAGE);
+  D.innerHTML=`<div style="font-weight:600;font-size:15px">${esc(SEL.name)}</div>
+    <div class="sub" style="color:#5f6b78;font-family:ui-monospace,Menlo,monospace;font-size:11px;margin:2px 0 14px">${esc(SEL.schema)}</div>
+    ${attribBox(r.j.attributions)}
+    <div class="lbl">Records (${PAGE.length}${CUR?'+':''})</div>
+    ${PAGE.length?`<div style="overflow:auto"><table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
+      ${PAGE.map((o,i)=>`<tr data-i="${i}" style="cursor:pointer" title="click for the full record">${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</table></div>`
+      :'<div class="empty">no records you can access in this dataset</div>'}
+    <div class="pager">${CUR?'<button class="pbtn" id="more">Load more</button>':'<span>— end —</span>'}</div>
+    <div id="rec"></div>`;
+  const m=document.getElementById('more'); if(m)m.onclick=()=>load(false);
+  document.querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>showRec(+tr.dataset.i));
+}
+boot();
+</script>

@@ -7,5 +7,7 @@ version: 0.1.0
 provider: ds:airawat:developer
 display_name: Studio
 entrypoint: index.html
-required_schemas: [platform.subscription, platform.workflow]
+required_schemas: [studio.project, platform.subscription, platform.workflow]
 sandboxed: true
+system: true            # a platform dev tool: default-available (not a per-tenant install)…
+developer_only: true    # …but INT-0004 §6 gates it to a user in a development tenant (a Developer participant)
