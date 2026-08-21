@@ -18,8 +18,8 @@
   header h1 b{color:var(--accent);font-weight:650}
   .sub{color:var(--muted);font-size:12.5px}
   .sub .dot{color:var(--dim);margin:0 7px}
-  .grid{display:grid;--lc:212px;--rc:340px;grid-template-columns:var(--lc) 1fr var(--rc);gap:0;
-    height:calc(100% - 63px);transition:grid-template-columns .22s ease}
+  .grid{display:grid;--lc:212px;--rc:340px;grid-template-columns:var(--lc) 1fr var(--rc);
+    grid-template-rows:1fr auto;gap:0;height:calc(100% - 63px);transition:grid-template-columns .22s ease}
   .grid.lc0{--lc:0}.grid.rc0{--rc:0}
   @media(max-width:1080px){.grid{grid-template-columns:1fr;height:auto}.map-wrap{min-height:52vh}}
   aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:auto;transition:padding .2s,opacity .15s}
@@ -44,7 +44,13 @@
   .legend .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px}
   .map-wrap{position:relative;overflow:hidden;background:
     radial-gradient(1200px 600px at 50% -10%,#12202e 0%,var(--ground) 70%)}
-  svg{display:block;width:100%;height:100%}
+  svg{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  svg.drag{cursor:grabbing}
+  .zoomctl{position:absolute;left:10px;bottom:10px;z-index:6;display:flex;flex-direction:column;gap:4px}
+  .zoomctl button{width:30px;height:30px;border:1px solid var(--edge2);background:#0e1c2ad9;color:var(--ink);
+    border-radius:8px;cursor:pointer;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
+  .zoomctl button:hover{border-color:var(--accent);color:var(--accent)}
+  .zoomctl button.rst{font-size:13px}
   polygon.base{stroke:#0e1621;stroke-width:.25;pointer-events:none}
   polygon.cell{stroke:#0c1420;stroke-width:.4;transition:opacity .1s}
   polygon.cell:hover{stroke:var(--accent);stroke-width:1.4;fill-opacity:1}
@@ -93,6 +99,7 @@
   <div class="map-wrap"><svg id="map" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
+    <div class="zoomctl"><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
     <div class="attrib" id="attrib" hidden>Basemap © OpenStreetMap contributors</div></div>
 
   <div class="trust">
@@ -124,20 +131,29 @@ const lon2x=(lon,z)=>Math.floor((lon+180)/360*TZ(z));
 const lat2y=(lat,z)=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*TZ(z));};
 const tile2lon=(x,z)=>x/TZ(z)*360-180;
 const tile2lat=(y,z)=>{const n=Math.PI-2*Math.PI*y/TZ(z);return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));};
+function visibleGeo(){                              // the geographic extent currently on screen (under the transform)
+  const W=proj.W,H=proj.H,{k,tx,ty}=view;
+  const xs=[(0-tx)/k,(W-tx)/k], ys=[(0-ty)/k,(H-ty)/k];
+  return {w:proj.invLng(Math.min(...xs)), e:proj.invLng(Math.max(...xs)),
+          n:proj.invLat(Math.min(...ys)), s:proj.invLat(Math.max(...ys))};
+}
 async function loadTiles(){
-  DATA.tiles=[];
-  const bb=(DATA.aoi||{}).bbox; if(!bb||!proj) return;
-  const [w,s,e,n]=bb, Z=Math.min(16,Math.max(11,Math.round(Math.log2(1440/Math.max(e-w,1e-4)))));
-  const jobs=[];
-  for(let x=lon2x(w,Z);x<=lon2x(e,Z);x++)for(let y=lat2y(n,Z);y<=lat2y(s,Z);y++){
-    const url=`https://tile.openstreetmap.org/${Z}/${x}/${y}.png`, X=x, Y=y;
+  if(!proj||!(DATA.aoi||{}).bbox) return;
+  const g=visibleGeo();
+  let Z=Math.max(11,Math.min(19,Math.round(BASE_Z+Math.log2(view.k)))), x0,x1,y0,y1;
+  while(true){ x0=lon2x(g.w,Z);x1=lon2x(g.e,Z);y0=lat2y(g.n,Z);y1=lat2y(g.s,Z);
+    if((x1-x0+1)*(y1-y0+1)<=48 || Z<=11) break; Z--; }   // keep the fetch bounded (OSM policy + perf)
+  const jobs=[], tiles=[];
+  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){ const X=x,Y=y,zz=Z;
     jobs.push(fetch("/bridge/fetch",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({app_id:APPID,url})}).then(r=>r.json()).then(d=>{ if(d&&d.body_b64)
-        DATA.tiles.push({w:tile2lon(X,Z),e:tile2lon(X+1,Z),n:tile2lat(Y,Z),s:tile2lat(Y+1,Z),
-          href:`data:${d.content_type||"image/png"};base64,${d.body_b64}`}); }).catch(()=>{}));
-  }
+      body:JSON.stringify({app_id:APPID,url:`https://tile.openstreetmap.org/${zz}/${X}/${Y}.png`})})
+      .then(r=>r.json()).then(d=>{ if(d&&d.body_b64)
+        tiles.push({w:tile2lon(X,zz),e:tile2lon(X+1,zz),n:tile2lat(Y,zz),s:tile2lat(Y+1,zz),
+          href:`data:${d.content_type||"image/png"};base64,${d.body_b64}`}); }).catch(()=>{})); }
   await Promise.all(jobs);
-  if(DATA.tiles.length){ $("attrib").hidden=false; render(); }
+  DATA.tiles=tiles;
+  if(tiles.length) $("attrib").hidden=false;
+  render();
 }
 
 async function load(){
@@ -161,6 +177,7 @@ async function load(){
 }
 
 let DATA, active=LAYERS[0].key, proj=null;
+let view={k:1,tx:0,ty:0}, BASE_Z=14;               // interactive pan/zoom state + base tile zoom for the AOI
 const $=id=>document.getElementById(id);
 
 function project(){
@@ -177,9 +194,11 @@ function project(){
   const cw=Math.max(320,wrap.clientWidth||1000), ch=Math.max(240,wrap.clientHeight||700);
   const s=Math.max(cw/gw, ch/gh);
   const offX=(cw-gw*s)/2, offY=(ch-gh*s)/2;
-  return {mnx,mxx,mny,mxy,kx,W:cw,H:ch,
+  return {mnx,mxx,mny,mxy,kx,W:cw,H:ch,s,offX,offY,
     x:lng=>offX+((lng-mnx)*kx)*s,
-    y:lat=>offY+((mxy-lat))*s};
+    y:lat=>offY+((mxy-lat))*s,
+    invLng:xb=>mnx+(xb-offX)/(kx*s),
+    invLat:yb=>mxy-(yb-offY)/s};
 }
 function range(key){const v=(DATA.layers[key]||[]).map(c=>c.v).filter(x=>typeof x==="number");
   return v.length?[Math.min(...v),Math.max(...v)]:[0,1];}
@@ -208,8 +227,10 @@ function render(){
     const pts=c.b.map(p=>proj.x(p[0]).toFixed(1)+","+proj.y(p[1]).toFixed(1)).join(" ");
     s+=`<polygon class="cell" points="${pts}" fill="${fill}" fill-opacity="${cellOp}" data-v="${esc(L.fmt(c.v))}" data-h="${esc(c.h3||"")}"></polygon>`;
   }
-  // land-cover base shows until real tiles arrive (fallback); tiles cover it when present
-  svg.innerHTML=`<g class="basemap"${hasTiles?' opacity="0.15"':''}>${base}</g><g class="tiles">${tiles}</g><g class="layer">${s}</g>`;
+  // land-cover base shows until real tiles arrive (fallback); tiles cover it when present. Everything lives
+  // inside #scene, whose transform gives interactive pan/zoom (vectors stay crisp; tiles refetch on settle).
+  svg.innerHTML=`<g id="scene" transform="translate(${view.tx.toFixed(2)} ${view.ty.toFixed(2)}) scale(${view.k.toFixed(4)})">`
+    +`<g class="basemap"${hasTiles?' opacity="0.15"':''}>${base}</g><g class="tiles">${tiles}</g><g class="layer">${s}</g></g>`;
   // legend
   $("legend").hidden=!cells.length;
   $("legbar").style.background=`linear-gradient(90deg,${L.lo},${L.hi})`;
@@ -258,11 +279,30 @@ function drawTrust(){
     +`${(DATA.coverage||[]).length} assessed<span class="dot">·</span>as of ${esc(fresh||"—")}`;
   $("foot").innerHTML="L2 cell indicators derived from L0/L1 sources · every cell carries derived_from lineage · authority is inferred, not asserted (ADR-0060)";
   if(!proj){$("app").innerHTML='<div class="empty" style="grid-column:1/-1">No baseline data available for this workspace yet.</div>';return;}
+  const [wl,,el]=DATA.aoi.bbox||[0,0,0,0];
+  BASE_Z=Math.min(16,Math.max(11,Math.round(Math.log2(1440/Math.max(el-wl,1e-4)))));
   drawLayers(); drawTrust(); render();
   loadTiles();                                    // real OSM basemap via declared /bridge/fetch (async → re-render)
-  const g=$("app"), reflow=()=>setTimeout(()=>{proj=project();render();},240);
+  // --- interactive pan / zoom: SVG transform for smooth feel, tile refetch on settle for crisp streets ---
+  const svg=$("map");
+  const applyTransform=()=>{const sc=$("scene"); if(sc) sc.setAttribute("transform",`translate(${view.tx.toFixed(2)} ${view.ty.toFixed(2)}) scale(${view.k.toFixed(4)})`);};
+  let tt=null; const scheduleTiles=()=>{clearTimeout(tt);tt=setTimeout(loadTiles,270);};
+  const zoomAt=(mx,my,f)=>{const nk=Math.max(1,Math.min(64,view.k*f));
+    view.tx=mx-((mx-view.tx)/view.k)*nk; view.ty=my-((my-view.ty)/view.k)*nk; view.k=nk; applyTransform(); scheduleTiles();};
+  svg.addEventListener("wheel",e=>{e.preventDefault();const r=svg.getBoundingClientRect();
+    zoomAt((e.clientX-r.left)/r.width*proj.W,(e.clientY-r.top)/r.height*proj.H, e.deltaY<0?1.2:1/1.2);},{passive:false});
+  let drag=null;
+  svg.addEventListener("mousedown",e=>{drag=[e.clientX,e.clientY,view.tx,view.ty];svg.classList.add("drag");});
+  addEventListener("mousemove",e=>{ if(!drag)return; const r=svg.getBoundingClientRect();
+    view.tx=drag[2]+(e.clientX-drag[0])/r.width*proj.W; view.ty=drag[3]+(e.clientY-drag[1])/r.height*proj.H; applyTransform();});
+  addEventListener("mouseup",()=>{ if(drag){drag=null;svg.classList.remove("drag");scheduleTiles();}});
+  $("zin").onclick=()=>zoomAt(proj.W/2,proj.H/2,1.4);
+  $("zout").onclick=()=>zoomAt(proj.W/2,proj.H/2,1/1.4);
+  $("zreset").onclick=()=>{view={k:1,tx:0,ty:0};proj=project();render();loadTiles();};
+  const reproject=()=>{view={k:1,tx:0,ty:0};proj=project();render();loadTiles();};   // fill re-covers on resize/toggle
+  const g=$("app"), reflow=()=>setTimeout(reproject,240);
   $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";reflow();};
   $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";reflow();};
-  addEventListener("resize",()=>{proj=project();render();});
+  addEventListener("resize",reproject);
 })();
 </script>
