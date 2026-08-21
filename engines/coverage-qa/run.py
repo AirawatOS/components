@@ -90,6 +90,30 @@ def _authority(objs):
     return "authoritative", srcs, None
 
 
+def _schema_of(oid):
+    """Infer a fact's schema from its id: ds:<tenant>:geo/landcover/… → geo.landcover."""
+    tail = oid.split(":", 2)[-1] if oid.count(":") >= 2 else oid
+    segs = tail.split("/")
+    return ".".join(segs[:2]) if len(segs) >= 2 else (segs[0] if segs else "")
+
+
+def _lineage_source(objs):
+    """A derived layer (cell.*) has no direct source — trace it through derived_from to the L1 fact it was
+    computed from, and report THAT source (e.g. cell.builtup → geo.landcover → osm). Returns (source, via)."""
+    for o in objs:
+        for ref in (o.get("derived_from") or []):
+            if isinstance(ref, str) and ref.startswith("ds:") and "@aoi:" not in ref:
+                sch = _schema_of(ref)
+                try:
+                    p = _call("/v1/read", {"scope": sch, "id": ref}).get("object") or {}
+                    s = p.get("source_ref") or p.get("source")
+                    if s:
+                        return s, sch
+                except Exception:
+                    pass
+    return None, None
+
+
 def main():
     aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
     if not aoi:
@@ -112,9 +136,14 @@ def main():
         fresh = max((o.get("observed_at") for o in objs if o.get("observed_at")), default=None)
         authority, srcs, syn_gap = _authority(objs)
         source_ref = sorted(srcs)[0] if srcs else None
+        via = None
+        if not source_ref:                                  # a derived layer: trace its source through lineage
+            source_ref, via = _lineage_source(objs)
         gaps = []
         if syn_gap:
             gaps.append(syn_gap)
+        if via:
+            gaps.append(f"source inherited via {via} (derived layer)")
         if total and len(covered) < total:
             gaps.append(f"{total - len(covered)}/{total} AOI cells uncovered")
         if source_ref == "ds:airawat:ref/source/open-meteo":

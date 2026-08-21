@@ -18,9 +18,17 @@
   header h1 b{color:var(--accent);font-weight:650}
   .sub{color:var(--muted);font-size:12.5px}
   .sub .dot{color:var(--dim);margin:0 7px}
-  .grid{display:grid;grid-template-columns:210px 1fr 340px;gap:0;height:calc(100% - 63px)}
+  .grid{display:grid;--lc:212px;--rc:340px;grid-template-columns:var(--lc) 1fr var(--rc);gap:0;
+    height:calc(100% - 63px);transition:grid-template-columns .22s ease}
+  .grid.lc0{--lc:0}.grid.rc0{--rc:0}
   @media(max-width:1080px){.grid{grid-template-columns:1fr;height:auto}.map-wrap{min-height:52vh}}
-  aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:auto}
+  aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:auto;transition:padding .2s,opacity .15s}
+  .grid.lc0 aside{padding:0;opacity:0;pointer-events:none;border:none}
+  .railtog{position:absolute;top:12px;z-index:6;width:22px;height:36px;border:1px solid var(--edge2);
+    background:#0e1c2ad9;color:var(--muted);border-radius:8px;cursor:pointer;font-size:15px;line-height:1;
+    display:flex;align-items:center;justify-content:center;transition:.13s}
+  .railtog:hover{color:var(--ink);border-color:var(--accent)}
+  .railtog.l{left:10px}.railtog.r{right:10px}
   .rail-h{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
   .layers{display:flex;flex-direction:column;gap:7px}
   .layer-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--edge);
@@ -46,7 +54,8 @@
   .attrib{position:absolute;right:6px;bottom:6px;background:#0a1320cc;border:1px solid var(--edge);
     border-radius:5px;padding:2px 8px;font-size:10.5px;color:var(--muted)}
   image{image-rendering:auto}
-  .trust{padding:18px 16px;border-left:1px solid var(--edge);overflow:auto}
+  .trust{padding:18px 16px;border-left:1px solid var(--edge);overflow:auto;transition:padding .2s,opacity .15s}
+  .grid.rc0 .trust{padding:0;opacity:0;pointer-events:none;border:none}
   .cov{border:1px solid var(--edge);border-radius:10px;padding:12px 13px;margin-bottom:10px;background:var(--panel)}
   .cov .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
   .cov .noun{font-weight:600;font-size:13px}
@@ -82,6 +91,8 @@
   </aside>
 
   <div class="map-wrap"><svg id="map" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div>
+    <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
+    <button class="railtog r" id="togR" title="Show/hide report">›</button>
     <div class="attrib" id="attrib" hidden>Basemap © OpenStreetMap contributors</div></div>
 
   <div class="trust">
@@ -243,6 +254,9 @@ function drawTrust(){
   if(!proj){$("app").innerHTML='<div class="empty" style="grid-column:1/-1">No baseline data available for this workspace yet.</div>';return;}
   drawLayers(); drawTrust(); render();
   loadTiles();                                    // real OSM basemap via declared /bridge/fetch (async → re-render)
+  const g=$("app"), reflow=()=>setTimeout(()=>{proj=project();render();},240);
+  $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";reflow();};
+  $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";reflow();};
   addEventListener("resize",()=>{proj=project();render();});
 })();
 </script>
