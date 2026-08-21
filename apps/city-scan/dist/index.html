@@ -163,7 +163,7 @@ async function load(){
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
   const APP=cfg.app_id; APPID=cfg.app_id;
   const q=async s=>{try{const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({app_id:APP,schema:s})});const d=await r.json();
+    body:JSON.stringify({app_id:APP,schema:s,limit:50000})});const d=await r.json();  // full metro grid, not the 1000 default
     return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[]}};
   const layers={};
   for(const L of LAYERS){

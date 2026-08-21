@@ -112,7 +112,25 @@ def main():
     name = aoi.get("name", AOI_ID.rsplit("/", 1)[-1])
     ee = init_ee()
     cells = h3_cells(bbox, res)
-    print(f"Dynamic World · AOI '{name}' bbox={bbox} res={res} → {len(cells)} H3 cells · project={PROJECT}")
+    print(f"Dynamic World · AOI '{name}' bbox={bbox} res={res} → {len(cells)} H3 cells · project={PROJECT}", flush=True)
+    # RESUME: skip cells that already have a cell.builtup (deterministic ids). A big metro run can be killed
+    # (memory) mid-way; each re-run then continues from where it stopped and converges to the full grid.
+    if os.environ.get("RESUME", "1") != "0":
+        done = set()
+        try:
+            for r in (call("/v1/query", {"scope": "cell.builtup"}).get("results") or []):
+                ob = r.get("object") or r
+                hid = (ob.get("cell_ref") or {}).get("h3_id")
+                if hid:
+                    done.add(hid)
+        except Exception as ex:
+            print(f"  (resume check skipped: {type(ex).__name__})", flush=True)
+        if done:
+            before = len(cells)
+            cells = [h for h in cells if h not in done]
+            print(f"  resuming: {len(done)} cells already done → {len(cells)}/{before} remaining", flush=True)
+    if not cells:
+        print("  nothing to do — all cells already indexed"); return 0
 
     end = time.strftime("%Y-%m-%d", time.gmtime())
     start = time.strftime("%Y-%m-%d", time.gmtime(time.time() - DAYS * 86400))
