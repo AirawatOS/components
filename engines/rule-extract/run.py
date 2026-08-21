@@ -140,7 +140,7 @@ def main():
                 res = _call("/v1/complete", {"messages": [{"role": "user", "content": prompt}]})
             except urllib.error.HTTPError as e:
                 print(f"FAIL: /v1/complete → {e.code} (configure a chat provider + key)."); return 1
-            model = res.get("model")
+            model = res.get("model"); receipt = res.get("receipt")   # ADR-0058: the LLM interaction receipt
             for i, r in enumerate(_json_array(res.get("content", ""))):
                 rtype = (r.get("rule_type") or "").lower(); statement = (r.get("statement") or "").strip()
                 if rtype not in ("threshold", "requirement", "prohibition", "permission") or not statement:
@@ -160,7 +160,7 @@ def main():
                        "evaluable": bool(quant),
                        "source": {"doc": doc["id"], "doc_class": doc.get("doc_class"), "chunk_hash": ch["chunk_hash"],
                                   "eid": eid, "uri": loc.get("uri"), "doc_version": cur["id"],
-                                  "citation": f"{doc.get('title')}, {label}"},
+                                  "citation": f"{doc.get('title')}, {label}", "derived_via": receipt},
                        "produced_by": {"component": CID, "model": model}, "tenant": T}
                 _call("/v1/write", {"scope": "governance.rule", "id": obj["id"], "object": obj,
                                     "valid_time": {"from": now}, "asserted_at": now})
