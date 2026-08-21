@@ -261,7 +261,7 @@ async function showVerb(iid){
     <div class="card mono" style="font-size:11px;word-break:break-all;color:#a9b6c4">${esc(rec.signature||'—')}</div>`;
 }
 
-const KICON={role:'👤',schema:'🧩',pack:'📦'};
+const KICON={role:'👤',schema:'🧩',pack:'📦',join:'🏙️'};
 async function requests(){
   const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
   let d; try{ d=await jget('/bridge/change-requests'); }catch(e){ W.innerHTML='<div class="empty">not authorized — standards body only</div>'; return; }
