@@ -230,9 +230,10 @@ def chunk_eid(text, doc):
         loc = {"kind": "eid", "eid": eid, "number": number,
                "path": ["__".join(_eid_of(number).split("__")[:i + 1]) for i in range(number.count(".") + 1)],
                "uri": _frbr_uri(doc, eid)}
-        # section-level units (chp/sec) contribute a heading; deeper units are the substantive clauses
-        if number.count(".") <= 1:
-            loc["heading"] = re.sub(r"\s+\d+\s*$", "", clean).strip()[:80]   # drop trailing TOC page-no
+        # a readable heading at EVERY level (from the clean text after the number) so the nav never shows a
+        # raw eId — section headings are titles; paragraph "headings" are a short preview of their text
+        htext = re.sub(r"^\s*" + re.escape(number) + r"\.?\s*", "", clean)
+        loc["heading"] = re.sub(r"\s+\d+\s*$", "", htext).strip()[:70] or eid
         if actions:
             loc["responsibility"] = [b.strip() for a in actions for b in re.split(r",| and ", a) if b.strip()]
         pieces.append((loc, clean))

@@ -11,9 +11,11 @@ provider: ds:airawat:developer
 display_name: Guideline → Rule Extractor
 entrypoint: run.py
 confinement_min: L1
-reads: [knowledge.document, knowledge.chunk]
+reads: [knowledge.document, knowledge.version, knowledge.chunk, governance.rule]
 writes: [governance.rule]
 scopes:
   - { verb: read,  scope: knowledge.document }
+  - { verb: read,  scope: knowledge.version }
   - { verb: read,  scope: knowledge.chunk }
+  - { verb: read,  scope: governance.rule }
   - { verb: write, scope: governance.rule, tenant: kmc }

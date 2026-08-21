@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
 T = os.environ.get("WRITE_TENANT", "kmc")
-DOC_ID = os.environ.get("DOC_ID", "caqm-grap-ncr")
+DOC_ID = os.environ.get("DOC_ID")   # a specific doc_id, or all docs when unset
 CID = "ds:airawat:engine/rule-extract"
 
 PROMPT = """You extract NORMATIVE RULES from an official document so a reviewer can approve them and, where they
@@ -76,71 +76,101 @@ def _json_array(s):
         return []
 
 
+def _section_label(loc):
+    """Human label for a section from its locator — eId-aware (ADR-0057), legacy-compatible."""
+    if loc.get("number"):
+        h = loc.get("heading")
+        return f"§{loc['number']}" + (f" {h}" if h and str(loc["number"]).count(".") <= 1 else "")
+    return loc.get("label") or "section"
+
+
 def main():
-    docs = [r.get("object") or r for r in _call("/v1/query", {"scope": "knowledge.document", "limit": 500}).get("results", [])]
-    docs = [d for d in docs if d.get("doc_id") == DOC_ID]
-    if not docs:
-        print(f"no knowledge.document '{DOC_ID}'."); return 1
-    doc = docs[0]
-    chunks = [r.get("object") or r for r in _call("/v1/query", {"scope": "knowledge.chunk", "limit": 2000}).get("results", [])]
-    chunks = [c for c in chunks if c.get("doc_id") == DOC_ID and c.get("locator", {}).get("label") != "preamble"]
-    if not chunks:
-        print(f"no chunks for '{DOC_ID}' (run doc-chunk-version first)."); return 0
-    # Rule extraction is one LLM call per section — cap it so a huge document (e.g. 1500 sections) doesn't fire
-    # thousands of calls. This is a LOUD cap, never a silent truncation: we report exactly what was covered.
-    cap = int(os.environ.get("MAX_EXTRACT_CHUNKS", "60"))
-    total = len(chunks)
-    if total > cap:
-        # sample EVENLY across the whole document, not the first N — a large document's real norms live in later
-        # chapters, not its front matter. Loud, never silent: we say exactly how much was covered.
-        stride = total / cap
-        chunks = [chunks[int(i * stride)] for i in range(cap)]
-        print(f"NOTE: {total} sections; sampling {cap} evenly across the document (MAX_EXTRACT_CHUNKS). "
-              f"Raise the cap for exhaustive extraction of a large document.")
+    all_docs = [r.get("object") or r for r in _call("/v1/query", {"scope": "knowledge.document", "limit": 500}).get("results", [])]
+    targets = [d for d in all_docs if d.get("doc_id") == DOC_ID] if DOC_ID else all_docs   # DOC_ID scopes; unset = all
+    if not targets:
+        print(f"no knowledge.document{f' {DOC_ID!r}' if DOC_ID else ''}."); return 1
+    versions = [r.get("object") or r for r in _call("/v1/query", {"scope": "knowledge.version", "limit": 3000}).get("results", [])]
+    all_rules = [r.get("object") or r for r in _call("/v1/query", {"scope": "governance.rule", "limit": 5000}).get("results", [])]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cap = int(os.environ.get("MAX_EXTRACT_CHUNKS", "60"))
+    grand = 0
 
-    n = 0; model = None
-    for ch in chunks:
-        label = ch["locator"]["label"]
-        prompt = PROMPT.format(title=doc.get("title"), doc_class=doc.get("doc_class", "document"),
-                               issuer=doc.get("issuer"), force=doc.get("legal_force"),
-                               label=label, text=ch.get("text", ""))
-        try:
-            res = _call("/v1/complete", {"messages": [{"role": "user", "content": prompt}]})
-        except urllib.error.HTTPError as e:
-            print(f"FAIL: /v1/complete → {e.code} (configure a chat provider + key). Nothing written."); return 1
-        model = res.get("model")
-        rules = _json_array(res.get("content", ""))
-        wrote = 0
-        for i, r in enumerate(rules):
-            rtype = (r.get("rule_type") or "").lower()
-            statement = (r.get("statement") or "").strip()
-            # a rule must be a real normative statement of a known kind (not a definition/description)
-            if rtype not in ("threshold", "requirement", "prohibition", "permission") or not statement:
-                continue
-            quant = r.get("operator") and r.get("value") is not None    # machine-evaluable?
-            subject = r.get("subject") or r.get("stage") or label
-            applies = _slug(r.get("applies_to")) or ("air.quality" if r.get("metric") == "pm25" else "document.norm")
-            rid = f"extracted-{DOC_ID}-{re.sub(r'[^a-z0-9]+', '-', str(label).lower()).strip('-')}-{i}"
-            obj = {"schema": "governance.rule", "id": f"ds:{T}:governance/rule/{rid}", "rule_id": rid,
-                   "title": statement[:120], "statement": statement, "rule_type": rtype,
-                   "applies_to": applies, "subject": subject, "stage": subject,
-                   "metric": r.get("metric"), "operator": r.get("operator") if quant else None,
-                   "value": r.get("value") if quant else None, "unit": r.get("unit"),
-                   "condition": r.get("condition"), "proposed_action": r.get("action") or "",
-                   "binding": doc.get("legal_force", "advisory"), "authority": doc.get("issuer"),
-                   "status": "proposed", "scope": {"jurisdiction": (doc.get("jurisdiction") or {}).get("level", "national")},
-                   "evaluable": bool(quant),
-                   "source": {"doc": doc["id"], "doc_class": doc.get("doc_class"), "chunk_hash": ch["chunk_hash"],
-                              "citation": f"{doc.get('title')}, {label}"},
-                   "produced_by": {"component": CID, "model": model}, "tenant": T}
-            _call("/v1/write", {"scope": "governance.rule", "id": obj["id"], "object": obj,
-                                "valid_time": {"from": now}, "asserted_at": now})
-            wrote += 1; n += 1
-        print(f"  {label}: {wrote} rule(s) extracted + cited")
+    for doc in targets:
+        did = doc["doc_id"]
+        cur = next((v for v in versions if v.get("id") == doc.get("current_version")), None)
+        if not cur:
+            print(f"  {did}: no current version — run doc-chunk-version first."); continue
+        # the CURRENT version's chunks only (content-addressed store keeps every version; the manifest is truth)
+        want = {c["chunk_hash"]: c.get("locator", {}) for c in cur.get("chunks", [])}
+        recs = {c["chunk_hash"]: c for c in
+                [r.get("object") or r for r in _call("/v1/query", {"scope": "knowledge.chunk", "limit": 8000}).get("results", [])]
+                if c.get("doc_id") == did and c["chunk_hash"] in want}
+        chunks = [recs[h] for h in want if h in recs and want[h].get("eid") != "front" and want[h].get("label") != "preamble"]
 
-    print(f"extracted {n} PROPOSED governance.rule from '{doc.get('title')}' (model {model}); "
-          f"each cited to a chunk_hash, binding={doc.get('legal_force')}. Awaiting human approval → live.")
+        # (1) RE-LINK existing rules to the CURRENT content by their stable eId (ADR-0057). A rule extracted
+        #     from §4.11.1 follows §4.11.1 across re-versioning — the eId is stable, only the chunk_hash (the
+        #     integrity pin) moves. This preserves APPROVED rules; nothing is re-extracted or duplicated.
+        eid2hash = {loc.get("eid"): h for h, loc in want.items() if loc.get("eid")}
+        mine = [r for r in all_rules if (r.get("source") or {}).get("doc") == doc["id"]]
+        relinked = 0
+        for r in mine:
+            src = r.get("source") or {}; eid = src.get("eid")
+            if eid and eid in eid2hash and src.get("chunk_hash") != eid2hash[eid]:
+                src["chunk_hash"] = eid2hash[eid]; src["doc_version"] = cur["id"]; r["source"] = src
+                _call("/v1/write", {"scope": "governance.rule", "id": r["id"], "object": r,
+                                    "valid_time": {"from": now}, "asserted_at": now})
+                relinked += 1
+
+        # (2) EXTRACT only for sections not already covered by a rule (idempotent — deterministic ids by eId,
+        #     so a re-run overwrites rather than duplicating; and we skip the LLM for already-covered sections).
+        covered = {(r.get("source") or {}).get("eid") for r in mine}
+        todo = [c for c in chunks if c.get("locator", {}).get("eid") not in covered]
+        if len(todo) > cap:
+            stride = len(todo) / cap
+            todo2 = [todo[int(i * stride)] for i in range(cap)]
+            print(f"  {did}: {len(todo)} uncovered sections; sampling {cap} evenly (MAX_EXTRACT_CHUNKS).")
+            todo = todo2
+        n = 0; model = None
+        for ch in todo:
+            loc = ch.get("locator", {}); label = _section_label(loc); eid = loc.get("eid")
+            prompt = PROMPT.format(title=doc.get("title"), doc_class=doc.get("doc_class", "document"),
+                                   issuer=doc.get("issuer"), force=doc.get("legal_force"),
+                                   label=label, text=ch.get("text", ""))
+            try:
+                res = _call("/v1/complete", {"messages": [{"role": "user", "content": prompt}]})
+            except urllib.error.HTTPError as e:
+                print(f"FAIL: /v1/complete → {e.code} (configure a chat provider + key)."); return 1
+            model = res.get("model")
+            for i, r in enumerate(_json_array(res.get("content", ""))):
+                rtype = (r.get("rule_type") or "").lower(); statement = (r.get("statement") or "").strip()
+                if rtype not in ("threshold", "requirement", "prohibition", "permission") or not statement:
+                    continue
+                quant = r.get("operator") and r.get("value") is not None
+                subject = r.get("subject") or label
+                applies = _slug(r.get("applies_to")) or ("air.quality" if r.get("metric") == "pm25" else "document.norm")
+                rid = f"extracted-{did}-{re.sub(r'[^a-z0-9]+', '-', str(eid or label).lower()).strip('-')}-{i}"  # deterministic by eId
+                obj = {"schema": "governance.rule", "id": f"ds:{T}:governance/rule/{rid}", "rule_id": rid,
+                       "title": statement[:120], "statement": statement, "rule_type": rtype,
+                       "applies_to": applies, "subject": subject, "stage": subject,
+                       "metric": r.get("metric"), "operator": r.get("operator") if quant else None,
+                       "value": r.get("value") if quant else None, "unit": r.get("unit"),
+                       "condition": r.get("condition"), "proposed_action": r.get("action") or "",
+                       "binding": doc.get("legal_force", "advisory"), "authority": doc.get("issuer"),
+                       "status": "proposed", "scope": {"jurisdiction": (doc.get("jurisdiction") or {}).get("level", "national")},
+                       "evaluable": bool(quant),
+                       "source": {"doc": doc["id"], "doc_class": doc.get("doc_class"), "chunk_hash": ch["chunk_hash"],
+                                  "eid": eid, "uri": loc.get("uri"), "doc_version": cur["id"],
+                                  "citation": f"{doc.get('title')}, {label}"},
+                       "produced_by": {"component": CID, "model": model}, "tenant": T}
+                _call("/v1/write", {"scope": "governance.rule", "id": obj["id"], "object": obj,
+                                    "valid_time": {"from": now}, "asserted_at": now})
+                n += 1
+        grand += n
+        print(f"  {did}: re-linked {relinked} existing rule(s) to current content; extracted {n} new "
+              f"(model {model}); {len(covered)} eIds already covered.")
+
+    print(f"rule-extract done: {grand} new PROPOSED rule(s) across {len(targets)} document(s). "
+          f"Rules cite a stable eId + chunk_hash → they re-link to content on every re-version. Awaiting approval.")
     return 0
 
 

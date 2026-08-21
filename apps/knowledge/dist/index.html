@@ -76,7 +76,7 @@
 let APPID, NAV='docs', PAGE=0, SIZE=10, Q='', DOCS=[], SEL=null, DTAB='doc', POLL=null;
 const SIZE_R=8;
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-async function query(schema,filter){const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:APPID,schema,filter:filter||{}})});return (await r.json()).results||[];}
+async function query(schema,filter,limit){const r=await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:APPID,schema,filter:filter||{},limit:limit||1000})});return (await r.json()).results||[];}
 async function post(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
 const TYPE={law:'Law',act:'Act',rule:'Rule',regulation:'Regulation',order:'Order',notification:'Notification',standard:'Standard',guideline:'Guideline',circular:'Circular',judgment:'Court judgment',reference:'Reference'};
 const FORCE={mandatory:'Mandatory',advisory:'Advisory',adjudicative:'Binding order',informational:'For reference',reference:'For reference'};
@@ -167,7 +167,7 @@ async function renderContentTab(d){
   const vers=(await query('knowledge.version',{doc_id:d.doc_id})).sort((a,b)=>a.version_no-b.version_no);
   const cur=vers[vers.length-1];
   if(!cur){B.innerHTML='<div class="empty">This document is still processing…</div>';return;}
-  const chunks=await query('knowledge.chunk',{doc_id:d.doc_id}); const byHash={}; chunks.forEach(c=>byHash[c.chunk_hash]=c);
+  const chunks=await query('knowledge.chunk',{doc_id:d.doc_id},9000); const byHash={}; chunks.forEach(c=>byHash[c.chunk_hash]=c);
   B.innerHTML=`<div class="meta" style="display:flex;align-items:center"><b>Content</b><span class="sub" style="margin-left:8px" id="csub"></span></div><div id="contents"></div>`;
   renderContents(cur, byHash);
 }
