@@ -69,7 +69,14 @@ def workspace(level, status, name, res):
 
 def run_member(label, reldir, token, env):
     path = os.path.join(COMPONENTS, reldir, "run.py")
-    e = dict(os.environ, RUN_TOKEN=token, AIRAWAT_API=API, AOI_ID=AOI_ID, TENANT=TENANT, **env)
+    # Onboarding tokens are tenant-generic: the run's tenant rides in the token name as "<base>@<tenant>"
+    # so ONE base drives the baseline for ANY city (the kernel clones the base spec per tenant). See ADR-0060.
+    member_token = f"{token}@{TENANT}"
+    # WRITE_TENANT is what members stamp into their output ids (ds:<tenant>:…) — must match the run's tenant
+    # so writes land in ds:<TENANT>: (the token confines to exactly that). Some members read TENANT, some
+    # WRITE_TENANT — pass both so every member is tenant-correct.
+    e = dict(os.environ, RUN_TOKEN=member_token, AIRAWAT_API=API, AOI_ID=AOI_ID,
+             TENANT=TENANT, WRITE_TENANT=TENANT, **env)
     try:
         r = subprocess.run([sys.executable, path], env=e, capture_output=True, text=True, timeout=300)
     except Exception as ex:

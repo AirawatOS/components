@@ -35,11 +35,12 @@
   .toast.show{opacity:1} .toast.err{background:#3d1418;border-color:#8b2c30;color:#ff9b9b}
 </style>
 <header><h1>🛡️ Admin</h1><span class="who" id="who"></span></header>
-<div class="tabs"><span class="tab on" data-t="user">By User</span><span class="tab" data-t="role">By Role</span><span class="tab" data-t="requests">Role Requests</span><span class="tab" data-t="apps">App Access</span></div>
+<div class="tabs"><span class="tab on" data-t="city">City Setup</span><span class="tab" data-t="user">By User</span><span class="tab" data-t="role">By Role</span><span class="tab" data-t="requests">Role Requests</span><span class="tab" data-t="apps">App Access</span></div>
 <div id="view"></div>
 <div class="toast" id="toast"></div>
 <script>
-let TAB='user';
+let TAB='city';
+let POLL=null;
 const enc=encodeURIComponent;
 async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
 async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
@@ -54,7 +55,73 @@ function boot(){
   });
   render();
 }
-function render(){ TAB==='user'?byUser():TAB==='role'?byRole():TAB==='requests'?requests():apps(); }
+function render(){
+  if(POLL){clearInterval(POLL);POLL=null;}
+  TAB==='city'?citySetup():TAB==='user'?byUser():TAB==='role'?byRole():TAB==='requests'?requests():apps();
+}
+
+// ---- City Setup (ADR-0060): initiate the City Digital Baseline for this tenant ------------------
+const MATURITY=['L0 · Requested','L1 · Baseline','L2 · Cells','L3 · Intelligence','L4 · Decisions'];
+async function citySetup(){
+  const V=document.getElementById('view');
+  V.innerHTML='<div class="detail" style="height:calc(100vh - 98px);overflow:auto"><div class="empty">loading…</div></div>';
+  const D=V.querySelector('.detail');
+  let d; try{ d=await jget('/bridge/city-onboard'); }catch(e){ D.innerHTML='<div class="empty">not authorized</div>'; return; }
+  if(!d.admin){ D.innerHTML='<div class="empty">City setup is for tenant admins.</div>'; return; }
+  const run=d.run, mat=(d.maturity==null?null:d.maturity), running=run&&(run.status==='running'||run.status==='queued');
+  const done=run&&run.status==='done', failed=run&&run.status==='failed';
+  const stateBadge = mat!=null
+    ? `<span style="color:#3fb950">● ${esc(MATURITY[mat]||('L'+mat))}</span>`
+    : `<span class="muted">no baseline yet</span>`;
+  let html=`<div class="lbl">City Digital Baseline</div>
+    <div style="max-width:720px">
+      <div style="color:var(--dim);font-size:12px;margin:-2px 0 14px">Tenant <b style="color:var(--ink);font-family:ui-monospace,Menlo,monospace">${esc(d.tenant)}</b> — establish the on-demand baseline for your city (ADR-0060). Give the area of interest and Airawat acquires land cover, heat and terrain, indexes them into H3 cells, and reports coverage &amp; trust. Current state: ${stateBadge}.</div>`;
+  if(running){
+    html+=`<div style="background:#132033;border:1px solid #1f3350;border-radius:10px;padding:14px 16px">
+      <div style="font-weight:600">⏳ Baseline running…</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Acquiring layers → indexing cells → assessing coverage. This takes a minute or two.</div>
+      ${run&&run.log?`<pre style="white-space:pre-wrap;background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;font-size:11px;max-height:200px;overflow:auto">${esc(run.log.slice(-1500))}</pre>`:''}</div>`;
+    D.innerHTML=html;
+    POLL=setInterval(()=>{ if(TAB==='city') citySetup(); },3000);
+    return;
+  }
+  if(done){
+    html+=`<div style="background:#0f2417;border:1px solid #1c3a25;border-radius:10px;padding:14px 16px;margin-bottom:14px">
+      <div style="font-weight:600;color:#3fb950">✓ Baseline ready${run.steps_ok!=null?` — ${run.steps_ok} step(s) succeeded`:''}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Workspace advanced to <b style="color:var(--ink)">${esc(MATURITY[d.maturity]||'L1')}</b>. Open <b>City Scan</b> to explore built-up, green cover, heat and terrain with the coverage &amp; trust report. A notification was sent to the commissioner.</div></div>`;
+  }
+  if(failed){
+    html+=`<div style="background:#2a1416;border:1px solid #4a2226;border-radius:10px;padding:14px 16px;margin-bottom:14px">
+      <div style="font-weight:600;color:#ff9b9b">✗ Last run failed</div>
+      ${run.log?`<pre style="white-space:pre-wrap;background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;font-size:11px;max-height:180px;overflow:auto">${esc(run.log.slice(-1500))}</pre>`:''}</div>`;
+  }
+  // the initiate form (also shown to re-run / after done|failed)
+  html+=`<div class="lbl" style="margin-top:8px">${mat!=null?'Re-run baseline':'Initiate setup'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:520px">
+      <label style="grid-column:1/3;font-size:12px;color:var(--dim)">City / area name
+        <input id="cs-name" class="search" style="margin:4px 0 0;width:100%" placeholder="e.g. Greater Mumbai"></label>
+      <label style="font-size:12px;color:var(--dim)">West (lng)<input id="cs-w" class="search" style="margin:4px 0 0;width:100%" placeholder="72.80"></label>
+      <label style="font-size:12px;color:var(--dim)">South (lat)<input id="cs-s" class="search" style="margin:4px 0 0;width:100%" placeholder="18.90"></label>
+      <label style="font-size:12px;color:var(--dim)">East (lng)<input id="cs-e" class="search" style="margin:4px 0 0;width:100%" placeholder="72.98"></label>
+      <label style="font-size:12px;color:var(--dim)">North (lat)<input id="cs-n" class="search" style="margin:4px 0 0;width:100%" placeholder="19.10"></label>
+      <label style="grid-column:1/3;font-size:12px;color:var(--dim)">Priorities (comma)
+        <input id="cs-pri" class="search" style="margin:4px 0 0;width:100%" placeholder="growth, heat" value="growth, heat"></label>
+    </div>
+    <div style="margin-top:14px"><button class="pbtn" id="cs-go" style="background:var(--accent);border-color:var(--accent);color:#fff;padding:8px 18px;font-size:14px">${mat!=null?'Re-run baseline':'Initiate City Setup'}</button>
+    <span class="muted" style="font-size:12px;margin-left:10px">Enter the bounding box of the area to cover (keep it city-sized).</span></div>`;
+  D.innerHTML=html;
+  D.querySelector('#cs-go').onclick=async()=>{
+    const name=D.querySelector('#cs-name').value.trim();
+    const bbox=['#cs-w','#cs-s','#cs-e','#cs-n'].map(id=>parseFloat(D.querySelector(id).value));
+    if(!name) return toast('enter a city name',true);
+    if(bbox.some(v=>isNaN(v))) return toast('enter all four bbox values',true);
+    if(!(bbox[0]<bbox[2]&&bbox[1]<bbox[3])) return toast('need west<east and south<north',true);
+    const priorities=D.querySelector('#cs-pri').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const r=await jpost('/bridge/city-onboard',{name,bbox,priorities});
+    if(r.ok){ toast('baseline started'); citySetup(); }
+    else toast(r.j.error||'failed',true);
+  };
+}
 
 // ---- Role Requests: file a request for a new canonical role; the standards body decides -----------
 async function requests(){

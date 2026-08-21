@@ -15,6 +15,7 @@ import json, math, os, urllib.request, urllib.error
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
 AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
+TENANT = os.environ.get("TENANT", "kmc")               # write ids land in ds:<TENANT>: (tenant-parameterized)
 OBSERVED_AT = os.environ.get("OBSERVED_AT", "2025-05-12T00:00:00Z")
 MODE = os.environ.get("MODE", "auto")
 OPEN_METEO_URL = os.environ.get("OPEN_METEO_URL", "https://api.open-meteo.com/v1/elevation")
@@ -110,7 +111,7 @@ def main():
         boundary = [[round(lo, 6), round(la, 6)] for (la, lo) in h3.cell_to_boundary(h)]  # [lon,lat] ring
         elev = round(elev_map[h], 1); slope = slope_deg(h, elev_map, res)
         fact = {
-            "schema": "geo.terrain", "id": f"ds:kmc:geo/terrain/{h}",
+            "schema": "geo.terrain", "id": f"ds:{TENANT}:geo/terrain/{h}",
             "space": {"h3": h, "res": res, "centroid": [round(lng, 6), round(lat, 6)], "boundary": boundary},
             "elevation_m": elev, "slope_deg": slope, "terrain_class": classify(slope), "unit": "m",
             "observed_at": OBSERVED_AT, "source_ref": "ds:airawat:ref/source/open-meteo",
