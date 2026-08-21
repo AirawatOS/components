@@ -177,11 +177,40 @@ def _parse_units(text):
     return out
 
 
+def _garbled(text):
+    """A chunk the deterministic de-spacer could not fully repair — a high fraction of very short tokens
+    (residual letter-spacing like 'devel o p m e n t', 'f r a m e w o rk'). The signal that the OPTIONAL
+    LLM cleanup is worth a call."""
+    toks = text.split()
+    if len(toks) < 12:
+        return False
+    return sum(1 for t in toks if len(t) <= 2) / len(toks) > 0.33
+
+
+def _llm_cleanup(text):
+    """OPTIONAL, opt-in (SEGMENT_ENRICH=1): repair a garbled chunk's PROSE via one bounded broker
+    /v1/complete call — rejoin residual letter-spaced / broken words ONLY, never add/remove/reword content
+    (this is a citation surface). Best-effort: returns the input unchanged on any failure. NOTE: never send
+    `temperature` to claude-sonnet-5 (deprecated → gateway 502s)."""
+    prompt = ("Repair text extracted from a PDF. Rejoin letter-spaced and broken words into normal readable "
+              "prose. Fix ONLY spacing and word-breaks — do NOT add, remove, summarise, reword, or reorder any "
+              "content, and keep all numbers/section labels verbatim. Return only the corrected text.\n\n"
+              + text[:2600])
+    try:
+        r = _call("/v1/complete", {"model": SEGMENT_MODEL, "max_tokens": 1400,
+                                   "messages": [{"role": "user", "content": prompt}]}, timeout=58)
+        out = (r.get("content") or r["choices"][0]["message"]["content"] or "").strip()
+        return out or text
+    except Exception as e:
+        print(f"    [cleanup] failed ({e}) — keeping deterministic text"); return text
+
+
 def chunk_eid(text, doc):
     """Content-anchored segmentation (ADR-0057). Each numbered unit -> a chunk with an eId locator, cleaned
     text, a heading (section-level), and any [Action:...] lifted to responsibility. Returns [(locator, text)]
     where locator is the rich dict written to knowledge.chunk.locator. Returns None if the doc has no usable
-    numbering (caller falls back to the window chunker / LLM)."""
+    numbering (caller falls back to the window chunker / LLM). With SEGMENT_ENRICH=1, chunks the deterministic
+    de-spacer leaves garbled are polished by a bounded LLM call (prose-only; content preserved)."""
     units = _parse_units(text)
     numbered = [u for u in units if u[0] != "__preamble__"]
     if len(numbered) < 5:                                  # not a numbered document — let the caller fall back
@@ -195,6 +224,8 @@ def chunk_eid(text, doc):
         actions = _ACTION.findall(raw)
         body = _ACTION.sub("", raw)
         clean = _clean(body)
+        if SEGMENT_ENRICH and _garbled(clean):
+            clean = _llm_cleanup(clean)
         eid = _eid_of(number)
         loc = {"kind": "eid", "eid": eid, "number": number,
                "path": ["__".join(_eid_of(number).split("__")[:i + 1]) for i in range(number.count(".") + 1)],

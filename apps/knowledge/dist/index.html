@@ -132,12 +132,13 @@ async function renderDetail(){
     <div class="dtitle">${esc(d.title)}</div>
     <div class="meta">${forcePill(d.legal_force)} · ${esc(TYPE[d.doc_class]||d.doc_class||'')} · ${docStatus(d)}</div>
     ${d.status==='failed'?`<div class="sec" style="border-color:#7a2f2f"><b class="st-failed">Processing didn't finish.</b> <span class="sub">${esc(d.error||'a step failed')}. The original file is safely stored — you can retry without re-uploading.</span><div style="margin-top:8px"><button class="btn primary" id="retry">Retry processing</button></div></div>`:''}
-    <div class="tabs"><span class="tab ${DTAB==='doc'?'on':''}" data-t="doc">Document</span><span class="tab ${DTAB==='rules'?'on':''}" data-t="rules">Rules</span></div>
+    <div class="tabs"><span class="tab ${DTAB==='doc'?'on':''}" data-t="doc">Document</span><span class="tab ${DTAB==='content'?'on':''}" data-t="content">Content</span><span class="tab ${DTAB==='rules'?'on':''}" data-t="rules">Rules</span></div>
     <div id="body"><div class="empty">loading…</div></div>`;
   document.getElementById('back').onclick=()=>{SEL=null;render();};
   const rb=document.getElementById('retry'); if(rb)rb.onclick=async()=>{rb.disabled=true;rb.textContent='Retrying…';const r=await post('/bridge/reprocess',{doc_id:d.doc_id});if(r.error){rb.disabled=false;rb.textContent='Retry processing';rb.insertAdjacentHTML('afterend',' <span class="badc">'+esc(r.error)+'</span>');}else{SEL=null;NAV='docs';PAGE=0;render();}};
   W.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{DTAB=t.dataset.t;renderDetail();});
   if(DTAB==='doc') return renderDocTab(d);
+  if(DTAB==='content') return renderContentTab(d);
   return renderRulesTab(d);
 }
 async function renderDocTab(d){
@@ -158,9 +159,17 @@ async function renderDocTab(d){
       ${(d.source_blob||d.blob)?`<div class="k">Original file</div><div><a href="/bridge/original?doc=${encodeURIComponent(d.doc_id)}" target="_blank" rel="noopener">${esc(d.source_filename||(d.doc_id+'.'+(d.source_format||'txt')))}</a> <span class="sub">${d.source_format?('· '+esc(String(d.source_format).toUpperCase())):''}${d.source_bytes?(' · '+ (d.source_bytes>=1048576?(d.source_bytes/1048576).toFixed(1)+' MB':Math.max(1,Math.round(d.source_bytes/1024))+' KB')):''} · kept as-is</span></div>`:''}
       ${(d.produced_by&&d.produced_by.component)||(d.source&&d.source.driver)?`<div class="k">Processed by</div><div><span class="sub">${esc(((d.produced_by&&d.produced_by.component)||(d.source&&d.source.driver&&d.source.driver.id)||'').split('/').pop())}${(d.produced_by&&d.produced_by.version)||(d.source&&d.source.driver&&d.source.driver.version)?(' v'+esc((d.produced_by&&d.produced_by.version)||(d.source.driver.version))):''}</span></div>`:''}</div>
     ${vers.length?`<div class="meta" style="margin-top:16px"><b>Version history</b></div>${vers.slice().reverse().map((v,ri)=>{const i=vers.length-1-ri;return `<div class="rev"><span class="n">Version ${v.version_no}${v===cur?' (current)':''}</span><span class="c">${changed(v,i)}${v.created_at?' · '+esc(v.created_at.slice(0,10)):''}</span></div>`;}).join('')}`:''}
-    <div class="meta" style="margin-top:18px;display:flex;align-items:center"><b>Contents</b><span class="sub" style="margin-left:8px" id="csub"></span></div>
-    <div id="contents">${cur?'':'<div class="empty">This document is still processing…</div>'}</div>`;
-  if(cur) renderContents(cur, byHash);
+    ${cur?`<div class="meta" style="margin-top:16px"><span class="sub">${cur.chunks.length} sections · <a class="back" style="margin:0" id="toc-link">open the Content tab ›</a></span></div>`:''}`;
+  const tl=document.getElementById('toc-link'); if(tl)tl.onclick=()=>{DTAB='content';renderDetail();};
+}
+async function renderContentTab(d){
+  const B=document.getElementById('body'); B.innerHTML='<div class="empty">loading…</div>';
+  const vers=(await query('knowledge.version',{doc_id:d.doc_id})).sort((a,b)=>a.version_no-b.version_no);
+  const cur=vers[vers.length-1];
+  if(!cur){B.innerHTML='<div class="empty">This document is still processing…</div>';return;}
+  const chunks=await query('knowledge.chunk',{doc_id:d.doc_id}); const byHash={}; chunks.forEach(c=>byHash[c.chunk_hash]=c);
+  B.innerHTML=`<div class="meta" style="display:flex;align-items:center"><b>Content</b><span class="sub" style="margin-left:8px" id="csub"></span></div><div id="contents"></div>`;
+  renderContents(cur, byHash);
 }
 function numTuple(n){return String(n||'').split('.').map(x=>parseInt(x,10)||0);}
 function cmpNum(a,b){const x=numTuple(a),y=numTuple(b);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d;}return 0;}
@@ -207,7 +216,8 @@ function renderContents(cur, byHash){
     if(!e){D.innerHTML='<div class="cempty">—</div>';return;}
     if(k==='front'){D.innerHTML=`<div class="crumb">front matter</div><h3>Title page &amp; contents</h3><div class="body">${esc((e.c.text||'').slice(0,4000))}${(e.c.text||'').length>4000?'…':''}</div>`;return;}
     const loc=e.locator, resp=loc.responsibility||[];
-    const crumb=(loc.path||[]).map(p=>p.replace(/^chp_/,'Ch ').replace(/^sec_/,'§').replace(/__.*/,'')).join(' › ');
+    const pp=String(loc.number).split('.');
+    const crumb=['Chapter '+pp[0]].concat(pp.length>1?['§'+pp.slice(0,2).join('.')]:[]).concat(pp.length>2?['¶'+loc.number]:[]).join('  ›  ');
     D.innerHTML=`<div class="crumb">${esc(crumb||('Chapter '+loc.number.split('.')[0]))}</div>
       <h3><span class="num">${esc(loc.number)}</span>&nbsp; ${esc(heading(e))}</h3>
       ${resp.length?`<div style="margin:10px 0 2px">${resp.map(r=>`<span class="resp">👤 ${esc(r)}</span>`).join('')}</div>`:''}
