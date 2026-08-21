@@ -349,6 +349,12 @@ def main():
                 print(f"  {did}: unchanged content (root {root[:22]}…) — refreshed manifest locators")
             else:
                 print(f"  {did}: unchanged (root {root[:22]}…) — no new version")
+            # self-heal a stale 'failed'/'processing' status: the content IS chunked and current
+            if doc.get("status") != "chunked" or doc.get("error"):
+                doc["status"] = "chunked"; doc.pop("error", None); doc["current_version"] = cur["id"]
+                _call("/v1/write", {"scope": "knowledge.document", "id": doc["id"], "object": doc,
+                                    "valid_time": {"from": now}, "asserted_at": now})
+                print(f"  {did}: healed status → chunked")
             continue
 
         vno = (cur["version_no"] + 1) if cur else 1

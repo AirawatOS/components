@@ -123,7 +123,7 @@ def main():
 
         # (2) EXTRACT only for sections not already covered by a rule (idempotent — deterministic ids by eId,
         #     so a re-run overwrites rather than duplicating; and we skip the LLM for already-covered sections).
-        covered = {(r.get("source") or {}).get("eid") for r in mine}
+        covered = {e for e in ((r.get("source") or {}).get("eid") for r in mine) if e}
         todo = [c for c in chunks if c.get("locator", {}).get("eid") not in covered]
         if len(todo) > cap:
             stride = len(todo) / cap
