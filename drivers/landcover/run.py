@@ -96,8 +96,8 @@ def _emit(idx, lc_class, ring, mode):
     fact = {"schema": "geo.landcover", "id": fid, "lc_class": lc_class,
             "geometry": {"type": "Polygon", "coordinates": [ring]},
             "area_m2": round(_area_m2(ring), 1), "aoi_ref": AOI_ID,
-            "source_ref": SOURCE_REF, "confidence": 0.9 if mode == "osm" else 0.4,
-            "observed_at": OBS, "layer": "L1", "acquired_via": f"ds:airawat:driver/landcover:{mode}"}
+            "source_ref": SOURCE_REF, "confidence": 0.9,
+            "observed_at": OBS, "layer": "L1", "acquired_via": "ds:airawat:driver/landcover:osm"}
     call("/v1/write", {"scope": "geo.landcover", "id": fid, "object": fact,
                        "valid_time": {"from": OBS}, "asserted_at": OBS})
     return lc_class
@@ -134,38 +134,16 @@ def fetch_osm(bbox):
     return written, classes
 
 
-# ---------------------------------------------------------------- synthetic (offline) fallback
-def synth(bbox):
-    """A deterministic land-cover field over the bbox: a built core, a green belt (N), water (SW), cropland (S)."""
-    w, s, e, n = bbox; dw, dh = e - w, n - s
-    def box(x0, y0, x1, y1):
-        return [[w + x0 * dw, s + y0 * dh], [w + x1 * dw, s + y0 * dh],
-                [w + x1 * dw, s + y1 * dh], [w + x0 * dw, s + y1 * dh]]
-    parts = [("built", box(0.30, 0.30, 0.72, 0.70)),      # central built core
-             ("vegetation", box(0.05, 0.72, 0.95, 0.95)), # green belt across the north
-             ("water", box(0.08, 0.10, 0.28, 0.30)),      # water body SW
-             ("cropland", box(0.05, 0.02, 0.95, 0.22))]   # cropland strip S
-    classes = {}
-    for i, (lc, ring) in enumerate(parts):
-        c = _emit(i, lc, ring, "synthetic"); classes[c] = classes.get(c, 0) + 1
-    return len(parts), classes
-
-
 def main():
     aoi, bbox = read_aoi()
-    print(f"aoi {AOI_ID} ({aoi.get('name','?')}) bbox={bbox} mode={MODE}")
-    mode, written, classes = None, 0, {}
-    if MODE in ("auto", "osm"):
-        try:
-            written, classes = fetch_osm(bbox); mode = "osm"
-        except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError, Exception) as ex:
-            if MODE == "osm":
-                raise SystemExit(f"FATAL: OSM acquisition failed and MODE=osm: {ex}")
-            print(f"  OSM egress unavailable ({str(ex)[:120]}) → deterministic offline land-cover")
-    if mode is None:
-        written, classes = synth(bbox); mode = "synthetic"
-    print(f"wrote {written} geo.landcover polygons [mode={mode}] classes={json.dumps(dict(sorted(classes.items())))}")
-    print(f"RESULT: {json.dumps({'mode': mode, 'written': written, 'source_ref': SOURCE_REF})}")
+    print(f"aoi {AOI_ID} ({aoi.get('name','?')}) bbox={bbox}")
+    # REAL OSM land cover only — fetch or fail loudly (no synthetic fabrication).
+    try:
+        written, classes = fetch_osm(bbox)
+    except Exception as ex:
+        raise SystemExit(f"FATAL: OSM land-cover acquisition failed — writing nothing (no synthetic fallback): {ex}")
+    print(f"wrote {written} geo.landcover polygons (real OSM) classes={json.dumps(dict(sorted(classes.items())))}")
+    print(f"RESULT: {json.dumps({'mode': 'osm', 'written': written, 'source_ref': SOURCE_REF})}")
     return 0
 
 

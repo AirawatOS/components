@@ -71,7 +71,7 @@ def grid_points(bbox, k):
 def _emit(idx, lat, lon, temp_c, mode):
     oid = f"ds:{TENANT}:environment/lst_observation/{mode}-{idx}"
     fact = {"schema": "environment.lst_observation", "id": oid, "tenant": TENANT,
-            "satellite_name": "open-meteo-2m-air-proxy" if mode == "openmeteo" else "synthetic-uhi",
+            "satellite_name": "open-meteo-2m-air-proxy",
             "latitude": lat, "longitude": lon, "lst_value": round(float(temp_c), 2), "unit": "celsius",
             "source": SOURCE_REF, "observed_at": OBS, "layer": "L1",
             "acquired_via": f"ds:airawat:driver/heat:{mode}"}
@@ -98,33 +98,17 @@ def fetch_openmeteo(pts):
     return n
 
 
-def synth(pts, bbox):
-    """Deterministic urban-heat-island field: warmer toward the AOI centre (built-up core)."""
-    w, s, e, n = bbox; cx, cy = (w + e) / 2, (s + n) / 2
-    half = max((e - w), (n - s)) / 2 or 1e-6
-    for idx, (lat, lon) in enumerate(pts):
-        d = math.hypot((lon - cx) / half, (lat - cy) / half)       # 0 centre … ~1.4 corner
-        temp = 30.0 + 8.0 * max(0.0, 1.0 - d)                       # 30°C edge → ~38°C core
-        _emit(idx, lat, lon, temp, "synthetic")
-    return len(pts)
-
-
 def main():
     aoi, bbox = read_aoi()
     pts = grid_points(bbox, GRID)
-    print(f"aoi {AOI_ID} ({aoi.get('name','?')}) bbox={bbox} grid={GRID}x{GRID}={len(pts)} pts mode={MODE}")
-    mode, n = None, 0
-    if MODE in ("auto", "openmeteo"):
-        try:
-            n = fetch_openmeteo(pts); mode = "openmeteo"
-        except Exception as ex:
-            if MODE == "openmeteo":
-                raise SystemExit(f"FATAL: open-meteo acquisition failed and MODE=openmeteo: {ex}")
-            print(f"  open-meteo egress unavailable ({str(ex)[:120]}) → deterministic UHI field")
-    if mode is None:
-        n = synth(pts, bbox); mode = "synthetic"
-    print(f"wrote {n} environment.lst_observation points [mode={mode}]")
-    print(f"RESULT: {json.dumps({'mode': mode, 'written': n, 'source_ref': SOURCE_REF})}")
+    print(f"aoi {AOI_ID} ({aoi.get('name','?')}) bbox={bbox} grid={GRID}x{GRID}={len(pts)} pts")
+    # REAL temperature only — fetch or fail loudly (no synthetic fabrication).
+    try:
+        n = fetch_openmeteo(pts)
+    except Exception as ex:
+        raise SystemExit(f"FATAL: real temperature acquisition failed — writing nothing (no synthetic fallback): {ex}")
+    print(f"wrote {n} environment.lst_observation points (real Open-Meteo)")
+    print(f"RESULT: {json.dumps({'mode': 'openmeteo', 'written': n, 'source_ref': SOURCE_REF})}")
     return 0
 
 
