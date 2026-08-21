@@ -10,5 +10,6 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 required_schemas: []
-system: true          # first-party Airawat app — present for every tenant (the way in to talk to Experts)
-roles: []             # available to everyone in the tenant
+system: false         # OPT-IN: Chat is the way to talk to installed AI Experts, so a tenant installs it from
+                      # the storefront when it adds an Expert — NOT force-installed on every new tenant.
+roles: []             # available to everyone in the tenant (once installed)

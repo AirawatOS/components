@@ -60,7 +60,14 @@ def _covered_cells(obj, res):
     its polyfill (parents). Returns a set (∩ AOI done by the caller)."""
     cr = obj.get("cell_ref") or {}
     if cr.get("h3_id"):
-        return {cr["h3_id"]} if cr.get("resolution", res) == res else {h3.cell_to_parent(cr["h3_id"], res)}
+        hid = cr["h3_id"]
+        sr = cr.get("resolution")
+        if sr is None:
+            try: sr = h3.get_resolution(hid)                 # infer from the id if not stated
+            except Exception: sr = res
+        if sr == res:   return {hid}
+        if sr > res:    return {h3.cell_to_parent(hid, res)}  # finer stored cell → its coarser parent
+        return set(h3.cell_to_children(hid, res))             # coarser stored cell → the finer cells it covers
     if obj.get("latitude") is not None and obj.get("longitude") is not None:
         return {h3.latlng_to_cell(obj["latitude"], obj["longitude"], res)}
     g = obj.get("geometry")

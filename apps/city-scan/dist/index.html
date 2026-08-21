@@ -195,7 +195,10 @@ function project(){
   const cw=Math.max(320,wrap.clientWidth||1000), ch=Math.max(240,wrap.clientHeight||700);
   const s=Math.max(cw/gw, ch/gh);
   const offX=(cw-gw*s)/2, offY=(ch-gh*s)/2;
-  return {mnx,mxx,mny,mxy,kx,W:cw,H:ch,s,offX,offY,
+  // fitK = the zoom multiplier (≤1) at which the ENTIRE AOI fits inside the box (contain-fit) — the default
+  // view is cover-fit (crops the longer axis), so we let the user zoom OUT to here to see the whole city.
+  const fitK=Math.min(cw/gw, ch/gh)/s;
+  return {mnx,mxx,mny,mxy,kx,W:cw,H:ch,s,offX,offY,fitK,
     x:lng=>offX+((lng-mnx)*kx)*s,
     y:lat=>offY+((mxy-lat))*s,
     invLng:xb=>mnx+(xb-offX)/(kx*s),
@@ -288,7 +291,8 @@ function drawTrust(){
   const svg=$("map");
   const applyTransform=()=>{const sc=$("scene"); if(sc) sc.setAttribute("transform",`translate(${view.tx.toFixed(2)} ${view.ty.toFixed(2)}) scale(${view.k.toFixed(4)})`);};
   let tt=null; const scheduleTiles=()=>{clearTimeout(tt);tt=setTimeout(loadTiles,270);};
-  const zoomAt=(mx,my,f)=>{const nk=Math.max(1,Math.min(64,view.k*f));
+  // min zoom = fitK×0.9 so you can zoom out past cover-fit to see the whole AOI (+10% breathing room).
+  const zoomAt=(mx,my,f)=>{const minK=Math.min(1,(proj&&proj.fitK||1)*0.9); const nk=Math.max(minK,Math.min(64,view.k*f));
     view.tx=mx-((mx-view.tx)/view.k)*nk; view.ty=my-((my-view.ty)/view.k)*nk; view.k=nk; applyTransform(); scheduleTiles();};
   svg.addEventListener("wheel",e=>{e.preventDefault();const r=svg.getBoundingClientRect();
     zoomAt((e.clientX-r.left)/r.width*proj.W,(e.clientY-r.top)/r.height*proj.H, e.deltaY<0?1.2:1/1.2);},{passive:false});
