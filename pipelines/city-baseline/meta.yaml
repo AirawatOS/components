@@ -1,0 +1,34 @@
+# The CITY BASELINE pipeline (kind=pipeline, ADR-0060) — the ONBOARDING SPINE. Given a city's AOI it:
+# provisions a city.workspace, files/advances the city.onboarding_request, runs the L0→L2 baseline (acquire
+# land cover · heat · terrain → index into H3 cells → assess coverage & trust), advances the workspace
+# MATURITY (L0 Requested → L1 Baseline), and NOTIFIES the commissioner (a platform.inbox_item): "Your City
+# Baseline is ready." One request → a City Digital Baseline. In production the execution engine (ADR-0050)
+# runs the members under minted run-tokens; here the pipeline orchestrates them directly (reference build).
+component_id: ds:airawat:pipeline/city-baseline
+kind: pipeline
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Baseline (onboarding pipeline)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi, city.onboarding_request]
+writes: [city.onboarding_request, city.workspace, city.coverage, geo.landcover, environment.lst_observation, geo.terrain, cell.builtup, cell.greencover, cell.heat, platform.inbox_item]
+stages:
+  - { stage: request,   writes: city.onboarding_request }
+  - { stage: provision, writes: city.workspace }
+  - { stage: acquire,   members: [landcover, heat, terrain] }
+  - { stage: index,     members: [cell-indexer] }
+  - { stage: assess,    members: [coverage-qa], writes: city.coverage }
+  - { stage: notify,    writes: platform.inbox_item }
+members:
+  - ds:airawat:driver/landcover
+  - ds:airawat:driver/heat
+  - ds:airawat:driver/terrain
+  - ds:airawat:engine/cell-indexer
+  - ds:airawat:engine/coverage-qa
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: city.onboarding_request }
+  - { verb: write, scope: city.onboarding_request, tenant: kmc }
+  - { verb: write, scope: city.workspace, tenant: kmc }
+  - { verb: write, scope: platform.inbox_item, tenant: kmc }
