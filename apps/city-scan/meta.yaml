@@ -1,0 +1,13 @@
+# The City Scan VIEWER (kind=app, ADR-0060). The first login onto a City Digital Baseline: it renders the
+# L2 cell indicators (built-up, green cover, heat) as H3 hexagons over the AOI and — beside them — the
+# city.coverage TRUST REPORT (coverage %, source, confidence, gaps, and the authority class: authoritative |
+# open-data | ai-derived). Self-contained (inline SVG, no basemap/tiles — the cell boundaries ARE the map),
+# reading only through the host bridge (/bridge/query) over its declared schemas.
+component_id: ds:airawat:app/city-scan
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Scan
+entrypoint: index.html
+required_schemas: [space.aoi, cell.builtup, cell.greencover, cell.heat, city.coverage]
+sandboxed: true

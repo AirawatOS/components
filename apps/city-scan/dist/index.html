@@ -1,0 +1,192 @@
+<title>City Scan — City Digital Baseline</title>
+<style>
+  :root{
+    --ground:#0e1621; --panel:#16212e; --panel2:#1b2836; --edge:#243545; --edge2:#2f4358;
+    --ink:#e8eff6; --muted:#93a6b8; --dim:#6b7f92; --accent:#38bdf8;
+    --auth-open:#34d399; --auth-ai:#fbbf24; --auth-real:#60a5fa;
+    font-synthesis:none;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--ground);color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+  header{padding:18px 22px;border-bottom:1px solid var(--edge);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  header h1{margin:0;font-size:18px;font-weight:650;letter-spacing:-.01em}
+  header h1 b{color:var(--accent);font-weight:650}
+  .sub{color:var(--muted);font-size:12.5px}
+  .sub .dot{color:var(--dim);margin:0 7px}
+  .grid{display:grid;grid-template-columns:210px 1fr 340px;gap:0;height:calc(100% - 63px)}
+  @media(max-width:1080px){.grid{grid-template-columns:1fr;height:auto}.map-wrap{min-height:52vh}}
+  aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:auto}
+  .rail-h{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+  .layers{display:flex;flex-direction:column;gap:7px}
+  .layer-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--edge);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;text-align:left;transition:.13s;width:100%}
+  .layer-btn:hover{border-color:var(--edge2);background:var(--panel2)}
+  .layer-btn.on{border-color:var(--accent);background:#12263200;box-shadow:inset 0 0 0 1px var(--accent)}
+  .swatch{width:12px;height:12px;border-radius:3px;flex:none}
+  .layer-btn .lb{flex:1}
+  .layer-btn .lb b{display:block;font-weight:600;font-size:13.5px}
+  .layer-btn .lb span{color:var(--muted);font-size:11.5px}
+  .legend{margin-top:22px}
+  .bar{height:10px;border-radius:5px;margin:8px 0 5px}
+  .legend .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px}
+  .map-wrap{position:relative;overflow:hidden;background:
+    radial-gradient(1200px 600px at 50% -10%,#12202e 0%,var(--ground) 70%)}
+  svg{display:block;width:100%;height:100%}
+  polygon.cell{stroke:#0c1420;stroke-width:.4;transition:opacity .1s}
+  polygon.cell:hover{stroke:var(--accent);stroke-width:1.4}
+  .tip{position:absolute;pointer-events:none;background:#0a1320ee;border:1px solid var(--edge2);
+    border-radius:7px;padding:7px 9px;font-size:12px;opacity:0;transition:.08s;transform:translate(-50%,-115%);white-space:nowrap}
+  .tip b{color:var(--accent)}
+  .trust{padding:18px 16px;border-left:1px solid var(--edge);overflow:auto}
+  .cov{border:1px solid var(--edge);border-radius:10px;padding:12px 13px;margin-bottom:10px;background:var(--panel)}
+  .cov .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+  .cov .noun{font-weight:600;font-size:13px}
+  .pill{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .pill.open{background:#0c2a20;color:var(--auth-open);border:1px solid #1c4a38}
+  .pill.ai{background:#2c220a;color:var(--auth-ai);border:1px solid #4d3d12}
+  .pill.real{background:#0f2340;color:var(--auth-real);border:1px solid #244a78}
+  .covbar{height:7px;border-radius:4px;background:#0c1520;overflow:hidden;margin:2px 0 8px}
+  .covbar>i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#2b6cb0,var(--accent))}
+  .kv{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:1.5px 0}
+  .kv b{color:var(--ink);font-weight:600}
+  .gaps{margin-top:8px;font-size:11.5px;color:#e0b877;border-top:1px dashed var(--edge);padding-top:7px}
+  .gaps .g{display:flex;gap:6px}.gaps .g::before{content:"△";color:#b98a3a}
+  footer{grid-column:1/-1;border-top:1px solid var(--edge);padding:9px 18px;color:var(--dim);font-size:11.5px}
+  .empty{padding:40px;color:var(--muted);text-align:center}
+</style>
+
+<header>
+  <h1><b>City Scan</b> — City Digital Baseline</h1>
+  <div class="sub" id="sub">loading…</div>
+</header>
+
+<div class="grid" id="app">
+  <aside>
+    <p class="rail-h">Layers</p>
+    <div class="layers" id="layers"></div>
+    <div class="legend" id="legend" hidden>
+      <p class="rail-h" style="margin-bottom:4px">Legend</p>
+      <div class="bar" id="legbar"></div>
+      <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
+    </div>
+  </aside>
+
+  <div class="map-wrap"><svg id="map" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div></div>
+
+  <div class="trust">
+    <p class="rail-h">Coverage &amp; trust report</p>
+    <div id="cov"></div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const LAYERS=[
+  {key:"cell.builtup",   label:"Built-up",    desc:"share of cell that is built",       lo:"#3a2418",hi:"#f0864a",fmt:v=>Math.round(v*100)+"%"},
+  {key:"cell.greencover",label:"Green cover", desc:"vegetation share of cell",           lo:"#12301f",hi:"#4ade80",fmt:v=>Math.round(v*100)+"%"},
+  {key:"cell.heat",      label:"Heat",        desc:"mean surface temperature",           lo:"#2b1414",hi:"#f87171",fmt:v=>v.toFixed(1)+"°"},
+];
+const AUTHCLASS={"open-data":"open","ai-derived":"ai","authoritative":"real"};
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function lerp(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+  return "#"+A.map((x,i)=>Math.round(x+(B[i]-x)*t).toString(16).padStart(2,"0")).join("");}
+
+async function load(){
+  if(window.__CITYSCAN__) return window.__CITYSCAN__;
+  const APP="ds:airawat:app/city-scan";
+  const q=async s=>{try{const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({app_id:APP,schema:s})});const d=await r.json();
+    return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[]}};
+  const layers={};for(const L of LAYERS){layers[L.key]=(await q(L.key)).map(o=>({h3:(o.cell_ref||{}).h3_id,b:(o.cell_ref||{}).boundary,v:o.value}));}
+  const aoi=((await q("space.aoi"))[0])||{};
+  return {aoi,layers,coverage:await q("city.coverage")};
+}
+
+let DATA, active=LAYERS[0].key, proj=null;
+const $=id=>document.getElementById(id);
+
+function project(){
+  let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9,any=false;
+  for(const L of LAYERS)for(const c of (DATA.layers[L.key]||[]))for(const p of (c.b||[])){any=true;
+    mnx=Math.min(mnx,p[0]);mxx=Math.max(mxx,p[0]);mny=Math.min(mny,p[1]);mxy=Math.max(mxy,p[1]);}
+  if(!any)return null;
+  const midLat=(mny+mxy)/2, kx=Math.cos(midLat*Math.PI/180);
+  const gw=(mxx-mnx)*kx, gh=(mxy-mny), W=1000, H=Math.max(200,Math.round(W*gh/gw)), pad=14;
+  return {mnx,mxx,mny,mxy,kx,W,H,pad,
+    x:lng=>pad+((lng-mnx)*kx)/gw*(W-2*pad),
+    y:lat=>pad+((mxy-lat))/gh*(H-2*pad)};
+}
+function range(key){const v=(DATA.layers[key]||[]).map(c=>c.v).filter(x=>typeof x==="number");
+  return v.length?[Math.min(...v),Math.max(...v)]:[0,1];}
+
+function render(){
+  const L=LAYERS.find(l=>l.key===active), cells=DATA.layers[active]||[], svg=$("map");
+  if(!proj){svg.innerHTML="";$("map").parentElement.querySelector(".tip");return;}
+  svg.setAttribute("viewBox",`0 0 ${proj.W} ${proj.H}`);
+  const [mn,mx]=range(active), span=(mx-mn)||1;
+  let s="";
+  for(const c of cells){ if(!c.b) continue;
+    const t=(c.v-mn)/span, fill=lerp(L.lo,L.hi,Math.max(0,Math.min(1,t)));
+    const pts=c.b.map(p=>proj.x(p[0]).toFixed(1)+","+proj.y(p[1]).toFixed(1)).join(" ");
+    s+=`<polygon class="cell" points="${pts}" fill="${fill}" data-v="${esc(L.fmt(c.v))}" data-h="${esc(c.h3||"")}"></polygon>`;
+  }
+  svg.innerHTML=s||"";
+  // legend
+  $("legend").hidden=!cells.length;
+  $("legbar").style.background=`linear-gradient(90deg,${L.lo},${L.hi})`;
+  $("legmin").textContent=L.fmt(mn); $("legmax").textContent=L.fmt(mx);
+  // buttons
+  document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
+  wireTips();
+}
+function wireTips(){
+  const tip=$("tip"), wrap=$("map").parentElement;
+  $("map").querySelectorAll("polygon").forEach(p=>{
+    p.onmousemove=e=>{const r=wrap.getBoundingClientRect();
+      tip.style.left=(e.clientX-r.left)+"px";tip.style.top=(e.clientY-r.top)+"px";
+      tip.innerHTML=`<b>${p.dataset.v}</b> · <span class="mono" style="color:var(--muted)">${p.dataset.h.slice(0,10)}</span>`;tip.style.opacity=1;};
+    p.onmouseleave=()=>tip.style.opacity=0;
+  });
+}
+function drawLayers(){
+  $("layers").innerHTML=LAYERS.map(L=>{const n=(DATA.layers[L.key]||[]).length;
+    return `<button class="layer-btn ${L.key===active?"on":""}" data-k="${L.key}">
+      <span class="swatch" style="background:linear-gradient(135deg,${L.lo},${L.hi})"></span>
+      <span class="lb"><b>${L.label}</b><span>${n} cells · ${L.desc}</span></span></button>`;}).join("");
+  document.querySelectorAll(".layer-btn").forEach(b=>b.onclick=()=>{active=b.dataset.k;render();});
+}
+function drawTrust(){
+  const cov=(DATA.coverage||[]).slice().sort((a,b)=>(a.layer_noun>b.layer_noun?1:-1));
+  if(!cov.length){$("cov").innerHTML='<div class="empty">No coverage report yet.</div>';return;}
+  $("cov").innerHTML=cov.map(c=>{
+    const cls=AUTHCLASS[c.authority]||"ai", pct=Math.round(c.coverage_pct||0);
+    const gaps=(c.gaps||[]).map(g=>`<div class="g">${esc(g)}</div>`).join("");
+    return `<div class="cov">
+      <div class="top"><span class="noun mono">${esc(c.layer_noun)}</span>
+        <span class="pill ${cls}">${esc(c.authority||"—")}</span></div>
+      <div class="covbar"><i style="width:${pct}%"></i></div>
+      <div class="kv"><span>Coverage</span><b class="num">${pct}% of AOI cells</b></div>
+      <div class="kv"><span>Confidence</span><b class="num">${c.confidence==null?"—":c.confidence}</b></div>
+      <div class="kv"><span>Source</span><b>${esc((c.source_ref||"—").split("/").pop())}</b></div>
+      <div class="kv"><span>As of</span><b class="num">${esc(c.freshness||"—")}</b></div>
+      ${gaps?`<div class="gaps">${gaps}</div>`:""}</div>`;}).join("");
+}
+(async function(){
+  DATA=await load(); proj=project();
+  const nL=LAYERS.filter(L=>(DATA.layers[L.key]||[]).length).length;
+  const fresh=(DATA.coverage||[]).map(c=>c.freshness).filter(Boolean).sort().pop();
+  $("sub").innerHTML=`${esc(DATA.aoi.name||"AOI")}<span class="dot">·</span>${nL} indicator layers<span class="dot">·</span>`
+    +`${(DATA.coverage||[]).length} assessed<span class="dot">·</span>as of ${esc(fresh||"—")}`;
+  $("foot").innerHTML="L2 cell indicators derived from L0/L1 sources · every cell carries derived_from lineage · authority is inferred, not asserted (ADR-0060)";
+  if(!proj){$("app").innerHTML='<div class="empty" style="grid-column:1/-1">No baseline data available for this workspace yet.</div>';return;}
+  drawLayers(); drawTrust(); render();
+  addEventListener("resize",()=>{proj=project();render();});
+})();
+</script>
