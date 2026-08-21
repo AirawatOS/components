@@ -40,15 +40,18 @@ KEY=$(curl -s -X POST http://localhost:8102/materialize -H "X-Internal-Token: $S
   -d '{"tenant":"bmc","component":"ds:airawat:driver/landcover-dw","name":"GEE_SERVICE_ACCOUNT_KEY"}' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
 
-docker run --rm --add-host host.docker.internal:host-gateway \
+docker run --rm --network airawat-stack_default \
   -v "$PWD/components/drivers/landcover-dw:/drivers:ro" \
-  -e AIRAWAT_API=http://host.docker.internal:8080 \
+  -e AIRAWAT_API=http://kernel:8080 \
   -e RUN_TOKEN=dev-run-landcover-dw@bmc \
   -e AOI_ID=ds:bmc:space/aoi/greater-mumbai--pilot -e TENANT=bmc \
   -e GEE_PROJECT="$GEE_PROJECT" -e GEE_SERVICE_ACCOUNT="$GEE_SERVICE_ACCOUNT" \
   -e GEE_SERVICE_ACCOUNT_KEY="$KEY" \
   airawatos/runtime-earth-observation:0.1.0  python /drivers/run.py
 ```
+(The launcher does this for you — placing on `RUNTIME_NETWORK` and deriving `kernel:8080`. On Docker Desktop
+without the stack network, drop `--network` and use `--add-host host.docker.internal:host-gateway` +
+`AIRAWAT_API=http://host.docker.internal:8080`.)
 
 For a quick **local dev test** (no Vault), export the three GEE_* vars and run `python run.py` directly —
 but note the host confinement shim (L1) would block the ee client's direct GEE calls, which is exactly why

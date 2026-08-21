@@ -45,15 +45,26 @@ docker build -t airawatos/runtime-modeling:0.1.0          components/runtimes/mo
 
 ## Launcher contract (what runs a profiled component)
 
+The launcher (`components/_common/launcher.py`, implements `platform.runtime_invoke`) resolves the profile →
+certified runtime, **enforces its certificate at point-of-use** (ADR-0051), materialises declared secrets
+from Vault, then places the container on the **kernel's network** so it reaches the broker by service DNS:
+
 ```
-docker run --rm --add-host host.docker.internal:host-gateway \
+# PRODUCTION — RUNTIME_NETWORK set (e.g. airawat-stack_default): join the kernel's network, broker = kernel:8080
+docker run --rm --network airawat-stack_default \
   -v <component-dir>:/drivers:ro \
-  -e AIRAWAT_API=http://host.docker.internal:8080 \
+  -e AIRAWAT_API=http://kernel:8080 \
   -e RUN_TOKEN=<dev-run-…@tenant> -e AOI_ID=… -e TENANT=… \
   [ -e <SECRET>=<materialized-from-Vault> … ] \
   airawatos/runtime-<profile>:<ver>  python /drivers/run.py
+
+# DEV FALLBACK — RUNTIME_NETWORK unset (Docker Desktop): default bridge + host gateway
+#   --add-host host.docker.internal:host-gateway   -e AIRAWAT_API=http://host.docker.internal:8080
 ```
 
-Today `city-baseline` runs members as host subprocesses (in-process, no profile). Wiring the launcher to
-place a `runtime.profile` component into its container is the remaining executor step
-(`_run_city_baseline` in the app-host, or the ADR-0050 execution engine).
+Placement env (the app-host injects these into the pipeline): `RUNTIME_NETWORK` (network to join),
+`KERNEL_ALIAS` (broker service name, default `kernel`), `CONTAINER_BROKER_URL` (explicit override),
+`NETWORK_URL`/`SECRETS_URL`/`SECRETS_INTERNAL` (the launcher's own cert-resolve + secret-materialise).
+
+`city-baseline` members without a profile still run in-process (host subprocess); a `runtime.profile` member
+is placed in its certified container. The full executor (own service, ADR-0050) is the natural next home.

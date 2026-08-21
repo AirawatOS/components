@@ -20,8 +20,14 @@ import json, os, subprocess, sys, urllib.request
 NETWORK_URL = os.environ.get("NETWORK_URL", "http://localhost:8090")
 SECRETS_URL = os.environ.get("SECRETS_URL", "http://localhost:8102")
 SECRETS_INTERNAL = os.environ.get("SECRETS_INTERNAL", "")
-# the broker url as reachable FROM a container (host loopback ≠ the container's loopback)
-CONTAINER_BROKER_URL = os.environ.get("CONTAINER_BROKER_URL", "http://host.docker.internal:8080")
+# PLACEMENT NETWORK. In production the runtime container joins the SAME docker network as the kernel and
+# reaches the broker by its service alias (`kernel:8080`) — service DNS, no host gateway. Set RUNTIME_NETWORK
+# to that network (e.g. airawat-stack_default). Unset ⇒ Docker-Desktop dev fallback: default bridge + the
+# host gateway (host.docker.internal). An explicit CONTAINER_BROKER_URL always wins.
+RUNTIME_NETWORK = os.environ.get("RUNTIME_NETWORK", "")
+KERNEL_ALIAS = os.environ.get("KERNEL_ALIAS", "kernel")      # the broker's in-network service name
+CONTAINER_BROKER_URL = os.environ.get("CONTAINER_BROKER_URL") or (
+    f"http://{KERNEL_ALIAS}:8080" if RUNTIME_NETWORK else "http://host.docker.internal:8080")
 TIMEOUT = int(os.environ.get("LAUNCH_TIMEOUT", "1200"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 COMPONENTS = os.path.dirname(HERE)                       # …/components (runtimes/ is a sibling)
@@ -119,9 +125,13 @@ def place(component_dir, run_token, env=None, *, label=""):
                         f"in tenant '{env.get('TENANT')}' — set it via the secrets service before running.")
         secret_env[name] = val
 
-    cmd = ["docker", "run", "--rm", "--add-host", "host.docker.internal:host-gateway",
-           "-v", f"{os.path.abspath(component_dir)}:/drivers:ro",
-           "-e", f"AIRAWAT_API={CONTAINER_BROKER_URL}", "-e", f"RUN_TOKEN={run_token}"]
+    cmd = ["docker", "run", "--rm"]
+    if RUNTIME_NETWORK:                                   # prod: place on the kernel's network → service DNS
+        cmd += ["--network", RUNTIME_NETWORK]
+    else:                                                # dev (Docker Desktop): reach the host loopback broker
+        cmd += ["--add-host", "host.docker.internal:host-gateway"]
+    cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro",
+            "-e", f"AIRAWAT_API={CONTAINER_BROKER_URL}", "-e", f"RUN_TOKEN={run_token}"]
     for k, v in {**env, **secret_env}.items():           # config + materialised secrets → container env only
         cmd += ["-e", f"{k}={v}"]
     cmd += [image, "python", f"/drivers/{entry}"]
