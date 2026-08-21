@@ -43,6 +43,9 @@
   .tip{position:absolute;pointer-events:none;background:#0a1320ee;border:1px solid var(--edge2);
     border-radius:7px;padding:7px 9px;font-size:12px;opacity:0;transition:.08s;transform:translate(-50%,-115%);white-space:nowrap}
   .tip b{color:var(--accent)}
+  .attrib{position:absolute;right:6px;bottom:6px;background:#0a1320cc;border:1px solid var(--edge);
+    border-radius:5px;padding:2px 8px;font-size:10.5px;color:var(--muted)}
+  image{image-rendering:auto}
   .trust{padding:18px 16px;border-left:1px solid var(--edge);overflow:auto}
   .cov{border:1px solid var(--edge);border-radius:10px;padding:12px 13px;margin-bottom:10px;background:var(--panel)}
   .cov .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
@@ -78,7 +81,8 @@
     </div>
   </aside>
 
-  <div class="map-wrap"><svg id="map" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div></div>
+  <div class="map-wrap"><svg id="map" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div>
+    <div class="attrib" id="attrib" hidden>Basemap © OpenStreetMap contributors</div></div>
 
   <div class="trust">
     <p class="rail-h">Coverage &amp; trust report</p>
@@ -102,11 +106,34 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 function lerp(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
   return "#"+A.map((x,i)=>Math.round(x+(B[i]-x)*t).toString(16).padStart(2,"0")).join("");}
 
+// ---- slippy-map tiles (Web Mercator) fetched through the host's declared-egress /bridge/fetch ----
+let APPID="city-scan";
+const TZ=z=>Math.pow(2,z);
+const lon2x=(lon,z)=>Math.floor((lon+180)/360*TZ(z));
+const lat2y=(lat,z)=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*TZ(z));};
+const tile2lon=(x,z)=>x/TZ(z)*360-180;
+const tile2lat=(y,z)=>{const n=Math.PI-2*Math.PI*y/TZ(z);return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));};
+async function loadTiles(){
+  DATA.tiles=[];
+  const bb=(DATA.aoi||{}).bbox; if(!bb||!proj) return;
+  const [w,s,e,n]=bb, Z=Math.min(16,Math.max(11,Math.round(Math.log2(1440/Math.max(e-w,1e-4)))));
+  const jobs=[];
+  for(let x=lon2x(w,Z);x<=lon2x(e,Z);x++)for(let y=lat2y(n,Z);y<=lat2y(s,Z);y++){
+    const url=`https://tile.openstreetmap.org/${Z}/${x}/${y}.png`, X=x, Y=y;
+    jobs.push(fetch("/bridge/fetch",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({app_id:APPID,url})}).then(r=>r.json()).then(d=>{ if(d&&d.body_b64)
+        DATA.tiles.push({w:tile2lon(X,Z),e:tile2lon(X+1,Z),n:tile2lat(Y,Z),s:tile2lat(Y+1,Z),
+          href:`data:${d.content_type||"image/png"};base64,${d.body_b64}`}); }).catch(()=>{}));
+  }
+  await Promise.all(jobs);
+  if(DATA.tiles.length){ $("attrib").hidden=false; render(); }
+}
+
 async function load(){
   if(window.__CITYSCAN__) return window.__CITYSCAN__;
   // the host serves ./config.json with our correct app_id (the bridge keys CERTIFIED by the short id)
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
-  const APP=cfg.app_id;
+  const APP=cfg.app_id; APPID=cfg.app_id;
   const q=async s=>{try{const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({app_id:APP,schema:s})});const d=await r.json();
     return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[]}};
@@ -150,14 +177,22 @@ function render(){
     const pts=f.ring.map(p=>proj.x(p[0]).toFixed(1)+","+proj.y(p[1]).toFixed(1)).join(" ");
     base+=`<polygon class="base" points="${pts}" fill="${BASECOL[f.cls]||'#20262e'}"></polygon>`;
   }
+  // real OSM tile basemap (fetched via /bridge/fetch, rendered as CSP-allowed data: URIs)
+  let tiles="";
+  for(const t of (DATA.tiles||[])){
+    const x0=proj.x(t.w), y0=proj.y(t.n), x1=proj.x(t.e), y1=proj.y(t.s);
+    tiles+=`<image x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${(x1-x0).toFixed(1)}" height="${(y1-y0).toFixed(1)}" href="${t.href}" preserveAspectRatio="none"></image>`;
+  }
+  const hasTiles=!!(DATA.tiles&&DATA.tiles.length), cellOp=hasTiles?"0.66":"0.82";
   const [mn,mx]=range(active), span=(mx-mn)||1;
   let s="";
   for(const c of cells){ if(!c.b) continue;
     const t=(c.v-mn)/span, fill=lerp(L.lo,L.hi,Math.max(0,Math.min(1,t)));
     const pts=c.b.map(p=>proj.x(p[0]).toFixed(1)+","+proj.y(p[1]).toFixed(1)).join(" ");
-    s+=`<polygon class="cell" points="${pts}" fill="${fill}" fill-opacity="0.82" data-v="${esc(L.fmt(c.v))}" data-h="${esc(c.h3||"")}"></polygon>`;
+    s+=`<polygon class="cell" points="${pts}" fill="${fill}" fill-opacity="${cellOp}" data-v="${esc(L.fmt(c.v))}" data-h="${esc(c.h3||"")}"></polygon>`;
   }
-  svg.innerHTML=`<g class="basemap">${base}</g><g class="layer">${s}</g>`;
+  // land-cover base shows until real tiles arrive (fallback); tiles cover it when present
+  svg.innerHTML=`<g class="basemap"${hasTiles?' opacity="0.15"':''}>${base}</g><g class="tiles">${tiles}</g><g class="layer">${s}</g>`;
   // legend
   $("legend").hidden=!cells.length;
   $("legbar").style.background=`linear-gradient(90deg,${L.lo},${L.hi})`;
@@ -207,6 +242,7 @@ function drawTrust(){
   $("foot").innerHTML="L2 cell indicators derived from L0/L1 sources · every cell carries derived_from lineage · authority is inferred, not asserted (ADR-0060)";
   if(!proj){$("app").innerHTML='<div class="empty" style="grid-column:1/-1">No baseline data available for this workspace yet.</div>';return;}
   drawLayers(); drawTrust(); render();
+  loadTiles();                                    // real OSM basemap via declared /bridge/fetch (async → re-render)
   addEventListener("resize",()=>{proj=project();render();});
 })();
 </script>
