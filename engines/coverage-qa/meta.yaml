@@ -1,0 +1,22 @@
+# The TRUST-LAYER engine (kind=engine, ADR-0060 §5). Confined — its only I/O is the broker (NO egress: pure
+# computation over registry facts). For an AOI it assesses each data LAYER (a governed noun) and writes one
+# city.coverage per layer: coverage % of the AOI cells, freshness, source, mean confidence, GAPS, and — the
+# headline — the AUTHORITY class (authoritative | open-data | ai-derived). This is what lets a commissioner
+# tell a real municipal dataset from an AI-derived estimate, and what the data-aware marketplace checks.
+component_id: ds:airawat:engine/coverage-qa
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Coverage & Trust (QA)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi, geo.landcover, environment.lst_observation, cell.builtup, cell.greencover, cell.heat]
+writes: [city.coverage]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: geo.landcover }
+  - { verb: read,  scope: environment.lst_observation }
+  - { verb: read,  scope: cell.builtup }
+  - { verb: read,  scope: cell.greencover }
+  - { verb: read,  scope: cell.heat }
+  - { verb: write, scope: city.coverage, tenant: kmc }
