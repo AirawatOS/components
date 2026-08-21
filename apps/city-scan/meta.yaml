@@ -14,6 +14,6 @@ sandboxed: true
 # DECLARED APP EGRESS (broker-for-apps): the viewer may reach ONLY these external hosts, and only through the
 # host's /bridge/fetch (the CSP still blocks direct calls). Used for the OpenStreetMap tile basemap (© OSM).
 egress:
-  - { host: tile.openstreetmap.org, rate_per_min: 120, user_agent: "AirawatOS/city-scan (+https://airawat.org; contact@airawat.org)" }
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-scan (+https://airawat.org; contact@airawat.org)" }
 sources:
   - { ref: "ds:airawat:ref/source/osm", host: tile.openstreetmap.org, provides: [viz.basemap] }

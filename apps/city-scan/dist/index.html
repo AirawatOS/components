@@ -142,7 +142,9 @@ async function loadTiles(){
   const g=visibleGeo();
   let Z=Math.max(11,Math.min(19,Math.round(BASE_Z+Math.log2(view.k)))), x0,x1,y0,y1;
   while(true){ x0=lon2x(g.w,Z);x1=lon2x(g.e,Z);y0=lat2y(g.n,Z);y1=lat2y(g.s,Z);
-    if((x1-x0+1)*(y1-y0+1)<=48 || Z<=11) break; Z--; }   // keep the fetch bounded (OSM policy + perf)
+    if((x1-x0+1)*(y1-y0+1)<=40 || Z<=11) break; Z--; }   // keep the fetch bounded (OSM policy + perf)
+  const key=Z+"/"+x0+","+y0+","+x1+","+y1;
+  if(key===DATA._tk) return;                              // already showing exactly these tiles — no refetch
   const jobs=[], tiles=[];
   for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){ const X=x,Y=y,zz=Z;
     jobs.push(fetch("/bridge/fetch",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -151,9 +153,8 @@ async function loadTiles(){
         tiles.push({w:tile2lon(X,zz),e:tile2lon(X+1,zz),n:tile2lat(Y,zz),s:tile2lat(Y+1,zz),
           href:`data:${d.content_type||"image/png"};base64,${d.body_b64}`}); }).catch(()=>{})); }
   await Promise.all(jobs);
-  DATA.tiles=tiles;
-  if(tiles.length) $("attrib").hidden=false;
-  render();
+  if(tiles.length){ DATA.tiles=tiles; DATA._tk=key; $("attrib").hidden=false; render(); }
+  // else keep the existing tiles — a transient failure / rate-limit must never blank the basemap
 }
 
 async function load(){
