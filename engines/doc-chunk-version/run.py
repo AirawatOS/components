@@ -51,7 +51,7 @@ def _sha(b):
 
 
 # -- content-anchored eId helpers (ADR-0057) ---------------------------------------------------------
-_NUM = re.compile(r"^\s*(\d+(?:\.\d+){0,3})\s+(?=\S)")     # a line OPENING a numbered unit: 4 / 4.11 / 4.11.1
+_NUM = re.compile(r"^\s*(\d+(?:\.\d+){0,3})\.?\s+(?=\S)")  # a numbered-unit opener; trailing dot optional (4.11.1 or 1.5.1.)
 _ACTION = re.compile(r"\[Action:\s*([^\]]+)\]")           # the doc's own responsibility marker
 
 
@@ -75,59 +75,87 @@ def _frbr_uri(doc, eid):
 
 
 def _clean(text):
-    """Repair PDF line-wrap deterministically: de-hyphenate lowercase syllable breaks, collapse reflow
-    newlines to spaces. Good enough for a citation anchor + retrieval; the LLM fallback does more."""
-    text = re.sub(r"(?<=[a-z])-\n(?=[a-z])", "", text)    # "consider-\nation" -> "consideration"
-    text = re.sub(r"[ \t]*\n[ \t]*", " ", text)           # reflow line-breaks -> spaces
-    return re.sub(r"\s{2,}", " ", text).strip()
+    """Repair PDF extraction artifacts deterministically so a chunk reads naturally:
+      1. de-hyphenate lowercase syllable breaks ("consider-\\nation" -> "consideration");
+      2. reflow hard line-wrap into spaces;
+      3. DE-LETTER-SPACE — some PDFs emit justified text as "N u m e r o u s  l a w s" (one space between
+         letters WITHIN a word, two BETWEEN words). Collapse a run of 3+ single-space-separated letters back
+         into a word; the wider word gaps survive step 4. Only fully letter-spaced runs match, so normal
+         prose is untouched.
+    The LLM fallback does more for genuinely broken text; this makes the common cases readable at no cost."""
+    text = re.sub(r"(?<=[a-z])-\n(?=[a-z])", "", text)
+    # De-letter-space. Some PDFs emit justified text as "N u m e r o u s" — a regular space BETWEEN LETTERS
+    # of a word, and a WIDER separator (non-breaking space U+00A0, a double space, or a line-break) BETWEEN
+    # WORDS. Tokenise on those wide word-boundaries, then collapse only tokens that are WHOLLY single chars
+    # joined by single spaces. A normal phrase like "with a runoff" is one token containing multi-char words,
+    # so it is left untouched — no corruption of clean prose.
+    tokens = [t.strip() for t in re.split(r"[\xa0]+|[ ]{2,}|\s*\n\s*", text) if t.strip()]
+    text = " ".join(t.replace(" ", "") if re.fullmatch(r"\w( \w)+", t) else t for t in tokens)
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
-def _valid_opener(number, state):
-    """CHAPTER-MONOTONIC outline validation — the guard that separates real section numbers from PDF noise
-    (prose decimals like "0.95", measurements like "2.5 m", TOC page-numbers, gigantic OCR fragments like
-    "77370.50"). Chapters only ever advance by 1 and never repeat, so: a candidate in the CURRENT chapter is
-    a section/para; chapter+1 opens the next chapter; anything else (a backward jump, chapter 0, chapter>99)
-    is noise. Mutates `state` on a chapter advance."""
+def _sane_number(number):
+    """Reject numbers that can't be a real section: chapter 0 or >99, or a bare integer, or an x.0-style
+    page-fraction (sections/paras start at 1). Returns the int segments, or None."""
     try:
         segs = [int(p) for p in number.split(".")]
     except ValueError:
-        return False
-    c0 = segs[0]
-    if len(segs) < 2 or c0 < 1 or c0 > 99 or any(s < 0 or s > 199 for s in segs[1:]):
-        return False                                          # bare integers (list items, page-nos, table cells) are noise
-    if c0 == state["chapter"]:
-        return segs[1] >= 1                                   # within-chapter: a section/para N.M[.K[.L]]
-    if c0 == state["chapter"] + 1 and segs[1] == 1:
-        state["chapter"] = c0                                 # advance to the next chapter, introduced by its N.1 section
-        return True
-    return False
+        return None
+    if len(segs) < 2 or not (1 <= segs[0] <= 99) or any(s < 1 or s > 199 for s in segs[1:]):
+        return None
+    return segs
+
+
+def _toc_like(rest):
+    """A table-of-contents entry: a short heading followed by a lone trailing page number
+    ('Perspective Plan  7'). Body openers are followed by prose, not a bare page number."""
+    return bool(re.search(r"[^\d.]\s+\d{1,4}\s*$", rest)) and len(rest.split()) <= 16
+
+
+def _openers(lines):
+    """Detect the numbered-unit openers in document order, robust to PDF noise. Two conventions are handled
+    by DETECTING which the document uses: some mark sections with a trailing dot ('1.5.1.'), others do not
+    ('4.11.1'). TOC entries (trailing page number) are excluded so they fold into surrounding text rather
+    than becoming empty chunks. Returns [(line_index, number)]."""
+    cand = []
+    for i, ln in enumerate(lines):
+        m = _NUM.match(ln)
+        if not m or not _sane_number(m.group(1)):
+            continue
+        had_dot = bool(re.match(r"^\s*\d+(?:\.\d+){0,3}\.\s", ln))
+        cand.append((i, m, ln[m.end():].rstrip(), had_dot))
+    if not cand:
+        return []
+    trailing_dot = sum(1 for c in cand if c[3]) / len(cand) > 0.6      # the doc's convention
+    out = []
+    for i, m, rest, had_dot in cand:
+        if _toc_like(rest):
+            continue
+        # suppress prose decimals ("2.5 m", "1.33 ECS"): in a trailing-dot doc a real opener HAS the dot;
+        # in a no-dot doc a real opener starts a Capitalised heading/word.
+        if (had_dot if trailing_dot else rest[:1].isupper()):
+            out.append((i, m.group(1)))
+    return out
 
 
 def _parse_units(text):
-    """Split into numbered units by the document's OWN decimal numbering, robust to PDF-extraction noise.
-    The body starts at the first THREE-part opener (a TOC lists only to section level, so this skips the
-    duplicated table of contents + title page into one preamble chunk). Returns [(number, raw_text)]."""
+    """Partition the document into numbered units in order — the RECONSTRUCTION contract: preamble + every
+    unit, concatenated, is the whole document (nothing dropped). Text between opener k and opener k+1 is
+    unit k's body; everything before the first opener is the preamble (title page + TOC fold in here).
+    Returns [] if too little structure is found, so the caller falls back to the window chunker."""
     lines = text.splitlines()
-    start = next((i for i, ln in enumerate(lines)
-                  if (_NUM.match(ln) and _NUM.match(ln).group(1).count(".") >= 2)), 0)
-    m0 = _NUM.match(lines[start]) if start < len(lines) else None
-    state = {"chapter": int(m0.group(1).split(".")[0])} if m0 else {"chapter": 1}
-    units, cur_no, buf = [], None, []
-    for line in lines[start:]:
-        m = _NUM.match(line)
-        if m and _valid_opener(m.group(1), state):
-            if cur_no is not None:
-                units.append((cur_no, "\n".join(buf)))
-            cur_no, buf = m.group(1), [line]
-        else:
-            buf.append(line)
-    if cur_no is not None:
-        units.append((cur_no, "\n".join(buf)))
+    ops = _openers(lines)
+    if len(ops) < 5:
+        return []
     out = []
-    preamble = "\n".join(lines[:start]).strip()
-    if preamble:
-        out.append(("__preamble__", preamble))
-    out.extend((n, t) for n, t in units if t.strip())
+    pre = "\n".join(lines[:ops[0][0]]).strip()
+    if pre:
+        out.append(("__preamble__", pre))
+    for k, (i, num) in enumerate(ops):
+        end = ops[k + 1][0] if k + 1 < len(ops) else len(lines)
+        body = "\n".join(lines[i:end]).strip()
+        if body:
+            out.append((num, body))
     return out
 
 
@@ -144,7 +172,7 @@ def chunk_eid(text, doc):
     for number, raw in units:
         if number == "__preamble__":
             pieces.append(({"kind": "eid", "eid": "front", "number": None,
-                            "uri": _frbr_uri(doc, "front")}, _clean(raw)[:2000]))
+                            "uri": _frbr_uri(doc, "front")}, _clean(raw)))
             continue
         actions = _ACTION.findall(raw)
         body = _ACTION.sub("", raw)
