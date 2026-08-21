@@ -35,13 +35,24 @@ forecast · prescriptive → recommend). The tier is how the catalog/marketplace
 the profile is how the platform places them. A prescriptive/optimization runtime (e.g. OR-Tools) is the
 natural next addition.
 
-## Build
+## Build → stamp → certify (required before a runtime may host anything)
+
+The launcher runs **only the certified image** (`LAUNCHER_REQUIRE_CERTIFIED_IMAGE=1`, default). It checks two
+bindings at point of use (ADR-0051): the on-disk runtime **source** equals its certified digest, AND the
+local **image**'s content id equals the `image_digest` the certified `meta.yaml` declares. So publishing a
+runtime is a three-step loop:
 
 ```
-docker build -t airawatos/runtime-earth-observation:0.1.0 components/runtimes/earth-observation
-docker build -t airawatos/runtime-geospatial:0.1.0        components/runtimes/geospatial
-docker build -t airawatos/runtime-modeling:0.1.0          components/runtimes/modeling
+# 1. build the image
+docker build -t airawatos/runtime-geospatial:0.1.0 components/runtimes/geospatial
+# 2. stamp its content id into meta.yaml as `image_digest:`
+docker image inspect --format '{{.Id}}' airawatos/runtime-geospatial:0.1.0     # → sha256:…  (put in meta.yaml)
+# 3. certify (steward) — evidence_digest now covers the stamped meta
+POST /v1/certify {subject_id: ds:airawat:runtime/geospatial, subject_kind: runtime, meta_yaml, files}
 ```
+
+Rebuild the image ⇒ its id changes ⇒ re-stamp + re-certify. A stale or swapped image is refused, not run.
+(Set `LAUNCHER_REQUIRE_CERTIFIED_IMAGE=0` only for local dev where a cert-verified runtime is enough.)
 
 ## Launcher contract (what runs a profiled component)
 

@@ -8,11 +8,15 @@ the runtime, mounted with the driver code. **No synthetic fallback**: without cr
 You have three values: `GEE_PROJECT`, `GEE_SERVICE_ACCOUNT` (the SA email), and `GEE_SERVICE_ACCOUNT_KEY`
 (the SA key JSON). Only the **key** is a secret → Vault. Project + email are non-secret run config.
 
-## 1. Build the earth-observation runtime image (once, shared by all EO drivers)
+## 1. Build → stamp → certify the earth-observation runtime image (once, shared by all EO drivers)
 
+The launcher runs ONLY the certified image, so after building you must stamp its digest + re-certify:
 ```
 docker build -t airawatos/runtime-earth-observation:0.1.0 components/runtimes/earth-observation
+docker image inspect --format '{{.Id}}' airawatos/runtime-earth-observation:0.1.0   # → put as image_digest: in meta.yaml
+# then certify (steward): POST /v1/certify {subject_id: ds:airawat:runtime/earth-observation, subject_kind: runtime, meta_yaml, files}
 ```
+(See `components/runtimes/README.md` → "Build → stamp → certify".)
 
 ## 2. Store the SA key in Vault (secrets service — tenant-admin)
 

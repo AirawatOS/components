@@ -15,7 +15,7 @@ here it is a library the pipeline/orchestrator calls so profiled components run 
 
 Env it reads: NETWORK_URL · SECRETS_URL · SECRETS_INTERNAL · CONTAINER_BROKER_URL · AIRAWAT_API · TIMEOUT
 """
-import json, os, subprocess, sys, urllib.request
+import hashlib, json, os, subprocess, sys, urllib.request
 
 NETWORK_URL = os.environ.get("NETWORK_URL", "http://localhost:8090")
 SECRETS_URL = os.environ.get("SECRETS_URL", "http://localhost:8102")
@@ -29,6 +29,10 @@ KERNEL_ALIAS = os.environ.get("KERNEL_ALIAS", "kernel")      # the broker's in-n
 CONTAINER_BROKER_URL = os.environ.get("CONTAINER_BROKER_URL") or (
     f"http://{KERNEL_ALIAS}:8080" if RUNTIME_NETWORK else "http://host.docker.internal:8080")
 TIMEOUT = int(os.environ.get("LAUNCH_TIMEOUT", "1200"))
+# LOCK: the launcher runs ONLY an image the certificate attests. On ⇒ verify the on-disk runtime source
+# equals its certified digest AND the local image equals the certified image_digest. Off (dev) ⇒ cert-verified
+# runtime is enough. Default ON — this is the point-of-use image binding (ADR-0051) for the artifact that runs.
+ENFORCE_IMAGE = os.environ.get("LAUNCHER_REQUIRE_CERTIFIED_IMAGE", "1") != "0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 COMPONENTS = os.path.dirname(HERE)                       # …/components (runtimes/ is a sibling)
 
@@ -77,10 +81,23 @@ def _resolve_cert(subject_id):
         return None
 
 
-def _runtime_image(profile):
-    """The image tag from the runtime component's own meta (components/runtimes/<profile>/meta.yaml)."""
-    d = os.path.join(COMPONENTS, "runtimes", profile)
-    return _read_meta(d).get("image") if os.path.isfile(os.path.join(d, "meta.yaml")) else None
+def _dir_digest(d):
+    """Reproduce conformance.aggregate_digest over a component dir: sha2-256 of the canonical
+    {relpath: sha256(contents)} map — equals the cert's evidence_digest iff the on-disk source is unchanged."""
+    files = {fn: hashlib.sha256(open(os.path.join(d, fn), "rb").read()).hexdigest()
+             for fn in os.listdir(d) if os.path.isfile(os.path.join(d, fn))}
+    canon = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    return "sha2-256:" + hashlib.sha256(canon).hexdigest()
+
+
+def _local_image_id(image):
+    """The content id (sha256) of the LOCAL image for `image` — None if it isn't present."""
+    try:
+        r = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}", image],
+                           capture_output=True, text=True, timeout=20)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except Exception:
+        return None
 
 
 def _materialize(tenant, component, name):
@@ -113,7 +130,27 @@ def place(component_dir, run_token, env=None, *, label=""):
     if not cert or not (cert.get("conformance") or {}).get("verified"):
         return 87, (f"REFUSED (ADR-0051 point-of-use): runtime {runtime_id} is not certified — "
                     f"cannot place {label or component_dir}. Certify the runtime first.")
-    image = _runtime_image(profile)
+    runtime_dir = os.path.join(COMPONENTS, "runtimes", profile)
+    if not os.path.isfile(os.path.join(runtime_dir, "meta.yaml")):
+        return 87, f"REFUSED: runtime profile '{profile}' has no local definition (components/runtimes/{profile})"
+    rmeta = _read_meta(runtime_dir)
+    image = rmeta.get("image")
+    if ENFORCE_IMAGE:
+        # LOCK to the certified image. (1) on-disk runtime SOURCE must equal what was certified — so the
+        # Dockerfile / image tag / declared digest cannot be swapped after certification.
+        if cert.get("evidence_digest") and _dir_digest(runtime_dir) != cert["evidence_digest"]:
+            return 87, (f"REFUSED: runtime '{profile}' on-disk source ≠ its certified digest — "
+                        f"re-certify the runtime after any change before it may host a component.")
+        # (2) the IMAGE that will actually run must equal the digest the (now-trusted) certified meta declares.
+        want, have = rmeta.get("image_digest"), _local_image_id(image)
+        if not want:
+            return 87, (f"REFUSED: runtime '{profile}' has no certified image_digest — build the image, "
+                        f"stamp its digest into meta.yaml, and re-certify before it can run.")
+        if not have:
+            return 87, f"REFUSED: certified image {image} is not present locally — build/pull it first."
+        if have != want:
+            return 87, (f"REFUSED: image {image} ({have[:26]}…) ≠ certified digest ({want[:26]}…) — "
+                        f"only the certified image may run. Rebuild from certified source or re-certify.")
     if not image:
         return 87, f"REFUSED: no image for runtime profile '{profile}' (components/runtimes/{profile}/meta.yaml)"
 
