@@ -78,4 +78,16 @@ Placement env (the app-host injects these into the pipeline): `RUNTIME_NETWORK` 
 `NETWORK_URL`/`SECRETS_URL`/`SECRETS_INTERNAL` (the launcher's own cert-resolve + secret-materialise).
 
 `city-baseline` members without a profile still run in-process (host subprocess); a `runtime.profile` member
-is placed in its certified container. The full executor (own service, ADR-0050) is the natural next home.
+is placed in its certified container.
+
+**The placement authority (point 1).** Docker + secret power lives in ONE trusted service, the **runtime
+manager** (`platform-spec/reference/runtime_manager.py`, `POST /v1/invoke`, internal-gated) — it imports the
+launcher. An orchestrator (a pipeline, the ADR-0050 engine) sets `RUNTIME_MANAGER_URL` and REQUESTS a
+placement; it never touches the Docker socket itself. So a component can't start a container, only ask the
+manager to, and the manager runs it under the governed policy (certified runtime + certified image + declared
+egress + run token). Unset ⇒ the pipeline falls back to an in-process launcher (local dev).
+
+**Profiles generalise across kinds.** `runtime.profile` is not driver-specific: an **engine** picks
+`geospatial`/`modeling`, a **pipeline** an `orchestration` runtime, an **ai-skill** an `agent` runtime, a
+**provider** a `gateway` runtime — each a certified image the manager places the component into. Add profiles
+as new kinds need them; the manager + interface are unchanged.

@@ -67,8 +67,23 @@ def workspace(level, status, name, res):
         "maturity_level": level, "status": status, "created_at": NOW})
 
 
-sys.path.insert(0, os.path.join(COMPONENTS, "_common"))
-import launcher                                            # the reference launcher (platform.runtime_invoke)
+RUNTIME_MANAGER_URL = os.environ.get("RUNTIME_MANAGER_URL")   # placement authority (point 1); else in-process
+
+
+def _place(reldir, run_token, env, label):
+    """Ask the RUNTIME MANAGER to run a member — the pipeline holds NO docker/secret power, it only REQUESTS a
+    placement (platform.runtime_invoke). Falls back to an in-process launcher only when no manager is
+    configured (local dev)."""
+    if RUNTIME_MANAGER_URL:
+        body = {"component": reldir, "run_token": run_token, "env": env, "label": label}
+        req = urllib.request.Request(RUNTIME_MANAGER_URL + "/v1/invoke", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json",
+                     "X-Internal-Token": os.environ.get("RUNTIME_MANAGER_INTERNAL", "")}, method="POST")
+        r = json.loads(urllib.request.urlopen(req, timeout=1300).read())
+        return r.get("exit_code", 1), r.get("logs", "")
+    sys.path.insert(0, os.path.join(COMPONENTS, "_common"))
+    import launcher
+    return launcher.place(os.path.join(COMPONENTS, reldir), run_token, env, label=label)
 
 
 def run_member(label, reldir, token, env):
@@ -76,11 +91,11 @@ def run_member(label, reldir, token, env):
     # so ONE base drives the baseline for ANY city (the kernel clones the base spec per tenant). See ADR-0060.
     member_token = f"{token}@{TENANT}"
     # non-secret run config. WRITE_TENANT is what members stamp into output ids (ds:<tenant>:…) — must match
-    # the run's tenant. The LAUNCHER decides placement from the member's meta: runtime.profile ⇒ its certified
-    # container (cert-checked at point of use, secrets materialised); else an in-process host subprocess.
+    # the run's tenant. The manager decides placement from the member's meta: runtime.profile ⇒ its certified
+    # container (cert-checked, image-locked, secrets materialised); else an in-process host subprocess.
     e = dict(AOI_ID=AOI_ID, TENANT=TENANT, WRITE_TENANT=TENANT, **env)
     try:
-        rc, out = launcher.place(os.path.join(COMPONENTS, reldir), member_token, e, label=label)
+        rc, out = _place(reldir, member_token, e, label)
     except Exception as ex:
         print(f"  [FAIL] {label}: {ex}"); return False
     tail = ((out or "").strip().splitlines() or ["(no output)"])[-1][:120]
