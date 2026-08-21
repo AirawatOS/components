@@ -52,24 +52,42 @@ def classify(slope):
             "moderate_slope" if slope < 15 else "steep" if slope < 30 else "very_steep")
 
 def fetch_elevations(cells):
-    """REAL elevation per cell centroid from Open-Meteo (keyless, one egress call; batches of 100)."""
-    elev = {}
+    """REAL elevation per cell centroid from Open-Meteo (keyless, batches of 100). Metro AOIs need many
+    batches, so this PACES under the broker's egress rate limit and RETRIES a rate-limited/transient batch
+    with backoff. A batch that never succeeds is SKIPPED (partial REAL data — never a synthetic fill); we
+    only fail if nothing at all came back."""
+    import time as _t
+    elev = {}; failed = 0; n = (len(cells) + 99) // 100
     for i in range(0, len(cells), 100):
         chunk = cells[i:i + 100]
         pts = [h3.cell_to_latlng(h) for h in chunk]
         url = (OPEN_METEO_URL + "?latitude=" + ",".join(f"{p[0]:.5f}" for p in pts)
                + "&longitude=" + ",".join(f"{p[1]:.5f}" for p in pts))
-        payload = _call("/v1/fetch", {"url": url})
-        body = payload.get("body") if isinstance(payload, dict) else None
-        data = json.loads(body) if isinstance(body, str) else (payload if isinstance(payload, dict) else {})
-        arr = data.get("elevation")
-        if not isinstance(arr, list) or len(arr) != len(chunk):
-            raise RuntimeError(f"open-meteo elevation shape unexpected: {str(data)[:160]}")
+        arr = None
+        for attempt in range(4):
+            try:
+                payload = _call("/v1/fetch", {"url": url})
+            except Exception:
+                _t.sleep(2.5 * (attempt + 1)); continue      # broker 429/HTTPError → back off + retry
+            body = payload.get("body") if isinstance(payload, dict) else None
+            try:
+                data = json.loads(body) if isinstance(body, str) else (payload if isinstance(payload, dict) else {})
+            except Exception:
+                data = {}
+            cand = data.get("elevation")
+            if isinstance(cand, list) and len(cand) == len(chunk):
+                arr = cand; break
+            _t.sleep(2.5 * (attempt + 1))                    # upstream rate-limit / error body → back off + retry
+        if arr is None:
+            failed += 1; continue                            # skip this batch — partial real, no fabrication
         for h, e in zip(chunk, arr):
             if e is not None:
                 elev[h] = float(e)
+        _t.sleep(2.1)                                        # pace ~28/min, under the declared 30/min egress limit
     if not elev:
-        raise RuntimeError("no elevations returned")
+        raise RuntimeError("no elevations returned (every batch rate-limited/failed)")
+    if failed:
+        print(f"  ⚠ {failed}/{n} elevation batches failed after retries — wrote {len(elev)} REAL cells (partial, no fill)")
     return elev
 
 def slope_deg(h, elev, res):
