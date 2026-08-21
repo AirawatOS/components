@@ -1,0 +1,71 @@
+<!doctype html><meta charset="utf-8"><title>Connections</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6;--ok:#3fb950;--warn:#e3a008}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
+  h1{margin:0;font-size:16px} .who{margin-left:auto;color:var(--dim);font-size:12px}
+  #view{padding:18px 22px;max-width:820px}
+  .sum{font-size:13px;margin:0 0 16px}
+  .card{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:14px 16px;margin-bottom:12px}
+  .ch{display:flex;align-items:center;gap:10px}
+  .cn{font-weight:600} .cid{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+  .kind{font-size:10.5px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 8px;text-transform:uppercase;letter-spacing:.04em}
+  .sec{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #1a1f27;margin-top:10px;flex-wrap:wrap}
+  .kn{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;flex:0 0 auto}
+  .badge{font-size:11px;padding:2px 9px;border-radius:999px}
+  .badge.ok{color:var(--ok);background:#0f2417;border:1px solid #1c3a25}
+  .badge.miss{color:var(--warn);background:#2a2411;border:1px solid #4a3f1a}
+  .grow{flex:1} .muted{color:var(--dim)}
+  input{background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12.5px}
+  .pbtn{border:1px solid var(--line);background:#161b22;color:var(--ink);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12.5px}
+  .pbtn:hover{border-color:var(--accent)} .pbtn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  .empty{color:var(--dim);padding:40px;text-align:center}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#132a17;border:1px solid #238636;color:#3fb950;padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s}
+  .toast.show{opacity:1} .toast.err{background:#3d1418;border-color:#8b2c30;color:#ff9b9b}
+</style>
+<header><h1>🔌 Connections</h1><span class="who" id="who"></span></header>
+<div id="view"><div class="empty">loading…</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
+async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
+function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2400);}
+
+async function render(){
+  const V=document.getElementById('view');
+  let d; try{ d=await jget('/bridge/connections'); }catch(e){ V.innerHTML='<div class="empty">not authorized</div>'; return; }
+  document.getElementById('who').textContent=d.tenant?('● '+d.tenant):'';
+  const comps=d.components||[];
+  if(!comps.length){ V.innerHTML='<div class="empty">No components require credentials yet.</div>'; return; }
+  const miss=d.missing||0;
+  let html=`<div class="sum">${miss?`<b style="color:var(--warn)">${miss} credential${miss>1?'s':''} still needed</b> — fill these so the components that need them can run.`:`<b style="color:var(--ok)">✓ All required credentials are set.</b>`}</div>`;
+  for(const c of comps){
+    html+=`<div class="card"><div class="ch"><span class="cn">${esc(c.name)}</span><span class="kind">${esc(c.kind||'')}</span><span class="grow"></span><span class="cid">${esc(c.component)}</span></div>`;
+    for(const s of c.secrets){
+      html+=`<div class="sec" data-comp="${esc(c.component)}" data-name="${esc(s.name)}">
+        <span class="kn">${esc(s.name)}</span>
+        <span class="badge ${s.set?'ok':'miss'}">${s.set?'● set':'○ missing'}</span>
+        ${s.updated?`<span class="muted" style="font-size:11px">updated ${esc((s.updated||'').slice(0,10))}</span>`:''}
+        <span class="grow"></span>
+        <input type="password" placeholder="paste value…" style="flex:0 0 260px" autocomplete="off">
+        <button class="pbtn ${s.set?'':'pri'}">${s.set?'Rotate':'Set'}</button></div>`;
+    }
+    html+=`</div>`;
+  }
+  V.innerHTML=html;
+  V.querySelectorAll('.sec').forEach(row=>{
+    const inp=row.querySelector('input'), btn=row.querySelector('button');
+    btn.onclick=async()=>{
+      const val=inp.value; if(!val) return toast('paste a value first',true);
+      btn.disabled=true;
+      const r=await jpost('/bridge/secret',{action:'set',component:row.dataset.comp,name:row.dataset.name,value:val});
+      btn.disabled=false;
+      if(r.ok){ inp.value=''; toast('saved to Vault'); render(); } else toast(r.j.error||'failed',true);
+    };
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') btn.click(); });
+  });
+}
+render();
+</script>

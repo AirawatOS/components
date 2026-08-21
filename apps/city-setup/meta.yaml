@@ -1,0 +1,17 @@
+# City Setup (kind=app) — the URBAN domain's onboarding wizard (ADR onboarding-composition). NOT a core app:
+# it is installed by the urban domain pack's default_apps, so only urban tenants get it (a Justice tenant sees
+# its own wizard instead). Draws the AOI on an OSM map (tiles via declared /bridge/fetch) and runs the City
+# Baseline (ADR-0060) via /bridge/city-onboard. Extracted out of the Admin app (which is domain-agnostic).
+component_id: ds:airawat:app/city-setup
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Setup
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: []
+system: false          # domain app — installed via the urban pack, not forced on every tenant
+roles: [platform.tenant-admin]
+egress:
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-setup (+https://airawat.org; contact@airawat.org)" }

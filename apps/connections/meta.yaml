@@ -1,0 +1,15 @@
+# Connections (kind=app) — a CORE app (every tenant) per the onboarding-composition ADR. It computes the API
+# keys / credentials a tenant needs as the UNION of `meta.secrets` over the platform's components, shows which
+# are set vs missing (the first-run checklist), and lets a tenant admin set/rotate them into Vault via the
+# secrets service. Derived, never hand-maintained. Domain-agnostic — urban, justice, health all use it.
+component_id: ds:airawat:app/connections
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Connections
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: []
+system: true           # CORE: Admin · Storefront · Connections
+roles: [platform.tenant-admin]
