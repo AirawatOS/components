@@ -340,7 +340,16 @@ def main():
         prior = sorted([v for v in versions if v.get("doc_id") == did], key=lambda v: v.get("version_no", 0))
         cur = prior[-1] if prior else None
         if cur and cur.get("root_hash") == root:
-            print(f"  {did}: unchanged (root {root[:22]}…) — no new version"); continue
+            # SAME content — no new version. But REFRESH the manifest's locators in place (e.g. richer
+            # headings) so downstream (the app's nav) sees the current metadata without a content change.
+            if cur.get("chunks") != manifest:
+                cur["chunks"] = manifest
+                _call("/v1/write", {"scope": "knowledge.version", "id": cur["id"], "object": cur,
+                                    "valid_time": {"from": now}, "asserted_at": now})
+                print(f"  {did}: unchanged content (root {root[:22]}…) — refreshed manifest locators")
+            else:
+                print(f"  {did}: unchanged (root {root[:22]}…) — no new version")
+            continue
 
         vno = (cur["version_no"] + 1) if cur else 1
         vid = f"ds:{T}:knowledge/version/{did}-v{vno}"

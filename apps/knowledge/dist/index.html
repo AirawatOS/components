@@ -190,7 +190,7 @@ function renderContents(cur, byHash){
     <div class="cnav"><input class="csrch" id="csrch" placeholder="filter ${numbered.length} sections…"><div id="ctree"></div></div>
     <div class="cdet" id="cdet"><div class="cempty">Select a section from the left to read it.</div></div></div>`;
   const heading=e=>{const h=e.locator.heading; if(h)return h; const t=(e.c.text||'').replace(/\s+/g,' ').trim();
-    return t.replace(new RegExp('^'+e.locator.number.replace(/\./g,'\\.')+'\\.?\\s*'),'').slice(0,60)||e.locator.eid;};
+    return t.replace(new RegExp('^'+e.locator.number.replace(/\./g,'\\.')+'\\.?\\s*'),'').slice(0,60)||('§'+e.locator.number);};
   let SELK=null;
   function draw(q){
     q=(q||'').toLowerCase();
@@ -210,18 +210,25 @@ function renderContents(cur, byHash){
     T.querySelectorAll('.sitem').forEach(el=>el.onclick=()=>{document.querySelectorAll('.sitem').forEach(x=>x.classList.remove('on'));el.classList.add('on');SELK=el.dataset.k;show(el.dataset.k);});
     if(SELK){const el=T.querySelector(`.sitem[data-k="${CSS.escape(SELK)}"]`); if(el)el.classList.add('on');}
   }
-  function show(k){
-    const D=document.getElementById('cdet');
+  async function bodyText(e){                    // robust: use the preloaded text, else fetch this ONE chunk by hash
+    if(e.c&&e.c.text) return e.c.text;
+    try{const recs=await query('knowledge.chunk',{chunk_hash:e.chunk_hash},1); const r=recs[0]; if(r){e.c=r; return r.text||'';}}catch(_){}
+    return '';
+  }
+  async function show(k){
+    const D=document.getElementById('cdet'); D.innerHTML='<div class="cempty">loading…</div>';
     const e = k==='front'? front[0] : numbered.find(x=>x.locator.number===k);
     if(!e){D.innerHTML='<div class="cempty">—</div>';return;}
-    if(k==='front'){D.innerHTML=`<div class="crumb">front matter</div><h3>Title page &amp; contents</h3><div class="body">${esc((e.c.text||'').slice(0,4000))}${(e.c.text||'').length>4000?'…':''}</div>`;return;}
+    const txt=await bodyText(e);
+    if(k==='front'){D.innerHTML=`<div class="crumb">front matter</div><h3>Title page &amp; contents</h3><div class="body">${esc(txt.slice(0,4000))}${txt.length>4000?'…':''}</div>`;return;}
     const loc=e.locator, resp=loc.responsibility||[];
     const pp=String(loc.number).split('.');
     const crumb=['Chapter '+pp[0]].concat(pp.length>1?['§'+pp.slice(0,2).join('.')]:[]).concat(pp.length>2?['¶'+loc.number]:[]).join('  ›  ');
+    const title=loc.heading||txt.replace(/\s+/g,' ').replace(new RegExp('^'+String(loc.number).replace(/\./g,'\\.')+'\\.?\\s*'),'').slice(0,70)||('§'+loc.number);
     D.innerHTML=`<div class="crumb">${esc(crumb||('Chapter '+loc.number.split('.')[0]))}</div>
-      <h3><span class="num">${esc(loc.number)}</span>&nbsp; ${esc(heading(e))}</h3>
+      <h3><span class="num">${esc(loc.number)}</span>&nbsp; ${esc(title)}</h3>
       ${resp.length?`<div style="margin:10px 0 2px">${resp.map(r=>`<span class="resp">👤 ${esc(r)}</span>`).join('')}</div>`:''}
-      <div class="body">${esc(e.c.text||'')}</div>
+      <div class="body">${txt?esc(txt):'<span class="cempty" style="padding:0">— this section has no extracted text —</span>'}</div>
       <div class="src" style="margin-top:16px;border-top:1px solid var(--line);padding-top:10px">
         <span class="mono" style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px">${esc(loc.uri||loc.eid||'')}</span>
         <button class="btn" data-h="${esc(e.chunk_hash)}" style="margin-left:auto">Verify against original</button> <span id="vok"></span></div>`;
