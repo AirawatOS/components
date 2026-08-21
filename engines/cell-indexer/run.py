@@ -113,6 +113,9 @@ def cells_in_bbox(bbox, res):
 def aggregate(features, cells, res, method):
     """features: list of dicts (each with 'id' and geometry-or-point). Returns {cell: (value, conf, [src_ids])}."""
     out = {}
+    if not features:
+        return out                                           # NO source data → write NOTHING (never fabricate a
+                                                             # complete grid of zeros — that would hide a fetch failure)
     if method == "fraction":
         child_res = min(res + 2, 15)
         covered = {}                                        # cell -> set(fine children covered by matching polys)

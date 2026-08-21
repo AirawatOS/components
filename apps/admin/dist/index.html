@@ -95,32 +95,106 @@ async function citySetup(){
       <div style="font-weight:600;color:#ff9b9b">✗ Last run failed</div>
       ${run.log?`<pre style="white-space:pre-wrap;background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;font-size:11px;max-height:180px;overflow:auto">${esc(run.log.slice(-1500))}</pre>`:''}</div>`;
   }
-  // the initiate form (also shown to re-run / after done|failed)
+  // the initiate form — DRAW the AOI on a map (also shown to re-run / after done|failed)
+  const aoi=d.aoi, ib=aoi&&aoi.bbox&&aoi.bbox.length===4?aoi.bbox:null;
   html+=`<div class="lbl" style="margin-top:8px">${mat!=null?'Re-run baseline':'Initiate setup'}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:520px">
-      <label style="grid-column:1/3;font-size:12px;color:var(--dim)">City / area name
-        <input id="cs-name" class="search" style="margin:4px 0 0;width:100%" placeholder="e.g. Greater Mumbai"></label>
-      <label style="font-size:12px;color:var(--dim)">West (lng)<input id="cs-w" class="search" style="margin:4px 0 0;width:100%" placeholder="72.80"></label>
-      <label style="font-size:12px;color:var(--dim)">South (lat)<input id="cs-s" class="search" style="margin:4px 0 0;width:100%" placeholder="18.90"></label>
-      <label style="font-size:12px;color:var(--dim)">East (lng)<input id="cs-e" class="search" style="margin:4px 0 0;width:100%" placeholder="72.98"></label>
-      <label style="font-size:12px;color:var(--dim)">North (lat)<input id="cs-n" class="search" style="margin:4px 0 0;width:100%" placeholder="19.10"></label>
-      <label style="grid-column:1/3;font-size:12px;color:var(--dim)">Priorities (comma)
-        <input id="cs-pri" class="search" style="margin:4px 0 0;width:100%" placeholder="growth, heat" value="growth, heat"></label>
+    <label style="display:block;font-size:12px;color:var(--dim);max-width:720px">City / area name
+      <input id="cs-name" class="search" style="margin:4px 0 10px;width:100%" placeholder="e.g. Greater Mumbai" value="${esc(aoi&&aoi.name||'')}"></label>
+    <div style="font-size:12px;color:var(--dim);margin:2px 0 6px">Pan/zoom to your city, click <b style="color:var(--ink)">✏️ Draw area</b>, then drag a rectangle over it.</div>
+    <div id="csmap" style="position:relative;height:380px;max-width:720px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0d1117;cursor:grab;user-select:none">
+      <div id="cstiles" style="position:absolute;inset:0"></div>
+      <div id="csrect" style="position:absolute;display:none;border:2px solid var(--accent);background:rgba(59,130,246,.18);pointer-events:none;box-shadow:0 0 0 9999px rgba(3,7,12,.35)"></div>
+      <div style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:6px">
+        <button class="pbtn" id="cs-draw" style="font-size:12px">✏️ Draw area</button>
+        <div style="display:flex;gap:6px;justify-content:flex-end"><button class="pbtn" id="cs-zin" style="width:30px">+</button><button class="pbtn" id="cs-zout" style="width:30px">−</button></div>
+      </div>
+      <div style="position:absolute;bottom:4px;right:6px;font-size:10px;color:#8b949e;background:#0d1117aa;padding:1px 5px;border-radius:4px">© OpenStreetMap</div>
     </div>
-    <div style="margin-top:14px"><button class="pbtn" id="cs-go" style="background:var(--accent);border-color:var(--accent);color:#fff;padding:8px 18px;font-size:14px">${mat!=null?'Re-run baseline':'Initiate City Setup'}</button>
-    <span class="muted" style="font-size:12px;margin-left:10px">Enter the bounding box of the area to cover (keep it city-sized).</span></div>`;
+    <div id="cs-bbox" class="muted" style="font-size:12px;margin:8px 0">No area drawn yet — pan/zoom and drag a rectangle.</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:520px">
+      <label style="font-size:11px;color:var(--dim)">West<input id="cs-w" class="search" style="margin:3px 0 0;width:100%"></label>
+      <label style="font-size:11px;color:var(--dim)">South<input id="cs-s" class="search" style="margin:3px 0 0;width:100%"></label>
+      <label style="font-size:11px;color:var(--dim)">East<input id="cs-e" class="search" style="margin:3px 0 0;width:100%"></label>
+      <label style="font-size:11px;color:var(--dim)">North<input id="cs-n" class="search" style="margin:3px 0 0;width:100%"></label>
+    </div>
+    <label style="display:block;font-size:12px;color:var(--dim);max-width:520px;margin-top:10px">Priorities (comma)
+      <input id="cs-pri" class="search" style="margin:4px 0 0;width:100%" value="growth, heat"></label>
+    <div style="margin-top:14px"><button class="pbtn" id="cs-go" style="background:var(--accent);border-color:var(--accent);color:#fff;padding:8px 18px;font-size:14px">${mat!=null?'Re-run baseline':'Initiate City Setup'}</button></div>`;
   D.innerHTML=html;
+  setupMap(D, ib);
   D.querySelector('#cs-go').onclick=async()=>{
     const name=D.querySelector('#cs-name').value.trim();
     const bbox=['#cs-w','#cs-s','#cs-e','#cs-n'].map(id=>parseFloat(D.querySelector(id).value));
     if(!name) return toast('enter a city name',true);
-    if(bbox.some(v=>isNaN(v))) return toast('enter all four bbox values',true);
-    if(!(bbox[0]<bbox[2]&&bbox[1]<bbox[3])) return toast('need west<east and south<north',true);
+    if(bbox.some(v=>isNaN(v))) return toast('draw an area on the map first',true);
+    if(!(bbox[0]<bbox[2]&&bbox[1]<bbox[3])) return toast('invalid rectangle — draw again',true);
     const priorities=D.querySelector('#cs-pri').value.split(',').map(s=>s.trim()).filter(Boolean);
     const r=await jpost('/bridge/city-onboard',{name,bbox,priorities});
     if(r.ok){ toast('baseline started'); citySetup(); }
     else toast(r.j.error||'failed',true);
   };
+}
+
+// ---- OSM slippy-map AOI picker: pan/zoom (tiles via declared /bridge/fetch) + drag to draw a rectangle ----
+function setupMap(D, initBbox){
+  const TS=256, P2=z=>Math.pow(2,z);
+  const lon2wx=(lo,z)=>(lo+180)/360*TS*P2(z);
+  const lat2wy=(la,z)=>{const s=Math.max(-.9999,Math.min(.9999,Math.sin(la*Math.PI/180)));return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*TS*P2(z);};
+  const wx2lon=(x,z)=>x/(TS*P2(z))*360-180;
+  const wy2lat=(y,z)=>{const n=Math.PI*(1-2*y/(TS*P2(z)));return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));};
+  const box=D.querySelector('#csmap'), layer=D.querySelector('#cstiles'), rectEl=D.querySelector('#csrect');
+  let M={lat:20.6,lng:78.9,z:5}, SEL=null, MODE='pan', cache={};
+  if(initBbox){ M.lng=(initBbox[0]+initBbox[2])/2; M.lat=(initBbox[1]+initBbox[3])/2; M.z=10;
+    SEL={w:initBbox[0],s:initBbox[1],e:initBbox[2],n:initBbox[3]}; }
+  const origin=()=>{const W=box.clientWidth||700,H=box.clientHeight||380;return {W,H,ox:lon2wx(M.lng,M.z)-W/2,oy:lat2wy(M.lat,M.z)-H/2};};
+  function draw(){
+    const {W,H,ox,oy}=origin(), nT=P2(M.z);
+    const x0=Math.floor(ox/TS),x1=Math.floor((ox+W)/TS),y0=Math.floor(oy/TS),y1=Math.floor((oy+H)/TS);
+    layer.innerHTML='';
+    for(let tx=x0;tx<=x1;tx++)for(let ty=y0;ty<=y1;ty++){
+      if(ty<0||ty>=nT) continue;
+      const wx=((tx%nT)+nT)%nT, key=M.z+'/'+wx+'/'+ty;
+      const img=document.createElement('img');
+      img.style.cssText='position:absolute;width:256px;height:256px;pointer-events:none;left:'+(tx*TS-ox)+'px;top:'+(ty*TS-oy)+'px';
+      if(cache[key]) img.src=cache[key];
+      else fetch('/bridge/fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:'admin',url:'https://tile.openstreetmap.org/'+key+'.png'})})
+        .then(r=>r.json()).then(o=>{if(o&&o.body_b64){const u='data:'+(o.content_type||'image/png')+';base64,'+o.body_b64;cache[key]=u;img.src=u;}}).catch(()=>{});
+      layer.appendChild(img);
+    }
+    drawRect();
+  }
+  function drawRect(){
+    if(!SEL){ rectEl.style.display='none'; return; }
+    const {ox,oy}=origin();
+    const a=lon2wx(SEL.w,M.z)-ox, b=lon2wx(SEL.e,M.z)-ox, c=lat2wy(SEL.n,M.z)-oy, e=lat2wy(SEL.s,M.z)-oy;
+    rectEl.style.display='block'; rectEl.style.left=Math.min(a,b)+'px'; rectEl.style.top=Math.min(c,e)+'px';
+    rectEl.style.width=Math.abs(b-a)+'px'; rectEl.style.height=Math.abs(e-c)+'px';
+  }
+  const geoAt=(cx,cy)=>{const {ox,oy}=origin();return {lng:wx2lon(ox+cx,M.z),lat:wy2lat(oy+cy,M.z)};};
+  function commit(){ if(!SEL)return;
+    D.querySelector('#cs-w').value=SEL.w.toFixed(4); D.querySelector('#cs-e').value=SEL.e.toFixed(4);
+    D.querySelector('#cs-s').value=SEL.s.toFixed(4); D.querySelector('#cs-n').value=SEL.n.toFixed(4);
+    D.querySelector('#cs-bbox').innerHTML='<b style="color:var(--ink)">Area drawn:</b> W '+SEL.w.toFixed(3)+', S '+SEL.s.toFixed(3)+' → E '+SEL.e.toFixed(3)+', N '+SEL.n.toFixed(3);
+  }
+  const dbtn=D.querySelector('#cs-draw');
+  const setMode=m=>{MODE=m; dbtn.style.background=m==='draw'?'var(--accent)':''; dbtn.style.color=m==='draw'?'#fff':''; box.style.cursor=m==='draw'?'crosshair':'grab';};
+  dbtn.onclick=()=>setMode(MODE==='draw'?'pan':'draw');
+  D.querySelector('#cs-zin').onclick=()=>{M.z=Math.min(18,M.z+1);draw();};
+  D.querySelector('#cs-zout').onclick=()=>{M.z=Math.max(2,M.z-1);draw();};
+  let drag=null;
+  box.addEventListener('mousedown',ev=>{const r=box.getBoundingClientRect();
+    if(MODE==='draw'){drag={m:'draw',a:geoAt(ev.clientX-r.left,ev.clientY-r.top)};}
+    else{drag={m:'pan',x:ev.clientX,y:ev.clientY,lat:M.lat,lng:M.lng};box.style.cursor='grabbing';}
+    ev.preventDefault();});
+  addEventListener('mousemove',ev=>{ if(!drag)return; const r=box.getBoundingClientRect();
+    if(drag.m==='draw'){const p=geoAt(ev.clientX-r.left,ev.clientY-r.top);
+      SEL={w:Math.min(drag.a.lng,p.lng),e:Math.max(drag.a.lng,p.lng),s:Math.min(drag.a.lat,p.lat),n:Math.max(drag.a.lat,p.lat)}; drawRect();}
+    else{const cwx=lon2wx(drag.lng,M.z)-(ev.clientX-drag.x), cwy=lat2wy(drag.lat,M.z)-(ev.clientY-drag.y);
+      M.lng=wx2lon(cwx,M.z); M.lat=wy2lat(cwy,M.z); draw();}});
+  addEventListener('mouseup',()=>{ if(!drag)return; if(drag.m==='draw'&&SEL)commit(); if(drag.m==='pan')box.style.cursor=(MODE==='draw'?'crosshair':'grab'); drag=null;});
+  box.addEventListener('wheel',ev=>{ev.preventDefault();M.z=Math.max(2,Math.min(18,M.z+(ev.deltaY<0?1:-1)));draw();},{passive:false});
+  if(SEL) commit();
+  draw();
 }
 
 // ---- Role Requests: file a request for a new canonical role; the standards body decides -----------

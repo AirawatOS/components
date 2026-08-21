@@ -12,3 +12,7 @@ sandboxed: true
 required_schemas: []
 system: true
 roles: [platform.tenant-admin]
+# City Setup uses an OSM slippy-map to draw the AOI — tiles come through the host's declared-egress
+# /bridge/fetch (the CSP still blocks direct calls); the app can reach ONLY this host (© OpenStreetMap).
+egress:
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/admin-citysetup (+https://airawat.org; contact@airawat.org)" }
