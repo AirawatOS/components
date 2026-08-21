@@ -1,0 +1,35 @@
+# A DRIVER (kind=driver) — LAND COVER from Google Dynamic World via Earth Engine (ADR-0060 L0→L2).
+# It reads the AOI (space.aoi), asks GEE to reduce the Dynamic World composite per H3 cell (server-side),
+# and writes cell.builtup + cell.greencover FRACTIONS directly (fused acquire+index). ML-derived → ai-derived.
+component_id: ds:airawat:driver/landcover-dw
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Land Cover (Dynamic World / GEE)
+entrypoint: run.py
+# CONFINEMENT: this driver needs a client (earthengine-api + google-auth) the host Python must NOT carry, so
+# it ships as its OWN CERTIFIED CONTAINER (L2) with its own requirements (see Dockerfile). Its confinement
+# policy allows exactly the declared egress: the broker (registry I/O) + the GEE hosts below. An L1 host-shim
+# is INSUFFICIENT here (the ee client makes direct HTTPS the shim would block) — hence runtime: container.
+confinement_min: L2
+runtime: container
+image: airawatos/driver-landcover-dw:0.1.0
+reads: [space.aoi]
+writes: [cell.builtup, cell.greencover]
+# EXTERNAL CONTRACT: the driver may egress ONLY to these hosts (GEE auth + compute). Declared for
+# certification + audit; enforced at the container network boundary in a real L2 deployment.
+egress:
+  - { host: oauth2.googleapis.com,               rate_per_min: 30, user_agent: "AirawatOS/landcover-dw" }
+  - { host: earthengine.googleapis.com,          rate_per_min: 120, user_agent: "AirawatOS/landcover-dw" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/landcover-dw" }
+# SECRET: a Google service-account key. Stored in Vault (secret/<tenant>/<component>/GEE_SERVICE_ACCOUNT_KEY),
+# supplied by the tenant at install, materialised into the container env at run (the ee client needs the raw
+# key — the declared exception to broker secret-injection; see SETUP.md). NEVER in code/registry.
+secrets: [GEE_SERVICE_ACCOUNT_KEY]
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT]          # non-secret run config (project id + SA email)
+sources:
+  - { ref: "ds:airawat:ref/source/dynamic-world", host: earthengine.googleapis.com, provides: [cell.builtup, cell.greencover] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: cell.builtup,    tenant: kmc }
+  - { verb: write, scope: cell.greencover, tenant: kmc }
