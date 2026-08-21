@@ -39,7 +39,7 @@ MEMBERS = [
                                     "METHOD": "fraction", "CLASS_FIELD": "lc_class", "CLASS_VALUE": "vegetation"}),
     ("acquire heat (Open-Meteo)",  "drivers/heat", "dev-run-heat", {"MODE": "openmeteo"}),
     ("index → cell.heat",          CI, "dev-run-cell", {"INPUT_SCHEMA": "environment.lst_observation",
-                                    "OUTPUT_SCHEMA": "cell.heat", "METHOD": "mean", "VALUE_FIELD": "lst_value"}),
+                                    "OUTPUT_SCHEMA": "cell.heat", "METHOD": "idw", "VALUE_FIELD": "lst_value"}),
     ("acquire terrain (elevation)", "drivers/terrain", "dev-run-terrain", {}),
     ("assess coverage & trust",    "engines/coverage-qa", "dev-run-coverage", {}),
 ]
@@ -78,7 +78,7 @@ def run_member(label, reldir, token, env):
     e = dict(os.environ, RUN_TOKEN=member_token, AIRAWAT_API=API, AOI_ID=AOI_ID,
              TENANT=TENANT, WRITE_TENANT=TENANT, **env)
     try:
-        r = subprocess.run([sys.executable, path], env=e, capture_output=True, text=True, timeout=300)
+        r = subprocess.run([sys.executable, path], env=e, capture_output=True, text=True, timeout=900)
     except Exception as ex:
         print(f"  [FAIL] {label}: {ex}"); return False
     tail = (r.stdout.strip().splitlines() or ["(no output)"])[-1][:120]

@@ -130,10 +130,36 @@ def aggregate(features, cells, res, method):
         for cell in cells:
             cov = covered.get(cell)
             if not cov:
-                continue
+                out[cell] = (0.0, 0.8, [])                   # COMPLETE grid: 0-fill cells with no matching feature
+                continue                                     # (land cover covers the whole AOI → absence is a real 0)
             total = len(h3.cell_to_children(cell, child_res)) or 1
             frac = min(1.0, len(cov) / total)
             out[cell] = (round(frac, 4), 0.85, contributors.get(cell, []))
+        return out
+    if method == "idw":
+        # INTERPOLATED complete grid: every AOI cell gets an inverse-distance-weighted value from the point
+        # observations (e.g. coarse LST → a smooth per-cell heat surface). MODELLED, not measured — the output
+        # carries method=idw + a distance-based confidence so the map/trust report shows it's derived.
+        pts = []
+        for f in features:
+            p = _feature_point(f); v = f.get(VALUE_FIELD)
+            if p and isinstance(v, (int, float)):
+                pts.append((p[0], p[1], float(v)))
+        if not pts:
+            return {}
+        for cell in cells:
+            clat, clng = h3.cell_to_latlng(cell)
+            kx = math.cos(math.radians(clat)) * 111.32
+            num = den = 0.0; dmin = 1e9
+            for (plat, plng, v) in pts:
+                d = math.hypot((plng - clng) * kx, (plat - clat) * 111.32)   # km, equirectangular
+                if d < 1e-6:
+                    num, den = v, 1.0; dmin = 0.0; break     # sample sits in the cell → exact
+                w = 1.0 / (d * d)
+                num += w * v; den += w; dmin = min(dmin, d)
+            if den > 0:
+                conf = round(max(0.05, min(0.9, 1.0 / (1.0 + dmin))), 3)      # nearer an obs → more confident
+                out[cell] = (round(num / den, 3), conf, [])
         return out
     # point-based methods
     bycell = {}                                             # cell -> ([values],[ids])
@@ -163,6 +189,9 @@ def aggregate(features, cells, res, method):
         else:                                               # density
             value = round(len(vals) / area_km2, 3); conf = 1.0
         out[cell] = (value, conf, ids)
+    if method in ("count", "density"):                       # COMPLETE grid: 0-fill cells with no points
+        for cell in cells:
+            out.setdefault(cell, (0, 1.0, []))
     return out
 
 
@@ -226,11 +255,12 @@ def selftest():
     cells = geojson_to_cells(poly, res) | geojson_to_cells(feats[1]["geometry"], res)
     frac = aggregate(feats, cells, res, "fraction")
     assert frac, "fraction produced no cells"
-    assert all(0 < v[0] <= 1 for v in frac.values()), "fraction out of range"
-    assert all("ds:kmc:geo/landcover/1" in v[2] for v in frac.values()), "lineage missing built poly"
-    # water poly must NOT contribute to a built-up fraction
+    assert all(0 <= v[0] <= 1 for v in frac.values()), "fraction out of range"     # COMPLETE grid: 0-fill allowed
+    built = geojson_to_cells(poly, res)
+    assert all("ds:kmc:geo/landcover/1" in frac[c][2] and frac[c][0] > 0 for c in built), "built cells missing/zero"
+    # water poly must NOT contribute to a built-up fraction: its cells are present but ZERO-valued (complete grid)
     water_cells = geojson_to_cells(feats[1]["geometry"], res)
-    assert all(wc not in frac for wc in water_cells if wc not in geojson_to_cells(poly, res)), "water leaked into built-up"
+    assert all(frac.get(wc, (0,))[0] == 0 for wc in water_cells if wc not in built), "water leaked into built-up"
     # mean over points (LST-like) — place both at the same cell's centroid so they co-locate
     pcell = h3.latlng_to_cell(26.42, 80.22, res)
     plat, plng = h3.cell_to_latlng(pcell)
@@ -239,6 +269,12 @@ def selftest():
     mean = aggregate(pts, {pcell}, res, "mean")
     got = mean.get(pcell)
     assert got and abs(got[0] - 42.0) < 2.0, f"mean wrong: {got}"
+    # idw: interpolate the two co-located points over a small ring of cells → EVERY cell gets a value in-range
+    ring = {pcell} | set(h3.grid_disk(pcell, 2))
+    idw = aggregate(pts, ring, res, "idw")
+    assert len(idw) == len(ring), "idw must fill every AOI cell"
+    assert all(39.9 <= v[0] <= 44.1 for v in idw.values()), "idw values out of source range"
+    assert idw[pcell][1] >= max(v[1] for c, v in idw.items() if c != pcell), "nearest cell should be most confident"
     print("SELFTEST OK:")
     print(f"  fraction: {len(frac)} built-up cells, values {sorted(round(v[0],3) for v in frac.values())[:6]}…, lineage present")
     print(f"  mean:     cell {pcell[:8]}… value={got[0]} conf={got[1]} from {got[2]}")
