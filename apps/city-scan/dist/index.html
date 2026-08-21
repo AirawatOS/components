@@ -170,10 +170,16 @@ function project(){
   for(const f of (DATA.base||[]))for(const p of (f.ring||[]))eat(p);
   if(!any)return null;
   const midLat=(mny+mxy)/2, kx=Math.cos(midLat*Math.PI/180);
-  const gw=(mxx-mnx)*kx, gh=(mxy-mny), W=1000, H=Math.max(200,Math.round(W*gh/gw)), pad=14;
-  return {mnx,mxx,mny,mxy,kx,W,H,pad,
-    x:lng=>pad+((lng-mnx)*kx)/gw*(W-2*pad),
-    y:lat=>pad+((mxy-lat))/gh*(H-2*pad)};
+  const gw=(mxx-mnx)*kx||1e-6, gh=(mxy-mny)||1e-6;
+  // COVER-FIT: viewBox = the container's pixel box; scale the AOI to fill BOTH dims (the larger overflows,
+  // trimming that edge) so the map is edge-to-edge with panels open or collapsed. Re-projected on resize/toggle.
+  const wrap=$("map").parentElement;
+  const cw=Math.max(320,wrap.clientWidth||1000), ch=Math.max(240,wrap.clientHeight||700);
+  const s=Math.max(cw/gw, ch/gh);
+  const offX=(cw-gw*s)/2, offY=(ch-gh*s)/2;
+  return {mnx,mxx,mny,mxy,kx,W:cw,H:ch,
+    x:lng=>offX+((lng-mnx)*kx)*s,
+    y:lat=>offY+((mxy-lat))*s};
 }
 function range(key){const v=(DATA.layers[key]||[]).map(c=>c.v).filter(x=>typeof x==="number");
   return v.length?[Math.min(...v),Math.max(...v)]:[0,1];}
