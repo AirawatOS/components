@@ -9,5 +9,5 @@ version: 0.1.0
 provider: ds:airawat:developer
 display_name: City Scan
 entrypoint: index.html
-required_schemas: [space.aoi, cell.builtup, cell.greencover, cell.heat, city.coverage]
+required_schemas: [space.aoi, geo.landcover, geo.terrain, cell.builtup, cell.greencover, cell.heat, city.coverage]
 sandboxed: true
