@@ -13,7 +13,7 @@ output is only as real as its source: run.mode records whether it was 'osm' or '
 
 Env: AOI_ID (default ds:kmc:space/aoi/kanpur-core) · TENANT (kmc) · OVERPASS_URL · MODE (auto|osm|synthetic)
 """
-import json, os, math, urllib.request, urllib.error
+import json, os, math, urllib.request, urllib.error, urllib.parse
 
 AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
 TENANT = os.environ.get("TENANT", "kmc")
@@ -111,7 +111,9 @@ def fetch_osm(bbox):
           f'way["natural"]({s},{w},{n},{e});'
           f'way["leisure"~"park|garden|nature_reserve"]({s},{w},{n},{e});'
           ");out tags geom;")
-    payload = unwrap(call("/v1/fetch", {"url": OVERPASS_URL, "method": "POST", "body": ql}))
+    # The broker's secrets-mediated egress does a GET; Overpass accepts the query as ?data=<ql>.
+    url = OVERPASS_URL + "?data=" + urllib.parse.quote(ql)
+    payload = unwrap(call("/v1/fetch", {"url": url}))
     els = payload.get("elements") if isinstance(payload, dict) else None
     if not els:
         raise RuntimeError(f"overpass returned no elements: {str(payload)[:200]}")
