@@ -1,0 +1,12 @@
+# A RUNTIME PROFILE (ADR-0030). The ML / MODELING stack (torch + classical ML) — for PREDICTIVE engines
+# (air-quality forecast, PM2.5 fusion, risk models). Kept OUT of the coordinator (torch is heavy). Drivers
+# declare `runtime.profile: modeling`.
+runtime_id:     modeling
+profile:        modeling
+analytics_tier: predictive                  # forecast / infer future or unobserved state
+display_name:   Modeling (PyTorch · scikit-learn · XGBoost)
+image:          airawatos/runtime-modeling:0.1.0
+provides:       [torch, torchvision, scikit-learn, xgboost, numpy, scipy, h3, requests, pyyaml]
+isolation:      shared
+confidential:   false
+level:          L2

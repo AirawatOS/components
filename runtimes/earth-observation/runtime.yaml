@@ -1,0 +1,12 @@
+# A RUNTIME PROFILE (ADR-0030 clean-room, ported from AirOS specs/11). A shared, per-profile container that
+# bundles a coherent library set; DRIVERS declare `runtime.profile: earth-observation` and are MOUNTED in —
+# they never ship their own image. One image runs every EO driver (GEE/raster/satellite). GEE lives here.
+runtime_id:     earth-observation
+profile:        earth-observation
+analytics_tier: descriptive                 # acquire/observe the world (satellite, raster) → raw facts
+display_name:   Earth Observation (satellite · raster · Google Earth Engine)
+image:          airawatos/runtime-earth-observation:0.1.0
+provides:       [earthengine-api, google-auth, rasterio, numpy, scipy, shapely, pyproj, earthaccess, h3]
+isolation:      shared                       # per-profile shared runner (first-party); a tenant Clean Room is L3+
+confidential:   false
+level:          L2                            # container isolation; egress = broker + the driver's declared hosts

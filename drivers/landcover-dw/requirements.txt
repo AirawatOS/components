@@ -1,4 +1,0 @@
-# The DW driver's OWN deps — kept OUT of the host Python; installed only inside its certified container.
-earthengine-api>=0.1.400
-google-auth>=2.0
-h3>=4

@@ -1,16 +1,17 @@
 # landcover-dw — setup & wiring (GEE Dynamic World, certified container)
 
 Land cover from **Google Dynamic World** via Earth Engine, written as per-cell `cell.builtup` /
-`cell.greencover` fractions. Runs as its **own certified L2 container** (ADR-0030) — its `earthengine-api`
-deps stay out of the host Python. **No synthetic fallback**: without credentials it fails loudly.
+`cell.greencover` fractions. Runs in the **shared `earth-observation` runtime container** (ADR-0030,
+`components/runtimes/earth-observation`) — the driver ships no image of its own; `earthengine-api` lives in
+the runtime, mounted with the driver code. **No synthetic fallback**: without credentials it fails loudly.
 
 You have three values: `GEE_PROJECT`, `GEE_SERVICE_ACCOUNT` (the SA email), and `GEE_SERVICE_ACCOUNT_KEY`
 (the SA key JSON). Only the **key** is a secret → Vault. Project + email are non-secret run config.
 
-## 1. Build the container image
+## 1. Build the earth-observation runtime image (once, shared by all EO drivers)
 
 ```
-docker build -t airawatos/driver-landcover-dw:0.1.0 components/drivers/landcover-dw
+docker build -t airawatos/runtime-earth-observation:0.1.0 components/runtimes/earth-observation
 ```
 
 ## 2. Store the SA key in Vault (secrets service — tenant-admin)
@@ -40,12 +41,13 @@ KEY=$(curl -s -X POST http://localhost:8102/materialize -H "X-Internal-Token: $S
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
 
 docker run --rm --add-host host.docker.internal:host-gateway \
+  -v "$PWD/components/drivers/landcover-dw:/drivers:ro" \
   -e AIRAWAT_API=http://host.docker.internal:8080 \
   -e RUN_TOKEN=dev-run-landcover-dw@bmc \
   -e AOI_ID=ds:bmc:space/aoi/greater-mumbai--pilot -e TENANT=bmc \
   -e GEE_PROJECT="$GEE_PROJECT" -e GEE_SERVICE_ACCOUNT="$GEE_SERVICE_ACCOUNT" \
   -e GEE_SERVICE_ACCOUNT_KEY="$KEY" \
-  airawatos/driver-landcover-dw:0.1.0
+  airawatos/runtime-earth-observation:0.1.0  python /drivers/run.py
 ```
 
 For a quick **local dev test** (no Vault), export the three GEE_* vars and run `python run.py` directly —

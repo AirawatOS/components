@@ -7,13 +7,14 @@ version: 0.1.0
 provider: ds:airawat:developer
 display_name: Land Cover (Dynamic World / GEE)
 entrypoint: run.py
-# CONFINEMENT: this driver needs a client (earthengine-api + google-auth) the host Python must NOT carry, so
-# it ships as its OWN CERTIFIED CONTAINER (L2) with its own requirements (see Dockerfile). Its confinement
-# policy allows exactly the declared egress: the broker (registry I/O) + the GEE hosts below. An L1 host-shim
-# is INSUFFICIENT here (the ee client makes direct HTTPS the shim would block) — hence runtime: container.
+# CONFINEMENT: needs earthengine-api + google-auth — deps the host Python must NOT carry. So it runs in the
+# shared EARTH-OBSERVATION runtime container (components/runtimes/earth-observation), which already provides
+# earthengine-api + h3; this driver ships NO image of its own — just declares the profile and is mounted in.
+# The runtime's L2 policy allows exactly the broker + this driver's declared egress (the GEE hosts below).
+# An L1 host-shim is insufficient (the ee client makes direct HTTPS it would block).
 confinement_min: L2
-runtime: container
-image: airawatos/driver-landcover-dw:0.1.0
+runtime:
+  profile: earth-observation           # placement key → components/runtimes/earth-observation image
 reads: [space.aoi]
 writes: [cell.builtup, cell.greencover]
 # EXTERNAL CONTRACT: the driver may egress ONLY to these hosts (GEE auth + compute). Declared for

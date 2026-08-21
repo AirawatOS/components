@@ -1,0 +1,12 @@
+# A RUNTIME PROFILE (ADR-0030). The common GEOSPATIAL library set — the workhorse for spatial ops,
+# aggregation/indexing (H3), routing, and vector/raster handling. Most descriptive/diagnostic engines
+# (cell-indexer, accessibility, connectivity) belong here. Drivers declare `runtime.profile: geospatial`.
+runtime_id:     geospatial
+profile:        geospatial
+analytics_tier: diagnostic                  # describe/diagnose place from spatial data (aggregate, relate)
+display_name:   Geospatial (H3 · vector · raster · routing)
+image:          airawatos/runtime-geospatial:0.1.0
+provides:       [h3, shapely, geopandas, pyproj, rasterio, networkx, numpy, requests, pyyaml]
+isolation:      shared
+confidential:   false
+level:          L2

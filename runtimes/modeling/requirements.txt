@@ -1,0 +1,12 @@
+# The modeling profile's shared library set. (CPU torch — install torch+torchvision as a matched pair from
+# the same index; installing torch alone pulls a torchvision built against a different ABI. AirOS lesson.)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.1
+torchvision>=0.16
+scikit-learn>=1.3
+xgboost>=2.0
+numpy>=1.24
+scipy>=1.10
+h3>=4
+requests>=2.31
+pyyaml>=6
