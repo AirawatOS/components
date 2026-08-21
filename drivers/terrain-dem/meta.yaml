@@ -1,0 +1,27 @@
+# A DRIVER (kind=driver) — TERRAIN from GEE Copernicus GLO-30 DEM (ADR-0060). Reduces the DEM server-side per
+# H3 cell → mean elevation (+ neighbour-derived slope), writing the same geo.terrain shape the viewer reads.
+# The scalable replacement for the Open-Meteo point-fetch terrain driver at metro scale. Runs in the shared
+# earth-observation runtime (earthengine-api) via the runtime-manager; cert-checked + image-locked.
+component_id: ds:airawat:driver/terrain-dem
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Terrain (Copernicus DEM / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation           # placement key → components/runtimes/earth-observation image
+reads: [space.aoi, geo.terrain]        # geo.terrain read = RESUME (skip cells already written)
+writes: [geo.terrain]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/terrain-dem" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/terrain-dem" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/terrain-dem" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # same Google service-account key as landcover-dw (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT]
+sources:
+  - { ref: "ds:airawat:ref/source/copernicus-dem", host: earthengine.googleapis.com, provides: [geo.terrain] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: geo.terrain }
+  - { verb: write, scope: geo.terrain, tenant: kmc }
