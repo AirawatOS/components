@@ -1,0 +1,24 @@
+# A DRIVER (kind=driver, ADR-0060 L0→L1 acquisition). Confined — its only I/O is the broker. Reads the AOI
+# (space.aoi) and acquires LAND COVER for it: real OSM landuse/natural/leisure polygons via Overpass
+# (egress-gated to overpass-api.de), classified into geo.landcover features (built / water / vegetation /
+# cropland / bare) with native GeoJSON geometry preserved (L1). When the egress path is unavailable (the
+# keyless offline reference build — e.g. no secrets service) it synthesizes a DETERMINISTIC land-cover field
+# over the AOI bbox so the City Scan vertical runs end-to-end. Feeds cell-indexer → cell.builtup/greencover.
+component_id: ds:airawat:driver/landcover
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Land Cover (OSM)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi]
+writes: [geo.landcover]
+# Structured egress: the broker enforces the per-host rate cap AND presents the declared User-Agent.
+egress:
+  - { host: overpass-api.de, rate_per_min: 20, user_agent: "AirawatOS/landcover (+https://airawat.org; contact@airawat.org)" }
+# Data-source DISCLOSURE: the derived geo.landcover attributes to OpenStreetMap (ODbL).
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: overpass-api.de, provides: [geo.landcover] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: geo.landcover, tenant: kmc }
