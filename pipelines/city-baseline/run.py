@@ -67,25 +67,27 @@ def workspace(level, status, name, res):
         "maturity_level": level, "status": status, "created_at": NOW})
 
 
+sys.path.insert(0, os.path.join(COMPONENTS, "_common"))
+import launcher                                            # the reference launcher (platform.runtime_invoke)
+
+
 def run_member(label, reldir, token, env):
-    path = os.path.join(COMPONENTS, reldir, "run.py")
     # Onboarding tokens are tenant-generic: the run's tenant rides in the token name as "<base>@<tenant>"
     # so ONE base drives the baseline for ANY city (the kernel clones the base spec per tenant). See ADR-0060.
     member_token = f"{token}@{TENANT}"
-    # WRITE_TENANT is what members stamp into their output ids (ds:<tenant>:…) — must match the run's tenant
-    # so writes land in ds:<TENANT>: (the token confines to exactly that). Some members read TENANT, some
-    # WRITE_TENANT — pass both so every member is tenant-correct.
-    e = dict(os.environ, RUN_TOKEN=member_token, AIRAWAT_API=API, AOI_ID=AOI_ID,
-             TENANT=TENANT, WRITE_TENANT=TENANT, **env)
+    # non-secret run config. WRITE_TENANT is what members stamp into output ids (ds:<tenant>:…) — must match
+    # the run's tenant. The LAUNCHER decides placement from the member's meta: runtime.profile ⇒ its certified
+    # container (cert-checked at point of use, secrets materialised); else an in-process host subprocess.
+    e = dict(AOI_ID=AOI_ID, TENANT=TENANT, WRITE_TENANT=TENANT, **env)
     try:
-        r = subprocess.run([sys.executable, path], env=e, capture_output=True, text=True, timeout=900)
+        rc, out = launcher.place(os.path.join(COMPONENTS, reldir), member_token, e, label=label)
     except Exception as ex:
         print(f"  [FAIL] {label}: {ex}"); return False
-    tail = (r.stdout.strip().splitlines() or ["(no output)"])[-1][:120]
-    print(f"  [{'ok  ' if r.returncode == 0 else 'FAIL'}] {label}: {tail}")
-    if r.returncode != 0:
-        print(f"         {r.stderr.strip()[-200:]}")
-    return r.returncode == 0
+    tail = ((out or "").strip().splitlines() or ["(no output)"])[-1][:120]
+    print(f"  [{'ok  ' if rc == 0 else 'FAIL'}] {label}: {tail}")
+    if rc != 0:
+        print(f"         {(out or '').strip()[-300:]}")
+    return rc == 0
 
 
 def main():

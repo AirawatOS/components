@@ -1,0 +1,10 @@
+# A tiny diagnostic component that PROVES the runtime container path: it runs in the geospatial runtime,
+# imports a runtime-provided lib (h3), and reaches the broker (registry) from inside the container.
+component_id: ds:airawat:driver/runtime-selftest
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+entrypoint: run.py
+runtime:
+  profile: geospatial
+reads: [space.aoi]
