@@ -33,7 +33,7 @@ PROJECT = os.environ.get("GEE_PROJECT", "")
 SA_EMAIL = os.environ.get("GEE_SERVICE_ACCOUNT", "")
 SA_KEY = os.environ.get("GEE_SERVICE_ACCOUNT_KEY", "")          # raw JSON or a path to the .json
 DAYS = int(os.environ.get("DAYS", "365"))
-BATCH = int(os.environ.get("BATCH", "500"))
+BATCH = int(os.environ.get("BATCH", "250"))                    # cells per reduceRegions — smaller = lighter GEE call
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/dynamic-world"
 
@@ -124,13 +124,25 @@ def main():
     label = dw.select("label").mode()                              # most-frequent class per pixel over the window
     print(f"  composited {n_img} DW scenes ({start}→{end}); reducing per cell (batch={BATCH})…")
 
-    wrote_b = wrote_g = 0
+    wrote_b = wrote_g = failed = 0
+    nb = (len(cells) + BATCH - 1) // BATCH
     for i in range(0, len(cells), BATCH):
         chunk = cells[i:i + BATCH]
         feats = [ee.Feature(ee.Geometry.Polygon([cell_boundary(h)]), {"h3": h}) for h in chunk]
         fc = ee.FeatureCollection(feats)
         red = label.reduceRegions(collection=fc, reducer=ee.Reducer.frequencyHistogram(), scale=10)
-        rows = red.getInfo()["features"]                          # server-side aggregation → small payload
+        rows = None
+        for attempt in range(5):                                  # GEE getInfo can time out / throttle at metro scale
+            try:
+                rows = red.getInfo().get("features") or []
+                break
+            except Exception as ex:
+                if attempt == 4:
+                    print(f"  ⚠ batch {i//BATCH+1}/{nb} failed after retries ({type(ex).__name__}: {str(ex)[:70]}) — skip", flush=True)
+                else:
+                    time.sleep(3 * (attempt + 1))                 # backoff, then retry the same batch
+        if rows is None:
+            failed += 1; continue                                 # partial REAL data — never fabricate a cell
         for f in rows:
             props = f.get("properties") or {}
             hist = props.get("histogram") or {}
@@ -152,10 +164,12 @@ def main():
                     "derived_from": ["gee:GOOGLE/DYNAMICWORLD/V1"], "source_ref": SRC, "layer": "L2",
                     "observed_at": end + "T00:00:00Z"})
             wrote_b += 1; wrote_g += 1
-        print(f"  …{min(i + BATCH, len(cells))}/{len(cells)} cells")
+        print(f"  …{min(i + BATCH, len(cells))}/{len(cells)} cells (wrote {wrote_b})", flush=True)
 
+    if failed:
+        print(f"  ⚠ {failed}/{nb} batches skipped after retries — wrote {wrote_b} REAL cells (partial, no fill)", flush=True)
     print(f"wrote {wrote_b} cell.builtup + {wrote_g} cell.greencover from Dynamic World (real GEE, ai-derived)")
-    print(f"RESULT: {json.dumps({'source': 'dynamic-world', 'cells': wrote_b, 'scenes': n_img})}")
+    print(f"RESULT: {json.dumps({'source': 'dynamic-world', 'cells': wrote_b, 'scenes': n_img, 'batches_failed': failed})}")
     return 0
 
 
