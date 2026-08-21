@@ -1,6 +1,11 @@
 # A RUNTIME PROFILE (ADR-0030). The common GEOSPATIAL library set — the workhorse for spatial ops,
 # aggregation/indexing (H3), routing, and vector/raster handling. Most descriptive/diagnostic engines
 # (cell-indexer, accessibility, connectivity) belong here. Drivers declare `runtime.profile: geospatial`.
+component_id:   ds:airawat:runtime/geospatial          # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
+kind:           runtime
+version:        0.1.0
+provider:       ds:airawat:developer
+implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058) it satisfies
 runtime_id:     geospatial
 profile:        geospatial
 analytics_tier: diagnostic                  # describe/diagnose place from spatial data (aggregate, relate)
