@@ -100,7 +100,9 @@ function lerp(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));cons
 
 async function load(){
   if(window.__CITYSCAN__) return window.__CITYSCAN__;
-  const APP="ds:airawat:app/city-scan";
+  // the host serves ./config.json with our correct app_id (the bridge keys CERTIFIED by the short id)
+  const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
+  const APP=cfg.app_id;
   const q=async s=>{try{const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({app_id:APP,schema:s})});const d=await r.json();
     return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[]}};
