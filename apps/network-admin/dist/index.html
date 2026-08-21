@@ -5,10 +5,16 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,#0e1622,#0a0f16)}
   h1{margin:0;font-size:16px} h1 b{color:var(--accent)} .sub{color:var(--dim);font-size:12px} .who{margin-left:auto;color:var(--dim);font-size:12px}
-  .tabs{display:flex;gap:4px;padding:12px 18px 0}
-  .tab{padding:6px 14px;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--dim);font-size:13px}
-  .tab.on{background:#16202e;color:var(--ink);border-color:#2b3a4d}
-  .wrap{padding:16px 20px;overflow:auto;height:calc(100vh - 98px)}
+  /* mental-model rail: The Language (nouns·verbs·roles·packs) · Participants · Governance */
+  .shell{display:flex;height:calc(100vh - 54px)}
+  .rail{width:212px;min-width:212px;border-right:1px solid var(--line);overflow:auto;background:#0b0f16;padding:4px 0 16px}
+  .rgrp{font:700 10px/1.2 system-ui;letter-spacing:.11em;text-transform:uppercase;color:#6b7684;padding:16px 16px 7px;display:flex;align-items:baseline;gap:6px}
+  .rgrp .rgh{font-weight:400;letter-spacing:.02em;text-transform:none;color:#4a5563;font-size:10px}
+  .ritem{display:flex;align-items:baseline;gap:8px;padding:8px 16px;cursor:pointer;color:var(--ink);font-size:13.5px;border-left:2px solid transparent;user-select:none}
+  .ritem:hover{background:#111823}
+  .ritem.on{background:#16202e;border-left-color:var(--accent);color:#fff;font-weight:500}
+  .ritem .rh{margin-left:auto;color:var(--dim);font-size:10.5px;font-family:ui-monospace,Menlo,monospace}
+  .wrap{flex:1;padding:16px 22px;overflow:auto}
   .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:6px 0 10px}
   .hint{color:var(--dim);font-size:12px;margin:-4px 0 14px;max-width:640px}
   table{width:100%;max-width:900px;border-collapse:collapse;font-size:13px}
@@ -51,11 +57,23 @@
   .sens.internal{color:var(--accent);border-color:#2b3a4d;background:#16202e} .sens.sensitive{color:var(--gold);border-color:#6b5316;background:#241d0c}
 </style>
 <header><h1>🌐 Airawat<b>Network</b></h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
-<div class="tabs"><span class="tab on" data-t="requests">Change Requests</span><span class="tab" data-t="specs">Specifications</span><span class="tab" data-t="participants">Participants</span><span class="tab" data-t="roles">Roles</span><span class="tab" data-t="packs">Domain Packs</span></div>
-<div class="wrap" id="wrap"><div class="empty">loading…</div></div>
+<div class="shell">
+  <nav class="rail">
+    <div class="rgrp">The Language <span class="rgh">the shared contract</span></div>
+    <a class="ritem" data-v="specs">🧩 Nouns<span class="rh">schemas</span></a>
+    <a class="ritem" data-v="verbs">🔌 Verbs<span class="rh">interfaces</span></a>
+    <a class="ritem" data-v="roles">👥 Roles<span class="rh">actors</span></a>
+    <a class="ritem" data-v="packs">📦 Domain Packs<span class="rh">bundles</span></a>
+    <div class="rgrp">Participants</div>
+    <a class="ritem" data-v="participants">🔗 Directory<span class="rh">members</span></a>
+    <div class="rgrp">Governance</div>
+    <a class="ritem" data-v="requests">⚖️ Change Requests<span class="rh">propose → approve</span></a>
+  </nav>
+  <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
+</div>
 <div class="toast" id="toast"></div>
 <script>
-let TAB='requests';
+let VIEW='specs';   // default to Nouns — the Language (the contract) is what the console is about
 async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
 async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
 function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2200);}
@@ -63,10 +81,11 @@ function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 
 function boot(){
   fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
-  document.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));el.classList.add('on');TAB=el.dataset.t;render();});
-  render();
+  document.querySelectorAll('.ritem').forEach(el=>el.onclick=()=>setView(el.dataset.v));
+  setView(VIEW);
 }
-function render(){ TAB==='requests'?requests():TAB==='specs'?specs():TAB==='participants'?participants():TAB==='roles'?catalog('roles'):catalog('packs'); }
+function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
+function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,requests:requests}[VIEW]||specs)(); }
 
 // --- Participant Directory: the network's roster of admitted participants (left nav by kind + detail) --
 const PKIND={developer:'🛠️',vendor:'🏭',steward:'🏛️',operator:'⚙️',participant:'🔗'};
@@ -192,6 +211,55 @@ async function showSpec(sid){
       :'<div class="muted">no recorded change-requests — this schema predates the request ledger.</div>'}`;
 }
 function fmt(iso){ if(!iso)return ''; try{return new Date(iso).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});}catch(e){return iso;} }
+
+// --- Verbs: the governed INTERFACE catalog (ADR-0058) — APIs / messages / events ---------------------
+const MICON={request:'⇄',event:'📣',stream:'⇉'};
+let VERB_SEL=null;
+async function verbs(){
+  const W=document.getElementById('wrap'); W.className=''; W.innerHTML='<div class="empty">loading…</div>';
+  let d; try{ d=await jpost('/bridge/interfaces',{}); if(!d.ok)throw 0; d=d.j; }catch(e){ W.innerHTML='<div class="empty">could not load the interface catalog</div>'; return; }
+  const ifs=(d.interfaces||[]).slice().sort((a,b)=>(a.interface_id||'').localeCompare(b.interface_id||''));
+  const by={}; ifs.forEach(s=>{const k=(s.interface_id||'').split('.')[0]||'other';(by[k]=by[k]||[]).push(s);});
+  const domains=Object.keys(by).sort();
+  W.innerHTML=`<div class="ide">
+    <div class="nav"><input class="srch" id="vsrch" placeholder="filter ${ifs.length} interfaces…"><div id="vtree"></div></div>
+    <div class="det" id="vdet">
+      ${ifs.length?'<div class="empty">Select an interface to view its request/response contract.</div>'
+        :'<div class="empty">No interfaces yet. A <b>Verb</b> is a request/response (API) or event/message contract a capability exposes — the third leg of the language, alongside Nouns (schemas) and Roles (actors).</div>'}
+    </div></div>`;
+  function draw(q){
+    const t=document.getElementById('vtree'); q=(q||'').toLowerCase();
+    t.innerHTML=domains.map(dom=>{
+      const items=by[dom].filter(s=>!q||(s.interface_id||'').toLowerCase().includes(q));
+      if(!items.length)return '';
+      return `<div class="grp"><div class="gh"><span class="caret">▼</span>🔌 ${esc(dom)} <span class="muted" style="margin-left:auto">${items.length}</span></div>
+        <div class="items">${items.map(s=>`<div class="sit${VERB_SEL===s.interface_id?' on':''}" data-iid="${esc(s.interface_id)}">${MICON[s.modality]||'⇄'} ${esc(s.interface_id)}<span class="sv">v${esc(s.version||'')}</span></div>`).join('')}</div></div>`;
+    }).join('')||'<div class="empty" style="padding:20px">no match</div>';
+    t.querySelectorAll('.gh').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('closed'));
+    t.querySelectorAll('.sit').forEach(el=>el.onclick=()=>{VERB_SEL=el.dataset.iid;t.querySelectorAll('.sit').forEach(x=>x.classList.remove('on'));el.classList.add('on');showVerb(el.dataset.iid);});
+  }
+  draw('');
+  const vs=document.getElementById('vsrch'); if(vs)vs.oninput=e=>draw(e.target.value);
+  if(VERB_SEL){const el=document.querySelector(`.sit[data-iid="${CSS.escape(VERB_SEL)}"]`); if(el){el.classList.add('on');showVerb(VERB_SEL);}}
+}
+async function showVerb(iid){
+  const D=document.getElementById('vdet'); D.innerHTML='<div class="empty">loading…</div>';
+  const rec=await jpost('/bridge/interface-resolve',{interface_id:iid}).then(r=>r.ok?r.j:null).catch(()=>null);
+  if(!rec){D.innerHTML='<div class="empty">could not resolve this interface</div>';return;}
+  const defn=rec.definition||{}; const mod=rec.modality||defn.modality||'request';
+  const block=(title,obj)=>obj?`<div class="sec">${title}</div><pre class="defn">${esc(JSON.stringify(obj,null,2))}</pre>`:'';
+  D.innerHTML=`<h2>${esc(iid)}</h2>
+    <div class="meta"><span class="pill" style="border:1px solid #6b5316;color:var(--gold);background:#241d0c">${MICON[mod]||'⇄'} ${esc(mod)}</span>
+      <span>latest <b>v${esc(rec.version||'—')}</b></span>
+      <span>· issued by ${esc((rec.issued_by||'').split('/').pop()||'—')}</span>
+      ${rec.definition_digest?`<span class="mono" style="font-size:10px" title="${esc(rec.definition_digest)}">· ${esc((rec.definition_digest||'').slice(0,18))}…</span>`:''}</div>
+    ${defn.description?`<div class="hint" style="max-width:70ch">${esc(defn.description)}</div>`:''}
+    ${block(mod==='event'?'Event payload (JSON Schema)':'Request (JSON Schema)', defn.request||defn.event)}
+    ${block('Response (JSON Schema)', defn.response)}
+    ${(defn.errors||[]).length?`<div class="sec">Errors</div>${defn.errors.map(e=>`<div class="card"><b class="mono">${esc(e.code||'')}</b> <span class="muted">${esc(e.when||'')}</span></div>`).join('')}`:''}
+    <div class="sec">Authority signature</div>
+    <div class="card mono" style="font-size:11px;word-break:break-all;color:#a9b6c4">${esc(rec.signature||'—')}</div>`;
+}
 
 const KICON={role:'👤',schema:'🧩',pack:'📦'};
 async function requests(){
