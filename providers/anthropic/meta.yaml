@@ -1,0 +1,17 @@
+# A model PROVIDER component (kind=provider). Like airawat-hosted, it doesn't run — it's a credential +
+# config holder that makes a model endpoint pluggable: install it into a tenant, then set its API key in the
+# Components app (Settings → API keys), exactly like a driver's key. The model-gateway routes /v1/complete
+# to this provider's base_url (Anthropic Messages API, protocol=anthropic) and reads THIS key from the
+# per-component secret path — the component/agent calling the broker never sees it. The matching
+# intelligence.provider record carries the routing (base_url, protocol, models + their task). Studio's
+# code-generation asks the gateway for task=code and is routed HERE — no model name is hard-coded anywhere.
+component_id: ds:airawat:provider/anthropic
+kind: provider
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Anthropic (Claude)
+secrets:
+  - name: ANTHROPIC_API_KEY
+    label: Anthropic API key
+    description: Key for the Anthropic Messages API (serves Claude models — used for Studio code generation)
+    url: https://api.anthropic.com
