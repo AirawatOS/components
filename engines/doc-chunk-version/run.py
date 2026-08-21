@@ -147,15 +147,33 @@ def _parse_units(text):
     ops = _openers(lines)
     if len(ops) < 5:
         return []
+    # Fold the front matter (title page + table of contents) into the preamble. A TOC restates the body's
+    # numbering, so a few TOC lines that escape the per-line filter survive as openers BEFORE the body — but
+    # they SCATTER across chapters (…3.5.3 → 5.6 → …10.4.2), whereas the body increments smoothly (1.1, 1.2,
+    # …, 2.1). Find the first opener that begins a locally-smooth run (consecutive chapter step ≤ 1); fold
+    # everything before it into the preamble. (Reconstruction still holds — nothing is dropped.)
+    def _ch(n):
+        return int(n.split(".")[0])
+    body_start, need = 0, min(8, len(ops) // 2)
+    for k in range(len(ops)):
+        run = 1
+        for j in range(k + 1, min(k + 12, len(ops))):
+            if abs(_ch(ops[j][1]) - _ch(ops[j - 1][1])) <= 1:
+                run += 1
+            else:
+                break
+        if run >= need:
+            body_start = k; break
+    body = ops[body_start:]
     out = []
-    pre = "\n".join(lines[:ops[0][0]]).strip()
+    pre = "\n".join(lines[:body[0][0]]).strip()
     if pre:
         out.append(("__preamble__", pre))
-    for k, (i, num) in enumerate(ops):
-        end = ops[k + 1][0] if k + 1 < len(ops) else len(lines)
-        body = "\n".join(lines[i:end]).strip()
-        if body:
-            out.append((num, body))
+    for k, (i, num) in enumerate(body):
+        end = body[k + 1][0] if k + 1 < len(body) else len(lines)
+        chunk = "\n".join(lines[i:end]).strip()
+        if chunk:
+            out.append((num, chunk))
     return out
 
 
