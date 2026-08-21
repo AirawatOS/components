@@ -1,0 +1,16 @@
+component_id: ds:airawatdeveloper:driver/satellite-lst
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+entrypoint: run.py
+confinement_min: L1
+reads: []
+writes:
+  - environment.lst_observation
+egress:
+  - "*.modaps.eosdis.nasa.gov"
+  - "modis.gsfc.nasa.gov"
+scopes:
+  - verb: write
+    scope: environment.lst_observation
+    tenant: airawatdeveloper

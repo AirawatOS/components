@@ -1,0 +1,24 @@
+# The L1→L2 KEYSTONE engine (kind=engine, ADR-0060). Confined by the Component Host — its only I/O is the
+# broker (NO egress: pure computation over registry facts). It is the generic H3 aggregator: it reads an AOI
+# (space.aoi) + any L1 FEATURE layer and indexes it into an L2 cell.* indicator at a configurable resolution
+# — fraction (area, via fine-child sampling), mean, count or density — writing each cell-measure with a
+# `derived_from` lineage (the contributing feature ids) and layer:"L2". It generalizes station-interpolation
+# (IDW over points) to ANY feature over cells. One engine, many indicators, driven by config.
+component_id: ds:airawat:engine/cell-indexer
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Cell Indexer (L1→L2 H3 aggregator)
+entrypoint: run.py
+confinement_min: L1
+# Generic: reads the AOI + the configured L1 layer; writes the configured cell.* indicator. Declares the
+# union it may touch in the ADR-0060 slice-1 vertical (landcover→built-up/green; LST→heat).
+reads: [space.aoi, geo.landcover, environment.lst_observation]
+writes: [cell.builtup, cell.greencover, cell.heat]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: geo.landcover }
+  - { verb: read,  scope: environment.lst_observation }
+  - { verb: write, scope: cell.builtup,    tenant: kmc }
+  - { verb: write, scope: cell.greencover, tenant: kmc }
+  - { verb: write, scope: cell.heat,       tenant: kmc }
