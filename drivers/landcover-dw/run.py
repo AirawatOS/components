@@ -75,12 +75,23 @@ def init_ee():
         import ee
     except ImportError:
         raise SystemExit("FATAL: earthengine-api not installed (pip install earthengine-api) — see SETUP.md")
-    if not (PROJECT and SA_EMAIL and SA_KEY):
-        raise SystemExit("FATAL: GEE_PROJECT / GEE_SERVICE_ACCOUNT / GEE_SERVICE_ACCOUNT_KEY not set — "
-                         "load the service-account key into Vault and materialise it (see SETUP.md). No synthetic fallback.")
+    if not SA_KEY:
+        raise SystemExit("FATAL: GEE_SERVICE_ACCOUNT_KEY not set — load the service-account key into Vault and "
+                         "materialise it (see SETUP.md). No synthetic fallback.")
     key_data = open(SA_KEY).read() if (SA_KEY.endswith(".json") and os.path.exists(SA_KEY)) else SA_KEY
-    creds = ee.ServiceAccountCredentials(SA_EMAIL, key_data=key_data)
-    ee.Initialize(creds, project=PROJECT, opt_url="https://earthengine-highvolume.googleapis.com")
+    kj = {}
+    try:
+        kj = json.loads(key_data)                            # a full SA key JSON carries client_email + project_id
+    except Exception:
+        pass
+    email = SA_EMAIL or kj.get("client_email")               # derive from the key if not given explicitly
+    project = PROJECT or kj.get("project_id")
+    if not (email and project):
+        raise SystemExit("FATAL: could not resolve GEE service-account email / project — provide a full "
+                         "service-account key JSON (contains both), or set GEE_SERVICE_ACCOUNT + GEE_PROJECT.")
+    creds = ee.ServiceAccountCredentials(email, key_data=key_data)
+    ee.Initialize(creds, project=project, opt_url="https://earthengine-highvolume.googleapis.com")
+    print(f"  authenticated GEE as {email} · project {project}")
     return ee
 
 

@@ -32,11 +32,10 @@ CI = "engines/cell-indexer"
 
 # (label, component dir, run-token, extra env) — the ordered baseline pipeline
 MEMBERS = [
-    ("acquire land cover (OSM)",   "drivers/landcover", "dev-run-landcover", {"MODE": "osm"}),
-    ("index → cell.builtup",       CI, "dev-run-cell", {"INPUT_SCHEMA": "geo.landcover", "OUTPUT_SCHEMA": "cell.builtup",
-                                    "METHOD": "fraction", "CLASS_FIELD": "lc_class", "CLASS_VALUE": "built"}),
-    ("index → cell.greencover",    CI, "dev-run-cell", {"INPUT_SCHEMA": "geo.landcover", "OUTPUT_SCHEMA": "cell.greencover",
-                                    "METHOD": "fraction", "CLASS_FIELD": "lc_class", "CLASS_VALUE": "vegetation"}),
+    # Land cover from Google Dynamic World (GEE) — writes cell.builtup + cell.greencover FRACTIONS directly,
+    # server-side reduced (scales to a metro). Runs in the certified earth-observation runtime via the manager.
+    # Replaces the OSM-landcover acquire + the two cell-indexer fraction steps. (No GEE creds ⇒ fails loudly.)
+    ("land cover → built + green (Dynamic World)", "drivers/landcover-dw", "dev-run-landcover-dw", {}),
     ("acquire heat (Open-Meteo)",  "drivers/heat", "dev-run-heat", {"MODE": "openmeteo"}),
     ("index → cell.heat",          CI, "dev-run-cell", {"INPUT_SCHEMA": "environment.lst_observation",
                                     "OUTPUT_SCHEMA": "cell.heat", "METHOD": "idw", "VALUE_FIELD": "lst_value"}),
