@@ -26,6 +26,19 @@
   .pbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:7px;padding:5px 12px;cursor:pointer}
   .pbtn:disabled{opacity:.4;cursor:default}
   .empty{color:var(--dim);text-align:center;padding:36px}
+  .name.link{cursor:pointer} .name.link:hover{color:var(--blue)}
+  .more{margin-left:auto;font-size:11px;color:var(--blue);cursor:pointer}
+  /* detail modal */
+  .ov{position:fixed;inset:0;background:rgba(1,4,9,.66);display:flex;align-items:center;justify-content:center;z-index:30;padding:20px}
+  .sheet{background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px}
+  .sheet h2{font-size:19px;color:var(--ink);text-transform:none;letter-spacing:0;margin:0 0 4px}
+  .sheet .desc{color:#c9d4e0;line-height:1.6;margin:12px 0 6px}
+  .sheet .sec{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+  .kv2{display:grid;grid-template-columns:130px 1fr;gap:6px 14px;font-size:13px}
+  .kv2 .k2{color:var(--dim)}
+  .tagm{display:inline-block;font-size:11px;font-family:ui-monospace,Menlo,monospace;background:#0d1117;border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:0 5px 5px 0;color:#c9d4e0}
+  .tagm.r{border-color:#1f6f3f;color:#3fb950} .tagm.w{border-color:#8a6d1a;color:#e3b341} .tagm.e{border-color:#6e40c9;color:#d2a8ff}
+  .xclose{float:right;color:var(--dim);cursor:pointer;font-size:18px;line-height:1;margin:-4px -4px 0 0}
 </style>
 <header><h1>Marketplace</h1><div class="sub" id="who">…</div></header>
 <div class="wrap">
@@ -67,14 +80,18 @@ function compCard(c){
               : '<span class="cert bad">uncertified</span>';
   const mem=(c.members||[]);   // an AI Expert (kind=agent) bundles Skills — installing it fans out to them
   const el=document.createElement('div'); el.className='card';
+  const dsc=c.description?`<div class="prov" style="margin-top:7px;color:#a9b6c4;line-height:1.5">${esc(c.description.slice(0,110))}${c.description.length>110?'…':''}</div>`:'';
   el.innerHTML=`<span class="k">${esc(kindLabel(c.kind))}</span>
-    <div class="name">${esc(niceName(c))}</div>
+    <div class="name link">${esc(niceName(c))}</div>
     <div class="prov">${esc(c.provider||'')} · v${c.version}</div>
     <div class="cid">${esc(c.component_id)}</div>
+    ${dsc}
     ${mem.length?`<div class="members">Includes ${mem.length} skill${mem.length>1?'s':''}: ${mem.map(m=>pretty(m.split('/').pop())).join(' · ')}</div>`:''}
-    <div class="row">${priceLabel(c.pricing)}${badge}</div>
+    <div class="row">${priceLabel(c.pricing)}${badge}<span class="more">Details ›</span></div>
     ${c.cert_note?`<div class="prov" style="color:#d29922">${esc(c.cert_note)}</div>`:''}
     <div class="row"></div>`;
+  el.querySelector('.name').onclick=()=>detail(c);
+  el.querySelector('.more').onclick=()=>detail(c);
   const b=document.createElement('button');
   const label=mem.length?'Install Expert':'Install';
   b.textContent=installed?'Installed':(installable?label:'Unavailable');
@@ -82,6 +99,45 @@ function compCard(c){
   if(installable&&!installed) b.onclick=()=>install('component',c.component_id,b);
   el.querySelector('.row:last-child').appendChild(b);
   return el;
+}
+function detail(c){
+  const installed=INSTALLED.includes(c.component_id);
+  const installable=c.certified && c.serveable!==false;
+  const mem=(c.members||[]);
+  const reads=c.schemas&&c.schemas.reads||c.reads||[], writes=c.schemas&&c.schemas.writes||c.writes||[];
+  const flat=Array.isArray(c.schemas)?c.schemas:[];   // some listings carry a flat schema list
+  const secrets=(c.secrets||[]).map(s=>s.name||s), egress=c.egress||[], scopes=c.scopes||[];
+  const badge=c.certified?'<span class="cert">✓ certified</span>':'<span class="cert bad">uncertified</span>';
+  const tags=(arr,cls)=>arr.length?arr.map(x=>`<span class="tagm ${cls}">${esc(typeof x==='string'?x:(x.scope||x.name||JSON.stringify(x)))}</span>`).join(''):'<span class="prov">none</span>';
+  const ov=document.createElement('div'); ov.className='ov';
+  ov.innerHTML=`<div class="sheet">
+    <span class="xclose" id="xc">✕</span>
+    <span class="k">${esc(kindLabel(c.kind))}</span> ${badge}
+    <h2>${esc(niceName(c))}</h2>
+    <div class="prov">${esc(c.provider||'')} · v${esc(c.version||'')}${c.published_at?' · listed '+esc(String(c.published_at).slice(0,10)):''}</div>
+    <div class="cid">${esc(c.component_id)}</div>
+    ${c.description?`<div class="desc">${esc(c.description)}</div>`:'<div class="desc" style="color:var(--dim)">No description provided.</div>'}
+    ${mem.length?`<div class="sec">Includes (${mem.length})</div><div>${mem.map(m=>`<span class="tagm">${esc(pretty(m.split('/').pop()))}</span>`).join('')}</div>`:''}
+    ${(reads.length||writes.length||flat.length)?`<div class="sec">Data it accesses</div>
+      ${reads.length?`<div><span class="k2" style="font-size:12px;color:var(--dim)">reads&nbsp;</span>${tags(reads,'r')}</div>`:''}
+      ${writes.length?`<div style="margin-top:4px"><span class="k2" style="font-size:12px;color:var(--dim)">writes&nbsp;</span>${tags(writes,'w')}</div>`:''}
+      ${flat.length?`<div>${tags(flat,'r')}</div>`:''}`:''}
+    ${egress.length?`<div class="sec">Network egress</div><div>${tags(egress,'e')}</div>`:''}
+    ${scopes.length?`<div class="sec">Capabilities (scopes)</div><div>${tags(scopes,'w')}</div>`:''}
+    ${secrets.length?`<div class="sec">Keys required</div><div>${tags(secrets,'')}</div><div class="prov" style="margin-top:4px">Set in the Components app (Settings → API keys) after install.</div>`:''}
+    <div class="sec">Provenance</div>
+    <div class="kv2"><div class="k2">Certificate</div><div class="cid" style="margin:0">${esc((c.certificate&&(c.certificate.id||c.certificate))||'—')}</div>
+      <div class="k2">Visibility</div><div>${esc(c.visibility||'public')}</div></div>
+    <div class="row" style="margin-top:18px"><span>${priceLabel(c.pricing)}</span></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#xc').onclick=()=>ov.remove();
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const btn=document.createElement('button');
+  btn.textContent=installed?'Installed':(installable?(mem.length?'Install Expert':'Install'):'Unavailable');
+  btn.disabled=installed||!installable;
+  if(installable&&!installed) btn.onclick=()=>{install('component',c.component_id,btn);};
+  ov.querySelector('.row:last-child').appendChild(btn);
 }
 function solCard(s){
   const el=document.createElement('div'); el.className='card';
@@ -93,7 +149,7 @@ function solCard(s){
 }
 function renderFilters(){
   const kinds=[...new Set(DATA.components.map(c=>c.kind))].sort();
-  if((DATA.solutions||[]).length) kinds.push('solution');
+  if((DATA.solutions||[]).length && !kinds.includes('solution')) kinds.push('solution');   // avoid a duplicate 'solution' chip when solutions are also registered as components
   const F=document.getElementById('filters');
   F.innerHTML=['all',...kinds].map(k=>`<span class="chip ${FILTER===k?'on':''}" data-k="${k}">${k==='all'?'all':esc(kindLabel(k))}</span>`).join('');
   F.querySelectorAll('.chip').forEach(el=>el.onclick=()=>{FILTER=el.dataset.k;PAGE=0;render();});

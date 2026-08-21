@@ -10,6 +10,13 @@ kind: provider
 version: 0.1.0
 provider: ds:airawat:developer
 display_name: Anthropic (Claude)
+description: >-
+  Makes Anthropic's Claude models available to the platform through the model-gateway. It is a
+  credential + routing holder — install it and set the Anthropic API key in the Components app; the
+  gateway then serves the "code" task (Studio code generation) from Claude via the Anthropic Messages
+  API. The key stays in the per-component secret store — confined components and agents never see it.
+egress:
+  - api.anthropic.com
 secrets:
   - name: ANTHROPIC_API_KEY
     label: Anthropic API key
