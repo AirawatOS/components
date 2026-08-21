@@ -39,7 +39,9 @@ MEMBERS = [
     ("acquire heat (Open-Meteo)",  "drivers/heat", "dev-run-heat", {"MODE": "openmeteo"}),
     ("index → cell.heat",          CI, "dev-run-cell", {"INPUT_SCHEMA": "environment.lst_observation",
                                     "OUTPUT_SCHEMA": "cell.heat", "METHOD": "idw", "VALUE_FIELD": "lst_value"}),
-    ("acquire terrain (elevation)", "drivers/terrain", "dev-run-terrain", {}),
+    # terrain from Copernicus GLO-30 DEM via GEE (server-side, scales to a metro; runs in the EO runtime).
+    # Replaces the Open-Meteo point-fetch terrain driver. (No GEE creds for terrain-dem ⇒ fails loudly.)
+    ("terrain (Copernicus DEM)",   "drivers/terrain-dem", "dev-run-terrain-dem", {}),
     ("assess coverage & trust",    "engines/coverage-qa", "dev-run-coverage", {}),
 ]
 
