@@ -20,8 +20,15 @@ import json, os, sys, subprocess, time, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-TENANT = os.environ.get("TENANT", "kmc")
+# The pipeline builds exactly ONE city, named by its caller (the onboarding bridge supplies both from the
+# commissioner's request). NO default — a defaulted tenant/AOI is how one city's baseline lands on another's.
+TENANT = os.environ.get("TENANT") or ""
+AOI_ID = os.environ.get("AOI_ID") or ""
+if not TENANT or not AOI_ID:
+    raise SystemExit("FATAL: city-baseline requires TENANT and AOI_ID (which city to build) — there is no default.")
+_at = AOI_ID.split(":")[1] if AOI_ID.count(":") >= 2 else ""
+if _at and _at != TENANT:                                        # the AOI must belong to the write tenant, never another city's
+    raise SystemExit(f"FATAL: AOI_ID {AOI_ID} belongs to tenant '{_at}', not TENANT '{TENANT}' — refusing to build.")
 WSID = os.environ.get("WORKSPACE", f"ds:{TENANT}:city/workspace/{AOI_ID.rsplit('/', 1)[-1]}")
 REQID = f"ds:{TENANT}:city/onboarding_request/{AOI_ID.rsplit('/', 1)[-1]}"
 COMMISSIONER = os.environ.get("COMMISSIONER", f"role://{TENANT}/urban.commissioner")

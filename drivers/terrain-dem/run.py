@@ -19,8 +19,11 @@ import json, math, os, time, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-TENANT = os.environ.get("TENANT", "kmc")
+AOI_HINT = os.environ.get("AOI_ID", "")          # the pipeline passes the exact AOI; else we discover the tenant's own
+# A driver runs in the context of exactly ONE tenant, supplied by the runtime. NO default — guessing a tenant
+# is how one city's data lands in another's namespace (the Kanpur-into-bmc pollution). Missing ⇒ fail loudly.
+TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""
+AOI_REF = ""                                     # the RESOLVED aoi id (set in main) — never a hardcoded default
 PROJECT = os.environ.get("GEE_PROJECT", "")
 SA_EMAIL = os.environ.get("GEE_SERVICE_ACCOUNT", "")
 SA_KEY = os.environ.get("GEE_SERVICE_ACCOUNT_KEY", "")
@@ -40,11 +43,31 @@ def unwrap(res):
     return res.get("object") if isinstance(res, dict) and "object" in res else res
 
 
-def read_aoi():
-    o = unwrap(call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}))
+def _load_aoi(aoi_id):
+    o = unwrap(call("/v1/read", {"scope": "space.aoi", "id": aoi_id}))
     if not isinstance(o, dict) or len(o.get("bbox") or []) != 4:
-        raise SystemExit(f"FATAL: space.aoi {AOI_ID} missing / no 4-el bbox: {o!r}")
+        raise SystemExit(f"FATAL: space.aoi {aoi_id} missing / no 4-el bbox: {o!r}")
     return o, [float(v) for v in o["bbox"]], int(o.get("h3_res", 9))
+
+
+def resolve_aoi():
+    """The AOI to fill for THIS tenant. An explicit AOI_ID (the pipeline passes it) is honoured ONLY if it
+    belongs to the write tenant; otherwise the driver DISCOVERS the tenant's own space.aoi. No default AOI."""
+    if AOI_HINT:
+        ht = AOI_HINT.split(":")[1] if AOI_HINT.count(":") >= 2 else ""
+        if ht and ht != TENANT:
+            raise SystemExit(f"FATAL: AOI_ID {AOI_HINT} belongs to tenant '{ht}', not write tenant '{TENANT}' — "
+                             f"refusing to write one city's terrain into another's namespace.")
+        o, bbox, res = _load_aoi(AOI_HINT)
+        return o, bbox, res, AOI_HINT
+    rows = call("/v1/query", {"scope": "space.aoi"}).get("results") or []
+    mine = [(r.get("object") or r) for r in rows
+            if str((r.get("object") or r).get("id", "")).startswith(f"ds:{TENANT}:")
+            and len((r.get("object") or r).get("bbox") or []) == 4]
+    if not mine:
+        raise SystemExit(f"FATAL: no space.aoi for tenant '{TENANT}' — run City Setup first. No default AOI.")
+    o = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1])))  # the city, not a sub-AOI
+    return o, [float(v) for v in o["bbox"]], int(o.get("h3_res", 9)), o["id"]
 
 
 def init_ee():
@@ -101,8 +124,12 @@ def slope_deg(h, elev, res):
 
 def main():
     import h3
-    aoi, bbox, res = read_aoi()
-    name = aoi.get("name", AOI_ID.rsplit("/", 1)[-1])
+    global AOI_REF
+    if not TENANT:                                               # no tenant default — a driver never guesses its tenant
+        raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant (the runtime "
+                         "supplies it from the confined run token). Refusing to run without one.")
+    aoi, bbox, res, AOI_REF = resolve_aoi()                      # honours the pipeline's AOI, else discovers the tenant's own
+    name = aoi.get("name", AOI_REF.rsplit("/", 1)[-1])
     ee = init_ee()
     cells = h3_cells(bbox, res)
     print(f"Copernicus DEM · AOI '{name}' bbox={bbox} res={res} → {len(cells)} H3 cells", flush=True)

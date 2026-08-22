@@ -30,7 +30,8 @@ Config (env, injected clean by the host via --set KEY=VALUE):
 import json, os, math, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/demo")
+AOI_HINT = os.environ.get("AOI_ID", "")          # the pipeline passes the exact AOI; else we discover the tenant's own
+AOI_REF = ""                                     # the RESOLVED aoi id (set in main) — never a hardcoded default
 INPUT_SCHEMA = os.environ.get("INPUT_SCHEMA", "geo.landcover")
 OUTPUT_SCHEMA = os.environ.get("OUTPUT_SCHEMA", "cell.builtup")
 METHOD = os.environ.get("METHOD", "fraction")
@@ -38,7 +39,7 @@ CLASS_FIELD = os.environ.get("CLASS_FIELD", "lc_class")
 CLASS_VALUE = os.environ.get("CLASS_VALUE", "built")
 VALUE_FIELD = os.environ.get("VALUE_FIELD", "value")
 RES_OVERRIDE = os.environ.get("RESOLUTION")
-WRITE_TENANT = os.environ.get("WRITE_TENANT", "kmc")
+WRITE_TENANT = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""   # NO default — an indexer never guesses its tenant
 CID = os.environ.get("AIROS_COMPONENT_ID", "ds:airawat:engine/cell-indexer")
 CVER = os.environ.get("AIROS_COMPONENT_VERSION", "0.1.0")
 _CAP = 50                                                   # cap derived_from list per cell (lineage, bounded)
@@ -203,19 +204,39 @@ def _boundary(hcell):
 
 
 # ---------------------------------------------------------------- broker mode
+def resolve_aoi():
+    """The AOI to index for THIS tenant. An explicit AOI_ID (the pipeline passes it) is honoured ONLY if it
+    belongs to the write tenant; otherwise DISCOVER the tenant's own space.aoi. No default AOI, ever."""
+    if AOI_HINT:
+        ht = AOI_HINT.split(":")[1] if AOI_HINT.count(":") >= 2 else ""
+        if ht and ht != WRITE_TENANT:
+            raise SystemExit(f"FATAL: AOI_ID {AOI_HINT} belongs to tenant '{ht}', not write tenant '{WRITE_TENANT}' — "
+                             f"refusing to write one city's cells into another's namespace.")
+        o = _call("/v1/read", {"scope": "space.aoi", "id": AOI_HINT}).get("object")
+        if not o or len(o.get("bbox") or []) != 4:
+            raise SystemExit(f"FATAL: space.aoi {AOI_HINT} missing / no 4-el bbox")
+        return o, AOI_HINT
+    rows = _call("/v1/query", {"scope": "space.aoi"}).get("results") or []
+    mine = [(r.get("object") or r) for r in rows
+            if str((r.get("object") or r).get("id", "")).startswith(f"ds:{WRITE_TENANT}:")
+            and len((r.get("object") or r).get("bbox") or []) == 4]
+    if not mine:
+        raise SystemExit(f"FATAL: no space.aoi for tenant '{WRITE_TENANT}' — run City Setup first. No default AOI.")
+    o = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1])))
+    return o, o["id"]
+
+
 def main():
-    aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
-    if not aoi:
-        print(f"FAIL: no AOI at {AOI_ID}"); return 1
+    global AOI_REF
+    if not WRITE_TENANT:                                          # no tenant default — an indexer never guesses its tenant
+        print("FAIL: WRITE_TENANT/TENANT not set — an indexer writes in the context of exactly one tenant. Refusing to guess.")
+        return 1
+    aoi, AOI_REF = resolve_aoi()                                  # honours the pipeline's AOI, else discovers the tenant's own
     bbox = aoi["bbox"]; res = int(RES_OVERRIDE) if RES_OVERRIDE else int(aoi.get("h3_res", 9))
-    aoi_tenant = AOI_ID.split(":")[1] if AOI_ID.count(":") >= 2 else ""
-    if aoi_tenant and aoi_tenant != WRITE_TENANT:                 # cross-tenant guard (ADR-0063): the AOI's tenant and the
-        print(f"FAIL: WRITE_TENANT={WRITE_TENANT} but AOI {AOI_ID} belongs to tenant '{aoi_tenant}' — refusing to "
-              f"write {aoi_tenant}'s cells into {WRITE_TENANT}'s namespace."); return 1   # write namespace MUST agree
     rows = _call("/v1/query", {"scope": INPUT_SCHEMA, "limit": 20000}).get("results", [])
     features = [(r.get("object") or r) for r in rows]
     cells = cells_in_bbox(bbox, res)
-    print(f"AOI '{aoi.get('name', AOI_ID)}' bbox={bbox} res={res} → {len(cells)} cells; "
+    print(f"AOI '{aoi.get('name', AOI_REF)}' bbox={bbox} res={res} → {len(cells)} cells; "
           f"{len(features)} {INPUT_SCHEMA} features; method={METHOD} → {OUTPUT_SCHEMA}")
 
     result = aggregate(features, cells, res, METHOD)
@@ -228,7 +249,7 @@ def main():
     for f in features:
         if f.get("observed_at"):
             obs = max(obs, f["observed_at"])
-    obs = obs if obs != "1970-01-01T00:00:00Z" else _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object", {}).get("observed_at", "2025-01-01T00:00:00Z")
+    obs = obs if obs != "1970-01-01T00:00:00Z" else _call("/v1/read", {"scope": "space.aoi", "id": AOI_REF}).get("object", {}).get("observed_at", "2025-01-01T00:00:00Z")
 
     written = 0
     for hcell, (value, conf, src) in result.items():
@@ -240,13 +261,13 @@ def main():
                 "cell_ref": {"h3_id": hcell, "resolution": res,
                              "centroid": [round(lng, 5), round(lat, 5)], "boundary": _boundary(hcell)},
                 "value": value, "method": METHOD, "confidence": conf,
-                "derived_from": src or [f"{INPUT_SCHEMA}@aoi:{AOI_ID}"],
+                "derived_from": src or [f"{INPUT_SCHEMA}@aoi:{AOI_REF}"],
                 "layer": "L2",
                 "produced_by": {"component": {"id": CID, "version": CVER}},
                 # prov: the derivation block the house rule requires on a measure (ADR-0041/0063 R5) — packages
                 # the lineage this engine already computes (method + inputs + producer + confidence + time).
                 "prov": {"method": METHOD, "confidence": conf,
-                         "derived_from": src or [f"{INPUT_SCHEMA}@aoi:{AOI_ID}"],
+                         "derived_from": src or [f"{INPUT_SCHEMA}@aoi:{AOI_REF}"],
                          "produced_by": {"component": {"id": CID, "version": CVER}}, "observed_at": obs},
                 "observed_at": obs}
         _call("/v1/write", {"scope": OUTPUT_SCHEMA, "id": rid, "object": fact,

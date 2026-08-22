@@ -16,14 +16,14 @@ writes: [city.onboarding_request, city.workspace, city.coverage, geo.landcover, 
 stages:
   - { stage: request,   writes: city.onboarding_request }
   - { stage: provision, writes: city.workspace }
-  - { stage: acquire,   members: [landcover, heat, terrain] }
+  - { stage: acquire,   members: [landcover-dw, heat, terrain-dem] }
   - { stage: index,     members: [cell-indexer] }
   - { stage: assess,    members: [coverage-qa], writes: city.coverage }
   - { stage: notify,    writes: platform.inbox_item }
 members:
-  - ds:airawat:driver/landcover
-  - ds:airawat:driver/heat
-  - ds:airawat:driver/terrain
+  - ds:airawat:driver/landcover-dw     # Dynamic World (GEE) — built-up + green cover
+  - ds:airawat:driver/heat             # Open-Meteo — temperature → environment.lst_observation
+  - ds:airawat:driver/terrain-dem      # Copernicus GLO-30 DEM (GEE) — elevation + slope. (Open-Meteo terrain driver retired.)
   - ds:airawat:engine/cell-indexer
   - ds:airawat:engine/coverage-qa
 scopes:
