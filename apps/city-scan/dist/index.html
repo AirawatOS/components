@@ -40,6 +40,14 @@
   .layer-btn .lb b{display:block;font-weight:600;font-size:13.5px}
   .layer-btn .lb span{color:var(--muted);font-size:11.5px}
   .legend{margin-top:22px}
+  .ovsec{margin-top:22px}
+  .ovbtns{display:flex;flex-direction:column;gap:7px}
+  .ovbtn{display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid var(--edge);border-radius:9px;
+    background:var(--panel);color:var(--muted);cursor:pointer;text-align:left;font-size:13px;transition:.13s}
+  .ovbtn:hover{border-color:var(--edge2)}
+  .ovbtn.on{color:var(--ink);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .ovbtn .dotb{width:10px;height:10px;border-radius:50%;flex:none;opacity:.45}
+  .ovbtn.on .dotb{opacity:1}
   .bar{height:10px;border-radius:5px;margin:8px 0 5px}
   .legend .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px}
   .map-wrap{position:relative;overflow:hidden;background:#0b1017}
@@ -90,6 +98,13 @@
       <div class="bar" id="legbar"></div>
       <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
     </div>
+    <div class="ovsec" id="ovsec" hidden>
+      <p class="rail-h">Overlays</p>
+      <div class="ovbtns">
+        <button class="ovbtn on" id="ovwater" hidden><span class="dotb" style="background:#60a5fa"></span>Drainage</button>
+        <button class="ovbtn on" id="ovroads" hidden><span class="dotb" style="background:#e2e8f0"></span>Roads</button>
+      </div>
+    </div>
   </aside>
 
   <div class="map-wrap">
@@ -132,7 +147,7 @@ async function q(schema){
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
 
-let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false;
+let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true;
 const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
 
 async function load(){
@@ -167,9 +182,14 @@ async function load(){
     }
   }));
   LAYERS=kept;
+  // VECTOR OVERLAYS (native L1 geometry, drawn on top of the choropleth): roads (lines) + drainage (channels).
+  const firstpt=g=>{let c=(g||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0]))c=c[0];return c;};
+  const roads=(await q("geo.osm_feature")).map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature}))
+    .filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]));
+  const water=(await q("geo.hydro_feature")).filter(o=>o.geometry&&inB(firstpt(o.geometry)));
   let cov=await q("city.coverage"); cov.sort((a,b)=>String(b.assessed_at||"").localeCompare(String(a.assessed_at||"")));
   const cs={}; cov=cov.filter(c=>{const k=c.layer_noun; if(cs[k])return false; cs[k]=1; return true;});
-  return {aoi,scope:SB,data,coverage:cov};
+  return {aoi,scope:SB,data,coverage:cov,roads,water};
 }
 
 // ---- basemap: OSM raster via the host's CACHED declared-egress /bridge/fetch (fetched once, served from disk) ----
@@ -204,9 +224,23 @@ function dataLayer(){
     getFillColor:c=>[...lerpC(L.ramp[0],L.ramp[1],norm(c)),235],
     updateTriggers:{getElevation:[mode3d,active], getFillColor:[active]}});
 }
+function overlayLayers(){
+  const out=[];
+  if(showWater && (DATA.water||[]).length){                    // drainage channels (geo.hydro_feature) → blue
+    out.push(new deck.GeoJsonLayer({id:"drainage",
+      data:{type:"FeatureCollection",features:DATA.water.map(o=>({type:"Feature",geometry:o.geometry,properties:{}}))},
+      filled:true,stroked:true,getFillColor:[56,120,190,150],getLineColor:[96,165,250,235],
+      lineWidthUnits:"pixels",getLineWidth:1,pickable:false}));
+  }
+  if(showRoads && (DATA.roads||[]).length){                    // road network (geo.osm_feature) → light paths on top
+    out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",getWidth:1,widthMinPixels:0.5,
+      getColor:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false}));
+  }
+  return out;
+}
 function render(){
   if(!deckgl) return;
-  deckgl.setProps({layers:[basemapLayer(), dataLayer()].filter(Boolean)});
+  deckgl.setProps({layers:[basemapLayer(), dataLayer(), ...overlayLayers()].filter(Boolean)});
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
@@ -271,6 +305,11 @@ function fitView(bbox){
   });
   $("mapload").remove();
   drawLayers(); drawTrust(); render();
+  // vector overlays: show a toggle only when that data exists (drainage now; roads once the run lands)
+  if((DATA.water||[]).length){ $("ovsec").hidden=false; $("ovwater").hidden=false; }
+  if((DATA.roads||[]).length){ $("ovsec").hidden=false; $("ovroads").hidden=false; }
+  $("ovwater").onclick=()=>{ showWater=!showWater; $("ovwater").classList.toggle("on",showWater); render(); };
+  $("ovroads").onclick=()=>{ showRoads=!showRoads; $("ovroads").classList.toggle("on",showRoads); render(); };
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
   $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});
