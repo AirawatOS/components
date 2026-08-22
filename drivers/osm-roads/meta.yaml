@@ -1,19 +1,30 @@
+# A DRIVER (kind=driver) — the ROAD NETWORK from OpenStreetMap/Overpass (ADR-0060 L0→L2, Wave-1 physical).
+# Emits BOTH tiers: L1 native geometry (geo.osm_feature, one LineString per highway way) AND the L2 analytical
+# layer (cell.roads — road length + density per H3 cell). Real OSM only; no tenant/AOI default.
 component_id: ds:airawat:driver/osm-roads
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer
+display_name: Roads (OpenStreetMap / Overpass)
 entrypoint: run.py
 confinement_min: L1
 reads:
   - space.aoi
 writes:
   - geo.osm_feature
-scopes:
-  - verb: read
-    scope: space.aoi
-    tenant: kmc
-  - verb: write
-    scope: geo.osm_feature
-    tenant: kmc
+  - cell.roads
+config: [OSM_PBF_FILE_ID]              # filestore digest of the uploaded regional OSM PBF (set by the Settings upload)
+assets:                               # DATA the tenant provides via driver Settings (uploaded to the filestore)
+  - name: OSM_PBF
+    kind: osm-pbf
+    populates: OSM_PBF_FILE_ID         # the upload stores the file → filestore → writes its digest into this config
+    optional: true                     # absent ⇒ the driver falls back to live Overpass
+    hint: "Regional OpenStreetMap extract (.osm.pbf — e.g. Geofabrik Maharashtra ~300 MB). Uploaded once; every run reads roads locally instead of Overpass."
 egress:
-  - overpass-api.de
+  - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-roads (+https://airawat.org; contact@airawat.org)" }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: overpass-api.de, provides: [geo.osm_feature, cell.roads] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: geo.osm_feature }
+  - { verb: write, scope: cell.roads }
