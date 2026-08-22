@@ -5,19 +5,18 @@ Confined — its only I/O is the kernel broker. It READS the area-of-interest (s
 bbox + resolution, enumerates the H3 cells covering that bbox, fetches REAL elevation for each cell
 centroid from Open-Meteo's elevation API (FREE + KEYLESS, egress-gated to api.open-meteo.com — no secret),
 derives slope from the elevation difference to neighbouring cells, and WRITES a geo.terrain fact per cell.
-If the egress path is unavailable it falls back to a deterministic SYNTHETIC ridge so the AOI→H3→measure
-pipeline still runs keyless; run mode records openmeteo|synthetic.
+REAL elevation ONLY — if the egress path is unavailable the driver writes NOTHING and fails loudly. No
+synthetic fallback. (Superseded by terrain-dem, which reads Copernicus GLO-30 via GEE.)
 
-Env: AOI_ID · MODE (auto|openmeteo|synthetic) · OPEN_METEO_URL
+Env: AOI_ID · TENANT · OPEN_METEO_URL
 """
-import json, math, os, urllib.request, urllib.error
+import json, math, os, time, urllib.request, urllib.error
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-TENANT = os.environ.get("TENANT", "kmc")               # write ids land in ds:<TENANT>: (tenant-parameterized)
-OBSERVED_AT = os.environ.get("OBSERVED_AT", "2025-05-12T00:00:00Z")
-MODE = os.environ.get("MODE", "auto")
+AOI_ID = os.environ.get("AOI_ID", "")
+TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
+NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())   # real acquisition time — never a hardcoded date
 OPEN_METEO_URL = os.environ.get("OPEN_METEO_URL", "https://api.open-meteo.com/v1/elevation")
 import h3
 
@@ -112,7 +111,7 @@ def main():
         print(f"no AOI at {AOI_ID}"); return 1
     bbox, res = aoi["bbox"], aoi["h3_res"]
     cells = cells_in_bbox(bbox, res)
-    print(f"AOI '{aoi['name']}' bbox={bbox} res={res} → {len(cells)} H3 cells (mode={MODE})")
+    print(f"AOI '{aoi['name']}' bbox={bbox} res={res} → {len(cells)} H3 cells")
 
     # REAL elevation only — fetch or fail loudly (no synthetic fabrication).
     try:
@@ -132,11 +131,12 @@ def main():
             "schema": "geo.terrain", "id": f"ds:{TENANT}:geo/terrain/{h}",
             "space": {"h3": h, "res": res, "centroid": [round(lng, 6), round(lat, 6)], "boundary": boundary},
             "elevation_m": elev, "slope_deg": slope, "terrain_class": classify(slope), "unit": "m",
-            "observed_at": OBSERVED_AT, "source_ref": "ds:airawat:ref/source/open-meteo",
-            "prov": {"method": "ds:airawat:method/open-meteo-elevation", "component": ctx["component_id"]},
+            "observed_at": NOW, "source_ref": "ds:airawat:ref/source/open-meteo",
+            "prov": {"method": "ds:airawat:method/open-meteo-elevation", "component": ctx["component_id"],
+                     "observed_at": NOW},
         }
         _call("/v1/write", {"scope": "geo.terrain", "id": fact["id"], "object": fact,
-                            "valid_time": {"from": OBSERVED_AT}, "asserted_at": OBSERVED_AT})
+                            "valid_time": {"from": NOW}, "asserted_at": NOW})
         written += 1
     print(f"wrote {written} geo.terrain cells (real Open-Meteo elevation)")
     return 0

@@ -117,8 +117,8 @@ def main():
                 **vals, "observed_at": obs, "source": "idss",
                 "prov": {"method": "idss.v1", "component": "ds:airawat:driver/kanpur-idss",
                          "station": loc.get("name") or sid}}
-        _call("/v1/write", {"scope": "air.sensor_reading", "id": rid, "object": fact,
-                            "valid_time": {"from": obs}, "asserted_at": obs})
+        _call("/v1/write", {"scope": "air.sensor_reading", "id": rid, "object": fact,   # asserted_at = write time (not the reading time)
+                            "valid_time": {"from": obs}, "asserted_at": _isoz(datetime.now(timezone.utc))})
         written += 1
 
     print(f"ingested {written} REAL air.sensor_reading points from Kanpur iDSS "

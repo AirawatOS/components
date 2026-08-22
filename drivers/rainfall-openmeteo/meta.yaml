@@ -1,0 +1,22 @@
+# A DRIVER (kind=driver) — annual RAINFALL per H3 cell from ERA5 via Open-Meteo archive (ADR-0060 L2, Wave-1).
+# Samples a coarse grid across the AOI, totals each point's ERA5 daily precipitation for a year, and assigns
+# every H3 cell its nearest sample → cell.rainfall (mm). The climate sibling of heat. Real ERA5 only, no default,
+# no synthetic fallback. Runs as a host subprocess (keyless HTTP via the broker).
+component_id: ds:airawat:driver/rainfall-openmeteo
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Rainfall (ERA5 / Open-Meteo)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi, cell.rainfall]     # cell.rainfall read = RESUME
+writes: [cell.rainfall]
+egress:
+  - { host: archive-api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/rainfall (+https://airawat.org; contact@airawat.org)" }
+config: [YEAR, GRID]
+sources:
+  - { ref: "ds:airawat:ref/source/open-meteo", host: archive-api.open-meteo.com, provides: [cell.rainfall] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.rainfall }
+  - { verb: write, scope: cell.rainfall }

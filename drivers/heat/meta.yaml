@@ -2,8 +2,8 @@
 # (space.aoi), samples a grid of points across it, and fetches the temperature at each from Open-Meteo (free,
 # keyless) in ONE egress call, writing an environment.lst_observation per point. Open-Meteo returns 2 m AIR
 # temperature — a keyless real proxy for surface heat; true satellite LST is a future raster driver. Feeds
-# cell-indexer (METHOD=mean) → cell.heat. Deterministic offline fallback (urban-heat-island field) when the
-# egress path is unavailable, so the vertical runs keyless; run mode records openmeteo|synthetic.
+# cell-indexer (METHOD=mean) → cell.heat. REAL Open-Meteo only — if the egress path is unavailable the driver
+# writes nothing and fails loudly. No synthetic fallback. observed_at = the reading's real timestamp.
 component_id: ds:airawat:driver/heat
 kind: driver
 version: 0.1.0

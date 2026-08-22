@@ -8,21 +8,26 @@ Confined (>= L1) — its ONLY I/O is the kernel broker:
   write  one environment.lst_observation per grid point (lat, lon, lst_value=°C, source_ref).
 
 Open-Meteo returns 2 m AIR temperature — a keyless REAL proxy for surface heat; genuine satellite LST is a
-future raster driver (noted). satellite_name records the proxy so the provenance is honest. If the egress
-path is unavailable it SYNTHESIZES a deterministic urban-heat-island field (warmer toward the AOI centre) so
-cell-indexer (METHOD=mean) still produces a varying cell.heat. run mode records openmeteo|synthetic.
+future raster driver (noted). satellite_name records the proxy so the provenance is honest. REAL temperature
+ONLY — if the egress path is unavailable the driver writes NOTHING and fails loudly. No synthetic fallback.
 
-Env: AOI_ID · TENANT · GRID (points per side, default 6) · OPEN_METEO_URL · MODE (auto|openmeteo|synthetic)
+Env: AOI_ID · TENANT · GRID (points per side, default 6) · OPEN_METEO_URL
 """
-import json, os, math, urllib.request, urllib.error, urllib.parse
+import json, os, math, time, urllib.request, urllib.error, urllib.parse
 
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-TENANT = os.environ.get("TENANT", "kmc")
+AOI_ID = os.environ.get("AOI_ID", "")
+TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
 GRID = int(os.environ.get("GRID", "6"))
 OPEN_METEO_URL = os.environ.get("OPEN_METEO_URL", "https://api.open-meteo.com/v1/forecast")
-MODE = os.environ.get("MODE", "auto")
 SOURCE_REF = "ds:airawat:ref/source/open-meteo"
-OBS = os.environ.get("OBSERVED_AT", "2025-06-01T12:00:00Z")
+NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())   # real acquisition time — never a hardcoded date
+
+
+def _iso(ts):
+    """Normalise Open-Meteo's `current.time` (GMT, 'YYYY-MM-DDTHH:MM') to an ISO-Z instant; None → fetch time."""
+    if not ts or not isinstance(ts, str):
+        return NOW
+    return ts if ts.endswith("Z") else (ts + ":00Z" if len(ts) == 16 else ts + "Z")
 
 
 def call(path, body):
@@ -50,11 +55,24 @@ def unwrap(res):
 
 
 def read_aoi():
-    o = unwrap(call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}))
-    bbox = o.get("bbox") if isinstance(o, dict) else None
-    if not bbox or len(bbox) != 4:
-        raise SystemExit(f"FATAL: space.aoi {AOI_ID} missing / no 4-el bbox: {o!r}")
-    return o, [float(v) for v in bbox]
+    """The AOI to sample for THIS tenant. An explicit AOI_ID is honoured only if it belongs to the write tenant;
+    otherwise DISCOVER the tenant's own space.aoi. No default AOI, ever."""
+    if AOI_ID:
+        ht = AOI_ID.split(":")[1] if AOI_ID.count(":") >= 2 else ""
+        if ht and ht != TENANT:
+            raise SystemExit(f"FATAL: AOI_ID {AOI_ID} belongs to tenant '{ht}', not write tenant '{TENANT}'.")
+        o = unwrap(call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}))
+        if not isinstance(o, dict) or len(o.get("bbox") or []) != 4:
+            raise SystemExit(f"FATAL: space.aoi {AOI_ID} missing / no 4-el bbox: {o!r}")
+        return o, [float(v) for v in o["bbox"]]
+    rows = call("/v1/query", {"scope": "space.aoi"}).get("results") or []
+    mine = [(r.get("object") or r) for r in rows
+            if str((r.get("object") or r).get("id", "")).startswith(f"ds:{TENANT}:")
+            and len((r.get("object") or r).get("bbox") or []) == 4]
+    if not mine:
+        raise SystemExit(f"FATAL: no space.aoi for tenant '{TENANT}' — run City Setup first. No default AOI.")
+    o = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1])))
+    return o, [float(v) for v in o["bbox"]]
 
 
 def grid_points(bbox, k):
@@ -68,18 +86,18 @@ def grid_points(bbox, k):
     return pts
 
 
-def _emit(idx, lat, lon, temp_c, mode):
-    oid = f"ds:{TENANT}:environment/lst_observation/{mode}-{idx}"
+def _emit(idx, lat, lon, temp_c, obs):
+    oid = f"ds:{TENANT}:environment/lst_observation/openmeteo-{idx}"
     fact = {"schema": "environment.lst_observation", "id": oid, "tenant": TENANT,
             "satellite_name": "open-meteo-2m-air-proxy",
             "latitude": lat, "longitude": lon, "lst_value": round(float(temp_c), 2), "unit": "celsius",
-            "source": SOURCE_REF, "observed_at": OBS, "layer": "L1",
-            "acquired_via": f"ds:airawat:driver/heat:{mode}",
+            "source": SOURCE_REF, "observed_at": obs, "layer": "L1",
+            "acquired_via": "ds:airawat:driver/heat",
             # prov: the observation's provenance the house rule requires (ADR-0041/0063 R5).
             "prov": {"method": "sensor", "source": SOURCE_REF, "satellite_name": "open-meteo-2m-air-proxy",
-                     "observed_at": OBS}}
+                     "observed_at": obs}}
     call("/v1/write", {"scope": "environment.lst_observation", "id": oid, "object": fact,
-                       "valid_time": {"from": OBS}, "asserted_at": OBS})
+                       "valid_time": {"from": obs}, "asserted_at": NOW})
 
 
 def fetch_openmeteo(pts):
@@ -95,13 +113,15 @@ def fetch_openmeteo(pts):
             continue
         # record at OUR sample point p (Open-Meteo snaps the returned lat/lon to its coarse ~11 km grid node,
         # which can fall outside a small AOI); the value is the model's nearest estimate for that location.
-        _emit(idx, p[0], p[1], t, "openmeteo"); n += 1
+        _emit(idx, p[0], p[1], t, _iso(cur.get("time"))); n += 1
     if n == 0:
         raise RuntimeError(f"open-meteo returned no temperatures: {str(payload)[:200]}")
     return n
 
 
 def main():
+    if not TENANT:
+        raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant. Refusing to guess.")
     aoi, bbox = read_aoi()
     pts = grid_points(bbox, GRID)
     print(f"aoi {AOI_ID} ({aoi.get('name','?')}) bbox={bbox} grid={GRID}x{GRID}={len(pts)} pts")

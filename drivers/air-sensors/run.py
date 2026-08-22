@@ -104,8 +104,8 @@ def main():
                 "pm25": vals.get("pm25"), "no2": vals.get("no2"), "o3": vals.get("o3"),
                 "observed_at": obs, "source": "openaq",
                 "prov": {"method": "openaq.v3", "component": "ds:airawat:driver/air-sensors", "station": loc.get("name")}}
-        _call("/v1/write", {"scope": "air.sensor_reading", "id": rid, "object": fact,
-                            "valid_time": {"from": obs}, "asserted_at": obs})
+        _call("/v1/write", {"scope": "air.sensor_reading", "id": rid, "object": fact,   # asserted_at = write time (not the reading time)
+                            "valid_time": {"from": obs}, "asserted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         written += 1
 
     print(f"ingested {written} REAL air.sensor_reading points from OpenAQ "

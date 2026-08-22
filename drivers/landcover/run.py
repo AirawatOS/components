@@ -7,20 +7,18 @@ Confined (>= L1) — its ONLY I/O is the kernel broker:
   write  one geo.landcover per polygon: an lc_class (built|water|vegetation|cropland|bare) + native
          GeoJSON geometry (WGS84 [lon,lat], preserved — geometry is truth, ADR-0060) + ODbL source_ref.
 
-If the egress path is unavailable (no secrets service / keyless offline build), it SYNTHESIZES a
-deterministic land-cover field over the AOI bbox so the vertical runs end-to-end — clearly labelled. The
-output is only as real as its source: run.mode records whether it was 'osm' or 'synthetic'.
+REAL OSM land cover ONLY — if the egress path is unavailable the driver writes NOTHING and fails loudly.
+No synthetic fallback. (Superseded by landcover-dw, which reads Google Dynamic World via GEE.)
 
-Env: AOI_ID (default ds:kmc:space/aoi/kanpur-core) · TENANT (kmc) · OVERPASS_URL · MODE (auto|osm|synthetic)
+Env: AOI_ID · TENANT · OVERPASS_URL
 """
-import json, os, math, urllib.request, urllib.error, urllib.parse
+import json, os, math, time, urllib.request, urllib.error, urllib.parse
 
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-TENANT = os.environ.get("TENANT", "kmc")
+AOI_ID = os.environ.get("AOI_ID", "")
+TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
 OVERPASS_URL = os.environ.get("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
-MODE = os.environ.get("MODE", "auto")                      # auto: try osm, fall back to synthetic
 SOURCE_REF = "ds:airawat:ref/source/osm"
-OBS = os.environ.get("OBSERVED_AT", "2025-06-01T00:00:00Z")
+NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())   # real acquisition time — never a hardcoded date
 
 
 def call(path, body):
@@ -97,9 +95,9 @@ def _emit(idx, lc_class, ring, mode):
             "geometry": {"type": "Polygon", "coordinates": [ring]},
             "area_m2": round(_area_m2(ring), 1), "aoi_ref": AOI_ID,
             "source_ref": SOURCE_REF, "confidence": 0.9,
-            "observed_at": OBS, "layer": "L1", "acquired_via": "ds:airawat:driver/landcover:osm"}
+            "observed_at": NOW, "layer": "L1", "acquired_via": "ds:airawat:driver/landcover"}
     call("/v1/write", {"scope": "geo.landcover", "id": fid, "object": fact,
-                       "valid_time": {"from": OBS}, "asserted_at": OBS})
+                       "valid_time": {"from": NOW}, "asserted_at": NOW})
     return lc_class
 
 

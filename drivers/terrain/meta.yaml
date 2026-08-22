@@ -9,9 +9,9 @@ entrypoint: run.py
 confinement_min: L1
 reads: [space.aoi]
 writes: [geo.terrain]
-# EXTERNAL CONTRACT (real-DEM mode): the driver may egress ONLY to these hosts. Open-Meteo's elevation API
-# is FREE + KEYLESS, so NO secrets are required (an honest empty secrets list — the driver never needs
-# the key). The synthetic-DEM reference build doesn't call out, but the declaration is the contract.
+# EXTERNAL CONTRACT: the driver may egress ONLY to these hosts. Open-Meteo's elevation API is FREE + KEYLESS,
+# so NO secrets are required (an honest empty secrets list — the driver never needs the key). REAL elevation
+# only — no synthetic fallback. (Superseded by terrain-dem, Copernicus GLO-30 via GEE.)
 egress:
   - { host: api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/terrain (+https://airawat.org; contact@airawat.org)" }
 secrets: []
