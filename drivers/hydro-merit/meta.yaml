@@ -1,0 +1,29 @@
+# A DRIVER (kind=driver) — HYDROLOGY from GEE MERIT Hydro (ADR-0060 L0→L2, Wave-1 physical foundation).
+# Derives the city's flood substrate from MERIT Hydro's HAND + flow-accumulation bands: the L1 drainage
+# network as native geometry (geo.hydro_feature) AND the L2 per-cell flood layer (cell.hydrology). Runs in
+# the shared earth-observation runtime (earthengine-api) via the runtime-manager; cert-checked + image-locked.
+# Real MERIT Hydro only — no synthetic fallback.
+component_id: ds:airawat:driver/hydro-merit
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Hydrology (MERIT Hydro / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation           # placement key → components/runtimes/earth-observation image (earthengine-api)
+reads: [space.aoi, cell.hydrology]     # cell.hydrology read = RESUME (skip cells already written)
+writes: [cell.hydrology, geo.hydro_feature]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/hydro-merit" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/hydro-merit" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/hydro-merit" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # same Google service-account key as terrain-dem/landcover-dw (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT]
+sources:
+  - { ref: "ds:airawat:ref/source/merit-hydro", host: earthengine.googleapis.com, provides: [cell.hydrology, geo.hydro_feature] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.hydrology }
+  - { verb: write, scope: cell.hydrology }
+  - { verb: write, scope: geo.hydro_feature }
