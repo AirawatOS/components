@@ -76,8 +76,8 @@ const GEE_STEPS=[
 const OSM_STEPS=[
  'Go to <a href="https://download.geofabrik.de" target="_blank" rel="noopener">download.geofabrik.de</a> — a free directory of OpenStreetMap extracts.',
  'Click your <b>country</b> (e.g. Asia → India), then, if listed, your <b>state / region</b> (e.g. Uttar Pradesh, Maharashtra).',
- 'Download the file ending in <b>.osm.pbf</b> for the <b>smallest region that fully contains your city</b> (a state file is fine; it can be a few hundred MB).',
- 'Upload that <b>.osm.pbf</b> file below. It’s a one-time upload — every roads &amp; facilities run then reads it locally.'];
+ 'Find the file ending in <b>.osm.pbf</b> for the <b>smallest region that fully contains your city</b> — <b>right-click it → Copy link address</b>.',
+ 'Paste that link below and click <b>Fetch</b>. The server downloads it for you — no upload needed. It’s one-time; every roads &amp; facilities run then reads it locally.'];
 
 let D=null, C=null, OPEN={gee:false,osm:false}, PENDING=null;
 function captureForm(){const q=id=>{const el=document.getElementById(id.slice(1));return el?el.value:'';};
@@ -175,11 +175,16 @@ async function render(){
       ${card('osm','🗺️','OpenStreetMap file','Powers roads &amp; critical facilities',os.s,
         os.s==='ok'?`Uploaded${osmAsset()&&osmAsset().filename?' · '+esc(osmAsset().filename.slice(0,28)):''}`:'Not uploaded',
         `<ol class="howto">${OSM_STEPS.map(s=>'<li>'+s+'</li>').join('')}</ol>
-         ${osmAsset()?`<div class="muted" style="font-size:12px;margin-bottom:6px">Current file: <b style="color:var(--ink)">${esc(osmAsset().filename||'set')}</b> ${osmAsset().size_bytes?'· '+fmtSize(osmAsset().size_bytes):''}. Upload a new one to replace it.</div>`:''}
-         <input type="file" id="osm-file" accept=".pbf,.osm.pbf,application/octet-stream" style="display:none">
-         <div class="drop" id="osm-drop">📁 Choose your <b>.osm.pbf</b> file — or drop it here</div>
+         ${osmAsset()?`<div class="muted" style="font-size:12px;margin-bottom:6px">Current file: <b style="color:var(--ink)">${esc(osmAsset().filename||'set')}</b> ${osmAsset().size_bytes?'· '+fmtSize(osmAsset().size_bytes):''}. Fetch or upload a new one to replace it.</div>`:''}
+         <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
+           <input id="osm-url" class="search" style="flex:1;min-width:0" placeholder="https://download.geofabrik.de/asia/india/maharashtra-latest.osm.pbf">
+           <button class="pbtn pri" id="osm-fetch" style="flex:none">Fetch</button></div>
          <div class="bar" id="osm-bar" style="display:none"><i></i></div>
-         <div class="muted" id="osm-prog" style="font-size:12px;margin-top:4px;display:none"></div>`)}
+         <div class="muted" id="osm-prog" style="font-size:12px;margin-top:4px;display:none"></div>
+         <details style="margin-top:8px"><summary class="muted" style="cursor:pointer;font-size:12px">…or upload a file from this computer instead</summary>
+           <input type="file" id="osm-file" accept=".pbf,.osm.pbf,application/octet-stream" style="display:none">
+           <div class="drop" id="osm-drop" style="margin-top:8px">📁 Choose your <b>.osm.pbf</b> file — or drop it here</div>
+         </details>`)}
       <div class="note"><span style="font-size:15px">☑</span><div><b style="color:#8ee0a6">Rainfall, heat &amp; forecast are automatic.</b> They pull free open weather data — nothing to set up.</div></div>
     </div></div>`;
 
@@ -224,6 +229,8 @@ function wireCards(V){
     el.querySelector('.cardhd').onclick=()=>{OPEN[key]=!el.classList.contains('open');el.classList.toggle('open');};
   });
   const gk=V.querySelector('#gee-save'); if(gk) gk.onclick=()=>connectGee(V);
+  const fb=V.querySelector('#osm-fetch'); if(fb) fb.onclick=()=>fetchOsmUrl(V);
+  const uin=V.querySelector('#osm-url'); if(uin) uin.onkeydown=e=>{if(e.key==='Enter')fetchOsmUrl(V);};
   const drop=V.querySelector('#osm-drop'), fin=V.querySelector('#osm-file');
   if(drop&&fin){
     drop.onclick=()=>fin.click();
@@ -250,6 +257,38 @@ async function connectGee(V){
   btn.disabled=false; btn.textContent='Connect key';
   if(okn){ ta.value=''; OPEN.gee=false; toast(`Earth Engine connected — ${okn} satellite layers ready`); await refresh(); }
   else toast(err||'could not save key',true);
+}
+
+// ── fetch the OSM file SERVER-SIDE from a pasted URL → bind to every OSM driver ─────────────
+async function fetchOsmUrl(V){
+  const comps=osmComps(); if(!comps.length) return toast('no OSM layers installed',true);
+  const roads=comps.find(c=>/osm-roads/.test(c.component))||comps[0];
+  const others=comps.filter(c=>c.component!==roads.component).map(c=>c.component);
+  const url=(V.querySelector('#osm-url').value||'').trim();
+  if(!/^https:\/\/\S+\.osm\.pbf$/i.test(url) && !/^https:\/\//i.test(url)) return toast('paste a valid https link to a .osm.pbf file',true);
+  const bar=V.querySelector('#osm-bar'), fill=bar.querySelector('i'), prog=V.querySelector('#osm-prog'), btn=V.querySelector('#osm-fetch');
+  bar.style.display='block'; prog.style.display='block'; fill.style.background='var(--accent)'; fill.style.width='4%';
+  prog.textContent='Starting download…'; btn.disabled=true;
+  const r=await jpost('/bridge/asset',{action:'from_url',component:roads.component,asset:'OSM_PBF',
+    populates:'OSM_PBF_FILE_ID',url,bind_to:others});
+  if(!r.ok){ btn.disabled=false; prog.textContent='Fetch failed: '+(r.j.error||('HTTP '+r.status)); fill.style.background='#f85149'; return toast(r.j.error||'fetch failed',true); }
+  // poll progress
+  const tick=async()=>{
+    const s=await jpost('/bridge/asset',{action:'url_status',component:roads.component,asset:'OSM_PBF'});
+    const j=s.j&&s.j.job; if(!j){ return setTimeout(tick,1500); }
+    if(j.status==='downloading'){
+      const p=j.total?Math.min(0.95,j.downloaded/j.total):0.3;
+      fill.style.width=(p*100).toFixed(0)+'%';
+      prog.textContent=`Downloading ${fmtSize(j.downloaded)}${j.total?' of '+fmtSize(j.total):''}…`;
+      return setTimeout(tick,1200);
+    }
+    if(j.status==='storing'){ fill.style.width='97%'; prog.textContent='Storing…'; return setTimeout(tick,1200); }
+    if(j.status==='done'){ fill.style.width='100%'; prog.textContent='Fetched ✓'; btn.disabled=false; OPEN.osm=false;
+      toast('OpenStreetMap file fetched — roads & facilities ready'); return refresh(); }
+    if(j.status==='failed'){ btn.disabled=false; fill.style.background='#f85149'; prog.textContent='Fetch failed: '+(j.error||'error'); return toast(j.error||'fetch failed',true); }
+    setTimeout(tick,1500);
+  };
+  setTimeout(tick,1000);
 }
 
 // ── upload one OSM file → bind it to every OSM driver (roads + facilities) ─────────────────
