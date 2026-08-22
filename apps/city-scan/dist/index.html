@@ -155,13 +155,26 @@
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-// color_scale (viz.layer enum) → a [low,high] RGB ramp. New scale = one entry; new LAYER = zero app edits.
-const RAMPS={reds:[[58,36,24],[240,134,74]], viridis:[[18,48,31],[74,222,128]], blues:[[11,32,51],[56,189,248]],
-             aqi:[[19,74,43],[248,113,113]], greys:[[36,43,51],[203,213,225]]};
+// color_scale (viz.layer enum) → a MULTI-STOP perceptual ramp (wide hue range → towers/cells differentiate
+// clearly, not shades of one colour). New scale = one entry; new LAYER = zero app edits.
+const RAMPS={
+  viridis:[[68,1,84],[59,82,139],[33,145,140],[92,200,99],[253,231,37]],   // purple→blue→teal→green→yellow
+  turbo:  [[48,18,59],[54,124,215],[30,196,163],[166,220,50],[249,150,50],[152,15,10]],
+  reds:   [[38,22,16],[103,37,28],[176,58,42],[227,120,64],[255,214,150]],
+  blues:  [[8,29,49],[16,73,115],[28,130,182],[70,175,230],[176,224,252]],
+  aqi:    [[38,138,66],[190,204,50],[245,170,50],[230,72,58],[126,40,120]],  // green→yellow→orange→red→purple
+  greys:  [[26,32,40],[74,86,99],[136,150,163],[208,218,230]]};
+const EMPTY_RGBA=[28,34,44,110];   // a TRUE-zero cell (absence) → muted slate, recedes as background vs low-but-present
+const GAMMA=0.55;                  // perceptual curve: spread skewed distributions (few dense cells) across the range
+const clamp01=t=>Math.max(0,Math.min(1,t));
+function rampColor(stops,t){       // interpolate a multi-stop ramp at t∈[0,1]
+  t=clamp01(t); const n=stops.length-1, x=t*n, i=Math.min(n-1,Math.floor(x)), f=x-i, a=stops[i], b=stops[i+1];
+  return [Math.round(a[0]+(b[0]-a[0])*f), Math.round(a[1]+(b[1]-a[1])*f), Math.round(a[2]+(b[2]-a[2])*f)];
+}
+const rampCSS=stops=>`linear-gradient(90deg,${stops.map((c,i)=>`rgb(${c[0]},${c[1]},${c[2]}) ${Math.round(i/(stops.length-1)*100)}%`).join(",")})`;
 const dget=(o,path)=>String(path||"value").split(".").reduce((v,k)=>(v==null?v:v[k]),o);
 const fmtFor=u=> u==="%"?(v=>Math.round(v*100)+"%"): u==="°C"?(v=>v.toFixed(1)+"°"): u==="m"?(v=>Math.round(v)+" m")
               : (v=>(Math.round(v*100)/100)+(u?(" "+u):""));
-const lerpC=(a,b,t)=>a.map((x,i)=>Math.round(x+(b[i]-x)*t));
 let APPID="city-scan";
 
 async function bridge(path,body){
@@ -257,14 +270,16 @@ function dataLayer(){
     return new deck.PathLayer({id:"roads",data:d.rows,widthUnits:"pixels",getWidth:1.6,
       getColor:[56,189,248,200],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:true});
   }
-  const span=(d.hi-d.lo)||1, norm=c=>Math.max(0,Math.min(1,(c.v-d.lo)/span));
+  const span=(d.hi-d.lo)||1;
+  const pnorm=c=>Math.pow(Math.max(0,Math.min(1,(c.v-d.lo)/span)),GAMMA);   // perceptual (gamma) — spreads the range
+  const zero=c=>c.v<=0 && d.lo<=0;                                          // TRUE absence (only when the layer bottoms at 0)
   return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
-    getElevation:c=> (mode3d&&!drillCell) ? norm(c)*ELEV_MAX : 0,   // flatten when drilled so native features show
-    getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?0.92:0.68),  // fade to a carpet in drill mode
-    getFillColor:c=>[...lerpC(L.ramp[0],L.ramp[1],norm(c)),235],
+    getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
+    getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?0.94:0.72),   // fade to a carpet in drill mode
+    getFillColor:c=> zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
-    updateTriggers:{getElevation:[mode3d,active,!!drillCell], getFillColor:[active], opacity:[!!drillCell,mode3d]}});
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell], getFillColor:[active,!!drillCell], opacity:[!!drillCell,mode3d]}});
 }
 function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
 const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
@@ -374,7 +389,7 @@ function render(){
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
-    $("legbar").style.background=`linear-gradient(90deg,rgb(${L.ramp[0]}),rgb(${L.ramp[1]}))`;
+    $("legbar").style.background=rampCSS(L.ramp);
     $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi);
   } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
@@ -392,7 +407,7 @@ function tip(info){
 function drawLayers(){
   $("layers").innerHTML=LAYERS.map(L=>{const d=DATA.data[L.key], n=d?d.rows.length:0;
     return `<button class="layer-btn ${L.key===active?"on":""}" data-k="${L.key}">
-      <span class="swatch" style="background:linear-gradient(135deg,rgb(${L.ramp[0]}),rgb(${L.ramp[1]}))"></span>
+      <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
       <span class="lb"><b>${esc(L.label)}</b><span>${n} ${d&&d.type==="path"?"segments":"cells"} · ${esc(L.desc)}</span></span></button>`;}).join("");
   document.querySelectorAll(".layer-btn").forEach(b=>b.onclick=()=>{active=b.dataset.k;render();});
 }
