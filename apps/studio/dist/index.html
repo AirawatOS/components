@@ -54,6 +54,7 @@
   <span style="margin-left:auto"></span>
   <span class="ic" id="specsBtn">📐 Specs</span>
   <span class="ic" id="reqSchema">Request schema</span>
+  <span class="ic" id="myReqBtn">📥 My Requests</span>
   <span class="ic" id="composeBtn">Compose → Solution</span>
 </div>
 <div class="body">
@@ -90,6 +91,7 @@ async function boot(){
   $('newProj').onclick=newProject;
   $('specsBtn').onclick=specsBrowser;
   $('reqSchema').onclick=requestSchema;
+  $('myReqBtn').onclick=myRequests;
   $('composeBtn').onclick=composeSolution;
   buildRight();
 }
@@ -265,15 +267,42 @@ async function specsBrowser(){
       <div class="sub" style="margin-top:6px">definition</div>
       <pre style="max-height:34vh;overflow:auto;font-size:12px">${esc(JSON.stringify(r.definition||r,null,2))}</pre>`;});
 }
-async function requestSchema(){let SCH=[];try{SCH=((await post('/bridge/schemas',{})).schemas||[]).map(s=>s.schema_id||s).filter(Boolean);}catch(e){}
-  const tmpl=sid=>JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid||"domain.subject","type":"object","required":["schema","id"],"additionalProperties":true,"properties":{"schema":{"const":sid||"domain.subject"},"id":{"type":"string"}}},null,2);
-  const m=modal(`<h3>Request a schema</h3><div class="sub">Reuse-first — existing (${SCH.length}): ${esc([...new Set(SCH)].slice(0,40).join(', '))||'none'}</div>
+async function requestSchema(){
+  // template is HOUSE-RULE COMPLIANT by default (closed + enveloped) so a proposal starts from a passing shape.
+  const tmpl=sid=>JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid||"domain.subject","type":"object","x-kind":"record","additionalProperties":false,"required":["schema","id"],"properties":{"schema":{"const":sid||"domain.subject"},"id":{"type":"string"}}},null,2);
+  const m=modal(`<h3>Request a schema</h3><div class="sub">The AI checks the house rules + suggests reuse before you file — so it arrives at the Semantic Administrator already passing the gate.</div>
     <div class="row" style="gap:8px"><div style="flex:2"><label class="sub">schema id</label><input class="in" id="sid" placeholder="geo.osm_feature"></div><div style="flex:1"><label class="sub">version</label><input class="in" id="ver" value="0.1.0"></div></div>
-    <label class="sub">definition</label><textarea class="in" id="def" rows="10" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(tmpl(''))}</textarea>
-    <div style="text-align:right"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="file">File request</button></div>`);
+    <label class="sub">definition</label><textarea class="in" id="def" rows="9" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(tmpl(''))}</textarea>
+    <div id="adv" class="sub" style="margin-top:6px"></div>
+    <div style="text-align:right;margin-top:6px"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="advise">🤖 Advise</button> <button class="btn primary" id="file">File request</button></div>`);
   m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim());};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
-  m.q('#x').onclick=m.close;m.q('#file').onclick=async()=>{let d;try{d=JSON.parse(m.q('#def').value);}catch(e){m.q('#rm').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
-    const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d});m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — approve in Network-admin</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1200);};}
+  const advise=async()=>{let d;try{d=JSON.parse(m.q('#def').value);}catch(e){m.q('#adv').innerHTML='<span style="color:var(--err)">bad JSON</span>';return null;}
+    const res=await post('/bridge/schema-advise',{schema_id:m.q('#sid').value.trim(),definition:d});
+    const rec=res.recommendation, col=rec==='reuse'?'#f0b429':rec==='fix-and-propose'?'var(--err)':'var(--good)';
+    const viol=(res.house_rule_violations||[]), reuse=(res.reuse_candidates||[]);
+    m.q('#adv').innerHTML=`<div style="color:${col};font-weight:600">🤖 ${esc(rec)}</div><div class="sub">${esc(res.why||'')}</div>`
+      +(viol.length?`<ul style="margin:3px 0 0 16px">${viol.map(v=>`<li style="font-size:11px">${esc(v)}</li>`).join('')}</ul>`:'')
+      +(reuse.length?`<div class="sub" style="margin-top:3px">↩ reuse instead? ${reuse.map(c=>esc(c.schema_id)+' ('+c.score+')').join(', ')}</div>`:'');
+    return res;};
+  m.q('#advise').onclick=advise; m.q('#x').onclick=m.close;
+  m.q('#file').onclick=async()=>{const a=await advise(); if(!a)return;
+    if((a.house_rule_violations||[]).length){m.q('#rm').innerHTML='<span style="color:var(--err)">fix the house-rule violations first</span>';return;}
+    const d=JSON.parse(m.q('#def').value);
+    const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d});
+    m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};}
+
+async function myRequests(){
+  const m=modal(`<h3>My change requests</h3><div class="sub">Status + the Semantic Administrator's decision & comments.</div><div id="mr" style="margin-top:8px;max-height:56vh;overflow:auto">loading…</div><div style="text-align:right;margin-top:8px"><button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close;
+  let d={requests:[]}; try{d=await post('/bridge/my-requests',{});}catch(e){}
+  const rq=d.requests||[];
+  const pill=s=>`<span class="st st-${s==='approved'?'internal':s}" style="padding:0 7px;border-radius:8px;font-size:11px;background:${s==='approved'?'#0f2417':s==='rejected'?'#241013':'#241d0c'};color:${s==='approved'?'#3fb950':s==='rejected'?'#ff9b9b':'#f0b429'}">${esc(s||'pending')}</span>`;
+  m.q('#mr').innerHTML = rq.length? rq.map(r=>`<div class="card" style="margin-bottom:6px"><div class="row" style="justify-content:space-between"><b class="mono">${esc(r.kind)} · ${esc(r.subject||'')}</b>${pill(r.status)}</div>
+      ${r.justification?`<div class="sub">“${esc(r.justification)}”</div>`:''}
+      ${r.status==='rejected'&&r.reason?`<div class="sub" style="color:#ff9b9b;margin-top:3px">✋ Admin: ${esc(r.reason)}</div>`:''}
+      ${r.status==='approved'?`<div class="sub" style="color:#3fb950;margin-top:3px">✓ signed into the catalog${r.decided_by?' by '+esc((r.decided_by||'').split('/').pop()):''}</div>`:''}</div>`).join('')
+    : '<div class="sub">No change requests yet. Use “Request a schema”.</div>';
+}
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return {q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>

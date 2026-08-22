@@ -23,4 +23,4 @@ scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: governance.rule }
   - { verb: read,  scope: risk.flood }
-  - { verb: write, scope: governance.recommendation, tenant: kmc }
+  - { verb: write, scope: governance.recommendation }

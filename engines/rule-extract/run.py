@@ -162,6 +162,7 @@ def main():
                                   "eid": eid, "uri": loc.get("uri"), "doc_version": cur["id"],
                                   "citation": f"{doc.get('title')}, {label}", "derived_via": receipt},
                        "produced_by": {"component": CID, "model": model}, "tenant": T}
+                obj = {k: v for k, v in obj.items() if v is not None}   # omit unset optional fields (house rule R4)
                 _call("/v1/write", {"scope": "governance.rule", "id": obj["id"], "object": obj,
                                     "valid_time": {"from": now}, "asserted_at": now})
                 n += 1

@@ -96,7 +96,10 @@ def main():
         rid = f"ds:{WRITE_TENANT}:air/quality/{hcell}-{obs[:13]}"
         fact = {"schema": "air.quality", "id": rid,
                 "space": {"h3": hcell, "res": res, "centroid": [round(lng, 5), round(lat, 5)], "boundary": boundary},
-                **out, "observed_at": obs, "method": "idw", "confidence": confidence}
+                **out, "observed_at": obs, "method": "idw", "confidence": confidence,
+                # prov: the measure's derivation block the house rule requires (ADR-0041/0063 R5).
+                "prov": {"method": "idw", "confidence": confidence, "derived_from": ["air.sensor_reading@stations"],
+                         "observed_at": obs}}
         _call("/v1/write", {"scope": "air.quality", "id": rid, "object": fact,
                             "valid_time": {"from": obs}, "asserted_at": obs})
         written += 1

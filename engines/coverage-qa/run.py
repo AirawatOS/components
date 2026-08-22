@@ -163,11 +163,12 @@ def main():
                "freshness": (fresh or "")[:10] or None, "source_ref": source_ref, "confidence": conf,
                "authority": authority, "gaps": gaps,
                "assessed_by": {"component": {"id": CID, "version": "0.1.0"}}, "assessed_at": ASSESSED_AT}
+        rec = {k: v for k, v in rec.items() if v is not None}   # omit unset optional fields (house rule R4)
         _call("/v1/write", {"scope": "city.coverage", "id": rec["id"], "object": rec,
                             "valid_time": {"from": ASSESSED_AT}, "asserted_at": ASSESSED_AT})
         written += 1
         print(f"{noun:30s} {cov_pct:5.1f} {('  -' if conf is None else f'{conf:5.2f}')} "
-              f"{authority:13s} {(rec['freshness'] or '    -   ')}  {len(objs):3d}  {(source_ref or '-').rsplit('/', 1)[-1]}")
+              f"{authority:13s} {(rec.get('freshness') or '    -   ')}  {len(objs):3d}  {(source_ref or '-').rsplit('/', 1)[-1]}")
         if gaps:
             print(f"{'':30s}   gaps: {'; '.join(gaps)}")
 

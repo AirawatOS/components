@@ -237,6 +237,11 @@ def main():
                 "derived_from": src or [f"{INPUT_SCHEMA}@aoi:{AOI_ID}"],
                 "layer": "L2",
                 "produced_by": {"component": {"id": CID, "version": CVER}},
+                # prov: the derivation block the house rule requires on a measure (ADR-0041/0063 R5) — packages
+                # the lineage this engine already computes (method + inputs + producer + confidence + time).
+                "prov": {"method": METHOD, "confidence": conf,
+                         "derived_from": src or [f"{INPUT_SCHEMA}@aoi:{AOI_ID}"],
+                         "produced_by": {"component": {"id": CID, "version": CVER}}, "observed_at": obs},
                 "observed_at": obs}
         _call("/v1/write", {"scope": OUTPUT_SCHEMA, "id": rid, "object": fact,
                             "valid_time": {"from": obs}, "asserted_at": obs})

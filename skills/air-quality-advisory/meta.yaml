@@ -26,4 +26,4 @@ scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: governance.rule }
   - { verb: read,  scope: air.quality }
-  - { verb: write, scope: governance.recommendation, tenant: kmc }
+  - { verb: write, scope: governance.recommendation }

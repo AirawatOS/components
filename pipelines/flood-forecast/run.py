@@ -152,7 +152,11 @@ def main():
         rf = {"schema": "risk.flood", "id": f"ds:{TENANT}:risk/flood/{h3}", "space": c["space"], "h3_id": h3,
               "score": score, "level": level, "method": "model", "confidence": 0.72,
               "drivers": {"elevation_m": elev, "slope_deg": slope, "rainfall_mm": RAINFALL_MM},
-              "forecast": fc_id, "observed_at": now(), "tenant": TENANT}
+              "forecast": fc_id, "observed_at": now(), "tenant": TENANT,
+              # prov: the measure's derivation the house rule requires (ADR-0041/0063 R5).
+              "prov": {"method": "model", "confidence": 0.72, "forecast": fc_id,
+                       "inputs": {"elevation_m": elev, "slope_deg": slope, "rainfall_mm": RAINFALL_MM},
+                       "derived_from": [fc_id, f"geo.terrain@{h3}"], "observed_at": now()}}
         put(rf); risks.append(rf)
     breached = sorted([r for r in risks if r["score"] >= THRESHOLD], key=lambda r: -r["score"])
     top = [r["id"] for r in breached[:3]]
@@ -169,7 +173,8 @@ def main():
     put({"schema": "signal.alert", "id": alert_id, "kind": "flood-risk", "severity": severity,
          "title": f"Flood risk — {len(breached)} low-lying cells", "area": f"AOI {AOI_ID} · {len(breached)} cells",
          "trigger": f"risk.flood.score >= {THRESHOLD}", "threshold": THRESHOLD, "count": len(breached),
-         "top": top, "maxscore": maxscore, "status": "open", "opened_at": now(), "tenant": TENANT})
+         "top": top, "maxscore": maxscore, "status": "open", "opened_at": now(),
+         "observed_at": now(), "tenant": TENANT})   # event occurrence time (house rule R6)
     print(f"3 DETECT  signal.alert {alert_id}  severity={severity}")
     print("   → event emitted; the automation subscription auto-fires the flood advisor (ADVISE).")
     print("DONE — sense→predict→detect. Advise + decision follow via the event fabric.")

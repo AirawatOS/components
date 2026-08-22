@@ -74,7 +74,10 @@ def _emit(idx, lat, lon, temp_c, mode):
             "satellite_name": "open-meteo-2m-air-proxy",
             "latitude": lat, "longitude": lon, "lst_value": round(float(temp_c), 2), "unit": "celsius",
             "source": SOURCE_REF, "observed_at": OBS, "layer": "L1",
-            "acquired_via": f"ds:airawat:driver/heat:{mode}"}
+            "acquired_via": f"ds:airawat:driver/heat:{mode}",
+            # prov: the observation's provenance the house rule requires (ADR-0041/0063 R5).
+            "prov": {"method": "sensor", "source": SOURCE_REF, "satellite_name": "open-meteo-2m-air-proxy",
+                     "observed_at": OBS}}
     call("/v1/write", {"scope": "environment.lst_observation", "id": oid, "object": fact,
                        "valid_time": {"from": OBS}, "asserted_at": OBS})
 

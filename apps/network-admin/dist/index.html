@@ -261,7 +261,7 @@ async function showVerb(iid){
     <div class="card mono" style="font-size:11px;word-break:break-all;color:#a9b6c4">${esc(rec.signature||'—')}</div>`;
 }
 
-const KICON={role:'👤',schema:'🧩',pack:'📦',join:'🏙️'};
+const KICON={role:'👤',schema:'🧩',interface:'⇄',pack:'📦',join:'🏙️'};
 async function requests(){
   const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
   let d; try{ d=await jget('/bridge/change-requests'); }catch(e){ W.innerHTML='<div class="empty">not authorized — standards body only</div>'; return; }
@@ -275,18 +275,73 @@ async function requests(){
       <td class="muted" style="max-width:220px">${detail}</td>
       <td class="muted">${esc((r.requested_by||'').split('/').pop())}</td>
       <td><span class="pill ${r.status}">${r.status}</span></td>
-      <td>${r.status==='pending'
-          ?`<button class="btn ok" data-i="${i}" data-act="approve">Approve</button><button class="btn no" data-i="${i}" data-act="reject">Reject</button>`
-          :`<span class="muted mono" style="font-size:11px">${esc((r.published||r.reason||'').split('/').pop())}</span>`}</td></tr>`;
+      <td><button class="btn" data-i="${i}" data-act="view">View</button>${r.status==='pending'
+          ?` <button class="btn ok" data-i="${i}" data-act="approve">Approve</button><button class="btn no" data-i="${i}" data-act="reject">Reject</button>`
+          :` <span class="muted mono" style="font-size:11px">${esc((r.published||r.reason||'').split('/').pop())}</span>`}</td></tr>`;
     }).join('')+'</table>';
   W.innerHTML=html;
   W.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{
     const r=reqs[+b.dataset.i], act=b.dataset.act;
+    if(act==='view'){ return reviewReq(r); }        // never approve blind — open the full proposed artifact
     let reason='';
     if(act==='reject'){ reason=prompt('Reason for rejection?',''); if(reason===null)return; }
-    const res=await jpost('/bridge/change-request-decide',{kind:r.kind,subject:r.subject,decision:act,reason});
-    res.ok?(toast(act==='approve'?'approved + published':'rejected'),requests()):toast(res.j.error||'refused',true);
+    await decideReq(r, act, reason);
   });
+}
+
+// decide a change-request (shared by the inline buttons and the review sheet)
+async function decideReq(r, act, reason){
+  const res=await jpost('/bridge/change-request-decide',{kind:r.kind,subject:r.subject,decision:act,reason:reason||''});
+  res.ok?(toast(act==='approve'?'approved + published':'rejected'),requests()):toast(res.j.error||'refused',true);
+}
+
+// REVIEW a change-request in full BEFORE deciding — shows the exact proposed definition (ADR-0038 governance
+// gate: the approver signs it into the catalog, so they must see precisely what they are signing).
+function reviewReq(r){
+  const defn=r.definition, hasDef=defn&&typeof defn==='object';
+  const meta=`<div class="meta" style="margin:6px 0 4px"><span class="pill ${esc(r.status)}">${esc(r.status)}</span>
+      <span>${esc(r.kind)}</span> <span class="mono">${esc(r.subject||'')}</span>
+      ${r.version?`<span>· v${esc(r.version)}</span>`:''}${r.sensitivity?`<span>· ${esc(r.sensitivity)}</span>`:''}
+      <span>· by ${esc((r.requested_by||'').split('/').pop()||'—')}</span>
+      ${r.requested_at?`<span>· ${esc((r.requested_at||'').slice(0,10))}</span>`:''}</div>`;
+  const just=r.justification?`<div class="sec">Justification</div><div class="hint" style="max-width:76ch">${esc(r.justification)}</div>`:'';
+  const body=hasDef
+      ?`<div class="sec">Proposed definition</div><pre class="defn" style="max-height:46vh;overflow:auto">${esc(JSON.stringify(defn,null,2))}</pre>`
+      :(r.kind==='pack'||r.kind==='role')
+          ?`<div class="sec">Contents</div><pre class="defn" style="max-height:46vh;overflow:auto">${esc(JSON.stringify({roles:r.roles||[],members:r.members||[],domain:r.domain||''},null,2))}</pre>`
+          :`<div class="muted">No structured definition on this request.</div>`;
+  const actions=r.status==='pending'
+      ?`<button class="btn no" id="rj">Reject</button><button class="btn ok" id="ap">Approve + sign</button>`
+      :`<span class="muted mono">${esc(r.published||r.reason||'')}</span>`;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:22px';
+  ov.innerHTML=`<div style="background:var(--panel,#131a22);border:1px solid var(--line,#233);border-radius:10px;max-width:780px;width:100%;max-height:88vh;overflow:auto;padding:18px">
+      <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Review change request</h2><button class="btn" id="cl">Close</button></div>
+      ${meta}${just}${(r.kind==='schema'||r.kind==='interface')?'<div id="advai" class="card" style="border-color:#3a4a5a;background:#0f1922"><span class="muted">🤖 Semantic Administrator AI — analysing…</span></div>':''}${body}
+      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px">${actions}</div></div>`;
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  ov.onclick=e=>{if(e.target===ov)close();};
+  ov.querySelector('#cl').onclick=close;
+  // AI advisor: for a schema/interface request, show the house-rule verdict + reuse candidates + recommendation.
+  if(r.kind==='schema'||r.kind==='interface'){ (async()=>{
+    const box=ov.querySelector('#advai'); if(!box) return;
+    const sid=(r.subject||'').split('@')[0];
+    const res=await jpost('/bridge/schema-advise',{schema_id:sid,kind:r.kind,definition:r.definition||{}}).catch(()=>null);
+    if(!res||!res.ok){box.innerHTML='<span class="muted">🤖 advisor unavailable</span>';return;}
+    const a=res.j; const rec=a.recommendation;
+    // admin framing — the reviewer APPROVES/REJECTS (not proposes)
+    const VMAP={'propose':['✅ Safe to approve','#3fb950'],'fix-and-propose':['⛔ Recommend reject — fix house rules','#ff9b9b'],'reuse':['⛔ Recommend reject — reuse an existing schema','#f0b429']};
+    const vm=VMAP[rec]||['🤖 '+rec,'#9ab']; const col=vm[1];
+    const viol=(a.house_rule_violations||[]); const reuse=(a.reuse_candidates||[]);
+    box.innerHTML=`<div style="font-weight:600;color:${col}">🤖 ${esc(vm[0])}</div>
+      <div class="muted" style="margin:3px 0 6px">${esc(a.why||'')}</div>
+      ${viol.length?`<div class="sub">House-rule violations</div><ul style="margin:2px 0 6px 16px">${viol.map(v=>`<li class="mono" style="font-size:11px">${esc(v)}</li>`).join('')}</ul>`:'<div class="sub" style="color:#3fb950">✓ passes all house rules</div>'}
+      ${reuse.length?`<div class="sub">Possible reuse (avoid duplicating)</div>${reuse.map(c=>`<div class="mono" style="font-size:11px">• ${esc(c.schema_id)} <span class="muted">(match ${c.score}${c.shared_fields&&c.shared_fields.length?', shares '+esc(c.shared_fields.slice(0,5).join(', ')):''})</span></div>`).join('')}`:''}`;
+  })(); }
+  const ap=ov.querySelector('#ap'), rj=ov.querySelector('#rj');
+  if(ap) ap.onclick=async()=>{ap.disabled=true;ap.textContent='signing…';await decideReq(r,'approve','');close();};
+  if(rj) rj.onclick=async()=>{const reason=prompt('Reason for rejection? (shared back to the developer)','');if(reason===null)return;await decideReq(r,'reject',reason);close();};
 }
 
 async function catalog(kind){

@@ -125,7 +125,7 @@ def main():
         "body": (f"The City Digital Baseline for {name} has been generated ({ok}/{len(MEMBERS)} steps). "
                  "Open City Scan to explore built-up, green cover, heat and terrain over the ward, with a "
                  "coverage & trust report showing what is authoritative vs AI-derived."),
-        "subject_ref": WSID, "kind": "notification", "status": "unread", "created_at": NOW})
+        "ref": WSID, "kind": "notification", "status": "unread", "created_at": NOW})
 
     print(f"\n✓ baseline ready — {ok}/{len(MEMBERS)} steps · workspace → L1 Baseline · notified {COMMISSIONER}")
     print(f"RESULT: {json.dumps({'workspace': WSID, 'maturity': 1, 'steps_ok': ok, 'notified': COMMISSIONER})}")

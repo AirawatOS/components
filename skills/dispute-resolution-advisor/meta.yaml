@@ -1,0 +1,20 @@
+# A SKILL (kind=skill, INT-0002) — Facts x Rules -> cited governance.recommendation.
+component_id: ds:airawatdeveloper:skill/dispute-resolution-advisor
+kind: skill
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Dispute Resolution Advisor
+entrypoint: run.py
+confinement_min: L1
+domain: TODO
+applies_to_facts: [TODO.fact]
+rules_domain: TODO.fact
+metric: value
+reasoning: hybrid
+reads: [space.aoi, governance.rule, TODO.fact]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read, scope: space.aoi }
+  - { verb: read, scope: governance.rule }
+  - { verb: read, scope: TODO.fact }
+  - { verb: write, scope: governance.recommendation, tenant: airawatdeveloper }

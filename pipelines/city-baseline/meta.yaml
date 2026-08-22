@@ -29,6 +29,6 @@ members:
 scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: city.onboarding_request }
-  - { verb: write, scope: city.onboarding_request, tenant: kmc }
-  - { verb: write, scope: city.workspace, tenant: kmc }
-  - { verb: write, scope: platform.inbox_item, tenant: kmc }
+  - { verb: write, scope: city.onboarding_request }
+  - { verb: write, scope: city.workspace }
+  - { verb: write, scope: platform.inbox_item }

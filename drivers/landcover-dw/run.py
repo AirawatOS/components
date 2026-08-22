@@ -180,6 +180,9 @@ def main():
                     "cell_ref": {"h3_id": hc, "resolution": res, "centroid": [round(lo, 5), round(la, 5)], "boundary": bound},
                     "value": round(val, 4), "method": "dynamic-world", "confidence": conf,
                     "derived_from": ["gee:GOOGLE/DYNAMICWORLD/V1"], "source_ref": SRC, "layer": "L2",
+                    # prov: the measure's derivation block the house rule requires (ADR-0041/0063 R5).
+                    "prov": {"method": "dynamic-world", "confidence": conf, "source_ref": SRC,
+                             "derived_from": ["gee:GOOGLE/DYNAMICWORLD/V1"], "observed_at": end + "T00:00:00Z"},
                     "observed_at": end + "T00:00:00Z"})
             wrote_b += 1; wrote_g += 1
         print(f"  …{min(i + BATCH, len(cells))}/{len(cells)} cells (wrote {wrote_b})", flush=True)

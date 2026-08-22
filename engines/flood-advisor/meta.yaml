@@ -1,0 +1,21 @@
+# An ENGINE (kind=engine) — the flood ADVISE stage as a governed, event-triggered COMPONENT (ADR-0063/0050).
+# Fired by a platform.subscription on a signal.alert: reads the alert (via SUBJECT_REF — the id of the alert
+# that triggered this run) + the knowledge base, emits cited governance.recommendation[] and opens the
+# platform.case + decision task + inbox item the decision loop consumes. Replaces the ungoverned /advise HTTP
+# handler — now it runs through the ONE governed run verb (platform.runtime_invoke) like any other component.
+component_id: ds:airawat:engine/flood-advisor
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Flood Advisor (alert → cited recommendations + decision task)
+entrypoint: run.py
+confinement_min: L1
+reads: [signal.alert, knowledge.guideline]
+writes: [governance.recommendation, platform.case, platform.task, platform.inbox_item]
+scopes:
+  - { verb: read,  scope: signal.alert }
+  - { verb: read,  scope: knowledge.guideline }
+  - { verb: write, scope: governance.recommendation }
+  - { verb: write, scope: platform.case }
+  - { verb: write, scope: platform.task }
+  - { verb: write, scope: platform.inbox_item }

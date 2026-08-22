@@ -17,7 +17,10 @@ Inputs (env):
   TENANT        tenant namespace for writes (default kmc)
   OVERPASS_URL  interpreter endpoint        (default https://overpass-api.de/api/interpreter)
 """
-import json, os, urllib.request
+import json, os, sys, urllib.request
+sys.path.insert(0, os.path.join(   # components/drivers/osm-roads → up 3 → components → /_common
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "_common"))
+import ids   # shared id-derivation helper (ADR-0063): id from the natural key + governed identifiers[]
 
 AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
 TENANT = os.environ.get("TENANT", "kmc")
@@ -91,18 +94,19 @@ def to_feature(el):
         return None
     tags = el.get("tags") or {}
     osm_id = str(el["id"])
-    fid = f"ds:{TENANT}:geo/osm_feature/way/{osm_id}"
-    return {
-        "schema": "geo.osm_feature",
-        "id": fid,
-        "tenant": TENANT,
-        "osm_id": osm_id,
-        "osm_type": "way",
-        "feature": tags.get("highway", "unknown"),   # road class from the highway tag
-        "tags": tags,
-        "geometry": {"type": "LineString", "coordinates": coords},
-        "source": {"aoi": AOI_ID, "endpoint": OVERPASS_URL, "via": "ds:airawat:driver/osm-roads"},
-    }
+    # The OSM id is the way's NATURAL KEY: it drives the ds: <local> (deterministic → re-runs upsert) AND is
+    # recorded in identifiers[] so a road is resolvable by its OSM id (ADR-0063). `entity()` does both.
+    return ids.entity(TENANT, "geo/osm_feature/way", "geo.osm_feature",
+        natural=[("osm_way", osm_id, "OpenStreetMap")],
+        extra={
+            "tenant": TENANT,
+            "osm_id": osm_id,
+            "osm_type": "way",
+            "feature": tags.get("highway", "unknown"),   # road class from the highway tag
+            "tags": tags,
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "source": {"aoi": AOI_ID, "endpoint": OVERPASS_URL, "via": "ds:airawat:driver/osm-roads"},
+        })
 
 
 def main():
