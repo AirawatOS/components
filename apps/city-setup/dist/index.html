@@ -75,9 +75,9 @@ const GEE_STEPS=[
  'Open that <b>.json</b> file in any text editor, copy <b>everything</b>, and paste it into the box below — then click Connect.'];
 const OSM_STEPS=[
  'Go to <a href="https://download.geofabrik.de" target="_blank" rel="noopener">download.geofabrik.de</a> — a free directory of OpenStreetMap extracts.',
- 'Click your <b>country</b> (e.g. Asia → India), then, if listed, your <b>state / region</b> (e.g. Uttar Pradesh, Maharashtra).',
- 'Find the file ending in <b>.osm.pbf</b> for the <b>smallest region that fully contains your city</b> — <b>right-click it → Copy link address</b>.',
- 'Paste that link below and click <b>Fetch</b>. The server downloads it for you — no upload needed. It’s one-time; every roads &amp; facilities run then reads it locally.'];
+ 'Open your <b>country</b> (e.g. Asia → India). Some countries split into states/regions; others (like India) are one file — either works.',
+ 'Find the <b>.osm.pbf</b> for the <b>smallest region that fully contains your city</b>, then <b>right-click it → Copy link address</b>.',
+ 'Paste that link below and click <b>Fetch</b>. The <b>server</b> downloads it — no upload, and large files (even 1&nbsp;GB+) are fine. One-time; every roads &amp; facilities run then reads it locally.'];
 
 let D=null, C=null, OPEN={gee:false,osm:false}, PENDING=null;
 function captureForm(){const q=id=>{const el=document.getElementById(id.slice(1));return el?el.value:'';};
@@ -177,7 +177,7 @@ async function render(){
         `<ol class="howto">${OSM_STEPS.map(s=>'<li>'+s+'</li>').join('')}</ol>
          ${osmAsset()?`<div class="muted" style="font-size:12px;margin-bottom:6px">Current file: <b style="color:var(--ink)">${esc(osmAsset().filename||'set')}</b> ${osmAsset().size_bytes?'· '+fmtSize(osmAsset().size_bytes):''}. Fetch or upload a new one to replace it.</div>`:''}
          <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
-           <input id="osm-url" class="search" style="flex:1;min-width:0" placeholder="https://download.geofabrik.de/asia/india/maharashtra-latest.osm.pbf">
+           <input id="osm-url" class="search" style="flex:1;min-width:0" placeholder="https://download.geofabrik.de/asia/india-latest.osm.pbf">
            <button class="pbtn pri" id="osm-fetch" style="flex:none">Fetch</button></div>
          <div class="bar" id="osm-bar" style="display:none"><i></i></div>
          <div class="muted" id="osm-prog" style="font-size:12px;margin-top:4px;display:none"></div>
