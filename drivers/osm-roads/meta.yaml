@@ -15,11 +15,7 @@ writes:
   - cell.roads
 config: [OSM_PBF_FILE_ID]              # filestore digest of the uploaded regional OSM PBF (set by the Settings upload)
 assets:                               # DATA the tenant provides via driver Settings (uploaded to the filestore)
-  - name: OSM_PBF
-    kind: osm-pbf
-    populates: OSM_PBF_FILE_ID         # the upload stores the file → filestore → writes its digest into this config
-    optional: true                     # absent ⇒ the driver falls back to live Overpass
-    hint: "Regional OpenStreetMap extract (.osm.pbf — e.g. Geofabrik Maharashtra ~300 MB). Uploaded once; every run reads roads locally instead of Overpass."
+  - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: true, hint: "Regional OpenStreetMap extract (.osm.pbf — e.g. Geofabrik Maharashtra ~300 MB). Uploaded once so every run reads roads locally instead of hitting Overpass." }
 egress:
   - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-roads (+https://airawat.org; contact@airawat.org)" }
 sources:

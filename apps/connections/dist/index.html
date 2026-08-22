@@ -31,7 +31,28 @@
 const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
 async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
-function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2400);}
+function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',e?4200:2400);}
+const fmtSize=b=>!b?'':b>1e9?(b/1e9).toFixed(1)+' GB':b>1e6?(b/1e6).toFixed(0)+' MB':(b/1e3).toFixed(0)+' KB';
+const blobToB64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});
+// Chunked upload of a large data file → the host /bridge/asset flow → filestore → governed platform.component_asset.
+async function uploadAsset(comp,asset,populates,file,sourceDate,prog){
+  const CH=4*1024*1024;                                        // 4 MB chunks (base64 ~5.3 MB/request)
+  const init=await jpost('/bridge/asset',{action:'init',component:comp,asset:asset});
+  if(!init.ok) return toast(init.j.error||'init failed',true);
+  const uid=init.j.upload_id; let sent=0;
+  try{
+    for(let off=0;off<file.size;off+=CH){
+      const b64=await blobToB64(file.slice(off,off+CH));
+      const r=await jpost('/bridge/asset',{action:'chunk',upload_id:uid,data_b64:b64});
+      if(!r.ok){ await jpost('/bridge/asset',{action:'abort',upload_id:uid}); return toast('upload failed',true); }
+      sent=Math.min(file.size,off+CH); prog.textContent=`uploading… ${Math.round(sent/file.size*100)}% (${fmtSize(sent)}/${fmtSize(file.size)})`;
+    }
+    prog.textContent='storing…';
+    const fin=await jpost('/bridge/asset',{action:'finish',upload_id:uid,asset:asset,populates:populates,
+      filename:file.name,content_type:file.type||'application/octet-stream',source_date:sourceDate||null});
+    if(fin.ok){ toast('uploaded — rerun the driver to use it'); render(); } else toast(fin.j.error||'finish failed',true);
+  }catch(e){ await jpost('/bridge/asset',{action:'abort',upload_id:uid}); toast('upload error: '+e,true); }
+}
 
 async function render(){
   const V=document.getElementById('view');
@@ -52,10 +73,22 @@ async function render(){
         <input type="password" placeholder="paste value…" style="flex:0 0 260px" autocomplete="off">
         <button class="pbtn ${s.set?'':'pri'}">${s.set?'Rotate':'Set'}</button></div>`;
     }
+    for(const a of (c.assets||[])){                            // DATA-FILE assets — upload a bulk file (e.g. an OSM PBF)
+      html+=`<div class="sec asset" data-comp="${esc(c.component)}" data-asset="${esc(a.name)}" data-pop="${esc(a.populates||'')}">
+        <span class="kn">📁 ${esc(a.name)}</span>
+        <span class="badge ${a.set?'ok':'miss'}">${a.set?'● uploaded':(a.optional?'○ optional':'○ not uploaded')}</span>
+        ${a.set&&a.filename?`<span class="muted" style="font-size:11px">${esc(a.filename)} · ${fmtSize(a.size_bytes)} · ${esc((a.uploaded_at||'').slice(0,10))}</span>`:''}
+        <span class="grow"></span>
+        <input type="date" class="adate" title="date the data represents (optional)" style="flex:0 0 130px">
+        <input type="file" class="afile" style="flex:0 0 190px;padding:4px">
+        <button class="pbtn ${a.set?'':'pri'}">${a.set?'Replace':'Upload'}</button>
+        ${a.hint?`<div class="muted" style="font-size:11px;flex-basis:100%;margin-top:2px">${esc(a.hint)}</div>`:''}
+        <div class="aprog muted" style="font-size:11px;flex-basis:100%"></div></div>`;
+    }
     html+=`</div>`;
   }
   V.innerHTML=html;
-  V.querySelectorAll('.sec').forEach(row=>{
+  V.querySelectorAll('.sec:not(.asset)').forEach(row=>{
     const inp=row.querySelector('input'), btn=row.querySelector('button');
     btn.onclick=async()=>{
       const val=inp.value; if(!val) return toast('paste a value first',true);
@@ -65,6 +98,16 @@ async function render(){
       if(r.ok){ inp.value=''; toast('saved to Vault'); render(); } else toast(r.j.error||'failed',true);
     };
     inp.addEventListener('keydown',e=>{ if(e.key==='Enter') btn.click(); });
+  });
+  V.querySelectorAll('.sec.asset').forEach(row=>{
+    const file=row.querySelector('.afile'), date=row.querySelector('.adate'),
+          btn=row.querySelector('button'), prog=row.querySelector('.aprog');
+    btn.onclick=async()=>{
+      const f=file.files&&file.files[0]; if(!f) return toast('choose a file first',true);
+      btn.disabled=true;
+      await uploadAsset(row.dataset.comp,row.dataset.asset,row.dataset.pop,f,date.value,prog);
+      btn.disabled=false;
+    };
   });
 }
 render();
