@@ -111,12 +111,17 @@
 </div>
 
 <script>
-const LAYERS=[
-  {key:"cell.builtup",   label:"Built-up",    desc:"share of cell that is built",       lo:"#3a2418",hi:"#f0864a",fmt:v=>Math.round(v*100)+"%"},
-  {key:"cell.greencover",label:"Green cover", desc:"vegetation share of cell",           lo:"#12301f",hi:"#4ade80",fmt:v=>Math.round(v*100)+"%"},
-  {key:"cell.heat",      label:"Heat",        desc:"mean surface temperature",           lo:"#2b1414",hi:"#f87171",fmt:v=>v.toFixed(1)+"°"},
-  {key:"geo.terrain",    label:"Terrain",     desc:"elevation (m above sea level)",      lo:"#241d12",hi:"#d8c27c",fmt:v=>Math.round(v)+" m"},
-];
+// LAYERS is DISCOVERED, not hardcoded: built at load() from governed viz.layer descriptors (render=map) ∩ the
+// layers THIS city actually has data for. A new map layer needs only a viz.layer record + its data — no edit here.
+let LAYERS=[];
+// color_scale enum (viz.layer) → a [low, high] ramp. New scale = one entry; new LAYER = zero app edits.
+const COLOR_RAMPS={reds:["#3a2418","#f0864a"], viridis:["#12301f","#4ade80"], blues:["#0b2033","#38bdf8"],
+                   aqi:["#134a2b","#f87171"], greys:["#242b33","#cbd5e1"]};
+const dget=(o,path)=>String(path||"value").split(".").reduce((v,k)=>(v==null?v:v[k]), o);
+const fmtFor=unit=> unit==="%"  ? (v=>Math.round(v*100)+"%")
+                  : unit==="°C" ? (v=>v.toFixed(1)+"°")
+                  : unit==="m"  ? (v=>Math.round(v)+" m")
+                  : (v=>(Math.round(v*100)/100)+(unit?(" "+unit):""));
 // base-map land-cover colours (the city's own governed polygons — no external tiles under the app CSP)
 const BASECOL={water:"#153048",vegetation:"#183020",built:"#232932",cropland:"#2c2818",bare:"#2a2520"};
 const AUTHCLASS={"open-data":"open","ai-derived":"ai","authoritative":"real"};
@@ -175,14 +180,27 @@ async function load(){
   for(const a of aois){ const bb=a.bbox; if(Array.isArray(bb)&&bb.length===4)
     SB = SB ? [Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])] : bb.slice(); }
   const M=0.03, inB=p=> !SB || !p || (p[0]>=SB[0]-M&&p[0]<=SB[2]+M&&p[1]>=SB[1]-M&&p[1]<=SB[3]+M);
-  const layers={};
-  for(const L of LAYERS){
-    const rows=await q(L.key);
-    layers[L.key]=rows.map(o=> L.key==="geo.terrain"
-      ? {h3:(o.space||{}).h3, b:(o.space||{}).boundary, c:(o.space||{}).centroid, v:o.elevation_m}       // L1 terrain
-      : {h3:(o.cell_ref||{}).h3_id, b:(o.cell_ref||{}).boundary, c:(o.cell_ref||{}).centroid, v:o.value}) // L2 cell measure
-      .filter(c=> inB(c.c || (c.b&&c.b[0])));                                                              // clip to the city
-  }
+  // DISCOVER the layers: governed viz.layer descriptors (render=map, enabled), ordered. Keyed by source_schema.
+  const descs=(await q("viz.layer"))
+    .filter(d=>d && d.render==="map" && d.enabled!==false && d.source_schema && d.value_field)
+    .sort((a,b)=>(a.order??99)-(b.order??99));
+  const seenS={}, specs=[];
+  for(const d of descs){ if(seenS[d.source_schema]) continue; seenS[d.source_schema]=1;
+    const ramp=COLOR_RAMPS[d.color_scale]||COLOR_RAMPS.viridis;
+    specs.push({key:d.source_schema, label:d.label||d.source_schema, desc:d.description||"",
+                vf:d.value_field, unit:d.unit||"", lo:ramp[0], hi:ramp[1], fmt:fmtFor(d.unit)}); }
+  // For each descriptor, pull its data (geometry from cell_ref OR space; value at the descriptor's value_field);
+  // keep ONLY layers this city actually has — so a city without hydrology simply shows no Flood layer.
+  // Pull every layer's data IN PARALLEL (was sequential → 5× the wait). Promise.all preserves the sorted order.
+  const layers={}, kept=[];
+  const results=await Promise.all(specs.map(async L=>{
+    const mapped=(await q(L.key)).map(o=>{ const g=o.cell_ref||o.space||{};
+        return {h3:g.h3_id||g.h3, b:g.boundary, c:g.centroid, v:dget(o,L.vf)}; })
+      .filter(c=> typeof c.v==="number" && inB(c.c || (c.b&&c.b[0])));   // clip to the city + real numeric value only
+    return {L, mapped};
+  }));
+  for(const {L,mapped} of results){ if(mapped.length){ layers[L.key]=mapped; kept.push(L); } }   // keep only layers this city has
+  LAYERS=kept;
   const base=(await q("geo.landcover")).map(o=>({ring:(((o.geometry||{}).coordinates)||[[]])[0], cls:o.lc_class}))
       .filter(f=> f.ring&&f.ring.length&&inB(f.ring[0]));
   // one card per layer_noun — keep the freshest assessment (baselines re-run; don't stack duplicate cards)
@@ -191,7 +209,7 @@ async function load(){
   return {aoi,scope:SB,layers,base,coverage:cov};
 }
 
-let DATA, active=LAYERS[0].key, proj=null;
+let DATA, active=null, proj=null;   // active layer chosen after load() discovers LAYERS
 let view={k:1,tx:0,ty:0}, BASE_Z=14;               // interactive pan/zoom state + base tile zoom for the AOI
 const $=id=>document.getElementById(id);
 
@@ -291,7 +309,7 @@ function drawTrust(){
       ${gaps?`<div class="gaps">${gaps}</div>`:""}</div>`;}).join("");
 }
 (async function(){
-  DATA=await load(); proj=project();
+  DATA=await load(); active=(LAYERS[0]||{}).key; proj=project();
   const nL=LAYERS.filter(L=>(DATA.layers[L.key]||[]).length).length;
   const fresh=(DATA.coverage||[]).map(c=>c.freshness).filter(Boolean).sort().pop();
   $("sub").innerHTML=`${esc(DATA.aoi.name||"AOI")}<span class="dot">·</span>${nL} indicator layers<span class="dot">·</span>`
