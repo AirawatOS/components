@@ -50,7 +50,7 @@ async function uploadAsset(comp,asset,populates,file,sourceDate,prog){
     prog.textContent='storing…';
     const fin=await jpost('/bridge/asset',{action:'finish',upload_id:uid,asset:asset,populates:populates,
       filename:file.name,content_type:file.type||'application/octet-stream',source_date:sourceDate||null});
-    if(fin.ok){ toast('uploaded — rerun the driver to use it'); render(); } else toast(fin.j.error||'finish failed',true);
+    if(fin.ok){ toast(fin.j.run_started?'uploaded — running the driver now…':'uploaded'); render(); } else toast(fin.j.error||'finish failed',true);
   }catch(e){ await jpost('/bridge/asset',{action:'abort',upload_id:uid}); toast('upload error: '+e,true); }
 }
 
