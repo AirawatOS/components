@@ -14,11 +14,11 @@ REAL ERA5 only — fetch or fail loudly. NO synthetic fabrication, NO tenant/AOI
 already written).
 
   Env: TENANT · AOI_ID (opt; else discover) · GRID (points/side, default 7) · ARCHIVE_URL · RESUME (1)
-       YEAR (optional — a specific calendar year to total; DEFAULT is the rolling last 12 months ending ~now)
-       LAG_DAYS (ERA5 reanalysis lag buffer for the rolling window's end, default 5)
+       NORMAL_YEARS (window for the climatological NORMAL, default 10) · YEAR (optional — pin one calendar year)
 
-By default this totals the MOST RECENT 12 months (ending ~now, minus the ERA5 lag) — a current annual-rainfall
-figure, not a fixed historical year. Pass YEAR=2023 to pin a specific calendar year instead.
+DEFAULT = a climatological NORMAL: the MEAN annual rainfall over the last NORMAL_YEARS complete years (ERA5).
+A baseline characterises the PLACE, so a multi-year normal is the right measure — stable, not skewed by a single
+wet/dry year (a rolling-12-month total is a monitoring number, not a baseline). Pass YEAR=<yyyy> for one year.
 """
 import datetime as _dt, json, math, os, time, urllib.request
 
@@ -27,20 +27,22 @@ TOKEN = os.environ["RUN_TOKEN"]
 AOI_HINT = os.environ.get("AOI_ID", "")
 TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
 GRID = int(os.environ.get("GRID", "7"))
-LAG_DAYS = int(os.environ.get("LAG_DAYS", "5"))
+NORMAL_YEARS = int(os.environ.get("NORMAL_YEARS", "10"))
 ARCHIVE_URL = os.environ.get("ARCHIVE_URL", "https://archive-api.open-meteo.com/v1/archive")
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/open-meteo"
 
 _yr = os.environ.get("YEAR", "").strip()
-if _yr:                                                          # pinned calendar year
-    START, END, PERIOD = f"{_yr}-01-01", f"{_yr}-12-31", _yr
-    OBSERVED = f"{_yr}-12-31T00:00:00Z"
-else:                                                           # DEFAULT: rolling last 12 months ending ~now (real clock)
-    _end = _dt.datetime.now(_dt.timezone.utc).date() - _dt.timedelta(days=LAG_DAYS)
-    _start = _end - _dt.timedelta(days=364)
-    START, END, PERIOD = _start.isoformat(), _end.isoformat(), f"{_start.isoformat()}..{_end.isoformat()}"
-    OBSERVED = f"{_end.isoformat()}T00:00:00Z"
+if _yr:                                                          # pinned single calendar year
+    _y = int(_yr)
+    START, END, NYEARS, PERIOD = f"{_y}-01-01", f"{_y}-12-31", 1, str(_y)
+    OBSERVED = f"{_y}-12-31T00:00:00Z"
+else:                                                           # DEFAULT: N-year climatological NORMAL (mean annual)
+    _end_y = _dt.datetime.now(_dt.timezone.utc).date().year - 1  # last COMPLETE calendar year
+    _start_y = _end_y - NORMAL_YEARS + 1
+    START, END, NYEARS = f"{_start_y}-01-01", f"{_end_y}-12-31", NORMAL_YEARS
+    PERIOD = f"{_start_y}-{_end_y} normal ({NORMAL_YEARS}yr)"
+    OBSERVED = f"{_end_y}-12-31T00:00:00Z"
 
 
 def call(path, body):
@@ -99,8 +101,9 @@ def haversine(la1, lo1, la2, lo2):
 
 
 def fetch_annual_rainfall(pts):
-    """Annual precipitation total (mm) at each sample point, from Open-Meteo ARCHIVE (ERA5). One egress call with
-    comma-separated coordinates; sums each point's daily precipitation_sum over the year. REAL or raise."""
+    """MEAN annual precipitation (mm) at each sample point over the window, from Open-Meteo ARCHIVE (ERA5). One
+    egress call (comma-separated coords); sums each point's daily precipitation over START..END and divides by the
+    number of years (NYEARS) → the climatological normal (or the single-year total when YEAR is pinned). REAL or raise."""
     lats = ",".join(f"{la:.4f}" for la, lo in pts)
     lons = ",".join(f"{lo:.4f}" for la, lo in pts)
     url = (f"{ARCHIVE_URL}?latitude={lats}&longitude={lons}"
@@ -118,7 +121,7 @@ def fetch_annual_rainfall(pts):
         nums = [v for v in vals if isinstance(v, (int, float))]
         if not nums:
             raise RuntimeError(f"archive returned no precipitation for point ({la:.3f},{lo:.3f}): {str(loc)[:160]}")
-        out.append((la, lo, round(sum(nums), 1)))
+        out.append((la, lo, round(sum(nums) / NYEARS, 1)))   # window total ÷ years = mean annual (the normal)
     return out
 
 
