@@ -109,6 +109,11 @@ def cell_boundary(hcell):
 
 def main():
     aoi, bbox, res = read_aoi()
+    aoi_tenant = AOI_ID.split(":")[1] if AOI_ID.count(":") >= 2 else ""
+    if aoi_tenant and aoi_tenant != TENANT:                       # cross-tenant guard (ADR-0063): the AOI's tenant and the
+        raise SystemExit(                                         # write namespace MUST agree, or we stamp one city's cells
+            f"FATAL: TENANT={TENANT} but AOI {AOI_ID} belongs to tenant '{aoi_tenant}'. Refusing to write "
+            f"{aoi_tenant}'s cells into {TENANT}'s namespace — set AOI_ID and TENANT to the same tenant.")
     name = aoi.get("name", AOI_ID.rsplit("/", 1)[-1])
     ee = init_ee()
     cells = h3_cells(bbox, res)
@@ -170,6 +175,8 @@ def main():
             hc = props["h3"]
             import h3 as _h3
             la, lo = _h3.cell_to_latlng(hc)
+            if not (bbox[0] <= lo <= bbox[2] and bbox[1] <= la <= bbox[3]):
+                continue                                          # AOI membership guard: never write a cell outside the AOI bbox
             bound = [[round(p[0], 6), round(p[1], 6)] for p in cell_boundary(hc)]
             built = hist.get(str(BUILT), 0) / total
             green = sum(hist.get(str(c), 0) for c in GREEN) / total

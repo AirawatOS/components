@@ -208,6 +208,10 @@ def main():
     if not aoi:
         print(f"FAIL: no AOI at {AOI_ID}"); return 1
     bbox = aoi["bbox"]; res = int(RES_OVERRIDE) if RES_OVERRIDE else int(aoi.get("h3_res", 9))
+    aoi_tenant = AOI_ID.split(":")[1] if AOI_ID.count(":") >= 2 else ""
+    if aoi_tenant and aoi_tenant != WRITE_TENANT:                 # cross-tenant guard (ADR-0063): the AOI's tenant and the
+        print(f"FAIL: WRITE_TENANT={WRITE_TENANT} but AOI {AOI_ID} belongs to tenant '{aoi_tenant}' — refusing to "
+              f"write {aoi_tenant}'s cells into {WRITE_TENANT}'s namespace."); return 1   # write namespace MUST agree
     rows = _call("/v1/query", {"scope": INPUT_SCHEMA, "limit": 20000}).get("results", [])
     features = [(r.get("object") or r) for r in rows]
     cells = cells_in_bbox(bbox, res)
@@ -229,6 +233,8 @@ def main():
     written = 0
     for hcell, (value, conf, src) in result.items():
         lat, lng = h3.cell_to_latlng(hcell)
+        if not (bbox[0] <= lng <= bbox[2] and bbox[1] <= lat <= bbox[3]):
+            continue                                              # AOI membership guard: never write a cell outside the AOI
         rid = f"ds:{WRITE_TENANT}:{OUTPUT_SCHEMA.replace('.', '/')}/{hcell}"
         fact = {"schema": OUTPUT_SCHEMA, "id": rid,
                 "cell_ref": {"h3_id": hcell, "resolution": res,
