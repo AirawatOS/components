@@ -1,4 +1,5 @@
 <title>City Scan — City Digital Baseline</title>
+<link rel="stylesheet" href="./vendor/maplibre-gl.css" onerror="this.remove()">
 <style>
   :root{
     --ground:#0e1621; --panel:#16212e; --panel2:#1b2836; --edge:#243545; --edge2:#2f4358;
@@ -10,7 +11,7 @@
   html,body{margin:0;height:100%}
   body{background:var(--ground);color:var(--ink);
     font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+    font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow:hidden}
   .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
   .num{font-variant-numeric:tabular-nums}
   header{padding:18px 22px;border-bottom:1px solid var(--edge);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
@@ -19,9 +20,8 @@
   .sub{color:var(--muted);font-size:12.5px}
   .sub .dot{color:var(--dim);margin:0 7px}
   .grid{display:grid;--lc:212px;--rc:340px;grid-template-columns:var(--lc) 1fr var(--rc);
-    grid-template-rows:1fr auto;gap:0;height:calc(100% - 63px);transition:grid-template-columns .22s ease}
+    grid-template-rows:1fr;gap:0;height:calc(100% - 63px);transition:grid-template-columns .22s ease}
   .grid.lc0{--lc:0}.grid.rc0{--rc:0}
-  @media(max-width:1080px){.grid{grid-template-columns:1fr;height:auto}.map-wrap{min-height:52vh}}
   aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:auto;transition:padding .2s,opacity .15s}
   .grid.lc0 aside{padding:0;opacity:0;pointer-events:none;border:none}
   .railtog{position:absolute;top:12px;z-index:6;width:22px;height:36px;border:1px solid var(--edge2);
@@ -34,7 +34,7 @@
   .layer-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--edge);
     border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;text-align:left;transition:.13s;width:100%}
   .layer-btn:hover{border-color:var(--edge2);background:var(--panel2)}
-  .layer-btn.on{border-color:var(--accent);background:#12263200;box-shadow:inset 0 0 0 1px var(--accent)}
+  .layer-btn.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
   .swatch{width:12px;height:12px;border-radius:3px;flex:none}
   .layer-btn .lb{flex:1}
   .layer-btn .lb b{display:block;font-weight:600;font-size:13.5px}
@@ -42,24 +42,19 @@
   .legend{margin-top:22px}
   .bar{height:10px;border-radius:5px;margin:8px 0 5px}
   .legend .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px}
-  .map-wrap{position:relative;overflow:hidden;background:
-    radial-gradient(1200px 600px at 50% -10%,#12202e 0%,var(--ground) 70%)}
-  svg{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
-  svg.drag{cursor:grabbing}
+  .map-wrap{position:relative;overflow:hidden;background:#0b1017}
+  #map{position:absolute;inset:0}
+  #deck canvas{outline:none}
   .zoomctl{position:absolute;left:10px;bottom:10px;z-index:6;display:flex;flex-direction:column;gap:4px}
   .zoomctl button{width:30px;height:30px;border:1px solid var(--edge2);background:#0e1c2ad9;color:var(--ink);
     border-radius:8px;cursor:pointer;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
   .zoomctl button:hover{border-color:var(--accent);color:var(--accent)}
   .zoomctl button.rst{font-size:13px}
-  polygon.base{stroke:#0e1621;stroke-width:.25;pointer-events:none}
-  polygon.cell{stroke:#0c1420;stroke-width:.4;transition:opacity .1s}
-  polygon.cell:hover{stroke:var(--accent);stroke-width:1.4;fill-opacity:1}
-  .tip{position:absolute;pointer-events:none;background:#0a1320ee;border:1px solid var(--edge2);
-    border-radius:7px;padding:7px 9px;font-size:12px;opacity:0;transition:.08s;transform:translate(-50%,-115%);white-space:nowrap}
+  .tip{position:absolute;pointer-events:none;background:#0a1320f2;border:1px solid var(--edge2);z-index:7;
+    border-radius:7px;padding:7px 9px;font-size:12px;opacity:0;transition:.06s;transform:translate(8px,8px);white-space:nowrap}
   .tip b{color:var(--accent)}
-  .attrib{position:absolute;right:6px;bottom:6px;background:#0a1320cc;border:1px solid var(--edge);
+  .attrib{position:absolute;right:6px;bottom:6px;background:#0a1320cc;border:1px solid var(--edge);z-index:6;
     border-radius:5px;padding:2px 8px;font-size:10.5px;color:var(--muted)}
-  image{image-rendering:auto}
   .trust{padding:18px 16px;border-left:1px solid var(--edge);overflow:auto;transition:padding .2s,opacity .15s}
   .grid.rc0 .trust{padding:0;opacity:0;pointer-events:none;border:none}
   .cov{border:1px solid var(--edge);border-radius:10px;padding:12px 13px;margin-bottom:10px;background:var(--panel)}
@@ -76,8 +71,9 @@
   .kv b{color:var(--ink);font-weight:600}
   .gaps{margin-top:8px;font-size:11.5px;color:#e0b877;border-top:1px dashed var(--edge);padding-top:7px}
   .gaps .g{display:flex;gap:6px}.gaps .g::before{content:"△";color:#b98a3a}
-  footer{grid-column:1/-1;border-top:1px solid var(--edge);padding:9px 18px;color:var(--dim);font-size:11.5px}
+  footer{border-top:1px solid var(--edge);padding:9px 18px;color:var(--dim);font-size:11.5px}
   .empty{padding:40px;color:var(--muted);text-align:center}
+  .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);z-index:5}
 </style>
 
 <header>
@@ -96,251 +92,187 @@
     </div>
   </aside>
 
-  <div class="map-wrap"><svg id="map" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div>
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="loading" id="mapload">initialising map…</div>
+    <div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
     <div class="zoomctl"><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
-    <div class="attrib" id="attrib" hidden>Basemap © OpenStreetMap contributors</div></div>
+    <div class="attrib" id="attrib">Basemap © OpenStreetMap contributors</div>
+  </div>
 
   <div class="trust">
     <p class="rail-h">Coverage &amp; trust report</p>
     <div id="cov"></div>
   </div>
-
-  <footer id="foot"></footer>
 </div>
 
+<!-- deck.gl (GPU map): core+layers+geo-layers bundled into one self-contained IIFE (esbuild), self-hosted
+     under the sandbox CSP (script-src 'self'). window.deck exposes Deck/MapView/H3HexagonLayer/TileLayer/… -->
+<script src="./vendor/deck-bundle.min.js"></script>
 <script>
-// LAYERS is DISCOVERED, not hardcoded: built at load() from governed viz.layer descriptors (render=map) ∩ the
-// layers THIS city actually has data for. A new map layer needs only a viz.layer record + its data — no edit here.
-let LAYERS=[];
-// color_scale enum (viz.layer) → a [low, high] ramp. New scale = one entry; new LAYER = zero app edits.
-const COLOR_RAMPS={reds:["#3a2418","#f0864a"], viridis:["#12301f","#4ade80"], blues:["#0b2033","#38bdf8"],
-                   aqi:["#134a2b","#f87171"], greys:["#242b33","#cbd5e1"]};
-const dget=(o,path)=>String(path||"value").split(".").reduce((v,k)=>(v==null?v:v[k]), o);
-const fmtFor=unit=> unit==="%"  ? (v=>Math.round(v*100)+"%")
-                  : unit==="°C" ? (v=>v.toFixed(1)+"°")
-                  : unit==="m"  ? (v=>Math.round(v)+" m")
-                  : (v=>(Math.round(v*100)/100)+(unit?(" "+unit):""));
-// base-map land-cover colours (the city's own governed polygons — no external tiles under the app CSP)
-const BASECOL={water:"#153048",vegetation:"#183020",built:"#232932",cropland:"#2c2818",bare:"#2a2520"};
-const AUTHCLASS={"open-data":"open","ai-derived":"ai","authoritative":"real"};
+const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function lerp(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
-  return "#"+A.map((x,i)=>Math.round(x+(B[i]-x)*t).toString(16).padStart(2,"0")).join("");}
-
-// ---- slippy-map tiles (Web Mercator) fetched through the host's declared-egress /bridge/fetch ----
+// color_scale (viz.layer enum) → a [low,high] RGB ramp. New scale = one entry; new LAYER = zero app edits.
+const RAMPS={reds:[[58,36,24],[240,134,74]], viridis:[[18,48,31],[74,222,128]], blues:[[11,32,51],[56,189,248]],
+             aqi:[[19,74,43],[248,113,113]], greys:[[36,43,51],[203,213,225]]};
+const dget=(o,path)=>String(path||"value").split(".").reduce((v,k)=>(v==null?v:v[k]),o);
+const fmtFor=u=> u==="%"?(v=>Math.round(v*100)+"%"): u==="°C"?(v=>v.toFixed(1)+"°"): u==="m"?(v=>Math.round(v)+" m")
+              : (v=>(Math.round(v*100)/100)+(u?(" "+u):""));
+const lerpC=(a,b,t)=>a.map((x,i)=>Math.round(x+(b[i]-x)*t));
 let APPID="city-scan";
-const TZ=z=>Math.pow(2,z);
-const lon2x=(lon,z)=>Math.floor((lon+180)/360*TZ(z));
-const lat2y=(lat,z)=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*TZ(z));};
-const tile2lon=(x,z)=>x/TZ(z)*360-180;
-const tile2lat=(y,z)=>{const n=Math.PI-2*Math.PI*y/TZ(z);return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));};
-function visibleGeo(){                              // the geographic extent currently on screen (under the transform)
-  const W=proj.W,H=proj.H,{k,tx,ty}=view;
-  const xs=[(0-tx)/k,(W-tx)/k], ys=[(0-ty)/k,(H-ty)/k];
-  return {w:proj.invLng(Math.min(...xs)), e:proj.invLng(Math.max(...xs)),
-          n:proj.invLat(Math.min(...ys)), s:proj.invLat(Math.max(...ys))};
+
+async function bridge(path,body){
+  const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  return r.json();
 }
-async function loadTiles(){
-  if(!proj||!(DATA.aoi||{}).bbox) return;
-  const g=visibleGeo();
-  let Z=Math.max(11,Math.min(19,Math.round(BASE_Z+Math.log2(view.k)))), x0,x1,y0,y1;
-  while(true){ x0=lon2x(g.w,Z);x1=lon2x(g.e,Z);y0=lat2y(g.n,Z);y1=lat2y(g.s,Z);
-    if((x1-x0+1)*(y1-y0+1)<=40 || Z<=11) break; Z--; }   // keep the fetch bounded (OSM policy + perf)
-  const key=Z+"/"+x0+","+y0+","+x1+","+y1;
-  if(key===DATA._tk) return;                              // already showing exactly these tiles — no refetch
-  const jobs=[], tiles=[];
-  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){ const X=x,Y=y,zz=Z;
-    jobs.push(fetch("/bridge/fetch",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({app_id:APPID,url:`https://tile.openstreetmap.org/${zz}/${X}/${Y}.png`})})
-      .then(r=>r.json()).then(d=>{ if(d&&d.body_b64)
-        tiles.push({w:tile2lon(X,zz),e:tile2lon(X+1,zz),n:tile2lat(Y,zz),s:tile2lat(Y+1,zz),
-          href:`data:${d.content_type||"image/png"};base64,${d.body_b64}`}); }).catch(()=>{})); }
-  await Promise.all(jobs);
-  DATA._tk=key;                          // this viewport is now ATTEMPTED — never re-hammer it. Without this, an
-                                         // all-429 batch (60/min egress cap) left _tk unset and refetched forever.
-  if(tiles.length){ DATA.tiles=tiles; $("attrib").hidden=false; render(); }
-  // else keep the existing tiles — a transient failure / rate-limit must never blank the basemap
+async function q(schema){
+  try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000});
+       return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
+
+let DATA={}, LAYERS=[], active=null, deckgl=null, view=null;
 
 async function load(){
-  if(window.__CITYSCAN__) return window.__CITYSCAN__;
-  // the host serves ./config.json with our correct app_id (the bridge keys CERTIFIED by the short id)
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
-  const APP=cfg.app_id; APPID=cfg.app_id;
-  const q=async s=>{try{const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({app_id:APP,schema:s,limit:50000})});const d=await r.json();  // full metro grid, not the 1000 default
-    return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[]}};
-  // SCOPE = the union of THIS tenant's AOI bboxes. Cells/landcover are queried tenant-wide, so we clip to the
-  // city here — one stray cross-city row (e.g. a stale cell left under this tenant from another metro) must not
-  // distort the projection or inflate the counts. Fetch the AOIs FIRST so the scope is known before we clip.
+  APPID=cfg.app_id||"city-scan";
+  // SCOPE = union of THIS tenant's AOI bboxes → clip cross-tenant strays; also frames the initial camera.
   const aois=await q("space.aoi"); const aoi=aois[0]||{};
   let SB=null;
   for(const a of aois){ const bb=a.bbox; if(Array.isArray(bb)&&bb.length===4)
-    SB = SB ? [Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])] : bb.slice(); }
-  const M=0.03, inB=p=> !SB || !p || (p[0]>=SB[0]-M&&p[0]<=SB[2]+M&&p[1]>=SB[1]-M&&p[1]<=SB[3]+M);
-  // DISCOVER the layers: governed viz.layer descriptors (render=map, enabled), ordered. Keyed by source_schema.
-  const descs=(await q("viz.layer"))
-    .filter(d=>d && d.render==="map" && d.enabled!==false && d.source_schema && d.value_field)
-    .sort((a,b)=>(a.order??99)-(b.order??99));
-  const seenS={}, specs=[];
-  for(const d of descs){ if(seenS[d.source_schema]) continue; seenS[d.source_schema]=1;
-    const ramp=COLOR_RAMPS[d.color_scale]||COLOR_RAMPS.viridis;
-    specs.push({key:d.source_schema, label:d.label||d.source_schema, desc:d.description||"",
-                vf:d.value_field, unit:d.unit||"", lo:ramp[0], hi:ramp[1], fmt:fmtFor(d.unit)}); }
-  // For each descriptor, pull its data (geometry from cell_ref OR space; value at the descriptor's value_field);
-  // keep ONLY layers this city actually has — so a city without hydrology simply shows no Flood layer.
-  // Pull every layer's data IN PARALLEL (was sequential → 5× the wait). Promise.all preserves the sorted order.
-  const layers={}, kept=[];
-  const results=await Promise.all(specs.map(async L=>{
-    const mapped=(await q(L.key)).map(o=>{ const g=o.cell_ref||o.space||{};
-        return {h3:g.h3_id||g.h3, b:g.boundary, c:g.centroid, v:dget(o,L.vf)}; })
-      .filter(c=> typeof c.v==="number" && inB(c.c || (c.b&&c.b[0])));   // clip to the city + real numeric value only
-    return {L, mapped};
+    SB=SB?[Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])]:bb.slice(); }
+  const M=0.03, inB=p=> !SB||!p||(p[0]>=SB[0]-M&&p[0]<=SB[2]+M&&p[1]>=SB[1]-M&&p[1]<=SB[3]+M);
+  // DISCOVER layers from the governed viz.layer catalog (render=map, enabled), ordered, keyed by source_schema.
+  const descs=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field)
+                                     .sort((a,b)=>(a.order??99)-(b.order??99));
+  const seen={}, specs=[];
+  for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
+    specs.push({key:d.source_schema,label:d.label||d.source_schema,desc:d.description||"",vf:d.value_field,
+                unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,fmt:fmtFor(d.unit)}); }
+  const data={}, kept=[];
+  await Promise.all(specs.map(async L=>{
+    const rows=await q(L.key);
+    if(L.key==="geo.osm_feature"){                              // LINES (roads) → paths
+      const paths=rows.map(o=>({path:((o.geometry||{}).coordinates)||[], feature:o.feature}))
+                      .filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]));
+      if(paths.length){ data[L.key]={type:"path",rows:paths}; kept.push(L); }
+    }else{                                                      // CELLS → H3 hexagons (value at value_field)
+      const cells=rows.map(o=>{ const g=o.cell_ref||o.space||{};
+          return {h3:g.h3_id||g.h3, c:g.centroid, v:dget(o,L.vf)}; })
+        .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
+      if(cells.length){ data[L.key]={type:"hex",rows:cells,
+          lo:Math.min(...cells.map(c=>c.v)),hi:Math.max(...cells.map(c=>c.v))}; kept.push(L); }
+    }
   }));
-  for(const {L,mapped} of results){ if(mapped.length){ layers[L.key]=mapped; kept.push(L); } }   // keep only layers this city has
   LAYERS=kept;
-  const base=(await q("geo.landcover")).map(o=>({ring:(((o.geometry||{}).coordinates)||[[]])[0], cls:o.lc_class}))
-      .filter(f=> f.ring&&f.ring.length&&inB(f.ring[0]));
-  // one card per layer_noun — keep the freshest assessment (baselines re-run; don't stack duplicate cards)
   let cov=await q("city.coverage"); cov.sort((a,b)=>String(b.assessed_at||"").localeCompare(String(a.assessed_at||"")));
-  const seen={}; cov=cov.filter(c=>{const k=c.layer_noun; if(seen[k])return false; seen[k]=1; return true;});
-  return {aoi,scope:SB,layers,base,coverage:cov};
+  const cs={}; cov=cov.filter(c=>{const k=c.layer_noun; if(cs[k])return false; cs[k]=1; return true;});
+  return {aoi,scope:SB,data,coverage:cov};
 }
 
-let DATA, active=null, proj=null;   // active layer chosen after load() discovers LAYERS
-let view={k:1,tx:0,ty:0}, BASE_Z=14;               // interactive pan/zoom state + base tile zoom for the AOI
-const $=id=>document.getElementById(id);
-
-function project(){
-  let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9,any=false;
-  const eat=p=>{any=true;mnx=Math.min(mnx,p[0]);mxx=Math.max(mxx,p[0]);mny=Math.min(mny,p[1]);mxy=Math.max(mxy,p[1]);};
-  if(DATA.scope){ const s=DATA.scope; eat([s[0],s[1]]); eat([s[2],s[3]]); }   // viewport = the city's own AOI bbox (stable)
-  else { for(const L of LAYERS)for(const c of (DATA.layers[L.key]||[]))for(const p of (c.b||[]))eat(p);
-         for(const f of (DATA.base||[]))for(const p of (f.ring||[]))eat(p); }
-  if(!any)return null;
-  const midLat=(mny+mxy)/2, kx=Math.cos(midLat*Math.PI/180);
-  const gw=(mxx-mnx)*kx||1e-6, gh=(mxy-mny)||1e-6;
-  // COVER-FIT: viewBox = the container's pixel box; scale the AOI to fill BOTH dims (the larger overflows,
-  // trimming that edge) so the map is edge-to-edge with panels open or collapsed. Re-projected on resize/toggle.
-  const wrap=$("map").parentElement;
-  const cw=Math.max(320,wrap.clientWidth||1000), ch=Math.max(240,wrap.clientHeight||700);
-  const s=Math.max(cw/gw, ch/gh);
-  const offX=(cw-gw*s)/2, offY=(ch-gh*s)/2;
-  // fitK = the zoom multiplier (≤1) at which the ENTIRE AOI fits inside the box (contain-fit) — the default
-  // view is cover-fit (crops the longer axis), so we let the user zoom OUT to here to see the whole city.
-  const fitK=Math.min(cw/gw, ch/gh)/s;
-  return {mnx,mxx,mny,mxy,kx,W:cw,H:ch,s,offX,offY,fitK,
-    x:lng=>offX+((lng-mnx)*kx)*s,
-    y:lat=>offY+((mxy-lat))*s,
-    invLng:xb=>mnx+(xb-offX)/(kx*s),
-    invLat:yb=>mxy-(yb-offY)/s};
+// ---- basemap: OSM raster via the host's CACHED declared-egress /bridge/fetch (fetched once, served from disk) ----
+async function tileImage(x,y,z){
+  const url=`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  const d=await bridge("/bridge/fetch",{app_id:APPID,url});
+  if(!d||!d.body_b64) return null;
+  const img=new Image(); img.src=`data:${d.content_type||"image/png"};base64,${d.body_b64}`;
+  try{ await img.decode(); }catch(e){}
+  return img;
 }
-function range(key){const v=(DATA.layers[key]||[]).map(c=>c.v).filter(x=>typeof x==="number");
-  return v.length?[Math.min(...v),Math.max(...v)]:[0,1];}
-
+function basemapLayer(){
+  const {TileLayer}=deck, {BitmapLayer}=deck;
+  return new TileLayer({id:"basemap",tileSize:256,minZoom:0,maxZoom:19,maxRequests:6,
+    getTileData:({index})=>tileImage(index.x,index.y,index.z),
+    renderSubLayers:props=>{ const {boundingBox}=props.tile;
+      return new BitmapLayer({id:props.id,image:props.data,opacity:0.85,
+        bounds:[boundingBox[0][0],boundingBox[0][1],boundingBox[1][0],boundingBox[1][1]]}); }});
+}
+function dataLayer(){
+  const L=LAYERS.find(l=>l.key===active); if(!L||!DATA.data[L.key]) return null;
+  const d=DATA.data[L.key];
+  if(d.type==="path"){
+    return new deck.PathLayer({id:"roads",data:d.rows,widthUnits:"pixels",getWidth:1.6,
+      getColor:[56,189,248,200],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:true});
+  }
+  const span=(d.hi-d.lo)||1;
+  return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
+    extruded:false,getHexagon:c=>c.h3,opacity:0.68,
+    getFillColor:c=>{ const t=Math.max(0,Math.min(1,(c.v-d.lo)/span)); return [...lerpC(L.ramp[0],L.ramp[1],t),235]; }});
+}
 function render(){
-  const L=LAYERS.find(l=>l.key===active), cells=DATA.layers[active]||[], svg=$("map");
-  if(!proj){svg.innerHTML="";$("map").parentElement.querySelector(".tip");return;}
-  svg.setAttribute("viewBox",`0 0 ${proj.W} ${proj.H}`);
-  // the underlying "map": the city's own land-cover polygons (self-contained; the app CSP blocks external tiles)
-  let base="";
-  for(const f of (DATA.base||[])){ if(!f.ring||f.ring.length<3) continue;
-    const pts=f.ring.map(p=>proj.x(p[0]).toFixed(1)+","+proj.y(p[1]).toFixed(1)).join(" ");
-    base+=`<polygon class="base" points="${pts}" fill="${BASECOL[f.cls]||'#20262e'}"></polygon>`;
-  }
-  // real OSM tile basemap (fetched via /bridge/fetch, rendered as CSP-allowed data: URIs)
-  let tiles="";
-  for(const t of (DATA.tiles||[])){
-    const x0=proj.x(t.w), y0=proj.y(t.n), x1=proj.x(t.e), y1=proj.y(t.s);
-    tiles+=`<image x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${(x1-x0).toFixed(1)}" height="${(y1-y0).toFixed(1)}" href="${t.href}" preserveAspectRatio="none"></image>`;
-  }
-  const hasTiles=!!(DATA.tiles&&DATA.tiles.length), cellOp=hasTiles?"0.66":"0.82";
-  const [mn,mx]=range(active), span=(mx-mn)||1;
-  let s="";
-  for(const c of cells){ if(!c.b) continue;
-    const t=(c.v-mn)/span, fill=lerp(L.lo,L.hi,Math.max(0,Math.min(1,t)));
-    const pts=c.b.map(p=>proj.x(p[0]).toFixed(1)+","+proj.y(p[1]).toFixed(1)).join(" ");
-    s+=`<polygon class="cell" points="${pts}" fill="${fill}" fill-opacity="${cellOp}" data-v="${esc(L.fmt(c.v))}" data-h="${esc(c.h3||"")}"></polygon>`;
-  }
-  // land-cover base shows until real tiles arrive (fallback); tiles cover it when present. Everything lives
-  // inside #scene, whose transform gives interactive pan/zoom (vectors stay crisp; tiles refetch on settle).
-  svg.innerHTML=`<g id="scene" transform="translate(${view.tx.toFixed(2)} ${view.ty.toFixed(2)}) scale(${view.k.toFixed(4)})">`
-    +`<g class="basemap"${hasTiles?' opacity="0.15"':''}>${base}</g><g class="tiles">${tiles}</g><g class="layer">${s}</g></g>`;
+  if(!deckgl) return;
+  deckgl.setProps({layers:[basemapLayer(), dataLayer()].filter(Boolean)});
   // legend
-  $("legend").hidden=!cells.length;
-  $("legbar").style.background=`linear-gradient(90deg,${L.lo},${L.hi})`;
-  $("legmin").textContent=L.fmt(mn); $("legmax").textContent=L.fmt(mx);
-  // buttons
+  const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
+  if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
+    $("legbar").style.background=`linear-gradient(90deg,rgb(${L.ramp[0]}),rgb(${L.ramp[1]}))`;
+    $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi);
+  } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
-  wireTips();
 }
-function wireTips(){
-  const tip=$("tip"), wrap=$("map").parentElement;
-  $("map").querySelectorAll("polygon.cell").forEach(p=>{
-    p.onmousemove=e=>{const r=wrap.getBoundingClientRect();
-      tip.style.left=(e.clientX-r.left)+"px";tip.style.top=(e.clientY-r.top)+"px";
-      tip.innerHTML=`<b>${p.dataset.v}</b> · <span class="mono" style="color:var(--muted)">${p.dataset.h.slice(0,10)}</span>`;tip.style.opacity=1;};
-    p.onmouseleave=()=>tip.style.opacity=0;
-  });
+function tip(info){
+  const t=$("tip");
+  if(!info||!info.object){ t.style.opacity=0; return; }
+  const L=LAYERS.find(l=>l.key===active);
+  const o=info.object;
+  const label = o.feature!==undefined ? esc(o.feature||"road")
+              : `<b>${esc(L?L.fmt(o.v):o.v)}</b> · <span class="mono" style="color:var(--muted)">${esc((o.h3||"").slice(0,10))}</span>`;
+  t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
 function drawLayers(){
-  $("layers").innerHTML=LAYERS.map(L=>{const n=(DATA.layers[L.key]||[]).length;
+  $("layers").innerHTML=LAYERS.map(L=>{const d=DATA.data[L.key], n=d?d.rows.length:0;
     return `<button class="layer-btn ${L.key===active?"on":""}" data-k="${L.key}">
-      <span class="swatch" style="background:linear-gradient(135deg,${L.lo},${L.hi})"></span>
-      <span class="lb"><b>${L.label}</b><span>${n} cells · ${L.desc}</span></span></button>`;}).join("");
+      <span class="swatch" style="background:linear-gradient(135deg,rgb(${L.ramp[0]}),rgb(${L.ramp[1]}))"></span>
+      <span class="lb"><b>${esc(L.label)}</b><span>${n} ${d&&d.type==="path"?"segments":"cells"} · ${esc(L.desc)}</span></span></button>`;}).join("");
   document.querySelectorAll(".layer-btn").forEach(b=>b.onclick=()=>{active=b.dataset.k;render();});
 }
 function drawTrust(){
+  const AUTH={"open-data":"open","ai-derived":"ai","authoritative":"real"};
   const cov=(DATA.coverage||[]).slice().sort((a,b)=>(a.layer_noun>b.layer_noun?1:-1));
   if(!cov.length){$("cov").innerHTML='<div class="empty">No coverage report yet.</div>';return;}
-  $("cov").innerHTML=cov.map(c=>{
-    const cls=AUTHCLASS[c.authority]||"ai", pct=Math.round(c.coverage_pct||0);
+  $("cov").innerHTML=cov.map(c=>{ const cls=AUTH[c.authority]||"ai", pct=Math.round(c.coverage_pct||0);
     const gaps=(c.gaps||[]).map(g=>`<div class="g">${esc(g)}</div>`).join("");
-    return `<div class="cov">
-      <div class="top"><span class="noun mono">${esc(c.layer_noun)}</span>
-        <span class="pill ${cls}">${esc(c.authority||"—")}</span></div>
+    return `<div class="cov"><div class="top"><span class="noun mono">${esc(c.layer_noun)}</span>
+      <span class="pill ${cls}">${esc(c.authority||"—")}</span></div>
       <div class="covbar"><i style="width:${pct}%"></i></div>
       <div class="kv"><span>Coverage</span><b class="num">${pct}% of AOI cells</b></div>
       <div class="kv"><span>Confidence</span><b class="num">${c.confidence==null?"—":c.confidence}</b></div>
       <div class="kv"><span>Source</span><b>${esc((c.source_ref||"—").split("/").pop())}</b></div>
-      <div class="kv"><span>As of</span><b class="num">${esc(c.freshness||"—")}</b></div>
+      <div class="kv"><span>As of</span><b class="num">${esc(c.freshness||c.assessed_at||"—")}</b></div>
       ${gaps?`<div class="gaps">${gaps}</div>`:""}</div>`;}).join("");
 }
+function fitView(bbox){
+  const [w,s,e,n]=bbox, lon=(w+e)/2, lat=(s+n)/2;
+  const span=Math.max(e-w,(n-s))||0.1, zoom=Math.max(3,Math.min(15,Math.log2(360/span)));
+  return {longitude:lon,latitude:lat,zoom,pitch:0,bearing:0};
+}
+
 (async function(){
-  DATA=await load(); active=(LAYERS[0]||{}).key; proj=project();
-  const nL=LAYERS.filter(L=>(DATA.layers[L.key]||[]).length).length;
-  const fresh=(DATA.coverage||[]).map(c=>c.freshness).filter(Boolean).sort().pop();
-  $("sub").innerHTML=`${esc(DATA.aoi.name||"AOI")}<span class="dot">·</span>${nL} indicator layers<span class="dot">·</span>`
-    +`${(DATA.coverage||[]).length} assessed<span class="dot">·</span>as of ${esc(fresh||"—")}`;
-  $("foot").innerHTML="L2 cell indicators derived from L0/L1 sources · every cell carries derived_from lineage · authority is inferred, not asserted";
-  if(!proj){$("app").innerHTML='<div class="empty" style="grid-column:1/-1">No baseline data available for this workspace yet.</div>';return;}
-  const [wl,,el]=DATA.aoi.bbox||[0,0,0,0];
-  BASE_Z=Math.min(16,Math.max(11,Math.round(Math.log2(1440/Math.max(el-wl,1e-4)))));
+  if(!window.deck||!deck.Deck){ $("mapload").textContent="map engine failed to load"; return; }
+  DATA=await load();
+  active=(LAYERS[0]||{}).key;
+  const fresh=(DATA.coverage||[]).map(c=>c.freshness||c.assessed_at).filter(Boolean).sort().pop();
+  $("sub").innerHTML=`${esc((DATA.aoi||{}).name||"AOI")}<span class="dot">·</span>${LAYERS.length} indicator layers`
+    +`<span class="dot">·</span>${(DATA.coverage||[]).length} assessed<span class="dot">·</span>as of ${esc((fresh||"—").slice(0,10))}`;
+  if(!LAYERS.length){ $("mapload").remove(); $("map").innerHTML='<div class="empty">No baseline data for this workspace yet.</div>'; drawTrust(); return; }
+  view=fitView(DATA.aoi.bbox||DATA.scope||[72.8,18.9,72.99,19.28]);
+  deckgl=new deck.Deck({
+    parent:$("map"), initialViewState:view, controller:true, useDevicePixels:false,
+    views:[new deck.MapView({repeat:false})],
+    onViewStateChange:({viewState})=>{ view=viewState; },
+    onHover:info=>tip(info),
+    getCursor:({isDragging})=>isDragging?"grabbing":"grab",
+    layers:[]
+  });
+  $("mapload").remove();
   drawLayers(); drawTrust(); render();
-  loadTiles();                                    // real OSM basemap via declared /bridge/fetch (async → re-render)
-  // --- interactive pan / zoom: SVG transform for smooth feel, tile refetch on settle for crisp streets ---
-  const svg=$("map");
-  const applyTransform=()=>{const sc=$("scene"); if(sc) sc.setAttribute("transform",`translate(${view.tx.toFixed(2)} ${view.ty.toFixed(2)}) scale(${view.k.toFixed(4)})`);};
-  let tt=null; const scheduleTiles=()=>{clearTimeout(tt);tt=setTimeout(loadTiles,270);};
-  // min zoom = fitK×0.9 so you can zoom out past cover-fit to see the whole AOI (+10% breathing room).
-  const zoomAt=(mx,my,f)=>{const minK=Math.min(1,(proj&&proj.fitK||1)*0.9); const nk=Math.max(minK,Math.min(64,view.k*f));
-    view.tx=mx-((mx-view.tx)/view.k)*nk; view.ty=my-((my-view.ty)/view.k)*nk; view.k=nk; applyTransform(); scheduleTiles();};
-  svg.addEventListener("wheel",e=>{e.preventDefault();const r=svg.getBoundingClientRect();
-    zoomAt((e.clientX-r.left)/r.width*proj.W,(e.clientY-r.top)/r.height*proj.H, e.deltaY<0?1.2:1/1.2);},{passive:false});
-  let drag=null;
-  svg.addEventListener("mousedown",e=>{drag=[e.clientX,e.clientY,view.tx,view.ty];svg.classList.add("drag");});
-  addEventListener("mousemove",e=>{ if(!drag)return; const r=svg.getBoundingClientRect();
-    view.tx=drag[2]+(e.clientX-drag[0])/r.width*proj.W; view.ty=drag[3]+(e.clientY-drag[1])/r.height*proj.H; applyTransform();});
-  addEventListener("mouseup",()=>{ if(drag){drag=null;svg.classList.remove("drag");scheduleTiles();}});
-  $("zin").onclick=()=>zoomAt(proj.W/2,proj.H/2,1.4);
-  $("zout").onclick=()=>zoomAt(proj.W/2,proj.H/2,1/1.4);
-  $("zreset").onclick=()=>{view={k:1,tx:0,ty:0};proj=project();render();loadTiles();};
-  const reproject=()=>{view={k:1,tx:0,ty:0};proj=project();render();loadTiles();};   // fill re-covers on resize/toggle
-  const g=$("app"), reflow=()=>setTimeout(reproject,240);
-  $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";reflow();};
-  $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";reflow();};
-  addEventListener("resize",reproject);
+  const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
+  $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
+  $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});
+  $("zreset").onclick=()=>setV({...fitView(DATA.aoi.bbox||DATA.scope),transitionDuration:250});
+  const g=$("app");
+  $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";};
+  $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";};
 })();
 </script>
