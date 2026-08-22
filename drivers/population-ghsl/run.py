@@ -161,17 +161,20 @@ def main():
                 continue                                          # AOI membership guard
             pop = max(0.0, float(pop))
             area_km2 = h3.cell_area(hc, unit="km^2")
+            # demographics.population is a CLOSED governed schema: only {schema,id,space,population,
+            # density_per_km2,source,prov,observed_at}. Provenance (method/asset/epoch/confidence/lineage)
+            # is carried in the nested `prov` object + the `source` string; the registry ALSO stamps the
+            # producing component on the write (ADR-0052 attribution).
             fact = {
                 "schema": "demographics.population", "id": f"ds:{TENANT}:demographics/population/{hc}",
                 "space": {"h3": hc, "res": res, "centroid": [round(lo, 6), round(la, 6)],
                           "boundary": [[round(x, 6), round(y, 6)] for (x, y) in cell_boundary_lonlat(hc)]},
                 "population": round(pop, 1),
-                "density_per_km2": round(pop / area_km2, 1) if area_km2 else None,
-                "epoch": EPOCH, "source": "GHSL R2023A (GHS-POP)", "source_ref": SRC,
-                "method": "ghsl-p2023a-reduceRegions-sum", "layer": "L2", "confidence": 0.9,
-                "derived_from": DERIVED,
-                "prov": {"method": "ghsl-p2023a", "source_ref": SRC, "derived_from": DERIVED, "epoch": EPOCH,
-                         "confidence": 0.9, "observed_at": OBSERVED},
+                "density_per_km2": round(pop / area_km2, 1) if area_km2 else 0.0,
+                "source": f"GHSL R2023A (GHS-POP) E{EPOCH} · gee:{POP_ASSET}",
+                "prov": {"method": "ghsl-p2023a-reduceRegions-sum", "source_ref": SRC, "asset": POP_ASSET,
+                         "epoch": EPOCH, "confidence": 0.9, "layer": "L2", "derived_from": DERIVED,
+                         "observed_at": OBSERVED},
                 "observed_at": OBSERVED}
             call("/v1/write", {"scope": "demographics.population", "id": fact["id"], "object": fact,
                                "valid_time": {"from": OBSERVED}, "asserted_at": NOW})
