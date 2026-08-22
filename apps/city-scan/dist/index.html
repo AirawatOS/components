@@ -105,6 +105,17 @@
     background:#0a1320d9;border:1px solid var(--edge2);border-radius:999px;padding:4px 13px;color:var(--muted);
     font-size:11.5px;opacity:0;transition:opacity .3s}
   .drillhint.show{opacity:1}
+  /* TIME SCRUBBER — animate a temporal layer over its time axis (forecast series / dated snapshots) */
+  .scrubber{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:7;width:min(560px,80%);
+    display:flex;align-items:center;gap:12px;background:#0c1622f2;border:1px solid var(--edge2);border-radius:12px;
+    padding:9px 14px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(4px)}
+  .scrubber button{flex:none;width:30px;height:30px;border-radius:50%;border:none;background:var(--accent);
+    color:#04121e;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .scrubber button:hover{filter:brightness(1.1)}
+  .scrubber input[type=range]{flex:1;accent-color:var(--accent);cursor:pointer}
+  .scrubber .tlab{flex:none;text-align:right;min-width:104px}
+  .scrubber .tlab b{display:block;font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .scrubber .tlab span{font-size:10.5px;color:var(--dim)}
 </style>
 
 <header>
@@ -136,6 +147,7 @@
     <div class="loading" id="mapload">initialising map…</div>
     <div class="cellpanel" id="cellpanel" hidden></div>
     <div class="drillhint" id="drillhint">click a cell to drill in · Esc to exit</div>
+    <div class="scrubber" id="scrubber" hidden></div>
     <div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
@@ -191,6 +203,7 @@ async function qf(schema,filter){                              // server-side fi
 }
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
+let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
 let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false;   // drilled cell state + overlays
 const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
@@ -226,10 +239,16 @@ async function load(){
       if(paths.length){ data[L.key]={type:"path",rows:paths}; kept.push(L); }
     }else{                                                      // CELLS → H3 hexagons (value at value_field)
       const cells=rows.map(o=>{ const g=o.cell_ref||o.space||{};
-          return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, v:dget(o,L.vf)}; })   // b = cell boundary (for drill highlight + feature-in-cell)
+          return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, v:dget(o,L.vf), series:o.series}; })   // series = per-cell time axis (temporal layers)
         .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
-      if(cells.length){ data[L.key]={type:"hex",rows:cells,
-          lo:Math.min(...cells.map(c=>c.v)),hi:Math.max(...cells.map(c=>c.v))}; kept.push(L); }
+      if(cells.length){ const dd={type:"hex",rows:cells,
+          lo:Math.min(...cells.map(c=>c.v)),hi:Math.max(...cells.map(c=>c.v))};
+        // TEMPORAL: a cell carrying a `series` (e.g. hourly forecast) → the layer animates over time via the scrubber
+        const ws=cells.find(c=>Array.isArray(c.series)&&c.series.length);
+        if(ws){ L.temporal=true; L.times=ws.series.map(s=>s.t); L.sfield="precip_mm";
+          let hi=0; for(const c of cells){ if(Array.isArray(c.series)) for(const s of c.series){ const v=s[L.sfield]; if(typeof v==="number"&&v>hi) hi=v; } }
+          dd.thi=hi||1; }
+        data[L.key]=dd; kept.push(L); }
     }
   }));
   LAYERS=kept;
@@ -270,16 +289,18 @@ function dataLayer(){
     return new deck.PathLayer({id:"roads",data:d.rows,widthUnits:"pixels",getWidth:1.6,
       getColor:[56,189,248,200],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:true});
   }
-  const span=(d.hi-d.lo)||1;
-  const pnorm=c=>Math.pow(Math.max(0,Math.min(1,(c.v-d.lo)/span)),GAMMA);   // perceptual (gamma) — spreads the range
-  const zero=c=>c.v<=0 && d.lo<=0;                                          // TRUE absence (only when the layer bottoms at 0)
+  const temporal = !!L.temporal && d.thi!=null;                    // animate over the cell's time series when scrubbing
+  const frameVal = c => temporal ? ((c.series&&c.series[tIdx]&&typeof c.series[tIdx][L.sfield]==="number")?c.series[tIdx][L.sfield]:0) : c.v;
+  const lo = temporal?0:d.lo, hi = temporal?d.thi:d.hi, span=(hi-lo)||1;   // temporal: fixed 0..max scale, stable across frames
+  const pnorm=c=>Math.pow(Math.max(0,Math.min(1,(frameVal(c)-lo)/span)),GAMMA);   // perceptual (gamma) — spreads the range
+  const zero=c=>frameVal(c)<=0 && lo<=0;                                    // TRUE absence (only when the layer bottoms at 0)
   return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
     getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
     getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?0.94:0.72),   // fade to a carpet in drill mode
     getFillColor:c=> zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
-    updateTriggers:{getElevation:[mode3d,active,!!drillCell], getFillColor:[active,!!drillCell], opacity:[!!drillCell,mode3d]}});
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx], opacity:[!!drillCell,mode3d]}});
 }
 function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
 const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
@@ -390,9 +411,35 @@ function render(){
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
     $("legbar").style.background=rampCSS(L.ramp);
-    $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi);
+    if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=(Math.round(d.thi*10)/10)+" mm/h"; }
+    else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi); }
   } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
+  updateScrubber();
+}
+// ---- TIME SCRUBBER: animate a temporal layer (cells with a `series`) over its time axis ----
+function fmtT(t){ const d=new Date(t); return isNaN(d.getTime())?String(t):d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }
+function stopPlay(){ tPlaying=false; if(tTimer){clearInterval(tTimer);tTimer=null;} const b=$("tplay"); if(b) b.textContent="▶"; }
+function startPlay(){ const L=LAYERS.find(l=>l.key===active); if(!L||!L.temporal) return; tPlaying=true;
+  const b=$("tplay"); if(b) b.textContent="⏸";
+  tTimer=setInterval(()=>{ tIdx=(tIdx+1)%L.times.length; render(); }, 650); }
+function scrubTo(i){ stopPlay(); tIdx=i; render(); }
+function updateScrubber(){
+  const L=LAYERS.find(l=>l.key===active), el=$("scrubber");
+  if(!L||!L.temporal||!(L.times||[]).length){ el.hidden=true; if(tTimer) stopPlay(); return; }
+  const times=L.times; if(tIdx>=times.length) tIdx=0;
+  if(el.hidden || el.dataset.k!==active){        // (re)build the control when shown or the layer changed
+    el.hidden=false; el.dataset.k=active;
+    el.innerHTML=`<button id="tplay" title="Play / pause">${tPlaying?"⏸":"▶"}</button>`
+      +`<input id="trange" type="range" min="0" max="${times.length-1}" step="1" value="${tIdx}">`
+      +`<div class="tlab"><b id="tnow"></b><span id="tsub"></span></div>`;
+    $("tplay").onclick=()=>{ tPlaying?stopPlay():startPlay(); };
+    $("trange").oninput=e=>scrubTo(+e.target.value);
+  }
+  $("trange").value=tIdx;
+  $("tnow").textContent=fmtT(times[tIdx]);
+  $("tsub").textContent=`${tIdx+1}/${times.length} · forecast`;
+  const pb=$("tplay"); if(pb) pb.textContent=tPlaying?"⏸":"▶";
 }
 function tip(info){
   const t=$("tip");
@@ -409,7 +456,7 @@ function drawLayers(){
     return `<button class="layer-btn ${L.key===active?"on":""}" data-k="${L.key}">
       <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
       <span class="lb"><b>${esc(L.label)}</b><span>${n} ${d&&d.type==="path"?"segments":"cells"} · ${esc(L.desc)}</span></span></button>`;}).join("");
-  document.querySelectorAll(".layer-btn").forEach(b=>b.onclick=()=>{active=b.dataset.k;render();});
+  document.querySelectorAll(".layer-btn").forEach(b=>b.onclick=()=>{active=b.dataset.k; stopPlay(); tIdx=0; render();});
 }
 function drawTrust(){
   const AUTH={"open-data":"open","ai-derived":"ai","authoritative":"real"};

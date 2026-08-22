@@ -1,0 +1,22 @@
+# A DRIVER (kind=driver) — per-H3-cell short-range WEATHER FORECAST from Open-Meteo (ADR-0060 L3, operational).
+# Samples a coarse grid, fetches each point's hourly precipitation + temperature forecast (next ~48h) in one
+# keyless call, and assigns every H3 cell its nearest series → cell.weather_forecast. The TEMPORAL layer that
+# drives the City Scan time scrubber + the flood loop. Real Open-Meteo only, no default, no synthetic fallback.
+# Runs as a host subprocess (keyless HTTP via the broker).
+component_id: ds:airawat:driver/weather-forecast
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Weather Forecast (Open-Meteo)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi]
+writes: [cell.weather_forecast]
+egress:
+  - { host: api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/weather-forecast (+https://airawat.org; contact@airawat.org)" }
+config: [GRID, HOURS]
+sources:
+  - { ref: "ds:airawat:ref/source/open-meteo", host: api.open-meteo.com, provides: [cell.weather_forecast] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: cell.weather_forecast }
