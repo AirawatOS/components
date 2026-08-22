@@ -126,6 +126,7 @@
       <div class="ovbtns">
         <button class="ovbtn on" id="ovwater" hidden><span class="dotb" style="background:#60a5fa"></span>Drainage</button>
         <button class="ovbtn on" id="ovroads" hidden><span class="dotb" style="background:#e2e8f0"></span>Roads</button>
+        <button class="ovbtn" id="ovfac" hidden><span class="dotb" style="background:#ef4444"></span>Facilities</button>
       </div>
     </div>
   </aside>
@@ -177,9 +178,13 @@ async function qf(schema,filter){                              // server-side fi
 }
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
-let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false;   // drilled cell's footprints + panel/vis state
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false;   // drilled cell state + overlays
 const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
+// geo.facility category → marker colour (schools/hospitals/police-fire/govt/utilities/…)
+const FCOL={healthcare:[239,68,68],education:[59,130,246],emergency:[249,115,22],government:[168,85,247],
+            utility:[234,179,8],transport:[6,182,212],religious:[236,72,153],commerce:[34,197,94],other:[148,163,184]};
+const fcol=c=>FCOL[c]||FCOL.other;
 
 async function load(){
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
@@ -191,8 +196,9 @@ async function load(){
     SB=SB?[Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])]:bb.slice(); }
   const M=0.03, inB=p=> !SB||!p||(p[0]>=SB[0]-M&&p[0]<=SB[2]+M&&p[1]>=SB[1]-M&&p[1]<=SB[3]+M);
   // DISCOVER layers from the governed viz.layer catalog (render=map, enabled), ordered, keyed by source_schema.
+  const GEOM_LAYERS=["geo.building","geo.facility"];               // drill/overlay geometry layers — NOT choropleths
   const descs=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field
-                                     &&d.source_schema!=="geo.building")   // geo.building = drill-only footprints, not a choropleth
+                                     &&!GEOM_LAYERS.includes(d.source_schema))
                                      .sort((a,b)=>(a.order??99)-(b.order??99));
   const seen={}, specs=[];
   for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
@@ -219,9 +225,12 @@ async function load(){
   const roads=(await q("geo.osm_feature")).map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature}))
     .filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]));
   const water=(await q("geo.hydro_feature")).filter(o=>o.geometry&&inB(firstpt(o.geometry)));
+  // CRITICAL FACILITIES (geo.facility) — POI points, kept for the overlay + per-cell drill count
+  const facilities=(await q("geo.facility")).map(o=>({c:((o.geometry||{}).coordinates)||o.centroid,
+      cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id})).filter(f=>Array.isArray(f.c)&&f.c.length===2&&inB(f.c));
   let cov=await q("city.coverage"); cov.sort((a,b)=>String(b.assessed_at||"").localeCompare(String(a.assessed_at||"")));
   const cs={}; cov=cov.filter(c=>{const k=c.layer_noun; if(cs[k])return false; cs[k]=1; return true;});
-  return {aoi,scope:SB,data,coverage:cov,roads,water};
+  return {aoi,scope:SB,data,coverage:cov,roads,water,facilities};
 }
 
 // ---- basemap: OSM raster via the host's CACHED declared-egress /bridge/fetch (fetched once, served from disk) ----
@@ -283,9 +292,9 @@ async function loadFootprints(cell){                              // pull ONLY t
 }
 function drillInto(cell){                                          // zoom into a cell + reveal its native features
   if(!cell||!cell.h3) return;
-  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showWater=true; showBuildings=true; panelCollapsed=false;
-  const ow=$("ovwater"), or=$("ovroads");                          // reflect the forced-on overlays in the toggles
-  if(ow&&!ow.hidden) ow.classList.add("on"); if(or&&!or.hidden) or.classList.add("on");
+  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showWater=true; showBuildings=true; showFacilities=true; panelCollapsed=false;
+  const ow=$("ovwater"), or=$("ovroads"), of=$("ovfac");           // reflect the forced-on overlays in the toggles
+  if(ow&&!ow.hidden) ow.classList.add("on"); if(or&&!or.hidden) or.classList.add("on"); if(of&&!of.hidden) of.classList.add("on");
   $("drillhint").classList.remove("show");
   const c=cell.c||[view.longitude,view.latitude];
   view={...view, longitude:c[0], latitude:c[1], zoom:16, pitch:55, transitionDuration:800};
@@ -325,7 +334,8 @@ function cellPanel(){
     ${rows||'<div class="muted" style="font-size:12px">no indicator values here</div>'}
     <div class="kv sep"><span>🏢 buildings in cell</span><span>${bldg}${bToggle}</span></div>
     <div class="kv"><span>🛣 roads in cell</span><b>${roadsIn}</b></div>
-    <div class="kv"><span>💧 drainage in cell</span><b>${waterIn}</b></div>`;
+    <div class="kv"><span>💧 drainage in cell</span><b>${waterIn}</b></div>
+    <div class="kv"><span>🏥 facilities in cell</span><b>${(DATA.facilities||[]).filter(f=>f.h3===drillCell.h3).length}</b></div>`;
   $("cpx").onclick=exitDrill; $("cpmin").onclick=toggleCollapse;
   const bt=$("cpbld"); if(bt) bt.onclick=()=>{ showBuildings=!showBuildings; cellPanel(); render(); };
 }
@@ -344,7 +354,19 @@ function overlayLayers(){
       getColor:drill?[241,245,249,245]:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
       updateTriggers:{getWidth:[drill],getColor:[drill]}}));
   }
+  const fac=facilitiesLayer(); if(fac) out.push(fac);
   return out;
+}
+function facilitiesLayer(){                                     // critical facilities (geo.facility) → coloured markers
+  if(!showFacilities || !(DATA.facilities||[]).length) return null;
+  const drill=!!drillCell;
+  const data=drill ? DATA.facilities.filter(f=>f.h3===drillCell.h3) : DATA.facilities;
+  if(!data.length) return null;
+  return new deck.ScatterplotLayer({id:"facilities",data,pickable:true,
+    getPosition:f=>f.c, getFillColor:f=>fcol(f.cat),
+    radiusUnits:"meters", getRadius:drill?9:26, radiusMinPixels:drill?5:2.5, radiusMaxPixels:14,
+    stroked:true, getLineColor:[8,16,26,220], lineWidthMinPixels:0.6,
+    updateTriggers:{getRadius:[drill], data:[drill, drill&&drillCell.h3]}});
 }
 function render(){
   if(!deckgl) return;
@@ -362,7 +384,8 @@ function tip(info){
   if(!info||!info.object){ t.style.opacity=0; return; }
   const L=LAYERS.find(l=>l.key===active);
   const o=info.object;
-  const label = o.feature!==undefined ? esc(o.feature||"road")
+  const label = o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
+              : o.feature!==undefined ? esc(o.feature||"road")
               : `<b>${esc(L?L.fmt(o.v):o.v)}</b> · <span class="mono" style="color:var(--muted)">${esc((o.h3||"").slice(0,10))}</span>`;
   t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
@@ -416,8 +439,10 @@ function fitView(bbox){
   // vector overlays: show a toggle only when that data exists (drainage now; roads once the run lands)
   if((DATA.water||[]).length){ $("ovsec").hidden=false; $("ovwater").hidden=false; }
   if((DATA.roads||[]).length){ $("ovsec").hidden=false; $("ovroads").hidden=false; }
+  if((DATA.facilities||[]).length){ $("ovsec").hidden=false; $("ovfac").hidden=false; }
   $("ovwater").onclick=()=>{ showWater=!showWater; $("ovwater").classList.toggle("on",showWater); render(); };
   $("ovroads").onclick=()=>{ showRoads=!showRoads; $("ovroads").classList.toggle("on",showRoads); render(); };
+  $("ovfac").onclick=()=>{ showFacilities=!showFacilities; $("ovfac").classList.toggle("on",showFacilities); render(); };
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
   $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});

@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""osm-facilities driver — CRITICAL FACILITIES for an AOI (ADR-0060 L1, Wave-1 physical foundation).
+
+Individual points of interest — schools, hospitals, clinics, police & fire stations, govt offices, utilities,
+places of worship, markets, transport hubs — extracted from the tenant's uploaded OSM PBF via osmium (the same
+reliable, Overpass-free path as osm-roads). Each POI is written as a `geo.facility` (native Point geometry)
+tagged with the H3 cell it sits in, so City Scan can pull one cell's facilities on drill-in and count them.
+
+POIs come from OSM `amenity` / `healthcare` / `emergency` / `power` / `man_made` tags on BOTH nodes and ways
+(a hospital mapped as a building way → its centroid). Deterministic natural-key id (…/facility/<type><osm_id>)
+so re-runs upsert. Real OSM only — fails loudly if the AOI or the PBF asset is missing. NO synthetic fallback,
+NO tenant/AOI default.
+
+  Env: TENANT · AOI_ID (opt; else discover) · OSM_PBF_FILE_ID (filestore digest of the uploaded PBF, injected
+       by the scheduler from the driver's component-asset)
+"""
+import base64, json, os, sys, tempfile, time, urllib.request
+
+AOI_HINT = os.environ.get("AOI_ID", "")
+TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
+NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+SRC = "ds:airawat:ref/source/osm"
+
+# OSM tag (key,value) -> (category, subcategory). Real critical-facility taxonomy; extend by adding rows.
+POI_FILTERS = {
+    ("amenity", "school"): ("education", "school"),
+    ("amenity", "college"): ("education", "college"),
+    ("amenity", "university"): ("education", "university"),
+    ("amenity", "kindergarten"): ("education", "kindergarten"),
+    ("amenity", "library"): ("education", "library"),
+    ("amenity", "hospital"): ("healthcare", "hospital"),
+    ("amenity", "clinic"): ("healthcare", "clinic"),
+    ("amenity", "doctors"): ("healthcare", "clinic"),
+    ("amenity", "pharmacy"): ("healthcare", "pharmacy"),
+    ("amenity", "dentist"): ("healthcare", "clinic"),
+    ("healthcare", "hospital"): ("healthcare", "hospital"),
+    ("healthcare", "clinic"): ("healthcare", "clinic"),
+    ("healthcare", "centre"): ("healthcare", "clinic"),
+    ("amenity", "police"): ("emergency", "police"),
+    ("amenity", "fire_station"): ("emergency", "fire_station"),
+    ("emergency", "fire_station"): ("emergency", "fire_station"),
+    ("amenity", "townhall"): ("government", "townhall"),
+    ("amenity", "courthouse"): ("government", "courthouse"),
+    ("amenity", "public_building"): ("government", "public_building"),
+    ("office", "government"): ("government", "govt_office"),
+    ("amenity", "place_of_worship"): ("religious", "place_of_worship"),
+    ("amenity", "marketplace"): ("commerce", "marketplace"),
+    ("amenity", "bus_station"): ("transport", "bus_station"),
+    ("railway", "station"): ("transport", "railway_station"),
+    ("power", "substation"): ("utility", "substation"),
+    ("power", "plant"): ("utility", "power_plant"),
+    ("man_made", "water_tower"): ("utility", "water_tower"),
+    ("man_made", "water_works"): ("utility", "water_works"),
+    ("man_made", "wastewater_plant"): ("utility", "wastewater_plant"),
+}
+
+
+def call(path, body):
+    req = urllib.request.Request(os.environ["AIRAWAT_API"] + path, data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "X-Run-Token": os.environ["RUN_TOKEN"]}, method="POST")
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return json.loads(r.read())
+
+
+def unwrap(res):
+    return res.get("object") if isinstance(res, dict) and isinstance(res.get("object"), dict) else res
+
+
+def resolve_aoi():
+    if AOI_HINT:
+        ht = AOI_HINT.split(":")[1] if AOI_HINT.count(":") >= 2 else ""
+        if ht and ht != TENANT:
+            raise SystemExit(f"FATAL: AOI_ID {AOI_HINT} belongs to tenant '{ht}', not write tenant '{TENANT}'.")
+        o = unwrap(call("/v1/read", {"scope": "space.aoi", "id": AOI_HINT}))
+        if not isinstance(o, dict) or len(o.get("bbox") or []) != 4:
+            raise SystemExit(f"FATAL: space.aoi {AOI_HINT} missing / no 4-el bbox: {o!r}")
+        return o, [float(v) for v in o["bbox"]], int(o.get("h3_res", 9)), AOI_HINT
+    rows = call("/v1/query", {"scope": "space.aoi"}).get("results") or []
+    mine = [(r.get("object") or r) for r in rows
+            if str((r.get("object") or r).get("id", "")).startswith(f"ds:{TENANT}:")
+            and len((r.get("object") or r).get("bbox") or []) == 4]
+    if not mine:
+        raise SystemExit(f"FATAL: no space.aoi for tenant '{TENANT}' — run City Setup first. No default AOI.")
+    o = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1])))
+    return o, [float(v) for v in o["bbox"]], int(o.get("h3_res", 9)), o["id"]
+
+
+def _match(tags):
+    for (k, v), cat in POI_FILTERS.items():
+        if tags.get(k) == v:
+            return cat
+    return None
+
+
+def pois_from_pbf(pbf_path, bbox):
+    """All facility POIs inside the bbox from a local OSM PBF (nodes + way-centroids). Returns
+    [{osm_type,osm_id,lon,lat,category,subcategory,name}]. Needs pyosmium in the runtime."""
+    import osmium
+    w, s, e, n = bbox
+    out = []
+
+    class _H(osmium.SimpleHandler):
+        def __init__(self):
+            super().__init__(); self._c = 0
+
+        def node(self, nd):
+            cat = _match(nd.tags)
+            if not cat:
+                return
+            loc = nd.location
+            if not loc.valid() or not (w <= loc.lon <= e and s <= loc.lat <= n):
+                return
+            out.append({"osm_type": "n", "osm_id": nd.id, "lon": loc.lon, "lat": loc.lat,
+                        "category": cat[0], "subcategory": cat[1], "name": nd.tags.get("name")})
+            self._bump()
+
+        def way(self, way):
+            # facilities mapped as buildings/areas (e.g. a hospital polygon) → centroid of the way's nodes
+            cat = _match(way.tags)
+            if not cat:
+                return
+            xs = ys = 0.0; pts = 0
+            try:
+                for nd in way.nodes:
+                    if nd.location.valid():
+                        xs += nd.location.lon; ys += nd.location.lat; pts += 1
+            except Exception:
+                return
+            if not pts:
+                return
+            lon, lat = xs / pts, ys / pts
+            if not (w <= lon <= e and s <= lat <= n):
+                return
+            out.append({"osm_type": "w", "osm_id": way.id, "lon": lon, "lat": lat,
+                        "category": cat[0], "subcategory": cat[1], "name": way.tags.get("name")})
+            self._bump()
+
+        def _bump(self):
+            self._c += 1
+            if self._c % 20000 == 0:
+                print(f"  …matched {self._c} facilities so far", flush=True)
+
+    h = _H()
+    h.apply_file(pbf_path, locations=True)   # locations=True → resolve node coords from the PBF (for way centroids)
+    return out
+
+
+def pois_from_asset(pbf_id, bbox):
+    res = call("/v1/file/get", {"id": pbf_id})
+    raw = base64.b64decode(res.get("content_b64") or "")
+    if not raw:
+        raise SystemExit(f"FATAL: PBF asset {pbf_id} is empty / not in the filestore")
+    tf = tempfile.NamedTemporaryFile(suffix=".osm.pbf", delete=False)
+    try:
+        tf.write(raw); tf.close()
+        print(f"reading facilities from uploaded PBF asset {pbf_id[:20]}… ({len(raw)//1024//1024} MB) via osmium", flush=True)
+        return pois_from_pbf(tf.name, bbox)
+    finally:
+        try: os.unlink(tf.name)
+        except Exception: pass
+
+
+def main():
+    if not TENANT:
+        raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant. Refusing to guess.")
+    import h3
+    aoi, bbox, res, aoi_ref = resolve_aoi()
+    pbf_id = os.environ.get("OSM_PBF_FILE_ID", "").strip()
+    if not pbf_id:
+        raise SystemExit("FATAL: OSM_PBF_FILE_ID not set — upload the regional OSM PBF via the driver's Settings "
+                         "(Connections). No Overpass fallback / no synthetic data.")
+    pois = pois_from_asset(pbf_id, bbox)
+    print(f"osmium matched {len(pois)} facility POIs in the AOI (from the uploaded PBF)", flush=True)
+    if not pois:
+        raise SystemExit("FATAL: no facility POIs found in the PBF for this AOI — nothing written (no fabrication).")
+
+    written = 0
+    by_cat = {}
+    for p in pois:
+        lon, lat = round(p["lon"], 6), round(p["lat"], 6)
+        hcell = h3.latlng_to_cell(lat, lon, res)
+        fid = f"ds:{TENANT}:facility/{p['category']}/{p['osm_type']}{p['osm_id']}"
+        fact = {
+            "schema": "geo.facility", "id": fid, "tenant": TENANT,
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "h3_id": hcell, "resolution": res, "centroid": [lon, lat],
+            "category": p["category"], "subcategory": p["subcategory"],
+            "name": p.get("name"),
+            "method": "osm-pbf", "source_ref": SRC, "layer": "L1",
+            "source": {"aoi": aoi_ref, "driver": "osm-facilities", "osm": f"{p['osm_type']}/{p['osm_id']}"},
+            "identifiers": [{"scheme": "osm", "value": f"{p['osm_type']}/{p['osm_id']}"}],
+            "prov": {"method": "osm-pbf", "source_ref": SRC, "observed_at": NOW},
+            "observed_at": NOW}
+        call("/v1/write", {"scope": "geo.facility", "id": fid, "object": fact,
+                           "valid_time": {"from": NOW}, "asserted_at": NOW})
+        written += 1
+        by_cat[p["category"]] = by_cat.get(p["category"], 0) + 1
+
+    print(f"wrote {written} geo.facility POIs from the OSM PBF (real OSM)")
+    print(f"  by category: {json.dumps(by_cat, sort_keys=True)}")
+    print(f"RESULT: {json.dumps({'source': 'osm-pbf', 'geo_facility': written, 'by_category': by_cat})}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
