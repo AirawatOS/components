@@ -13,21 +13,34 @@ assign every H3 cell the value of its NEAREST sample point. The climate sibling 
 REAL ERA5 only — fetch or fail loudly. NO synthetic fabrication, NO tenant/AOI default. RESUMABLE (skips cells
 already written).
 
-  Env: TENANT · AOI_ID (opt; else discover) · YEAR (full year to total, default 2023) · GRID (points/side, default 7)
-       ARCHIVE_URL · RESUME (1)
+  Env: TENANT · AOI_ID (opt; else discover) · GRID (points/side, default 7) · ARCHIVE_URL · RESUME (1)
+       YEAR (optional — a specific calendar year to total; DEFAULT is the rolling last 12 months ending ~now)
+       LAG_DAYS (ERA5 reanalysis lag buffer for the rolling window's end, default 5)
+
+By default this totals the MOST RECENT 12 months (ending ~now, minus the ERA5 lag) — a current annual-rainfall
+figure, not a fixed historical year. Pass YEAR=2023 to pin a specific calendar year instead.
 """
-import json, math, os, time, urllib.request
+import datetime as _dt, json, math, os, time, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
 AOI_HINT = os.environ.get("AOI_ID", "")
 TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
-YEAR = int(os.environ.get("YEAR", "2023"))
 GRID = int(os.environ.get("GRID", "7"))
+LAG_DAYS = int(os.environ.get("LAG_DAYS", "5"))
 ARCHIVE_URL = os.environ.get("ARCHIVE_URL", "https://archive-api.open-meteo.com/v1/archive")
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-OBSERVED = f"{YEAR}-12-31T00:00:00Z"
 SRC = "ds:airawat:ref/source/open-meteo"
+
+_yr = os.environ.get("YEAR", "").strip()
+if _yr:                                                          # pinned calendar year
+    START, END, PERIOD = f"{_yr}-01-01", f"{_yr}-12-31", _yr
+    OBSERVED = f"{_yr}-12-31T00:00:00Z"
+else:                                                           # DEFAULT: rolling last 12 months ending ~now (real clock)
+    _end = _dt.datetime.now(_dt.timezone.utc).date() - _dt.timedelta(days=LAG_DAYS)
+    _start = _end - _dt.timedelta(days=364)
+    START, END, PERIOD = _start.isoformat(), _end.isoformat(), f"{_start.isoformat()}..{_end.isoformat()}"
+    OBSERVED = f"{_end.isoformat()}T00:00:00Z"
 
 
 def call(path, body):
@@ -91,7 +104,7 @@ def fetch_annual_rainfall(pts):
     lats = ",".join(f"{la:.4f}" for la, lo in pts)
     lons = ",".join(f"{lo:.4f}" for la, lo in pts)
     url = (f"{ARCHIVE_URL}?latitude={lats}&longitude={lons}"
-           f"&start_date={YEAR}-01-01&end_date={YEAR}-12-31&daily=precipitation_sum&timezone=auto")
+           f"&start_date={START}&end_date={END}&daily=precipitation_sum&timezone=auto")
     payload = unwrap(call("/v1/fetch", {"url": url}))
     locs = payload if isinstance(payload, list) else [payload]      # multi-location → array; single → object
     if len(locs) != len(pts):
@@ -126,7 +139,7 @@ def main():
     import h3
     aoi, bbox, res, aoi_ref = resolve_aoi()
     pts = grid_points(bbox, GRID)
-    print(f"aoi {aoi_ref} bbox={bbox} · sampling {GRID}x{GRID}={len(pts)} ERA5 points for {YEAR}", flush=True)
+    print(f"aoi {aoi_ref} bbox={bbox} · sampling {GRID}x{GRID}={len(pts)} ERA5 points for {PERIOD}", flush=True)
     samples = fetch_annual_rainfall(pts)   # REAL or raise
     lo_mm = min(s[2] for s in samples); hi_mm = max(s[2] for s in samples)
     print(f"  ERA5 annual rainfall across the AOI: {lo_mm:.0f}–{hi_mm:.0f} mm ({len(samples)} points)", flush=True)
@@ -157,9 +170,9 @@ def main():
             "schema": "cell.rainfall", "id": f"ds:{TENANT}:cell/rainfall/{hc}",
             "cell_ref": {"h3_id": hc, "resolution": res, "centroid": [round(lo, 6), round(la, 6)],
                          "boundary": [[round(x, 6), round(y, 6)] for (x, y) in cell_boundary_lonlat(hc)]},
-            "rainfall_mm": rain, "period": str(YEAR),
+            "rainfall_mm": rain, "period": PERIOD,
             "method": "era5-openmeteo-archive-nearest", "source_ref": SRC, "layer": "L2", "confidence": 0.85,
-            "prov": {"method": "era5-openmeteo-archive", "source_ref": SRC, "period": str(YEAR),
+            "prov": {"method": "era5-openmeteo-archive", "source_ref": SRC, "period": PERIOD,
                      "grid_points": len(samples), "observed_at": OBSERVED},
             "observed_at": OBSERVED}
         call("/v1/write", {"scope": "cell.rainfall", "id": fact["id"], "object": fact,
@@ -170,8 +183,8 @@ def main():
 
     if not written:
         raise SystemExit("FATAL: no cells written (no synthetic fill).")
-    print(f"wrote {written} cell.rainfall cells from ERA5 (Open-Meteo archive), year {YEAR}")
-    print(f"RESULT: {json.dumps({'source': 'era5-openmeteo-archive', 'year': YEAR, 'cells': written, 'mm_range': [lo_mm, hi_mm]})}")
+    print(f"wrote {written} cell.rainfall cells from ERA5 (Open-Meteo archive), period {PERIOD}")
+    print(f"RESULT: {json.dumps({'source': 'era5-openmeteo-archive', 'period': PERIOD, 'cells': written, 'mm_range': [lo_mm, hi_mm]})}")
     return 0
 
 
