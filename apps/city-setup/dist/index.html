@@ -36,7 +36,7 @@ async function render(){
   const done=run&&run.status==='done', failed=run&&run.status==='failed';
   const state=mat!=null?`<span style="color:#3fb950">● ${esc(MATURITY[mat]||('L'+mat))}</span>`:`<span class="muted">no baseline yet</span>`;
   let html=`<div class="lbl">City Digital Baseline</div>
-    <div style="color:var(--dim);font-size:12.5px;margin:-2px 0 14px">Tenant <b style="color:var(--ink);font-family:ui-monospace,Menlo,monospace">${esc(d.tenant)}</b> — establish the on-demand baseline for your city (ADR-0060): land cover, heat and terrain over H3 cells, with a coverage &amp; trust report. Current state: ${state}.</div>`;
+    <div style="color:var(--dim);font-size:12.5px;margin:-2px 0 14px">Tenant <b style="color:var(--ink);font-family:ui-monospace,Menlo,monospace">${esc(d.tenant)}</b> — establish the on-demand baseline for your city: land cover, heat and terrain over H3 cells, with a coverage &amp; trust report. Current state: ${state}.</div>`;
   if(running){
     html+=`<div style="background:#132033;border:1px solid #1f3350;border-radius:10px;padding:14px 16px">
       <div style="font-weight:600">⏳ Baseline running…</div>

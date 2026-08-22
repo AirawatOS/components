@@ -212,7 +212,7 @@ async function showSpec(sid){
 }
 function fmt(iso){ if(!iso)return ''; try{return new Date(iso).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});}catch(e){return iso;} }
 
-// --- Verbs: the governed INTERFACE catalog (ADR-0058) — APIs / messages / events ---------------------
+// --- Verbs: the governed INTERFACE catalog — APIs / messages / events ---------------------
 const MICON={request:'⇄',event:'📣',stream:'⇉'};
 let VERB_SEL=null;
 async function verbs(){

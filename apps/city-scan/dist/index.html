@@ -281,7 +281,7 @@ function drawTrust(){
   const fresh=(DATA.coverage||[]).map(c=>c.freshness).filter(Boolean).sort().pop();
   $("sub").innerHTML=`${esc(DATA.aoi.name||"AOI")}<span class="dot">·</span>${nL} indicator layers<span class="dot">·</span>`
     +`${(DATA.coverage||[]).length} assessed<span class="dot">·</span>as of ${esc(fresh||"—")}`;
-  $("foot").innerHTML="L2 cell indicators derived from L0/L1 sources · every cell carries derived_from lineage · authority is inferred, not asserted (ADR-0060)";
+  $("foot").innerHTML="L2 cell indicators derived from L0/L1 sources · every cell carries derived_from lineage · authority is inferred, not asserted";
   if(!proj){$("app").innerHTML='<div class="empty" style="grid-column:1/-1">No baseline data available for this workspace yet.</div>';return;}
   const [wl,,el]=DATA.aoi.bbox||[0,0,0,0];
   BASE_Z=Math.min(16,Math.max(11,Math.round(Math.log2(1440/Math.max(el-wl,1e-4)))));
