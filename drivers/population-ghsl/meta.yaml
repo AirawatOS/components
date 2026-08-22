@@ -1,0 +1,26 @@
+# A DRIVER (kind=driver) — resident POPULATION per H3 cell from GHS-POP (JRC GHSL) via GEE (ADR-0060 L2, Wave-1).
+# Sums the GHSL population raster inside each H3 cell → demographics.population (count + density). Runs in the
+# shared earth-observation runtime (earthengine-api); cert-checked + image-locked. Real GHSL only, no default.
+component_id: ds:airawat:driver/population-ghsl
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Population (GHS-POP / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads: [space.aoi, demographics.population]     # demographics.population read = RESUME
+writes: [demographics.population]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/population-ghsl" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/population-ghsl" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/population-ghsl" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # same Google service-account key as the other EO drivers (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, EPOCH]
+sources:
+  - { ref: "ds:airawat:ref/source/ghsl", host: earthengine.googleapis.com, provides: [demographics.population] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: demographics.population }
+  - { verb: write, scope: demographics.population }
