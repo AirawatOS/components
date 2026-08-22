@@ -82,6 +82,20 @@
   footer{border-top:1px solid var(--edge);padding:9px 18px;color:var(--dim);font-size:11.5px}
   .empty{padding:40px;color:var(--muted);text-align:center}
   .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);z-index:5}
+  /* cell drill-down detail panel (click a hex to zoom in on it) */
+  .cellpanel{position:absolute;left:14px;top:56px;z-index:7;width:224px;background:#0c1622f2;
+    border:1px solid var(--edge2);border-radius:11px;padding:12px 13px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(3px)}
+  .cptop{display:flex;align-items:center;justify-content:space-between;font-size:11px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+  .cptop button{background:none;border:none;color:var(--muted);font-size:19px;line-height:1;cursor:pointer;padding:0 2px}
+  .cptop button:hover{color:var(--accent)}
+  .cellpanel .cph{font-size:12px;color:var(--accent);margin-bottom:9px}
+  .cellpanel .kv{padding:2.5px 0;font-size:12.5px}
+  .cellpanel .kv.sep{border-top:1px dashed var(--edge);margin-top:6px;padding-top:7px}
+  .drillhint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:6;pointer-events:none;
+    background:#0a1320d9;border:1px solid var(--edge2);border-radius:999px;padding:4px 13px;color:var(--muted);
+    font-size:11.5px;opacity:0;transition:opacity .3s}
+  .drillhint.show{opacity:1}
 </style>
 
 <header>
@@ -110,6 +124,8 @@
   <div class="map-wrap">
     <div id="map"></div>
     <div class="loading" id="mapload">initialising map…</div>
+    <div class="cellpanel" id="cellpanel" hidden></div>
+    <div class="drillhint" id="drillhint">click a cell to drill in · Esc to exit</div>
     <div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
@@ -147,7 +163,7 @@ async function q(schema){
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
 
-let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true;
+let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
 const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
 
 async function load(){
@@ -175,7 +191,7 @@ async function load(){
       if(paths.length){ data[L.key]={type:"path",rows:paths}; kept.push(L); }
     }else{                                                      // CELLS → H3 hexagons (value at value_field)
       const cells=rows.map(o=>{ const g=o.cell_ref||o.space||{};
-          return {h3:g.h3_id||g.h3, c:g.centroid, v:dget(o,L.vf)}; })
+          return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, v:dget(o,L.vf)}; })   // b = cell boundary (for drill highlight + feature-in-cell)
         .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
       if(cells.length){ data[L.key]={type:"hex",rows:cells,
           lo:Math.min(...cells.map(c=>c.v)),hi:Math.max(...cells.map(c=>c.v))}; kept.push(L); }
@@ -218,11 +234,49 @@ function dataLayer(){
   }
   const span=(d.hi-d.lo)||1, norm=c=>Math.max(0,Math.min(1,(c.v-d.lo)/span));
   return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
-    extruded:mode3d, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
-    getElevation:c=> mode3d ? norm(c)*ELEV_MAX : 0,           // 2.5D: taller tower = higher value
-    getHexagon:c=>c.h3, opacity:mode3d?0.92:0.68,
+    extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
+    getElevation:c=> (mode3d&&!drillCell) ? norm(c)*ELEV_MAX : 0,   // flatten when drilled so native features show
+    getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?0.92:0.68),  // fade to a carpet in drill mode
     getFillColor:c=>[...lerpC(L.ramp[0],L.ramp[1],norm(c)),235],
-    updateTriggers:{getElevation:[mode3d,active], getFillColor:[active]}});
+    onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell], getFillColor:[active], opacity:[!!drillCell,mode3d]}});
+}
+function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
+const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
+function firstPt(g){ let c=(g||{}).coordinates; while(Array.isArray(c)&&c.length&&Array.isArray(c[0])) c=c[0]; return c; }
+function highlightLayer(){                                         // the drilled cell's outline, bright
+  if(!drillCell||!drillCell.b) return null;
+  return new deck.PolygonLayer({id:"drill-hi",data:[drillCell],getPolygon:c=>c.b,stroked:true,filled:false,
+    getLineColor:[56,189,248,255],lineWidthUnits:"pixels",getLineWidth:2.5,pickable:false});
+}
+function drillInto(cell){                                          // zoom into a cell + reveal its native features
+  if(!cell||!cell.h3) return;
+  drillCell=cell; showRoads=true; showWater=true;
+  const ow=$("ovwater"), or=$("ovroads");                          // reflect the forced-on overlays in the toggles
+  if(ow&&!ow.hidden) ow.classList.add("on"); if(or&&!or.hidden) or.classList.add("on");
+  $("drillhint").classList.remove("show");
+  const c=cell.c||[view.longitude,view.latitude];
+  view={...view, longitude:c[0], latitude:c[1], zoom:16, pitch:55, transitionDuration:800};
+  deckgl.setProps({initialViewState:view}); cellPanel(); render();
+}
+function exitDrill(){
+  if(!drillCell) return; drillCell=null; $("cellpanel").hidden=true;
+  view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?50:0, transitionDuration:500};
+  deckgl.setProps({initialViewState:view}); render();
+}
+function cellPanel(){
+  const p=$("cellpanel"); if(!drillCell){ p.hidden=true; return; }
+  const bb=drillCell.b?bboxOf(drillCell.b):null;
+  const rows=LAYERS.map(L=>{ const d=DATA.data[L.key], cell=d&&d.rows.find(r=>r.h3===drillCell.h3);
+      return (cell&&typeof cell.v==="number")?`<div class="kv"><span>${esc(L.label)}</span><b>${esc(L.fmt(cell.v))}</b></div>`:""; }).join("");
+  const roadsIn=bb?(DATA.roads||[]).filter(r=>inBox(r.path&&r.path[0],bb)).length:0;
+  const waterIn=bb?(DATA.water||[]).filter(o=>inBox(firstPt(o.geometry),bb)).length:0;
+  p.innerHTML=`<div class="cptop"><span>Cell detail</span><button id="cpx" title="Exit (Esc)">×</button></div>
+    <div class="cph mono">${esc((drillCell.h3||'').slice(0,12))}</div>
+    ${rows||'<div class="muted" style="font-size:12px">no indicator values here</div>'}
+    <div class="kv sep"><span>🛣 roads in cell</span><b>${roadsIn}</b></div>
+    <div class="kv"><span>💧 drainage in cell</span><b>${waterIn}</b></div>`;
+  p.hidden=false; $("cpx").onclick=exitDrill;
 }
 function overlayLayers(){
   const out=[];
@@ -240,7 +294,7 @@ function overlayLayers(){
 }
 function render(){
   if(!deckgl) return;
-  deckgl.setProps({layers:[basemapLayer(), dataLayer(), ...overlayLayers()].filter(Boolean)});
+  deckgl.setProps({layers:[basemapLayer(), dataLayer(), ...overlayLayers(), highlightLayer()].filter(Boolean)});
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
@@ -324,5 +378,7 @@ function fitView(bbox){
   const g=$("app");
   $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";};
   $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";};
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") exitDrill(); });   // Esc leaves the drilled cell
+  const hint=$("drillhint"); hint.classList.add("show"); setTimeout(()=>hint.classList.remove("show"),4200);
 })();
 </script>
