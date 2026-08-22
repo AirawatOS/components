@@ -36,7 +36,9 @@ const fmtSize=b=>!b?'':b>1e9?(b/1e9).toFixed(1)+' GB':b>1e6?(b/1e6).toFixed(0)+'
 const blobToB64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});
 // Chunked upload of a large data file → the host /bridge/asset flow → filestore → governed platform.component_asset.
 async function uploadAsset(comp,asset,populates,file,sourceDate,prog){
-  const CH=4*1024*1024;                                        // 4 MB chunks (base64 ~5.3 MB/request)
+  // 512 KB raw → ~700 KB base64 JSON body, safely under a 1 MB proxy body cap (the TLS front default).
+  // A larger chunk 413s at the front proxy before it reaches app-host, hanging the upload.
+  const CH=512*1024;
   const init=await jpost('/bridge/asset',{action:'init',component:comp,asset:asset});
   if(!init.ok) return toast(init.j.error||'init failed',true);
   const uid=init.j.upload_id; let sent=0;
@@ -44,7 +46,7 @@ async function uploadAsset(comp,asset,populates,file,sourceDate,prog){
     for(let off=0;off<file.size;off+=CH){
       const b64=await blobToB64(file.slice(off,off+CH));
       const r=await jpost('/bridge/asset',{action:'chunk',upload_id:uid,data_b64:b64});
-      if(!r.ok){ await jpost('/bridge/asset',{action:'abort',upload_id:uid}); return toast('upload failed',true); }
+      if(!r.ok){ await jpost('/bridge/asset',{action:'abort',upload_id:uid}); prog.textContent='upload failed'+(r.status===413?' (chunk too large for proxy)':''); return toast('upload failed'+(r.status===413?' — proxy rejected the chunk':''),true); }
       sent=Math.min(file.size,off+CH); prog.textContent=`uploading… ${Math.round(sent/file.size*100)}% (${fmtSize(sent)}/${fmtSize(file.size)})`;
     }
     prog.textContent='storing…';
