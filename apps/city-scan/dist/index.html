@@ -88,8 +88,16 @@
     border:1px solid var(--edge2);border-radius:11px;padding:12px 13px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(3px)}
   .cptop{display:flex;align-items:center;justify-content:space-between;font-size:11px;letter-spacing:.09em;
     text-transform:uppercase;color:var(--dim);margin-bottom:2px}
-  .cptop button{background:none;border:none;color:var(--muted);font-size:19px;line-height:1;cursor:pointer;padding:0 2px}
+  .cptop .cpbtns{display:flex;align-items:center;gap:2px}
+  .cptop button{background:none;border:none;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;padding:0 3px}
+  .cptop button#cpx{font-size:19px}
   .cptop button:hover{color:var(--accent)}
+  .cellpanel.collapsed{width:auto;min-width:150px;padding-bottom:10px}
+  .tgl{font-size:10.5px;border:1px solid var(--edge2);background:#0e1c2a;color:var(--muted);border-radius:6px;
+    padding:2px 8px;cursor:pointer;margin-left:8px;white-space:nowrap}
+  .tgl:hover{border-color:var(--accent)}
+  .tgl.on{color:var(--accent);border-color:var(--accent)}
+  .cellpanel .kv span:last-child{display:flex;align-items:center}
   .cellpanel .cph{font-size:12px;color:var(--accent);margin-bottom:9px}
   .cellpanel .kv{padding:2.5px 0;font-size:12.5px}
   .cellpanel .kv.sep{border-top:1px dashed var(--edge);margin-top:6px;padding-top:7px}
@@ -169,7 +177,7 @@ async function qf(schema,filter){                              // server-side fi
 }
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
-let drillBuildings=[], footLoading=false;   // the drilled cell's real building footprints (geo.building), lazily loaded
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false;   // drilled cell's footprints + panel/vis state
 const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
 
@@ -259,7 +267,7 @@ function highlightLayer(){                                         // the drille
 }
 const ringOf=g=>{ let c=(g||{}).coordinates; return (c&&Array.isArray(c[0]))?c[0]:null; };  // Polygon outer ring
 function footprintsLayer(){                                       // the drilled cell's REAL building footprints, extruded
-  if(!drillCell || !drillBuildings.length) return null;
+  if(!drillCell || !drillBuildings.length || !showBuildings) return null;   // toggle off → reveal roads/drains beneath
   return new deck.PolygonLayer({id:"footprints",data:drillBuildings,pickable:true,extruded:true,wireframe:true,
     getPolygon:b=>ringOf(b.geometry), getElevation:b=> (typeof b.height_m==="number"&&b.height_m>0)?b.height_m:NOMINAL_H,
     getFillColor:[203,213,225,230], getLineColor:[100,116,139,255], lineWidthUnits:"pixels", getLineWidth:0.5,
@@ -275,7 +283,7 @@ async function loadFootprints(cell){                              // pull ONLY t
 }
 function drillInto(cell){                                          // zoom into a cell + reveal its native features
   if(!cell||!cell.h3) return;
-  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showWater=true;
+  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showWater=true; showBuildings=true; panelCollapsed=false;
   const ow=$("ovwater"), or=$("ovroads");                          // reflect the forced-on overlays in the toggles
   if(ow&&!ow.hidden) ow.classList.add("on"); if(or&&!or.hidden) or.classList.add("on");
   $("drillhint").classList.remove("show");
@@ -289,8 +297,20 @@ function exitDrill(){
   view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?50:0, transitionDuration:500};
   deckgl.setProps({initialViewState:view}); render();
 }
+function toggleCollapse(){ panelCollapsed=!panelCollapsed; cellPanel(); }
 function cellPanel(){
   const p=$("cellpanel"); if(!drillCell){ p.hidden=true; return; }
+  const h3s=esc((drillCell.h3||'').slice(0,12));
+  const top=`<div class="cptop"><span>Cell detail</span><span class="cpbtns">`
+    +`<button id="cpmin" title="${panelCollapsed?'Expand':'Collapse'}">${panelCollapsed?'▸':'▾'}</button>`
+    +`<button id="cpx" title="Exit (Esc)">×</button></span></div>`;
+  p.hidden=false;
+  if(panelCollapsed){                                            // collapsed → just the header bar + id (frees the map)
+    p.classList.add("collapsed");
+    p.innerHTML=top+`<div class="cph mono" style="margin:0">${h3s}</div>`;
+    $("cpx").onclick=exitDrill; $("cpmin").onclick=toggleCollapse; return;
+  }
+  p.classList.remove("collapsed");
   const bb=drillCell.b?bboxOf(drillCell.b):null;
   const rows=LAYERS.map(L=>{ const d=DATA.data[L.key], cell=d&&d.rows.find(r=>r.h3===drillCell.h3);
       return (cell&&typeof cell.v==="number")?`<div class="kv"><span>${esc(L.label)}</span><b>${esc(L.fmt(cell.v))}</b></div>`:""; }).join("");
@@ -299,13 +319,15 @@ function cellPanel(){
   const bldg = footLoading ? '<span class="muted">loading…</span>'
              : drillBuildings.length ? `<b>${drillBuildings.length}</b>`
              : '<span class="muted" title="no footprints ingested for this cell yet">—</span>';
-  p.innerHTML=`<div class="cptop"><span>Cell detail</span><button id="cpx" title="Exit (Esc)">×</button></div>
-    <div class="cph mono">${esc((drillCell.h3||'').slice(0,12))}</div>
+  const bToggle = drillBuildings.length ? `<button id="cpbld" class="tgl ${showBuildings?'on':''}" title="Show / hide the 3D buildings so you can see the roads &amp; drains beneath">${showBuildings?'👁 shown':'🚫 hidden'}</button>` : '';
+  p.innerHTML=top+`
+    <div class="cph mono">${h3s}</div>
     ${rows||'<div class="muted" style="font-size:12px">no indicator values here</div>'}
-    <div class="kv sep"><span>🏢 buildings in cell</span>${bldg}</div>
+    <div class="kv sep"><span>🏢 buildings in cell</span><span>${bldg}${bToggle}</span></div>
     <div class="kv"><span>🛣 roads in cell</span><b>${roadsIn}</b></div>
     <div class="kv"><span>💧 drainage in cell</span><b>${waterIn}</b></div>`;
-  p.hidden=false; $("cpx").onclick=exitDrill;
+  $("cpx").onclick=exitDrill; $("cpmin").onclick=toggleCollapse;
+  const bt=$("cpbld"); if(bt) bt.onclick=()=>{ showBuildings=!showBuildings; cellPanel(); render(); };
 }
 function overlayLayers(){
   const out=[], drill=!!drillCell;                             // in a drilled cell, thicken + brighten so the street
@@ -313,13 +335,13 @@ function overlayLayers(){
     out.push(new deck.GeoJsonLayer({id:"drainage",             // drainage channels (geo.hydro_feature) → TEAL, distinct
       data:{type:"FeatureCollection",features:DATA.water.map(o=>({type:"Feature",geometry:o.geometry,properties:{}}))},
       filled:true,stroked:true,getFillColor:[20,184,166,drill?120:90],getLineColor:[94,234,212,255],
-      lineWidthUnits:"pixels",getLineWidth:drill?2.4:1.4,lineWidthMinPixels:drill?1.6:1,pickable:false,
+      lineWidthUnits:"pixels",getLineWidth:drill?3.6:1.4,lineWidthMinPixels:drill?2.2:1,pickable:false,
       updateTriggers:{getLineWidth:[drill],getFillColor:[drill]}}));
   }
   if(showRoads && (DATA.roads||[]).length){                    // road network (geo.osm_feature) → light paths on top
     out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",
-      getWidth:drill?2.6:1,widthMinPixels:drill?1.4:0.5,
-      getColor:drill?[241,245,249,240]:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      getWidth:drill?4:1,widthMinPixels:drill?2:0.5,
+      getColor:drill?[241,245,249,245]:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
       updateTriggers:{getWidth:[drill],getColor:[drill]}}));
   }
   return out;
