@@ -226,11 +226,11 @@ function dataLayer(){
 }
 function overlayLayers(){
   const out=[];
-  if(showWater && (DATA.water||[]).length){                    // drainage channels (geo.hydro_feature) → blue
-    out.push(new deck.GeoJsonLayer({id:"drainage",
+  if(showWater && (DATA.water||[]).length){                    // drainage channels (geo.hydro_feature) → TEAL, so it
+    out.push(new deck.GeoJsonLayer({id:"drainage",             // stays distinct from the blue Flood-susceptibility ramp
       data:{type:"FeatureCollection",features:DATA.water.map(o=>({type:"Feature",geometry:o.geometry,properties:{}}))},
-      filled:true,stroked:true,getFillColor:[56,120,190,150],getLineColor:[96,165,250,235],
-      lineWidthUnits:"pixels",getLineWidth:1,pickable:false}));
+      filled:true,stroked:true,getFillColor:[20,184,166,90],getLineColor:[94,234,212,245],
+      lineWidthUnits:"pixels",getLineWidth:1.4,lineWidthMinPixels:1,pickable:false}));
   }
   if(showRoads && (DATA.roads||[]).length){                    // road network (geo.osm_feature) → light paths on top
     out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",getWidth:1,widthMinPixels:0.5,
