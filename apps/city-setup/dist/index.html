@@ -264,7 +264,8 @@ async function uploadOsm(V,file){
     setp(0,'Preparing upload…');
     const init=await jpost('/bridge/asset',{action:'init',component:roads.component,asset:'OSM_PBF'});
     if(!init.ok) throw new Error(init.j.error||'init failed');
-    const uid=init.j.upload_id, CH=4*1024*1024;
+    // 512 KB raw → ~700 KB base64 JSON body, safely under a 1 MB proxy body cap (TLS front default).
+    const uid=init.j.upload_id, CH=512*1024;
     for(let off=0;off<file.size;off+=CH){
       const blob=file.slice(off,Math.min(off+CH,file.size));
       const b64=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result.split(',')[1]);fr.onerror=rej;fr.readAsDataURL(blob);});
@@ -281,7 +282,7 @@ async function uploadOsm(V,file){
       content_type:'application/octet-stream',from_component:roads.component}); }
     setp(1,'Uploaded ✓');
     OPEN.osm=false; toast(`OpenStreetMap file uploaded — roads & facilities ready`); await refresh();
-  }catch(e){ toast('upload failed: '+e.message,true); drop.style.pointerEvents=''; drop.style.opacity=''; }
+  }catch(e){ toast('upload failed: '+e.message,true); prog.textContent='Upload failed: '+e.message; fill.style.background='#f85149'; drop.style.pointerEvents=''; drop.style.opacity=''; }
 }
 
 async function refresh(){ PENDING=captureForm(); try{ C=await jget('/bridge/connections'); }catch(e){} render(); }
