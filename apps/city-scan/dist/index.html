@@ -14,7 +14,8 @@
     font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow:hidden}
   .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
   .num{font-variant-numeric:tabular-nums}
-  header{padding:18px 22px;border-bottom:1px solid var(--edge);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  header{padding:18px 22px 18px 84px;border-bottom:1px solid var(--edge);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  /* ^ left pad clears the app-host shell's floating "✕ Exit" pill (top-left chrome) */
   header h1{margin:0;font-size:18px;font-weight:650;letter-spacing:-.01em}
   header h1 b{color:var(--accent);font-weight:650}
   .sub{color:var(--muted);font-size:12.5px}
@@ -162,9 +163,15 @@ async function q(schema){
   try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000});
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
+async function qf(schema,filter){                              // server-side filtered query (e.g. one cell's footprints)
+  try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,filter,limit:20000});
+       return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
+}
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
+let drillBuildings=[], footLoading=false;   // the drilled cell's real building footprints (geo.building), lazily loaded
 const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
+const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
 
 async function load(){
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
@@ -176,7 +183,8 @@ async function load(){
     SB=SB?[Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])]:bb.slice(); }
   const M=0.03, inB=p=> !SB||!p||(p[0]>=SB[0]-M&&p[0]<=SB[2]+M&&p[1]>=SB[1]-M&&p[1]<=SB[3]+M);
   // DISCOVER layers from the governed viz.layer catalog (render=map, enabled), ordered, keyed by source_schema.
-  const descs=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field)
+  const descs=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field
+                                     &&d.source_schema!=="geo.building")   // geo.building = drill-only footprints, not a choropleth
                                      .sort((a,b)=>(a.order??99)-(b.order??99));
   const seen={}, specs=[];
   for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
@@ -249,18 +257,35 @@ function highlightLayer(){                                         // the drille
   return new deck.PolygonLayer({id:"drill-hi",data:[drillCell],getPolygon:c=>c.b,stroked:true,filled:false,
     getLineColor:[56,189,248,255],lineWidthUnits:"pixels",getLineWidth:2.5,pickable:false});
 }
+const ringOf=g=>{ let c=(g||{}).coordinates; return (c&&Array.isArray(c[0]))?c[0]:null; };  // Polygon outer ring
+function footprintsLayer(){                                       // the drilled cell's REAL building footprints, extruded
+  if(!drillCell || !drillBuildings.length) return null;
+  return new deck.PolygonLayer({id:"footprints",data:drillBuildings,pickable:true,extruded:true,wireframe:true,
+    getPolygon:b=>ringOf(b.geometry), getElevation:b=> (typeof b.height_m==="number"&&b.height_m>0)?b.height_m:NOMINAL_H,
+    getFillColor:[203,213,225,230], getLineColor:[100,116,139,255], lineWidthUnits:"pixels", getLineWidth:0.5,
+    material:{ambient:0.6,diffuse:0.65,shininess:32,specularColor:[60,70,85]},
+    updateTriggers:{getPolygon:[drillCell&&drillCell.h3]}});
+}
+async function loadFootprints(cell){                              // pull ONLY this cell's footprints (server-side h3 filter)
+  footLoading=true; cellPanel();
+  const rows=await qf("geo.building",{h3_id:cell.h3});
+  if(!drillCell || drillCell.h3!==cell.h3) return;                // user already drilled elsewhere / exited
+  drillBuildings=rows.map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2})).filter(b=>ringOf(b.geometry));
+  footLoading=false; cellPanel(); render();
+}
 function drillInto(cell){                                          // zoom into a cell + reveal its native features
   if(!cell||!cell.h3) return;
-  drillCell=cell; showRoads=true; showWater=true;
+  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showWater=true;
   const ow=$("ovwater"), or=$("ovroads");                          // reflect the forced-on overlays in the toggles
   if(ow&&!ow.hidden) ow.classList.add("on"); if(or&&!or.hidden) or.classList.add("on");
   $("drillhint").classList.remove("show");
   const c=cell.c||[view.longitude,view.latitude];
   view={...view, longitude:c[0], latitude:c[1], zoom:16, pitch:55, transitionDuration:800};
   deckgl.setProps({initialViewState:view}); cellPanel(); render();
+  loadFootprints(cell);                                            // real Open Buildings footprints, lazily (AirOS pattern)
 }
 function exitDrill(){
-  if(!drillCell) return; drillCell=null; $("cellpanel").hidden=true;
+  if(!drillCell) return; drillCell=null; drillBuildings=[]; footLoading=false; $("cellpanel").hidden=true;
   view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?50:0, transitionDuration:500};
   deckgl.setProps({initialViewState:view}); render();
 }
@@ -271,10 +296,14 @@ function cellPanel(){
       return (cell&&typeof cell.v==="number")?`<div class="kv"><span>${esc(L.label)}</span><b>${esc(L.fmt(cell.v))}</b></div>`:""; }).join("");
   const roadsIn=bb?(DATA.roads||[]).filter(r=>inBox(r.path&&r.path[0],bb)).length:0;
   const waterIn=bb?(DATA.water||[]).filter(o=>inBox(firstPt(o.geometry),bb)).length:0;
+  const bldg = footLoading ? '<span class="muted">loading…</span>'
+             : drillBuildings.length ? `<b>${drillBuildings.length}</b>`
+             : '<span class="muted" title="no footprints ingested for this cell yet">—</span>';
   p.innerHTML=`<div class="cptop"><span>Cell detail</span><button id="cpx" title="Exit (Esc)">×</button></div>
     <div class="cph mono">${esc((drillCell.h3||'').slice(0,12))}</div>
     ${rows||'<div class="muted" style="font-size:12px">no indicator values here</div>'}
-    <div class="kv sep"><span>🛣 roads in cell</span><b>${roadsIn}</b></div>
+    <div class="kv sep"><span>🏢 buildings in cell</span>${bldg}</div>
+    <div class="kv"><span>🛣 roads in cell</span><b>${roadsIn}</b></div>
     <div class="kv"><span>💧 drainage in cell</span><b>${waterIn}</b></div>`;
   p.hidden=false; $("cpx").onclick=exitDrill;
 }
@@ -294,7 +323,7 @@ function overlayLayers(){
 }
 function render(){
   if(!deckgl) return;
-  deckgl.setProps({layers:[basemapLayer(), dataLayer(), ...overlayLayers(), highlightLayer()].filter(Boolean)});
+  deckgl.setProps({layers:[basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer()].filter(Boolean)});
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;

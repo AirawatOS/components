@@ -1,0 +1,28 @@
+# A DRIVER (kind=driver) — individual building FOOTPRINTS from Google Open Buildings v3 via GEE (ADR-0060 L1).
+# Ingests real footprint POLYGONS (geo.building), one H3 cell at a time, so a viewer can drill into a cell and
+# see the buildings inside it. Sibling of buildings-openbuildings (which writes the L2 coverage fraction). Runs
+# in the shared earth-observation runtime (earthengine-api); cert-checked + image-locked. Real footprints only.
+component_id: ds:airawat:driver/buildings-footprints
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Building Footprints (Google Open Buildings / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads: [space.aoi, cell.buildings, geo.building]   # cell.buildings = target cells; geo.building = RESUME
+writes: [geo.building]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/buildings-footprints" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/buildings-footprints" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/buildings-footprints" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # same Google service-account key as the other EO drivers (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT]
+sources:
+  - { ref: "ds:airawat:ref/source/google-open-buildings", host: earthengine.googleapis.com, provides: [geo.building] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: read,  scope: geo.building }
+  - { verb: write, scope: geo.building }
