@@ -13,4 +13,4 @@ reads: [geo.terrain]
 writes: [risk.flood]
 scopes:
   - { verb: read,  scope: geo.terrain }
-  - { verb: write, scope: risk.flood, tenant: kmc }
+  - { verb: write, scope: risk.flood }

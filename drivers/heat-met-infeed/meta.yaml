@@ -1,0 +1,14 @@
+# A DRIVER (kind=driver) — confined; only I/O is the broker. It FETCHES from a declared egress
+# host and WRITES governed facts. Fill the TODOs, then Test + Publish from Studio.
+component_id: ds:airawatdeveloper:driver/heat-met-infeed
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Met Heat Data Infeed
+entrypoint: run.py
+confinement_min: L1
+egress: [example.com]              # external host(s) this driver may reach (no paths)
+reads: []
+writes: [met.forecast]              # the GOVERNED schema it writes (must be published)
+scopes:
+  - { verb: write, scope: met.forecast }

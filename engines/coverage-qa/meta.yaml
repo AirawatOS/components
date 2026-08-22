@@ -19,4 +19,4 @@ scopes:
   - { verb: read,  scope: cell.builtup }
   - { verb: read,  scope: cell.greencover }
   - { verb: read,  scope: cell.heat }
-  - { verb: write, scope: city.coverage, tenant: kmc }
+  - { verb: write, scope: city.coverage }

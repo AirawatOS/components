@@ -15,4 +15,4 @@ reads: []
 writes: [knowledge.document]
 files: [put]                      # declares it stores blobs (forward-compat with per-component file capability)
 scopes:
-  - { verb: write, scope: knowledge.document, tenant: kmc }
+  - { verb: write, scope: knowledge.document }

@@ -21,4 +21,4 @@ sources:
   - { ref: "ds:airawat:ref/source/osm", host: overpass-api.de, provides: [geo.landcover] }
 scopes:
   - { verb: read,  scope: space.aoi }
-  - { verb: write, scope: geo.landcover, tenant: kmc }
+  - { verb: write, scope: geo.landcover }

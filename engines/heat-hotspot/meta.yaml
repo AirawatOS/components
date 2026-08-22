@@ -1,0 +1,13 @@
+# An ENGINE (kind=engine) — confined; reads facts, writes derived facts.
+component_id: ds:airawatdeveloper:engine/heat-hotspot
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Heat Hotspot Detection
+entrypoint: run.py
+confinement_min: L1
+reads: [TODO.input]
+writes: [risk.heat]
+scopes:
+  - { verb: read, scope: TODO.input }
+  - { verb: write, scope: risk.heat }

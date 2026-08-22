@@ -24,4 +24,4 @@ sources:
   - { ref: "ds:airawat:ref/source/cpcb",   host: api.data.gov.in, provides: [air.sensor_reading] }
 scopes:
   - { verb: read,  scope: space.aoi }
-  - { verb: write, scope: air.sensor_reading, tenant: kmc }
+  - { verb: write, scope: air.sensor_reading }

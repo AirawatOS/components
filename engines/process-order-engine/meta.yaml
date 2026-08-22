@@ -1,0 +1,13 @@
+# An ENGINE (kind=engine) — confined; reads facts, writes derived facts.
+component_id: ds:airawatdeveloper:engine/process-order-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Summons & Warrant Order Engine
+entrypoint: run.py
+confinement_min: L1
+reads: [TODO.input]
+writes: [governance.order]
+scopes:
+  - { verb: read, scope: TODO.input }
+  - { verb: write, scope: governance.order, tenant: airawatdeveloper }

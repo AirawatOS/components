@@ -28,4 +28,4 @@ egress:
 secrets: [IDSS_USERNAME, IDSS_PASSWORD]
 scopes:
   - { verb: read,  scope: space.aoi }
-  - { verb: write, scope: air.sensor_reading, tenant: kmc }
+  - { verb: write, scope: air.sensor_reading }

@@ -16,6 +16,6 @@ writes: [platform.case, platform.task, platform.inbox_item]
 scopes:
   - { verb: read,  scope: governance.recommendation }
   - { verb: read,  scope: platform.task }
-  - { verb: write, scope: platform.case,       tenant: kmc }
-  - { verb: write, scope: platform.task,       tenant: kmc }
-  - { verb: write, scope: platform.inbox_item, tenant: kmc }
+  - { verb: write, scope: platform.case }
+  - { verb: write, scope: platform.task }
+  - { verb: write, scope: platform.inbox_item }

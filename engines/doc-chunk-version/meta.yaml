@@ -18,6 +18,6 @@ files: [get, put]
 scopes:
   - { verb: read,  scope: knowledge.document }
   - { verb: read,  scope: knowledge.version }
-  - { verb: write, scope: knowledge.chunk,    tenant: kmc }
-  - { verb: write, scope: knowledge.version,  tenant: kmc }
-  - { verb: write, scope: knowledge.document, tenant: kmc }
+  - { verb: write, scope: knowledge.chunk }
+  - { verb: write, scope: knowledge.version }
+  - { verb: write, scope: knowledge.document }

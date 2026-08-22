@@ -10,4 +10,4 @@ reads: [TODO.input]
 writes: [TODO.schema]
 scopes:
   - { verb: read, scope: TODO.input }
-  - { verb: write, scope: TODO.schema, tenant: kmc }
+  - { verb: write, scope: TODO.schema }

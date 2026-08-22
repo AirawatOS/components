@@ -32,5 +32,5 @@ sources:
   - { ref: "ds:airawat:ref/source/dynamic-world", host: earthengine.googleapis.com, provides: [cell.builtup, cell.greencover] }
 scopes:
   - { verb: read,  scope: space.aoi }
-  - { verb: write, scope: cell.builtup,    tenant: kmc }
-  - { verb: write, scope: cell.greencover, tenant: kmc }
+  - { verb: write, scope: cell.builtup }
+  - { verb: write, scope: cell.greencover }

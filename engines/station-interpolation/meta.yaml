@@ -15,4 +15,4 @@ writes: [air.quality]
 scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: air.sensor_reading }
-  - { verb: write, scope: air.quality, tenant: kmc }
+  - { verb: write, scope: air.quality }

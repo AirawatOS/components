@@ -1,0 +1,13 @@
+# An ENGINE (kind=engine) — confined; reads facts, writes derived facts.
+component_id: ds:airawatdeveloper:engine/case-scrutiny-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Case Scrutiny Engine
+entrypoint: run.py
+confinement_min: L1
+reads: [TODO.input]
+writes: [platform.task]
+scopes:
+  - { verb: read, scope: TODO.input }
+  - { verb: write, scope: platform.task, tenant: airawatdeveloper }

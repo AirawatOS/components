@@ -1,0 +1,14 @@
+# A DRIVER (kind=driver) — confined; its only I/O is the broker. It FETCHES from a declared
+# egress host and WRITES governed facts. Fill the two TODOs, then Test + Publish from Studio.
+component_id: ds:airawatdeveloper:driver/court-filing-intake
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Court e-Filing Intake
+entrypoint: run.py
+confinement_min: L1
+egress: [example.com]              # external host(s) this driver may reach (host only, no paths)
+reads: []
+writes: [platform.case]              # the GOVERNED schema it writes (must be published)
+scopes:
+  - { verb: write, scope: platform.case, tenant: airawatdeveloper }

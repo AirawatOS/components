@@ -19,6 +19,6 @@ scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: geo.landcover }
   - { verb: read,  scope: environment.lst_observation }
-  - { verb: write, scope: cell.builtup,    tenant: kmc }
-  - { verb: write, scope: cell.greencover, tenant: kmc }
-  - { verb: write, scope: cell.heat,       tenant: kmc }
+  - { verb: write, scope: cell.builtup }
+  - { verb: write, scope: cell.greencover }
+  - { verb: write, scope: cell.heat }

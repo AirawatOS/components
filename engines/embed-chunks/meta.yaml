@@ -15,4 +15,4 @@ writes: [knowledge.embedding]
 scopes:
   - { verb: read,  scope: knowledge.chunk }
   - { verb: read,  scope: knowledge.embedding }
-  - { verb: write, scope: knowledge.embedding, tenant: kmc }
+  - { verb: write, scope: knowledge.embedding }

@@ -24,4 +24,4 @@ sources:
 scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: geo.terrain }
-  - { verb: write, scope: geo.terrain, tenant: kmc }
+  - { verb: write, scope: geo.terrain }
