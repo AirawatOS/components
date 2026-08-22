@@ -308,16 +308,19 @@ function cellPanel(){
   p.hidden=false; $("cpx").onclick=exitDrill;
 }
 function overlayLayers(){
-  const out=[];
-  if(showWater && (DATA.water||[]).length){                    // drainage channels (geo.hydro_feature) → TEAL, so it
-    out.push(new deck.GeoJsonLayer({id:"drainage",             // stays distinct from the blue Flood-susceptibility ramp
+  const out=[], drill=!!drillCell;                             // in a drilled cell, thicken + brighten so the street
+  if(showWater && (DATA.water||[]).length){                    // grid + drains read clearly between the 3D buildings
+    out.push(new deck.GeoJsonLayer({id:"drainage",             // drainage channels (geo.hydro_feature) → TEAL, distinct
       data:{type:"FeatureCollection",features:DATA.water.map(o=>({type:"Feature",geometry:o.geometry,properties:{}}))},
-      filled:true,stroked:true,getFillColor:[20,184,166,90],getLineColor:[94,234,212,245],
-      lineWidthUnits:"pixels",getLineWidth:1.4,lineWidthMinPixels:1,pickable:false}));
+      filled:true,stroked:true,getFillColor:[20,184,166,drill?120:90],getLineColor:[94,234,212,255],
+      lineWidthUnits:"pixels",getLineWidth:drill?2.4:1.4,lineWidthMinPixels:drill?1.6:1,pickable:false,
+      updateTriggers:{getLineWidth:[drill],getFillColor:[drill]}}));
   }
   if(showRoads && (DATA.roads||[]).length){                    // road network (geo.osm_feature) → light paths on top
-    out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",getWidth:1,widthMinPixels:0.5,
-      getColor:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false}));
+    out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",
+      getWidth:drill?2.6:1,widthMinPixels:drill?1.4:0.5,
+      getColor:drill?[241,245,249,240]:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      updateTriggers:{getWidth:[drill],getColor:[drill]}}));
   }
   return out;
 }
