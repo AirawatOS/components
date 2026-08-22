@@ -153,7 +153,9 @@ async function loadTiles(){
         tiles.push({w:tile2lon(X,zz),e:tile2lon(X+1,zz),n:tile2lat(Y,zz),s:tile2lat(Y+1,zz),
           href:`data:${d.content_type||"image/png"};base64,${d.body_b64}`}); }).catch(()=>{})); }
   await Promise.all(jobs);
-  if(tiles.length){ DATA.tiles=tiles; DATA._tk=key; $("attrib").hidden=false; render(); }
+  DATA._tk=key;                          // this viewport is now ATTEMPTED — never re-hammer it. Without this, an
+                                         // all-429 batch (60/min egress cap) left _tk unset and refetched forever.
+  if(tiles.length){ DATA.tiles=tiles; $("attrib").hidden=false; render(); }
   // else keep the existing tiles — a transient failure / rate-limit must never blank the basemap
 }
 
@@ -165,16 +167,28 @@ async function load(){
   const q=async s=>{try{const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({app_id:APP,schema:s,limit:50000})});const d=await r.json();  // full metro grid, not the 1000 default
     return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[]}};
+  // SCOPE = the union of THIS tenant's AOI bboxes. Cells/landcover are queried tenant-wide, so we clip to the
+  // city here — one stray cross-city row (e.g. a stale cell left under this tenant from another metro) must not
+  // distort the projection or inflate the counts. Fetch the AOIs FIRST so the scope is known before we clip.
+  const aois=await q("space.aoi"); const aoi=aois[0]||{};
+  let SB=null;
+  for(const a of aois){ const bb=a.bbox; if(Array.isArray(bb)&&bb.length===4)
+    SB = SB ? [Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])] : bb.slice(); }
+  const M=0.03, inB=p=> !SB || !p || (p[0]>=SB[0]-M&&p[0]<=SB[2]+M&&p[1]>=SB[1]-M&&p[1]<=SB[3]+M);
   const layers={};
   for(const L of LAYERS){
     const rows=await q(L.key);
     layers[L.key]=rows.map(o=> L.key==="geo.terrain"
-      ? {h3:(o.space||{}).h3, b:(o.space||{}).boundary, v:o.elevation_m}      // L1 terrain: space.boundary + elevation
-      : {h3:(o.cell_ref||{}).h3_id, b:(o.cell_ref||{}).boundary, v:o.value}); // L2 cell measure
+      ? {h3:(o.space||{}).h3, b:(o.space||{}).boundary, c:(o.space||{}).centroid, v:o.elevation_m}       // L1 terrain
+      : {h3:(o.cell_ref||{}).h3_id, b:(o.cell_ref||{}).boundary, c:(o.cell_ref||{}).centroid, v:o.value}) // L2 cell measure
+      .filter(c=> inB(c.c || (c.b&&c.b[0])));                                                              // clip to the city
   }
-  const base=(await q("geo.landcover")).map(o=>({ring:(((o.geometry||{}).coordinates)||[[]])[0], cls:o.lc_class}));
-  const aoi=((await q("space.aoi"))[0])||{};
-  return {aoi,layers,base,coverage:await q("city.coverage")};
+  const base=(await q("geo.landcover")).map(o=>({ring:(((o.geometry||{}).coordinates)||[[]])[0], cls:o.lc_class}))
+      .filter(f=> f.ring&&f.ring.length&&inB(f.ring[0]));
+  // one card per layer_noun — keep the freshest assessment (baselines re-run; don't stack duplicate cards)
+  let cov=await q("city.coverage"); cov.sort((a,b)=>String(b.assessed_at||"").localeCompare(String(a.assessed_at||"")));
+  const seen={}; cov=cov.filter(c=>{const k=c.layer_noun; if(seen[k])return false; seen[k]=1; return true;});
+  return {aoi,scope:SB,layers,base,coverage:cov};
 }
 
 let DATA, active=LAYERS[0].key, proj=null;
@@ -184,8 +198,9 @@ const $=id=>document.getElementById(id);
 function project(){
   let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9,any=false;
   const eat=p=>{any=true;mnx=Math.min(mnx,p[0]);mxx=Math.max(mxx,p[0]);mny=Math.min(mny,p[1]);mxy=Math.max(mxy,p[1]);};
-  for(const L of LAYERS)for(const c of (DATA.layers[L.key]||[]))for(const p of (c.b||[]))eat(p);
-  for(const f of (DATA.base||[]))for(const p of (f.ring||[]))eat(p);
+  if(DATA.scope){ const s=DATA.scope; eat([s[0],s[1]]); eat([s[2],s[3]]); }   // viewport = the city's own AOI bbox (stable)
+  else { for(const L of LAYERS)for(const c of (DATA.layers[L.key]||[]))for(const p of (c.b||[]))eat(p);
+         for(const f of (DATA.base||[]))for(const p of (f.ring||[]))eat(p); }
   if(!any)return null;
   const midLat=(mny+mxy)/2, kx=Math.cos(midLat*Math.PI/180);
   const gw=(mxx-mnx)*kx||1e-6, gh=(mxy-mny)||1e-6;
