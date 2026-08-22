@@ -98,7 +98,7 @@
     <div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
-    <div class="zoomctl"><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
+    <div class="zoomctl"><button id="tilt" class="rst" title="Toggle 2.5D view — extruded hex towers; ctrl/right-drag to orbit">⬢</button><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
     <div class="attrib" id="attrib">Basemap © OpenStreetMap contributors</div>
   </div>
 
@@ -132,7 +132,8 @@ async function q(schema){
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
 
-let DATA={}, LAYERS=[], active=null, deckgl=null, view=null;
+let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false;
+const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
 
 async function load(){
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
@@ -195,10 +196,13 @@ function dataLayer(){
     return new deck.PathLayer({id:"roads",data:d.rows,widthUnits:"pixels",getWidth:1.6,
       getColor:[56,189,248,200],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:true});
   }
-  const span=(d.hi-d.lo)||1;
+  const span=(d.hi-d.lo)||1, norm=c=>Math.max(0,Math.min(1,(c.v-d.lo)/span));
   return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
-    extruded:false,getHexagon:c=>c.h3,opacity:0.68,
-    getFillColor:c=>{ const t=Math.max(0,Math.min(1,(c.v-d.lo)/span)); return [...lerpC(L.ramp[0],L.ramp[1],t),235]; }});
+    extruded:mode3d, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
+    getElevation:c=> mode3d ? norm(c)*ELEV_MAX : 0,           // 2.5D: taller tower = higher value
+    getHexagon:c=>c.h3, opacity:mode3d?0.92:0.68,
+    getFillColor:c=>[...lerpC(L.ramp[0],L.ramp[1],norm(c)),235],
+    updateTriggers:{getElevation:[mode3d,active], getFillColor:[active]}});
 }
 function render(){
   if(!deckgl) return;
@@ -270,7 +274,14 @@ function fitView(bbox){
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
   $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});
-  $("zreset").onclick=()=>setV({...fitView(DATA.aoi.bbox||DATA.scope),transitionDuration:250});
+  $("zreset").onclick=()=>setV({...fitView(DATA.aoi.bbox||DATA.scope),pitch:mode3d?50:0,transitionDuration:250});
+  $("tilt").onclick=()=>{                                       // 2D ⇄ 2.5D: tilt the camera + extrude the hexes into towers
+    mode3d=!mode3d;
+    $("tilt").style.color=mode3d?"var(--accent)":""; $("tilt").style.borderColor=mode3d?"var(--accent)":"";
+    view={...view, pitch:mode3d?50:0, bearing:mode3d?view.bearing:0};
+    deckgl.setProps({initialViewState:{...view,transitionDuration:450}});
+    render();                                                  // re-emit layers with extruded:mode3d (updateTriggers)
+  };
   const g=$("app");
   $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";};
   $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";};
