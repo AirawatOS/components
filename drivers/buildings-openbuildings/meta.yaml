@@ -1,0 +1,26 @@
+# A DRIVER (kind=driver) — BUILDINGS from Google Open Buildings v3 via GEE (ADR-0060 L0→L2, Wave-1 physical).
+# Server-side footprint coverage per H3 cell → cell.buildings. Runs in the shared earth-observation runtime
+# (earthengine-api) via the runtime-manager; cert-checked + image-locked. Real Open Buildings only.
+component_id: ds:airawat:driver/buildings-openbuildings
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Buildings (Google Open Buildings / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads: [space.aoi, cell.buildings]     # cell.buildings read = RESUME
+writes: [cell.buildings]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/buildings-openbuildings" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/buildings-openbuildings" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/buildings-openbuildings" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # same Google service-account key as the other EO drivers (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT]
+sources:
+  - { ref: "ds:airawat:ref/source/google-open-buildings", host: earthengine.googleapis.com, provides: [cell.buildings] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: write, scope: cell.buildings }
