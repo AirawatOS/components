@@ -25,3 +25,7 @@ scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: geo.terrain }
   - { verb: write, scope: geo.terrain }
+# Tier-4 conformance FIXTURE: a representative geo.terrain output. The CA validates it against the governed
+# geo.terrain schema at certify (same validator the registry runs at write-time), so a driver that would emit
+# a non-conformant object fails certification instead of 422-ing in a live run.
+conformance_samples: '{"geo.terrain": {"schema": "geo.terrain", "id": "ds:airawat:geo/terrain/example", "space": {"h3": "8a2a1072b59ffff", "res": 9, "centroid": [73.7, 20.0], "boundary": [[73.7, 20.0], [73.71, 20.0], [73.71, 20.01]]}, "elevation_m": 560.0, "slope_deg": 2.0, "terrain_class": "flat", "unit": "m", "source_ref": "ds:airawat:ref/source/copernicus-dem", "prov": {"component": "ds:airawat:driver/terrain-dem@0.1.0", "method": "copernicus-glo30", "source_ref": "ds:airawat:ref/source/copernicus-dem", "observed_at": "2025-06-01T00:00:00Z"}, "observed_at": "2025-06-01T00:00:00Z"}}'
