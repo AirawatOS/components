@@ -10,8 +10,8 @@ runtime_id:     geospatial
 profile:        geospatial
 analytics_tier: diagnostic                  # describe/diagnose place from spatial data (aggregate, relate)
 display_name:   Geospatial (H3 · vector · raster · routing)
-image:          airawatos/runtime-geospatial:0.1.0
-image_digest:   sha256:f51dd04e267358bce321106b4291092fa42bfc8a91a9a8dc7a598e1867fb4677                # the CERTIFIED image content id (launcher runs only this)
+image:          manishsv/airawatos-runtime-geospatial:0.1.0
+image_digest:   sha256:73b10a2fb9e87745c7ae911b2fa9b8ac28051fcdb397ec572200a03595841b06                # the CERTIFIED image content id (launcher runs only this)
 provides:       [h3, shapely, geopandas, pyproj, rasterio, networkx, numpy, requests, pyyaml]
 isolation:      shared
 confidential:   false

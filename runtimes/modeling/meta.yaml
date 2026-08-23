@@ -10,7 +10,8 @@ runtime_id:     modeling
 profile:        modeling
 analytics_tier: predictive                  # forecast / infer future or unobserved state
 display_name:   Modeling (PyTorch · scikit-learn · XGBoost)
-image:          airawatos/runtime-modeling:0.1.0
+image:          manishsv/airawatos-runtime-modeling:0.1.0
+image_digest:   sha256:a8ccc115c344f0e0ac19e724e6f9841c41be43808d746184377f0932eaf7d022   # CERTIFIED image content id (launcher runs only this)
 provides:       [torch, torchvision, scikit-learn, xgboost, numpy, scipy, h3, requests, pyyaml]
 isolation:      shared
 confidential:   false
