@@ -30,6 +30,10 @@ SA_KEY = os.environ.get("GEE_SERVICE_ACCOUNT_KEY", "")
 BATCH = int(os.environ.get("BATCH", "250"))
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/copernicus-dem"
+# this run's component identity — injected by the runtime; fall back to the meta values. Written into prov so
+# every geo.terrain fact records exactly which component + version produced it (id@version, ADR-0052).
+COMPONENT_ID = os.environ.get("AIROS_COMPONENT_ID", "ds:airawat:driver/terrain-dem")
+COMPONENT_VERSION = os.environ.get("AIROS_COMPONENT_VERSION", "0.1.0")
 
 
 def call(path, body):
@@ -189,9 +193,10 @@ def main():
                           "boundary": [[round(x, 6), round(y, 6)] for (x, y) in cell_boundary_lonlat(h)]},
                 "elevation_m": round(e, 1), "slope_deg": slope, "terrain_class": classify(slope), "unit": "m",
                 "source_ref": SRC,
-                # geo.terrain is a CLOSED schema: provenance lives in `prov` (component is a string), and it
-                # does not accept top-level `layer`/`method`.
-                "prov": {"component": "ds:airawat:driver/terrain-dem", "method": "copernicus-glo30",
+                # geo.terrain is a CLOSED schema: provenance lives in `prov`, no top-level `layer`/`method`.
+                # prov.component is a string, so the VERSION rides in it as <id>@<version> (the ADR-0052
+                # component://<id>@<version> attribution convention).
+                "prov": {"component": f"{COMPONENT_ID}@{COMPONENT_VERSION}", "method": "copernicus-glo30",
                          "source_ref": SRC, "observed_at": NOW},
                 "observed_at": NOW}
         call("/v1/write", {"scope": "geo.terrain", "id": fact["id"], "object": fact,
