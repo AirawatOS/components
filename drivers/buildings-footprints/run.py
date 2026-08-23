@@ -35,8 +35,12 @@ PER_CELL_CAP = int(os.environ.get("PER_CELL_CAP", "5000"))
 FOOTPRINT_BBOX = os.environ.get("FOOTPRINT_BBOX", "").strip()
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/google-open-buildings"
-DERIVED = ["gee:GOOGLE/Research/open-buildings/v3/polygons"]
+DERIVED = ["gee:GOOGLE/Research/open-buildings/v3/polygons", "gee:GOOGLE/Research/open-buildings-temporal/v1"]
 OB_ASSET = "GOOGLE/Research/open-buildings/v3/polygons"
+# Open Buildings Temporal carries a per-pixel `building_height` (metres). A zonal MEAN over each footprint
+# gives that building's height — the same join AirOS uses. levels = height / 3 m (typical storey).
+OB_TEMPORAL = "GOOGLE/Research/open-buildings-temporal/v1"
+STOREY_M = 3.0
 
 
 def call(path, body):
@@ -153,6 +157,13 @@ def footprints_for_cell(ee, hcell, res):
     geom = ee.Geometry.Polygon([ring])
     fc = (ee.FeatureCollection(OB_ASSET).filterBounds(geom)
           .filter(ee.Filter.gte("confidence", CONF)).limit(PER_CELL_CAP))
+    # HEIGHT: zonal-mean of the Open Buildings Temporal `building_height` band over each footprint (scale 4 m,
+    # matching the raster). Each output feature gains a `mean` property = that building's height in metres.
+    try:
+        height = ee.ImageCollection(OB_TEMPORAL).filterBounds(geom).mosaic().select("building_height")
+        fc = height.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=4)
+    except Exception as ex:                                    # Temporal unavailable → fall back to footprints only
+        print(f"  ⚠ cell {hcell} height join skipped ({type(ex).__name__}) — height_m stays null", flush=True)
     info = None
     for attempt in range(5):
         try:
@@ -176,9 +187,11 @@ def footprints_for_cell(ee, hcell, res):
         clo, cla = sum(xs) / len(xs), sum(ys) / len(ys)
         if h3.latlng_to_cell(cla, clo, res) != hcell:
             continue                                              # centroid not in THIS cell → belongs to a neighbour
+        hm = props.get("mean")                                # zonal-mean building_height (metres), None if no cover
         out.append((g, [round(clo, 6), round(cla, 6)],
                     round(float(props["area_in_meters"]), 1) if isinstance(props.get("area_in_meters"), (int, float)) else None,
-                    round(float(props["confidence"]), 3) if isinstance(props.get("confidence"), (int, float)) else None))
+                    round(float(props["confidence"]), 3) if isinstance(props.get("confidence"), (int, float)) else None,
+                    round(float(hm), 1) if isinstance(hm, (int, float)) and hm > 0 else None))
     if len(feats) >= PER_CELL_CAP:
         print(f"  ⚠ cell {hcell} hit the {PER_CELL_CAP}-footprint cap — dense cell, some footprints not ingested", flush=True)
     return out
@@ -211,11 +224,12 @@ def main():
             continue                                              # getInfo failed for this cell — skip, don't fabricate
         if not fps:
             empty += 1
-        for (geom, centroid, area, conf) in fps:
+        for (geom, centroid, area, conf, height_m) in fps:
+            levels = max(1, int(round(height_m / STOREY_M))) if height_m else None   # schema: integer storeys
             fact = {
                 "schema": "geo.building", "id": fp_id(hcell, centroid, area), "tenant": TENANT,
                 "geometry": geom, "h3_id": hcell, "resolution": res, "centroid": centroid,
-                "area_m2": area, "height_m": None, "confidence": conf,
+                "area_m2": area, "height_m": height_m, "levels": levels, "confidence": conf,
                 "method": "open-buildings-v3", "source_ref": SRC, "layer": "L1", "derived_from": DERIVED,
                 "source": {"aoi": aoi_ref, "driver": "buildings-footprints", "asset": OB_ASSET},
                 "prov": {"method": "open-buildings-v3", "source_ref": SRC, "derived_from": DERIVED,
