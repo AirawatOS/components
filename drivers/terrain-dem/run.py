@@ -188,7 +188,12 @@ def main():
                 "space": {"h3": h, "res": res, "centroid": [round(lo, 6), round(la, 6)],
                           "boundary": [[round(x, 6), round(y, 6)] for (x, y) in cell_boundary_lonlat(h)]},
                 "elevation_m": round(e, 1), "slope_deg": slope, "terrain_class": classify(slope), "unit": "m",
-                "method": "copernicus-glo30", "source_ref": SRC, "layer": "L1", "observed_at": NOW}
+                "source_ref": SRC,
+                # geo.terrain is a CLOSED schema: provenance lives in `prov` (component is a string), and it
+                # does not accept top-level `layer`/`method`.
+                "prov": {"component": "ds:airawat:driver/terrain-dem", "method": "copernicus-glo30",
+                         "source_ref": SRC, "observed_at": NOW},
+                "observed_at": NOW}
         call("/v1/write", {"scope": "geo.terrain", "id": fact["id"], "object": fact,
                            "valid_time": {"from": NOW}, "asserted_at": NOW})
         written += 1
