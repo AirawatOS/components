@@ -80,6 +80,29 @@
   .kv b{color:var(--ink);font-weight:600}
   .gaps{margin-top:8px;font-size:11.5px;color:#e0b877;border-top:1px dashed var(--edge);padding-top:7px}
   .gaps .g{display:flex;gap:6px}.gaps .g::before{content:"△";color:#b98a3a}
+  /* --- rolled-up trust cards --- */
+  .trustsum{font-size:12px;color:var(--muted);margin:0 0 11px}.trustsum b{font-weight:700}
+  .cov .top{cursor:pointer}
+  .cov .cvx{margin-left:2px;color:var(--dim);font-size:11px;transition:transform .15s}
+  .cov.open .cvx{transform:rotate(180deg)}
+  .pill.tg-ok{background:#0f2417;color:#3fb950;border:1px solid #1c3a25}
+  .pill.tg-mid{background:#2c220a;color:#d29922;border:1px solid #4d3d12}
+  .pill.tg-low{background:#3d1418;color:#ff7b72;border:1px solid #6e2b30}
+  .pill.na{background:#161b22;color:var(--muted);border:1px solid var(--edge)}
+  .tbrow{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px}
+  .tb{display:flex;flex-direction:column;gap:1px;background:#0c1520;border:1px solid var(--edge);border-radius:7px;padding:5px 9px;flex:1;min-width:70px}
+  .tbk{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .tbv{font-size:12.5px;font-weight:700}
+  .tbv.ok{color:#3fb950}.tbv.mid{color:#d29922}.tbv.low{color:#ff7b72}.tbv.na{color:var(--muted)}
+  .covsub{font-size:12px;color:var(--muted)}
+  .cov-empty{opacity:.65}
+  .covdetail{display:none;margin-top:9px;border-top:1px dashed var(--edge);padding-top:9px}
+  .cov.open .covdetail{display:block}
+  .trail{margin:2px 0 10px}
+  .trn{display:flex;gap:9px;align-items:flex-start}
+  .trdot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent);margin-top:3px;box-shadow:0 0 0 3px #12233a}
+  .trline{width:1px;height:11px;background:var(--edge);margin:1px 0 1px 4px}
+  .trt{font-size:12.5px;font-weight:600;color:var(--ink)} .trs{font-size:10.5px;color:var(--muted)}
   footer{border-top:1px solid var(--edge);padding:9px 18px;color:var(--dim);font-size:11.5px}
   .empty{padding:40px;color:var(--muted);text-align:center}
   .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);z-index:5}
@@ -485,20 +508,75 @@ function drawLayers(){
     render();
   });
 }
+// ── Trust roll-up: turn a raw city.coverage record into human bands + a headline + a source trail ──────
+const NOUN_LABEL={'cell.heat':'Heat','cell.builtup':'Built-up','cell.greencover':'Green cover',
+ 'geo.landcover':'Land cover','environment.lst_observation':'Land-surface temp','cell.rainfall':'Rainfall',
+ 'cell.weather_forecast':'Weather forecast','cell.hydrology':'Hydrology','geo.terrain':'Terrain',
+ 'geo.building':'Building footprints','cell.buildings':'Buildings','geo.facility':'Critical facilities',
+ 'demographics.population':'Population','cell.population':'Population','geo.hydro_feature':'Rivers & water'};
+const SRCTYPE={authoritative:{t:'Official',c:'real'},'open-data':{t:'Open data',c:'open'},'ai-derived':{t:'AI estimate',c:'ai'}};
+const SRCNAME={'open-meteo':'Open-Meteo','esa-worldcover':'ESA WorldCover','osm':'OpenStreetMap',
+ 'dynamic-world':'Google Dynamic World','ghsl':'GHSL','copernicus-dem':'Copernicus DEM','openaq':'OpenAQ','cpcb':'CPCB'};
+function nounLabel(n){return NOUN_LABEL[n]||String(n||'').split('.').pop().replace(/_/g,' ');}
+function srcName(s){if(!s)return null;const k=String(s).split('/').pop();return SRCNAME[k]||k;}
+function layerKind(c){
+  if((c.gaps||[]).some(g=>/no data/i.test(g))) return 'empty';
+  if(/observation$|^environment\.|^met\./.test(c.layer_noun||'')||(c.gaps||[]).some(g=>/input feed/i.test(g))) return 'input';
+  return 'layer';
+}
+function bandCov(p){p=p||0;return p>=90?{b:'Full',c:'ok'}:p>=40?{b:'Partial',c:'mid'}:p>0?{b:'Sparse',c:'low'}:{b:'None',c:'na'};}
+function bandFresh(d){if(!d)return null;const t=Date.parse(String(d).slice(0,10));if(isNaN(t))return null;
+  const days=(Date.now()-t)/864e5;return days<=180?{b:'Fresh',c:'ok'}:days<=760?{b:'Recent',c:'mid'}:{b:'Stale',c:'low'};}
+function bandConf(c){if(c.authority&&c.authority!=='ai-derived')return{b:'High',c:'ok'};
+  const v=c.confidence;if(v==null)return{b:'—',c:'na'};return v>=0.7?{b:'High',c:'ok'}:v>=0.4?{b:'Medium',c:'mid'}:{b:'Low',c:'low'};}
+function trustOf(c){
+  const cov=bandCov(c.coverage_pct),fresh=bandFresh(c.freshness||c.assessed_at),conf=bandConf(c);
+  const auth={authoritative:3,'open-data':2,'ai-derived':1}[c.authority]||1, W={ok:2,mid:1,low:0,na:0};
+  let s=auth+W[cov.c]+(fresh?({ok:1,mid:.5,low:0})[fresh.c]:.5)+({ok:1,mid:.5,low:0,na:.5})[conf.c];
+  let trust=s>=5.5?{b:'Good',c:'ok'}:s>=3.5?{b:'Fair',c:'mid'}:{b:'Weak',c:'low'};
+  if(cov.b==='None')trust={b:'Weak',c:'low'};
+  return {cov,fresh,conf,trust};
+}
+function trailNodes(c){
+  const nodes=[{t:nounLabel(c.layer_noun),sub:(SRCTYPE[c.authority]||{}).t||'layer'}];
+  const viaG=(c.gaps||[]).find(g=>/inherited via/i.test(g));
+  if(viaG){const m=viaG.match(/via\s+([a-z0-9_.]+)/i);if(m&&m[1]!=='origin'&&m[1]!==c.layer_noun)nodes.push({t:nounLabel(m[1]),sub:'derived from'});}
+  if(c.source_ref)nodes.push({t:srcName(c.source_ref),sub:'source'+(c.freshness?' · '+String(c.freshness).slice(0,10):'')});
+  return nodes;
+}
 function drawTrust(){
-  const AUTH={"open-data":"open","ai-derived":"ai","authoritative":"real"};
   const cov=(DATA.coverage||[]).slice().sort((a,b)=>(a.layer_noun>b.layer_noun?1:-1));
   if(!cov.length){$("cov").innerHTML='<div class="empty">No coverage report yet.</div>';return;}
-  $("cov").innerHTML=cov.map(c=>{ const cls=AUTH[c.authority]||"ai", pct=Math.round(c.coverage_pct||0);
-    const gaps=(c.gaps||[]).map(g=>`<div class="g">${esc(g)}</div>`).join("");
-    return `<div class="cov"><div class="top"><span class="noun mono">${esc(c.layer_noun)}</span>
-      <span class="pill ${cls}">${esc(c.authority||"—")}</span></div>
-      <div class="covbar"><i style="width:${pct}%"></i></div>
-      <div class="kv"><span>Coverage</span><b class="num">${pct}% of AOI cells</b></div>
-      <div class="kv"><span>Confidence</span><b class="num">${c.confidence==null?"—":c.confidence}</b></div>
-      <div class="kv"><span>Source</span><b>${esc((c.source_ref||"—").split("/").pop())}</b></div>
-      <div class="kv"><span>As of</span><b class="num">${esc(c.freshness||c.assessed_at||"—")}</b></div>
-      ${gaps?`<div class="gaps">${gaps}</div>`:""}</div>`;}).join("");
+  const real=cov.filter(c=>layerKind(c)==='layer');
+  const good=real.filter(c=>trustOf(c).trust.b==='Good').length;
+  $("cov").innerHTML=(real.length?`<div class="trustsum">${good} of ${real.length} map layers rated <b class="tbv ok" style="font-weight:700">Good</b> · click a layer for its data trail</div>`:'')
+    + cov.map(c=>{
+    const kind=layerKind(c), name=nounLabel(c.layer_noun), st=SRCTYPE[c.authority];
+    if(kind==='empty') return `<div class="cov cov-empty"><div class="top" style="cursor:default"><span class="noun">${esc(name)}</span><span class="pill na">no data</span></div>
+      <div class="covsub">Not built for this city yet — connect its key/file in City Setup, then re-build.</div></div>`;
+    const T=trustOf(c), pct=Math.round(c.coverage_pct||0);
+    const badges = kind==='input'
+      ? `<span class="tb"><span class="tbk">Role</span><span class="tbv na">Input feed</span></span>
+         <span class="tb"><span class="tbk">Freshness</span><span class="tbv ${T.fresh?T.fresh.c:'na'}">${T.fresh?T.fresh.b:'—'}</span></span>`
+      : `<span class="tb"><span class="tbk">Confidence</span><span class="tbv ${T.conf.c}">${T.conf.b}</span></span>
+         <span class="tb"><span class="tbk">Freshness</span><span class="tbv ${T.fresh?T.fresh.c:'na'}">${T.fresh?T.fresh.b:'—'}</span></span>
+         <span class="tb"><span class="tbk">Coverage</span><span class="tbv ${T.cov.c}">${T.cov.b}</span></span>`;
+    const head = kind==='input' ? `<span class="pill ${st?st.c:'ai'}">${esc(st?st.t:'input')}</span>`
+                                : `<span class="pill tg-${T.trust.c}">${T.trust.b}</span>`;
+    const trail=trailNodes(c).map((n,j,a)=>`<div class="trn"><span class="trdot"></span><div><div class="trt">${esc(n.t)}</div><div class="trs">${esc(n.sub)}</div></div></div>${j<a.length-1?'<div class="trline"></div>':''}`).join('');
+    return `<div class="cov"><div class="top"><span class="noun">${esc(name)}</span>${head}<span class="cvx">▾</span></div>
+      <div class="tbrow">${badges}</div>
+      ${kind==='layer'?`<div class="covbar"><i style="width:${pct}%"></i></div>`:''}
+      <div class="covdetail">
+        <div class="trail">${trail}</div>
+        <div class="kv"><span>Source type</span><b>${esc(st?st.t:'—')}</b></div>
+        ${kind==='layer'?`<div class="kv"><span>Coverage</span><b class="num">${pct}% of AOI cells</b></div>`:''}
+        <div class="kv"><span>Confidence score</span><b class="num">${c.confidence==null?'—':c.confidence}</b></div>
+        <div class="kv"><span>As of</span><b class="num">${esc(String(c.freshness||c.assessed_at||'—').slice(0,10))}</b></div>
+        ${(c.gaps||[]).length?`<div class="gaps">${(c.gaps||[]).map(g=>`<div class="g">${esc(g)}</div>`).join('')}</div>`:''}
+      </div></div>`;}).join("");
+  $("cov").querySelectorAll('.cov').forEach(el=>{const top=el.querySelector('.top');
+    if(top&&el.querySelector('.covdetail')) top.onclick=()=>el.classList.toggle('open');});
 }
 function fitView(bbox){
   const [w,s,e,n]=bbox, lon=(w+e)/2, lat=(s+n)/2;

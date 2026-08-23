@@ -22,8 +22,12 @@ import h3
 AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
 TENANT = os.environ.get("TENANT", "kmc")
 WORKSPACE = os.environ.get("WORKSPACE", f"ds:{TENANT}:city/workspace/{AOI_ID.rsplit('/', 1)[-1]}")
+# The Wave-1 baseline nouns (ADR-0060). geo.landcover dropped — it is superseded by cell.builtup/greencover
+# and carried no data, so it only ever showed as a misleading empty "authoritative" row.
 LAYERS = [s.strip() for s in os.environ.get(
-    "LAYERS", "geo.landcover,environment.lst_observation,cell.builtup,cell.greencover,cell.heat").split(",") if s.strip()]
+    "LAYERS", "environment.lst_observation,cell.builtup,cell.greencover,cell.heat,cell.rainfall,"
+              "cell.weather_forecast,cell.hydrology,geo.terrain,cell.buildings,geo.building,"
+              "geo.facility,demographics.population").split(",") if s.strip()]
 ASSESSED_AT = os.environ.get("ASSESSED_AT", "2025-06-01T00:00:00Z")
 CID = os.environ.get("AIROS_COMPONENT_ID", "ds:airawat:engine/coverage-qa")
 
@@ -31,6 +35,18 @@ CID = os.environ.get("AIROS_COMPONENT_ID", "ds:airawat:engine/coverage-qa")
 OPEN_SOURCES = {"ds:airawat:ref/source/osm", "ds:airawat:ref/source/open-meteo",
                 "ds:airawat:ref/source/esa-worldcover", "ds:airawat:ref/source/openaq",
                 "ds:airawat:ref/source/cpcb"}
+
+# Origin source for a DERIVED layer when its `derived_from` lineage isn't stamped on the rows — so the trust
+# report always names where a layer's data ultimately came from (cell.heat → the Open-Meteo LST it interpolates).
+FALLBACK_SOURCE = {"cell.heat": "ds:airawat:ref/source/open-meteo",
+                   "cell.builtup": "ds:airawat:ref/source/esa-worldcover",
+                   "cell.greencover": "ds:airawat:ref/source/esa-worldcover",
+                   "cell.rainfall": "ds:airawat:ref/source/open-meteo",
+                   "cell.weather_forecast": "ds:airawat:ref/source/open-meteo"}
+
+# L0 INPUT nouns: raw point/observation feeds that are interpolated into cell layers. Cell-coverage % does not
+# describe them (a handful of sample points never "cover" the AOI cells) — the report shows them as inputs.
+INPUT_NOUNS = {"environment.lst_observation"}
 
 
 def _call(path, body):
@@ -142,16 +158,23 @@ def main():
         conf = round(sum(confs) / len(confs), 2) if confs else None
         fresh = max((o.get("observed_at") for o in objs if o.get("observed_at")), default=None)
         authority, srcs, syn_gap = _authority(objs)
+        if not objs:
+            authority = None                                # an EMPTY layer is 'no data', never a default 'authoritative'
         source_ref = sorted(srcs)[0] if srcs else None
         via = None
-        if not source_ref:                                  # a derived layer: trace its source through lineage
-            source_ref, via = _lineage_source(objs)
+        if not source_ref:                                  # a derived layer: trace its source through lineage,
+            source_ref, via = _lineage_source(objs)          # then fall back to the known origin if it isn't stamped
+        if not source_ref and objs:
+            source_ref = FALLBACK_SOURCE.get(noun)
+            if source_ref: via = via or "origin"
         gaps = []
         if syn_gap:
             gaps.append(syn_gap)
         if via:
             gaps.append(f"source inherited via {via} (derived layer)")
-        if total and len(covered) < total:
+        if noun in INPUT_NOUNS:
+            gaps.append("input feed (sample points) — interpolated into the cell layers")
+        elif total and len(covered) < total:
             gaps.append(f"{total - len(covered)}/{total} AOI cells uncovered")
         if source_ref == "ds:airawat:ref/source/open-meteo":
             gaps.append("coarse source (~11km) — intra-city variation limited")
