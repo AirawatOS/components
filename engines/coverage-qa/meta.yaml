@@ -10,7 +10,11 @@ provider: ds:airawat:developer
 display_name: Coverage & Trust (QA)
 entrypoint: run.py
 confinement_min: L1
-reads: [space.aoi, geo.landcover, environment.lst_observation, cell.builtup, cell.greencover, cell.heat]
+# reads MUST list every noun run.py assesses (LAYERS) — the steward grant is built from these scopes, so any
+# undeclared read is refused (403) at run time. Keep this in lock-step with LAYERS in run.py.
+# NB: ONE line — the manifest parser does not handle a multi-line [ ... ] flow sequence (it reads only the
+# first line, so a wrapped list is mis-parsed as a single ungoverned schema and certify 422s).
+reads: [space.aoi, geo.landcover, environment.lst_observation, cell.builtup, cell.greencover, cell.heat, cell.rainfall, cell.weather_forecast, cell.hydrology, geo.terrain, cell.buildings, geo.building, geo.facility, geo.osm_feature, demographics.population]
 writes: [city.coverage]
 scopes:
   - { verb: read,  scope: space.aoi }
@@ -19,4 +23,13 @@ scopes:
   - { verb: read,  scope: cell.builtup }
   - { verb: read,  scope: cell.greencover }
   - { verb: read,  scope: cell.heat }
+  - { verb: read,  scope: cell.rainfall }
+  - { verb: read,  scope: cell.weather_forecast }
+  - { verb: read,  scope: cell.hydrology }
+  - { verb: read,  scope: geo.terrain }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: read,  scope: geo.building }
+  - { verb: read,  scope: geo.facility }
+  - { verb: read,  scope: geo.osm_feature }
+  - { verb: read,  scope: demographics.population }
   - { verb: write, scope: city.coverage }

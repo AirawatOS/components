@@ -167,13 +167,27 @@ def place(component_dir, run_token, env=None, *, label=""):
         cmd += ["--network", RUNTIME_NETWORK]
     else:                                                # dev (Docker Desktop): reach the host loopback broker
         cmd += ["--add-host", "host.docker.internal:host-gateway"]
-    cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro",
-            "-e", f"AIRAWAT_API={CONTAINER_BROKER_URL}", "-e", f"RUN_TOKEN={run_token}"]
-    for k, v in {**env, **secret_env}.items():           # config + materialised secrets → container env only
-        cmd += ["-e", f"{k}={v}"]
-    cmd += [image, "python", f"/drivers/{entry}"]
+    cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro"]
+    # ALL env (broker + config + MATERIALISED SECRETS) goes via a private --env-file, NEVER `-e VALUE`: an
+    # argv value leaks into `docker inspect`, `ps`, and any subprocess exception/log (e.g. TimeoutExpired). The
+    # file is 0600, in the manager's own FS, and unlinked in `finally`. (Values must be single-line — API keys
+    # / the GEE service-account JSON already are.)
+    import tempfile as _tf
+    allenv = {"AIRAWAT_API": CONTAINER_BROKER_URL, "RUN_TOKEN": run_token, **env, **secret_env}
+    ef = _tf.NamedTemporaryFile("w", prefix="airawat-run-", suffix=".env", delete=False)
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
-    except FileNotFoundError:
-        return 89, "REFUSED: docker not available to place a container runtime"
-    return p.returncode, (p.stdout or "") + (p.stderr or "")
+        for k, v in allenv.items():
+            ef.write(f"{k}={v}\n")
+        ef.close()
+        os.chmod(ef.name, 0o600)
+        cmd += ["--env-file", ef.name, image, "python", f"/drivers/{entry}"]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
+        except FileNotFoundError:
+            return 89, "REFUSED: docker not available to place a container runtime"
+        except subprocess.TimeoutExpired:
+            return 124, f"REFUSED: run exceeded LAUNCH_TIMEOUT ({TIMEOUT}s) — bound the work or raise the cap"
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+    finally:
+        try: os.unlink(ef.name)
+        except OSError: pass
