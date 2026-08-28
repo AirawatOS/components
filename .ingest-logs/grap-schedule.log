@@ -2,6 +2,20 @@
 grap-schedule: unchanged (root sha2-256:1c1d579f14107…) — no new version
 
 ### engines/embed-chunks rc=0
-embedded 0 new chunk(s) with model 'bge-m3' (dim 1024); 1542 already current.
+all 2127 chunk(s) already embedded.
 
-### engines/rule-extract EXCEPTION Command '['python3', '/Users/manishsv/Documents/Projects/Airawat/components/engines/rule-extract/run.py']' timed out after 600 seconds — pipeline stopped
+### engines/rule-extract rc=1
+chars 10400-11400: 0 rule(s) extracted + cited
+  chars 24800-25800: 0 rule(s) extracted + cited
+  chars 20800-21800: 0 rule(s) extracted + cited
+  chars 8800-9800: 0 rule(s) extracted + cited
+  chars 25600-26056: 0 rule(s) extracted + cited
+  chars 4000-5000: 0 rule(s) extracted + cited
+Traceback (most recent call last):
+  File "/Users/manishsv/Documents/Projects/Airawat/components/engines/rule-extract/run.py", line 148, in <module>
+    raise SystemExit(main())
+  File "/Users/manishsv/Documents/Projects/Airawat/components/engines/rule-extract/run.py", line 116, in main
+    rtype = (r.get("rule_type") or "").lower()
+AttributeError: 'int' object has no attribute 'get'
+
+### engines/rule-extract FAILED (rc=1) — pipeline stopped

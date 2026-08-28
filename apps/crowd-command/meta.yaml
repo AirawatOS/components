@@ -4,7 +4,7 @@
 # simulated scenarios (baseline / Ramkund crush) via the host bridge. Reads only through /bridge/query.
 component_id: ds:airawatdeveloper:app/crowd-command
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawatdeveloper:developer
 display_name: Crowd Command
 entrypoint: index.html

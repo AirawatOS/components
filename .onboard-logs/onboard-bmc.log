@@ -1,0 +1,11 @@
+City Baseline · AOI 'Greater Mumbai' (ds:bmc:space/aoi/greater-mumbai) · workspace ds:bmc:city/workspace/greater-mumbai
+
+running baseline pipeline:
+  [ok  ] land cover → built + green (Dynamic World):   nothing to do — all cells already indexed
+  [ok  ] acquire heat (Open-Meteo): RESULT: {"mode": "openmeteo", "written": 36, "source_ref": "ds:airawat:ref/source/open-meteo"}
+  [ok  ] index → cell.heat: indexed 8761 cell.heat cells from 36 environment.lst_observation features (method=idw, res=9); each carries derived_from
+  [ok  ] terrain (Copernicus DEM):   nothing to do — all cells already indexed
+  [ok  ] assess coverage & trust: wrote 5 city.coverage records — the baseline's trust report for ds:bmc:city/workspace/greater-mumbai
+
+✓ baseline ready — 5/5 steps · workspace → L1 Baseline · notified user://bmc/bmc-admin
+RESULT: {"workspace": "ds:bmc:city/workspace/greater-mumbai", "maturity": 1, "steps_ok": 5, "notified": "user://bmc/bmc-admin"}
