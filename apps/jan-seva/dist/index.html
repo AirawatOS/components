@@ -1,0 +1,91 @@
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
+  header{padding:16px 20px;background:#161b22;border-bottom:1px solid #21262d;font-weight:600;font-size:17px;display:flex;align-items:center;gap:8px}
+  main{max-width:660px;margin:0 auto;padding:18px}
+  .card{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:16px;margin:12px 0}
+  .btn{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:9px 15px;cursor:pointer;font-size:14px;font-weight:500}
+  .btn:disabled{opacity:.5}
+  .btn.ghost{background:#21262d;color:#e6edf3}
+  input,textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:10px;margin:6px 0;font:inherit}
+  .muted{color:#8b949e;font-size:13px}
+  .pill{display:inline-block;background:#21262d;border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
+  .svc{border-top:1px solid #21262d;padding:12px 0}.svc:first-child{border-top:0}
+  .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .ok{color:#3fb950}.err{color:#f85149}
+  h3{margin:.2em 0}
+</style>
+<header>🏛️ Jan Seva <span class="muted" style="font-weight:400">· Citizen Services</span></header>
+<main>
+  <div class="card">
+    <div class="row"><input id="q" placeholder="Search a service — e.g. complaint, water"/><button class="btn" id="go">Search</button></div>
+    <div id="results" class="muted">Type a service and search — services are offered by your city agencies.</div>
+  </div>
+  <div id="detail"></div>
+  <div class="card">
+    <div class="row"><b>My requests</b><button class="btn ghost" id="refresh">Refresh</button></div>
+    <div id="txns" class="muted" style="margin-top:8px">—</div>
+  </div>
+</main>
+<script>
+const api = (p, b) => fetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP = 'jan-seva';
+let CATALOG = [], SEL = null;
+
+async function search(){
+  const r = await api('/bridge/service-search', {query: document.getElementById('q').value});
+  CATALOG = (r.message || {}).catalog || [];
+  const el = document.getElementById('results');
+  el.innerHTML = CATALOG.length ? CATALOG.map((o,i)=>
+    `<div class="svc"><div class="row"><div><b>${esc(o.title)}</b><span class="pill">${esc(o.domain)}</span><br>
+       <span class="muted">${esc(o.description||'')}</span></div>
+       <button class="btn ghost" onclick="pick(${i})">Open</button></div></div>`).join('')
+    : '<span class="muted">No services found.</span>';
+}
+function pick(i){
+  SEL = CATALOG[i];
+  const canQuote = (SEL.interaction||[]).includes('select');
+  document.getElementById('detail').innerHTML =
+    `<div class="card"><h3>${esc(SEL.title)}</h3>
+       <div class="muted">provided by <b>${esc(SEL.tenant)}</b> · steps: ${(SEL.interaction||[]).join(' → ')}</div>
+       ${canQuote?'<button class="btn ghost" style="margin-top:8px" onclick="quote()">Get fee quote</button>':''}
+       <div id="quote" class="muted"></div>
+       <textarea id="msg" rows="3" placeholder="Describe your request (e.g. garbage uncollected at ward 5 for 3 days)"></textarea>
+       <button class="btn" id="submit" onclick="fileIt()">Consent &amp; Submit</button>
+       <div id="out" class="muted" style="margin-top:8px"></div></div>`;
+  document.getElementById('detail').scrollIntoView({behavior:'smooth'});
+}
+async function quote(){
+  const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id});
+  const q = (r.message||{}).quote;
+  document.getElementById('quote').innerHTML = q && q.amount
+    ? `Fee: <b>₹${q.amount} ${esc(q.currency)}</b> (${q.breakdown.map(b=>esc(b.item)+' ₹'+b.amount).join(', ')})`
+    : 'No fee for this service.';
+}
+async function fileIt(){
+  const out = document.getElementById('out'), btn = document.getElementById('submit');
+  btn.disabled = true; out.textContent = 'Requesting your consent…';
+  await api('/bridge/service-consent', {app_id:APP, service_id:SEL.service_id, provider:SEL.tenant, expires_at:'2027-01-01T00:00:00Z'});
+  out.textContent = 'Submitting to ' + SEL.tenant + '…';
+  const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{description:document.getElementById('msg').value}});
+  const m = r.message || {};
+  out.innerHTML = m.reference
+    ? `<span class="ok">✓ Submitted.</span> Reference <b>${esc(m.reference)}</b> — ${esc(SEL.tenant)} has your request.`
+    : `<span class="err">✗ ${esc(r.error||'could not submit')}</span>`;
+  btn.disabled = false; track();
+}
+async function track(){
+  const d = await api('/bridge/service-transactions', {});
+  const t = (d.transactions || []).slice().reverse();
+  document.getElementById('txns').innerHTML = t.length
+    ? t.map(x=>`<div class="row" style="padding:4px 0"><span>${esc(x.service_id)}</span>
+        <span><span class="pill">${esc(x.status)}</span> ${x.case?'<span class="muted">'+esc(x.case.split('/').pop())+'</span>':''}</span></div>`).join('')
+    : '<span class="muted">No requests yet.</span>';
+}
+document.getElementById('go').onclick = search;
+document.getElementById('q').addEventListener('keydown', e=>{if(e.key==='Enter') search();});
+document.getElementById('refresh').onclick = track;
+track();
+</script>

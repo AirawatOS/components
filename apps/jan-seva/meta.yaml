@@ -1,0 +1,15 @@
+# Jan Seva — Citizen Services (kind=app). A unified citizen front door (a BAP, ADR-0067): discover civic
+# services across agencies, apply (file a complaint), and track to resolution. It writes only the citizen's
+# CONSENT; every application is fulfilled + owned by the PROVIDER agency (data-at-source). No drivers, no
+# engines — the intelligence lives at each agency; Jan Seva orchestrates the interaction via the app-host
+# service bridges (search / select / consent / route / transactions).
+component_id: ds:airawatdeveloper:app/jan-seva
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Jan Seva — Citizen Services
+entrypoint: index.html
+required_schemas: [network.service_offering, platform.case, governance.consent]
+writes: [governance.consent]
+sandboxed: true
+roles: [civic.resident]
