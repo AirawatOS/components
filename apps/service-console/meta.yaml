@@ -1,0 +1,14 @@
+# Service Console (kind=app) — manage the ADR-0067 service directory. Role-aware: an AGENCY admin manages
+# its OWN services (publish / update / retire); the NETWORK STEWARD oversees ALL (suspend / reinstate /
+# retire) for directory governance. Talks only to the app-host service-offering bridges (which forward the
+# signed-in admin/steward token; the network enforces authority). No registry writes of its own.
+component_id: ds:airawatdeveloper:app/service-console
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Service Console
+entrypoint: index.html
+required_schemas: [network.service_offering]
+writes: []
+sandboxed: true
+roles: [platform.tenant-admin, platform.steward]

@@ -5,7 +5,7 @@
 # service bridges (search / select / consent / route / transactions).
 component_id: ds:airawatdeveloper:app/jan-seva
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawatdeveloper:developer
 display_name: Jan Seva — Citizen Services
 entrypoint: index.html
