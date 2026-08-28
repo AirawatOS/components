@@ -11,7 +11,7 @@ profile:        earth-observation
 analytics_tier: descriptive                 # acquire/observe the world (satellite, raster) → raw facts
 display_name:   Earth Observation (satellite · raster · Google Earth Engine)
 image:          manishsv/airawatos-runtime-earth-observation:0.1.0
-image_digest:   sha256:0ea3541eefd6831d43f7ce40c65b0af16aa0b5d34fdbf3d00d22bbf88fbef6b3   # CERTIFIED image content id (launcher runs only this)
+image_digest:   sha256:7515d30fb17706ab10e408c3527709e246879b21e82fab3aba78d27d39b7f599   # CERTIFIED image content id (launcher runs only this)
 provides:       [earthengine-api, google-auth, rasterio, numpy, scipy, shapely, pyproj, earthaccess, h3]
 isolation:      shared                       # per-profile shared runner (first-party); a tenant Clean Room is L3+
 confidential:   false

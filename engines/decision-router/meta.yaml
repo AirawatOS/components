@@ -6,11 +6,15 @@
 # Domain-agnostic: routes ANY recommendation, not just air quality. Idempotent (deterministic case/task ids).
 component_id: ds:airawat:engine/decision-router
 kind: engine
-version: 0.1.0
+version: 0.4.0
 provider: ds:airawat:developer
 display_name: Decision Router (recommendation → inbox)
 entrypoint: run.py
 confinement_min: L1
+# DECIDER: the role (or user) the decide-task is addressed to — set per install so each solution routes to
+# its own authority (e.g. role://<tenant>/urban.pollution-control-officer for Air Intelligence). Injected as
+# env at run; defaults to role://kmc/urban.disaster-officer if unset.
+config: [DECIDER]
 reads: [governance.recommendation, platform.task]
 writes: [platform.case, platform.task, platform.inbox_item]
 scopes:

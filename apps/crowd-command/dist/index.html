@@ -1,0 +1,256 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crowd Command</title>
+<style>
+  :root{--bg:#0a1420;--panel:#0e1c2a;--edge:#1e3448;--edge2:#2b4a63;--ink:#e6eef6;--dim:#8aa0b4;--muted:#5f778c;
+        --accent:#38bdf8;--ok:#26a65b;--warn:#e6a817;--danger:#e2603a;--crit:#e5484d;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+  #app{display:grid;grid-template-columns:1fr 372px;grid-template-rows:52px 1fr;height:100vh}
+  header{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:0 16px;background:linear-gradient(90deg,#0c1a28,#0e1c2a);border-bottom:1px solid var(--edge)}
+  header .t{font-weight:700;font-size:15px;letter-spacing:.2px}
+  header .sub{color:var(--dim);font-size:12px}
+  header .sim{margin-left:auto;font-size:11px;color:#04121e;background:var(--warn);padding:3px 9px;border-radius:20px;font-weight:700;letter-spacing:.3px}
+  #mapwrap{position:relative;overflow:hidden}
+  #map{position:absolute;inset:0}
+  #mapload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim)}
+  aside{background:var(--panel);border-left:1px solid var(--edge);overflow-y:auto;padding:14px}
+  .card{background:#0c1826;border:1px solid var(--edge);border-radius:11px;padding:12px 13px;margin-bottom:12px}
+  .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:7px}
+  .stat{display:flex;justify-content:space-between;align-items:baseline;margin:3px 0}
+  .stat b{font-size:19px;font-variant-numeric:tabular-nums}
+  .chip{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .chip.normal{background:#123a25;color:#5fd08a}.chip.busy{background:#3a3410;color:#e6c84a}
+  .chip.caution{background:#3d2c10;color:#f0a53c}.chip.danger{background:#3d1e14;color:#f0805a}
+  .chip.critical{background:#3d1418;color:#ff6b6b}
+  .alert{display:flex;gap:9px;align-items:center;padding:7px 9px;border-radius:8px;background:#180f10;border:1px solid #3a1a1c;margin-bottom:6px}
+  .alert .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .rec .title{font-size:14.5px;font-weight:700;margin-bottom:6px;line-height:1.3}
+  .rec .sum{font-size:12.5px;color:var(--dim);margin-bottom:9px}
+  .rec ol{margin:0 0 10px 0;padding-left:18px}
+  .rec li{font-size:12.5px;margin:4px 0}
+  .rec .cite{font-size:11px;color:var(--muted);border-top:1px dashed var(--edge);padding-top:7px}
+  .btn{width:100%;padding:10px;border:none;border-radius:9px;background:var(--accent);color:#04121e;font-weight:700;font-size:13px;cursor:pointer;margin-top:4px}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent;border:1px solid var(--edge2);color:var(--ink)}
+  .admitted{background:#0f2a1a;border:1px solid #1f5836;color:#7fe0a3;border-radius:9px;padding:9px 11px;font-size:12.5px;margin-top:6px}
+  footer{grid-column:1/3;position:absolute;left:0;right:372px;bottom:0;display:flex;align-items:center;gap:14px;
+         padding:10px 16px;background:#0b1723e8;border-top:1px solid var(--edge);backdrop-filter:blur(6px)}
+  footer .grp{display:flex;align-items:center;gap:8px}
+  footer .scen{font-size:11px;color:var(--muted);margin-right:2px}
+  .sbtn{padding:6px 11px;border:1px solid var(--edge2);border-radius:8px;background:#0e1f2e;color:var(--ink);cursor:pointer;font-size:12px}
+  .sbtn.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .sbtn.crit.on{border-color:var(--crit);box-shadow:inset 0 0 0 1px var(--crit);color:#ff8a8a}
+  #play{width:32px;height:32px;border-radius:50%;border:none;background:var(--accent);color:#04121e;font-size:14px;cursor:pointer;flex:none}
+  #trange{flex:1;accent-color:var(--accent);cursor:pointer;min-width:120px}
+  .tnow{min-width:118px;text-align:right;font-variant-numeric:tabular-nums}
+  .tnow b{display:block;font-size:13px}.tnow span{font-size:10.5px;color:var(--muted)}
+  .legend{position:absolute;left:12px;bottom:70px;background:#0c1826d0;border:1px solid var(--edge);border-radius:9px;padding:8px 10px;font-size:11px}
+  .legend .row{display:flex;align-items:center;gap:7px;margin:2px 0}
+  .legend .sw{width:22px;height:9px;border-radius:2px}
+  .busy{position:absolute;top:60px;left:50%;transform:translateX(-50%);background:#0c1826d8;border:1px solid var(--edge);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--dim);display:none}
+</style>
+<div id="app">
+  <header>
+    <div class="t">🛡 Crowd Command</div>
+    <div class="sub" id="hsub">Nashik–Trimbakeshwar · Kumbh</div>
+    <div class="sim">◉ SIMULATION</div>
+  </header>
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div id="mapload">loading the operations picture…</div>
+    <div class="busy" id="busy"></div>
+    <div class="legend" id="legend"></div>
+    <footer>
+      <button id="play" title="Play / pause">▶</button>
+      <input id="trange" type="range" min="0" max="0" step="1" value="0">
+      <div class="tnow"><b id="tnow">—</b><span id="tsub"></span></div>
+      <div class="grp"><span class="scen">Scenario</span>
+        <button class="sbtn on" id="scBase" data-s="baseline">Baseline peak day</button>
+        <button class="sbtn crit" id="scCrush" data-s="ramkund-crush">Ramkund crush</button>
+      </div>
+    </footer>
+  </div>
+  <aside id="side"></aside>
+</div>
+<script src="./vendor/deck-bundle.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let APPID="crowd-command";
+async function bridge(path,body){ const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000}); return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return[];} }
+
+// ---- crowd density → colour band ----------------------------------------------------------------
+function bandName(d){ return d>=6?"critical":d>=4.5?"danger":d>=3?"caution":d>=1.5?"busy":"normal"; }
+function bandColor(d){ return d>=6?[190,40,55]:d>=4.5?[229,72,77]:d>=3?[240,120,50]:d>=1.5?[230,180,30]:[46,160,90]; }
+const GHATS=[{name:"Ramkund (Nashik)",c:[73.7897,19.9993]},{name:"Kushavarta (Trimbak.)",c:[73.5310,19.9320]}];
+
+let DATA={aoi:null,frames:[],dens:{},crush:{},recs:[],roads:[]}, tIdx=0, tPlaying=false, tTimer=null, admitted=false, scenario="baseline", deckgl=null, view=null;
+
+async function tileImage(x,y,z){ const url=`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  const d=await bridge("/bridge/fetch",{app_id:APPID,url}); if(!d||!d.body_b64) return null;
+  const img=new Image(); img.src=`data:${d.content_type||"image/png"};base64,${d.body_b64}`; try{await img.decode();}catch(e){} return img; }
+function basemapLayer(){ const {TileLayer,BitmapLayer}=deck;
+  return new TileLayer({id:"bm",tileSize:256,minZoom:0,maxZoom:19,maxRequests:6,getTileData:({index})=>tileImage(index.x,index.y,index.z),
+    renderSubLayers:p=>{const{boundingBox:b}=p.tile;return new BitmapLayer({id:p.id,image:p.data,opacity:0.72,bounds:[b[0][0],b[0][1],b[1][0],b[1][1]]});}}); }
+
+function fitView(bb){ if(!bb)return{longitude:73.66,latitude:19.97,zoom:10.4,pitch:0,bearing:0};
+  const w=bb[2]-bb[0],h=bb[3]-bb[1],z=Math.min(13,Math.max(9,Math.log2(360/Math.max(w,h))-0.2));
+  return{longitude:(bb[0]+bb[2])/2,latitude:(bb[1]+bb[3])/2,zoom:z,pitch:0,bearing:0}; }
+
+async function load(){
+  const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"crowd-command"})); APPID=cfg.app_id||"crowd-command";
+  const aois=await q("space.aoi"); DATA.aoi=aois[0]||{bbox:[73.48,19.85,73.88,20.08]};
+  await reloadCrowd();
+  DATA.roads=(await q("geo.osm_feature")).map(o=>({path:((o.geometry||{}).coordinates)||[]})).filter(p=>Array.isArray(p.path)&&p.path.length>1).slice(0,9000);
+  view=fitView(DATA.aoi.bbox);
+  deckgl=new deck.Deck({parent:$("map"),initialViewState:view,controller:true,useDevicePixels:false,
+    views:[new deck.MapView({repeat:false})],onViewStateChange:({viewState})=>{view=viewState;},
+    onHover:info=>tip(info),getCursor:({isDragging})=>isDragging?"grabbing":"grab",layers:[]});
+  $("mapload").remove(); drawLegend(); render(); side();
+  $("play").onclick=()=>tPlaying?stop():play();
+  $("trange").oninput=e=>{stop();tIdx=+e.target.value;render();side();};
+  document.querySelectorAll(".sbtn").forEach(b=>b.onclick=()=>runScenario(b.dataset.s));
+}
+
+async function reloadCrowd(){
+  const dens=await q("cell.crowd_density"), crush=await q("cell.crush_risk"), recs=await q("governance.recommendation");
+  DATA.dens={}; DATA.crush={};
+  const fr=new Set();
+  for(const o of dens){ const t=o.observed_at; fr.add(t); (DATA.dens[t]=DATA.dens[t]||[]).push(o); }
+  for(const o of crush){ const t=o.observed_at; (DATA.crush[t]=DATA.crush[t]||[]).push(o); }
+  DATA.frames=[...fr].sort();
+  DATA.recs=recs.filter(r=>String(r.id).includes("crowd")).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  tIdx=DATA.frames.findIndex(t=>t.slice(11,13)==="13"); if(tIdx<0) tIdx=Math.max(0,DATA.frames.length-1);
+  $("trange").max=Math.max(0,DATA.frames.length-1); $("trange").value=tIdx;
+}
+
+function curFrame(){ return DATA.frames[tIdx]; }
+function frameStats(t){ const cells=DATA.dens[t]||[]; let mx=0,hc=0; for(const c of cells){ mx=Math.max(mx,c.density_sqm||0); hc+=c.headcount||0; } return {mx,hc,n:cells.length}; }
+
+function render(){
+  if(!deckgl) return;
+  const t=curFrame(), cells=DATA.dens[t]||[], crush=DATA.crush[t]||[];
+  const layers=[ basemapLayer(),
+    new deck.PathLayer({id:"roads",data:DATA.roads,widthUnits:"pixels",getWidth:1,widthMinPixels:0.6,getColor:[120,140,160,90],getPath:p=>p.path}),
+    new deck.H3HexagonLayer({id:"crowd",data:cells,pickable:true,filled:true,stroked:false,extruded:false,
+      getHexagon:c=>c.space.h3_id,getFillColor:c=>[...bandColor(c.density_sqm),205],opacity:1,
+      updateTriggers:{getFillColor:[t]}}),
+    new deck.PolygonLayer({id:"crush",data:crush,stroked:true,filled:false,getPolygon:c=>c.space.boundary,
+      getLineColor:c=>c.density_sqm>=6?[255,80,90,255]:[245,150,60,235],lineWidthUnits:"pixels",getLineWidth:2.4,
+      updateTriggers:{getLineColor:[t]}}),
+    new deck.ScatterplotLayer({id:"ghats",data:GHATS,getPosition:g=>g.c,getRadius:7,radiusUnits:"pixels",
+      getFillColor:[56,189,248,255],getLineColor:[255,255,255,255],lineWidthMinPixels:1.5,stroked:true}),
+    new deck.TextLayer({id:"glab",data:GHATS,getPosition:g=>g.c,getText:g=>"  "+g.name.split(" ")[0],
+      getSize:12,getColor:[230,240,248,255],getTextAnchor:"start",getAlignmentBaseline:"center",fontWeight:700,
+      background:true,getBackgroundColor:[10,20,32,180],backgroundPadding:[4,2]})];
+  deckgl.setProps({layers});
+  const {mx}=frameStats(t);
+  $("tnow").textContent=t?t.slice(11,16)+" IST":"—";
+  $("tsub").textContent=`frame ${tIdx+1}/${DATA.frames.length} · peak ${mx.toFixed(1)}/m²`;
+}
+
+function play(){ if(!DATA.frames.length)return; tPlaying=true; $("play").textContent="⏸";
+  tTimer=setInterval(()=>{ tIdx=(tIdx+1)%DATA.frames.length; $("trange").value=tIdx; render(); side(); },700); }
+function stop(){ tPlaying=false; if(tTimer){clearInterval(tTimer);tTimer=null;} $("play").textContent="▶"; }
+
+function side(){
+  const t=curFrame(), {mx,hc,n}=frameStats(t), bn=bandName(mx), crush=DATA.crush[t]||[];
+  const sites={}; for(const c of crush){ const s=c.site||"?"; sites[s]=Math.max(sites[s]||0,c.density_sqm); }
+  const rec=DATA.recs[DATA.recs.length-1];
+  const acts=rec?String(rec.proposed_action||"").split(" · ").map(s=>s.replace(/^\d+\)\s*/,"")).filter(Boolean):[];
+  $("side").innerHTML=`
+    <div class="card"><div class="lbl">Situation · ${t?t.slice(11,16)+" IST":""}</div>
+      <div class="stat"><span>Peak density</span><b>${mx.toFixed(1)} <small style="font-size:12px;color:var(--dim)">/m²</small></b></div>
+      <div class="stat"><span>Status</span><span class="chip ${bn}">${bn.toUpperCase()}</span></div>
+      <div class="stat"><span>Crowd present (est.)</span><b>${(hc/1e6).toFixed(2)}M</b></div>
+      <div class="stat"><span>Active cells</span><b>${n}</b></div>
+    </div>
+    <div class="card"><div class="lbl">Crush-risk alerts (${crush.length} cells)</div>
+      ${Object.keys(sites).length?Object.entries(sites).map(([s,d])=>`<div class="alert"><span class="dot" style="background:${d>=6?'#ff5a5f':'#f0a53c'}"></span><div><b>${s}</b> — ${d.toFixed(1)}/m² <span class="chip ${bandName(d)}" style="margin-left:4px">${bandName(d)}</span></div></div>`).join(""):'<div style="color:var(--muted);font-size:12.5px">No cells in the danger band this frame.</div>'}
+    </div>
+    ${rec?`<div class="card rec">
+      <div class="lbl">🧠 Recommendation · crowd-safety advisor</div>
+      <div class="title">${esc(rec.title)}</div>
+      <div class="sum">${esc(rec.summary)}</div>
+      <ol>${acts.map(a=>`<li>${esc(a)}</li>`).join("")}</ol>
+      <div class="cite">Cited to rule <code>${esc(String((rec.citation||{}).rule||"—").split("/").pop())}</code> · ${(rec.for_facts||{}).cells_in_band||0} evidence cells · confidence ${Math.round((rec.confidence||0)*100)}%</div>
+      ${admitted?`<div class="admitted">✓ ADMITTED by Incident Commander — dispatched to Transport Control, Medical / 108, Ground Marshals</div>`
+        :`<button class="btn" id="admit">✓ Admit &amp; Dispatch</button><button class="btn ghost" id="reject" style="margin-top:6px">Hold / revise</button>`}
+    </div>`:`<div class="card"><div class="lbl">Recommendation</div><div style="color:var(--muted);font-size:12.5px">Run a scenario to generate a recommendation.</div></div>`}
+    <div style="color:var(--muted);font-size:11px;text-align:center">All data simulated · decision spine: AI recommends, commander admits</div>`;
+  const ab=$("admit"); if(ab) ab.onclick=async()=>{ ab.textContent="Dispatching…"; ab.disabled=true;
+    try{ const r=await admit(rec); admitted=!!(r&&r.dispatched&&r.dispatched.length); }catch(e){ admitted=false; }
+    side(); };
+  const rb=$("reject"); if(rb) rb.onclick=()=>{admitted=false;side();};
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function tip(info){ /* reserved for cell hover */ }
+
+function drawLegend(){ const bands=[["normal","<1.5"],["busy","1.5–3"],["caution","3–4.5"],["danger","4.5–6"],["critical",">6"]];
+  $("legend").innerHTML='<div class="lbl" style="margin-bottom:5px">Crowd density · people/m²</div>'+
+    bands.map(([b,r])=>`<div class="row"><span class="sw" style="background:rgb(${bandColor(b==="normal"?1:b==="busy"?2:b==="caution"?4:b==="danger"?5:7).join(",")})"></span>${b} <span style="color:var(--muted);margin-left:auto">${r}</span></div>`).join(""); }
+
+// ---- the app OWNS its backend behaviour (ADR: no bespoke host code) --------------------------------
+// Reads/writes go through the GENERIC bridges: /bridge/run (fire a certified component in this tenant),
+// /bridge/save (write a governed object as the signed-in commander), /bridge/query (read).
+const CMP={sim:"ds:airawatdeveloper:driver/kumbh-crowd-sim",engine:"ds:airawatdeveloper:engine/crush-risk-engine",
+           advisor:"ds:airawatdeveloper:skill/crowd-safety-advisor"};
+async function save(o){ return bridge("/bridge/save",{app_id:APPID,id:o.id,object:o}); }
+async function sessionInfo(){ try{ return await (await fetch("/session")).json(); }catch(e){ return {}; } }
+
+// ADMIT: the incident commander admits a recommendation. The app writes the case, the tasks (fanned out to
+// responders + the connected transport SYSTEM), the inbox items for humans, and a governance.decision whose
+// evidence_manifest pins recommendation+rule+facts (a reconstructable receipt). Authority = the commander.
+async function admit(rec){
+  if(!rec) return {dispatched:[]};
+  const S=await sessionInfo(); const T=S.tenant||"nashik";
+  const sfx=Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+  const ts=new Date().toISOString().replace(/\.\d+Z$/,"Z");
+  const caseId=`ds:${T}:case/crowd-${sfx}`, decId=`ds:${T}:governance/decision/crowd-${sfx}`;
+  const ruleId=(rec.citation||{}).rule||`ds:${T}:governance/rule/crowd-crush-density-bands`;
+  const facts=(rec.evidence||[]).filter(x=>typeof x==="string");
+  await save({schema:"platform.case",id:caseId,tenant:T,status:"open",title:"Crowd-safety intervention · "+(rec.title||"Ramkund crush"),
+    opened_at:ts,opened_by:S.sub||"",current_step:"dispatch",service:"crowd-safety",subjects:[rec.id]});
+  const orders=[
+    ["mobility.transport-controller","Hold / stagger buses on the Ramkund routes to slow arrivals","system",`system://${T}/msrtc-scheduler`],
+    ["health.medical-responder","Pre-position 108 ambulances + medical teams at the ghat edge","human",`role://${T}/health.medical-responder`],
+    ["safety.ground-marshal","Meter inflow at the approach gates; surge marshals to the pinch-point","human",`role://${T}/safety.ground-marshal`]];
+  const dispatched=[];
+  for(const [role,action,kind,assignee] of orders){
+    const tid=`ds:${T}:task/${sfx}-${role.split(".").pop()}`;
+    await save({schema:"platform.task",id:tid,case:caseId,verb:"fulfil",title:action,status:"blocked",assignee,created_at:ts,tenant:T});
+    if(kind==="human"){
+      const iid=`ds:${T}:inbox/${sfx}-${role.split(".").pop()}`;
+      await save({schema:"platform.inbox_item",id:iid,ref:tid,actor:assignee,kind:"task",title:action,
+        body:"Ordered under crowd-safety decision "+decId,source:"crowd-safety-advisor",status:"unread",actions:["complete"],created_at:ts,tenant:T});
+    }
+    dispatched.push(tid);
+  }
+  const rationale="Basis for decision (reconstructable from the evidence manifest):\n"+
+    "• FACTS — "+(rec.summary||rec.title||"crush-risk snapshot")+" ("+facts.length+" cell fact(s) relied on).\n"+
+    "• RULE — applied governed threshold "+ruleId.split("/").pop()+" (crush band ≥6 people/m²).\n"+
+    "• RECOMMENDATION — "+(rec.title||"")+" [method="+(rec.method||"rule")+"].\n"+
+    "• DISCRETION — incident commander ADMITTED the graded intervention as recommended (no modification) and dispatched "+
+    dispatched.length+" order(s): "+orders.map(o=>o[1]).join("; ")+".";
+  await save({schema:"governance.decision",id:decId,tenant:T,case:caseId,task:dispatched[0]||caseId,outcome:"approved",
+    authority:S.sub||`role://${T}/safety.incident-commander`,decided_at:ts,rationale:rationale,
+    subjects:[rec.id],considered:[rec.id],evidence_manifest:[rec.id].concat(ruleId?[ruleId]:[],facts)});
+  return {decision:decId,case:caseId,dispatched};
+}
+
+// SCENARIO: fire the certified sensing chain in THIS tenant — sim (writes crowd density) → crush-risk engine
+// → advisor skill (writes the cited recommendation). Each runs confined under its own run-token via the broker.
+async function runScenario(s){
+  scenario=s; stop(); admitted=false;
+  document.querySelectorAll(".sbtn").forEach(b=>b.classList.toggle("on",b.dataset.s===s));
+  $("busy").style.display="block"; $("busy").textContent=`Running ${s==="ramkund-crush"?"Ramkund crush":"baseline"} scenario…`;
+  try{
+    await bridge("/bridge/run",{component:CMP.sim,env:{SCENARIO:s}});
+    await bridge("/bridge/run",{component:CMP.engine});
+    await bridge("/bridge/run",{component:CMP.advisor});
+  }catch(e){}
+  await reloadCrowd(); $("busy").style.display="none"; render(); side();
+}
+load();
+</script>

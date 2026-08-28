@@ -55,7 +55,8 @@
   .tl .by{color:var(--dim);font-size:12px} .tl .note{color:#a9b6c4;font-size:12px;font-style:italic;margin-top:2px}
   .sens{border:1px solid} .sens.public{color:#3fb950;border-color:#1a5a2e;background:#0f2417}
   .sens.internal{color:var(--accent);border-color:#2b3a4d;background:#16202e} .sens.sensitive{color:var(--gold);border-color:#6b5316;background:#241d0c}
-</style>
+  .btn.sm{padding:3px 9px;font-size:11.5px}.btn.danger{border-color:#5a2424;color:#e5484d}.btn.danger:hover{background:#2a1414;border-color:#e5484d}
+  </style>
 <header><h1>🌐 Airawat<b>Network</b></h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
 <div class="shell">
   <nav class="rail">
@@ -68,6 +69,7 @@
     <a class="ritem" data-v="participants">🔗 Directory<span class="rh">members</span></a>
     <div class="rgrp">Governance</div>
     <a class="ritem" data-v="requests">⚖️ Change Requests<span class="rh">propose → approve</span></a>
+    <a class="ritem" data-v="marketplace">🛒 Marketplace<span class="rh">catalog · lifecycle</span></a>
   </nav>
   <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
 </div>
@@ -85,7 +87,43 @@ function boot(){
   setView(VIEW);
 }
 function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
-function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,requests:requests}[VIEW]||specs)(); }
+function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,requests:requests,marketplace:marketplace}[VIEW]||specs)(); }
+
+// --- Marketplace: the Network Steward's catalog console (roll-up + lifecycle: deprecate / revoke) --------
+const KI={driver:'🔧',engine:'⚙️',skill:'🧠',agent:'🤖',app:'🖥️',solution:'📦',pipeline:'🔗',provider:'☁️'};
+async function marketplace(){
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
+  let d; try{ d=await jget('/bridge/catalog?kind=marketplace'); }catch(e){ W.innerHTML='<div class="empty">could not load the marketplace</div>'; return; }
+  const s=d.stats||{}, L=(d.listings||[]).slice().sort((a,b)=>String(a.component_id).localeCompare(String(b.component_id)));
+  const chips=Object.entries(s.by_kind||{}).map(([k,n])=>`<span class="chip">${KI[k]||''} ${esc(k)} · ${n}</span>`).join('');
+  const provs=Object.entries(s.by_provider||{}).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([p,n])=>`<span class="chip">${esc((p||'?').split(':').pop())} · ${n}</span>`).join('');
+  const st=s.by_status||{};
+  W.innerHTML=`<div class="lbl">Marketplace catalog</div>
+    <div class="hint">The certified-component catalog the standards body governs. A published (id, version) is immutable — republish requires a higher version. Lifecycle: <b>active</b> → <b>deprecated</b> (sunset) → <b>revoked</b> (pulled).</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 4px">
+      <div class="card" style="min-width:120px"><div class="muted" style="font-size:11px">TOTAL</div><div style="font-size:24px;font-weight:700">${s.total||0}</div></div>
+      <div class="card" style="min-width:120px"><div class="muted" style="font-size:11px">LIFECYCLE</div><div style="font-size:13px;margin-top:4px">🟢 ${st.active||0} active · 🟡 ${st.deprecated||0} deprecated · 🔴 ${st.revoked||0} revoked</div></div>
+    </div>
+    <div style="margin:8px 0"><span class="muted" style="font-size:11px">by kind:</span> ${chips}</div>
+    <div style="margin:8px 0 14px"><span class="muted" style="font-size:11px">top providers:</span> ${provs}</div>
+    <table><tr><th>component</th><th>kind</th><th>ver</th><th>status</th><th>published by</th><th></th></tr>
+    ${L.map(l=>{const status=l.status||'active';
+      const badge=status==='revoked'?'<span class="chip" style="color:#e5484d">revoked</span>':status==='deprecated'?`<span class="chip" style="color:#e5a23d">deprecated${l.sunset_at?' · sunset '+esc(l.sunset_at):''}</span>`:'<span class="chip" style="color:#5fd08a">active</span>';
+      const acts=status==='revoked'?'':`<button class="btn sm" data-dep="${esc(l.component_id)}">Deprecate</button> <button class="btn sm danger" data-rev="${esc(l.component_id)}">Revoke</button>`;
+      return `<tr><td class="mono">${esc(l.component_id.split(':').pop())}</td><td>${KI[l.kind]||''} ${esc(l.kind)}</td><td class="mono">${esc(l.version||'')}</td><td>${badge}</td><td class="muted">${esc((l.published_by||'—').split('/').pop())}</td><td style="text-align:right">${acts}</td></tr>`;}).join('')}
+    </table>`;
+  W.querySelectorAll('[data-rev]').forEach(b=>b.onclick=()=>governAct('revoke',b.dataset.rev));
+  W.querySelectorAll('[data-dep]').forEach(b=>b.onclick=()=>governAct('deprecate',b.dataset.dep));
+}
+async function governAct(action,cid){
+  const verb=action==='revoke'?'REVOKE (pull from the marketplace)':'DEPRECATE (sunset)';
+  const reason=prompt(verb+'\n\n'+cid+'\n\nReason (audited):','');
+  if(reason===null) return;
+  const body={component_id:cid,reason:reason};
+  if(action==='deprecate'){ const sup=prompt('Superseded by (optional component id):',''); if(sup)body.superseded_by=sup; }
+  const r=await jpost('/bridge/store-'+action,body);
+  if(r.ok) marketplace(); else alert('✗ '+action+' failed: '+(r.j&&(r.j.detail||r.j.error)||r.status));
+}
 
 // --- Participant Directory: the network's roster of admitted participants (left nav by kind + detail) --
 const PKIND={developer:'🛠️',vendor:'🏭',steward:'🏛️',operator:'⚙️',participant:'🔗'};

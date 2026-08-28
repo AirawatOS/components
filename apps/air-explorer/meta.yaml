@@ -9,4 +9,5 @@ display_name: Air Explorer
 entrypoint: index.html      # SPA entry inside the bundle
 bundle: dist                # the static bundle directory served under /apps/<id>/
 sandboxed: true             # third-party default → null-origin iframe + host-mediated calls
-required_schemas: [intelligence.analysis, intelligence.signal]
+required_schemas: [air.quality, air.hotspot, air.sensor_reading, governance.recommendation]
+roles: [urban.pollution-control-officer]   # the officer this workbench serves — installing it makes the role grantable in the tenant

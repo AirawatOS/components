@@ -1,0 +1,22 @@
+# An ANALYTICS engine (kind=engine, ADR-0060). Confined — its only I/O is the broker (NO egress: pure
+# computation over registry facts). It turns cell-level population into BUILDING-level population by
+# disaggregating each cell's demographics.population across the geo.building footprints inside it, weighted
+# by floor area (area_m2 x levels). Writes one geo.building_analytics per footprint. est_population is a
+# deterministic ESTIMATE, not a headcount — so this is derived analytics (ontology §54: deterministic
+# computation, not Intelligence), with prov.derived_from_refs pinning the exact inputs used.
+component_id: ds:airawat:engine/building-enrichment
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Building Enrichment (people per building)
+entrypoint: run.py
+confinement_min: L1
+# reads MUST list every noun run.py reads — the steward grant is built from these scopes, so any undeclared
+# read is refused (403) at run time. NB: ONE line — the manifest parser does not handle a multi-line [ ... ].
+reads: [space.aoi, geo.building, demographics.population]
+writes: [geo.building_analytics]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: geo.building }
+  - { verb: read,  scope: demographics.population }
+  - { verb: write, scope: geo.building_analytics }

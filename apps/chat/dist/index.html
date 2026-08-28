@@ -73,7 +73,7 @@ async function send(){
   try{
     const r=await fetch('/bridge/expert-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expert_id:EXPERT.component_id,message:msg,history:HIST})}).then(r=>r.json());
     if(r.error){ tip.innerHTML='<span class="err">'+esc(r.error)+'</span>'; }
-    else{ tip.innerHTML=fmt(r.answer)+sourcesHtml(r.sources); HIST.push({role:'assistant',content:r.answer}); FOOT.textContent=r.model?('answered by '+r.model+' · grounded'):''; }
+    else{ tip.innerHTML=fmt(r.answer)+sourcesHtml(r.sources); HIST.push({role:'assistant',content:r.answer}); FOOT.textContent=r.model?'grounded':''; }
   }catch(e){ tip.innerHTML='<span class="err">could not reach the expert ('+esc(e.message)+')</span>'; }
   SEND.disabled=false; scroll();
 }

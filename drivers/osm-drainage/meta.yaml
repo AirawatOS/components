@@ -1,0 +1,26 @@
+# osm-drainage driver — the DRAINAGE NETWORK (nalas / drains / canals / streams) for an AOI, the T2
+# flood-prediction input (flood-prediction.md). Sibling of osm-roads: same PBF/Overpass line-extraction, but
+# it matches OSM `waterway` ways instead of `highway`, and writes:
+#   geo.hydro_feature — one LineString per waterway way (deterministic natural-key id from the OSM id)
+#   cell.drainage     — drainage length + density per H3 cell (km of drain per km²) — the SINK-TERM the
+#                       flood-risk engine reads to discriminate DRAINED vs UNDRAINED low-lying land (T2).
+# Its only I/O is the broker: reads space.aoi, fetches Overpass (egress-gated) or a locally-uploaded PBF,
+# writes the two layers. Real OSM only — no synthetic fallback; fails loudly if the AOI is missing.
+component_id: ds:airawat:driver/osm-drainage
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: OSM Drainage (nalas/drains -> cell.drainage)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi]
+writes: [geo.hydro_feature, cell.drainage]
+egress:
+  - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-drainage (+https://airawat.org; contact@airawat.org)" }
+config:  [OSM_PBF_FILE_ID]
+sources:
+  - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: true, hint: "Regional OpenStreetMap extract (.osm.pbf). Uploaded once so every run reads drains locally instead of hitting Overpass." }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: geo.hydro_feature }
+  - { verb: write, scope: cell.drainage }

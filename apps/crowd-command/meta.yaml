@@ -1,0 +1,18 @@
+# Crowd-Safety Command Centre (kind=app) — the operations picture for a mass gathering (Kumbh). Renders the
+# live crowd-density heatmap + crush-risk alerts over the AOI, animates the peak-day timeline, and surfaces the
+# cited governance.recommendation for the incident commander to ADMIT. Includes a DEMO-CONTROL panel that fires
+# simulated scenarios (baseline / Ramkund crush) via the host bridge. Reads only through /bridge/query.
+component_id: ds:airawatdeveloper:app/crowd-command
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Crowd Command
+entrypoint: index.html
+required_schemas: [space.aoi, cell.crowd_density, cell.crush_risk, governance.recommendation, geo.osm_feature, geo.facility, viz.layer]
+writes: [governance.decision, platform.case, platform.task, platform.inbox_item]
+sandboxed: true
+roles: [safety.incident-commander]
+egress:
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/crowd-command (+https://airawat.org)" }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: tile.openstreetmap.org, provides: [viz.basemap] }

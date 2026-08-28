@@ -1,16 +1,18 @@
-# flood-risk ENGINE (kind=engine, INT-0002 PREDICT). Confined — broker only. Reads the real terrain
-# (geo.terrain: elevation, slope) and a rainfall FORECAST scenario, and writes a predicted risk.flood
-# score (0..1) + level per cell. The output is a PREDICTION (method=model), carrying its drivers so it is
-# transparent + re-derivable; it is NOT an observation. The Flood Advisory skill applies flood rules to it.
+# flood-risk ENGINE (kind=engine, INT-0002 PREDICT). Confined — broker only. Capability-TIERED
+# (flood-prediction.md): T1 = terrain (geo.terrain: elevation rank + slope) × a rainfall FORECAST scenario;
+# T2 = where cell.drainage exists, dense drainage RELIEVES ponding risk (drained low land < undrained low
+# land). Writes a predicted risk.flood score (0..1) + level + method.tier per cell. A PREDICTION (method=
+# model), carrying its drivers so it is transparent + re-derivable. The Flood Advisory skill applies rules to it.
 component_id: ds:airawat:engine/flood-risk
 kind: engine
 version: 0.1.0
 provider: ds:airawat:developer
-display_name: Flood Risk (terrain × forecast → risk.flood)
+display_name: Flood Risk (terrain × drainage × forecast → risk.flood)
 entrypoint: run.py
 confinement_min: L1
-reads: [geo.terrain]
+reads: [geo.terrain, cell.drainage]
 writes: [risk.flood]
 scopes:
   - { verb: read,  scope: geo.terrain }
+  - { verb: read,  scope: cell.drainage }
   - { verb: write, scope: risk.flood }

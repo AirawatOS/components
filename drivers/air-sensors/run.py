@@ -13,9 +13,10 @@ import h3
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
+AOI_ID = os.environ.get("AOI_ID", "")     # the injected AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
 OPENAQ = "https://api.openaq.org/v3"
 MAX_LOCATIONS = int(os.environ.get("MAX_LOCATIONS", "25"))
+AS_OF = os.environ.get("AS_OF_DATE", "").strip()   # optional YYYY-MM-DD: ingest that day's REAL history, not /latest
 _INJECT = {"name": "OPENAQ_API_KEY", "as": "header", "header": "X-API-Key", "prefix": ""}
 _PARAMS = ("pm25", "no2", "o3", "pm10", "so2", "co")
 
@@ -44,7 +45,7 @@ def _fetch(url, tries=5):
             if e.code == 429:                              # the broker throttled us — back off, don't hammer
                 wait = min(int(e.headers.get("Retry-After") or 2 ** attempt), 15)
                 print(f"  broker rate limit → waiting {wait}s"); time.sleep(wait); continue
-            raise
+            return e.code, None                            # 403 (no key bound) etc. — surface it, don't crash
         st = r.get("upstream_status"); hdrs = r.get("headers") or {}
         if st == 429:                                      # the VENDOR rate-limited us
             wait = _reset_wait(hdrs, attempt)
@@ -60,10 +61,68 @@ def _fetch(url, tries=5):
     return 429, None
 
 
+def _tenant():
+    """This run's tenant (from the broker context) — the driver writes into whoever installed it, never kmc."""
+    try:
+        req = urllib.request.Request(API + "/v1/context", headers={"X-Run-Token": TOKEN})
+        return (json.loads(urllib.request.urlopen(req, timeout=20).read()) or {}).get("tenant")
+    except Exception:
+        return None
+
+
+def _day_bounds(d):
+    from datetime import datetime, timedelta
+    d0 = datetime.strptime(d, "%Y-%m-%d")
+    return d0.strftime("%Y-%m-%dT00:00:00Z"), (d0 + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+
+
+def _readings(loc):
+    """REAL readings for a location: the latest snapshot, or — when AS_OF_DATE is set — the daily MEAN of
+    that historical day from OpenAQ's hourly measurements per sensor. Returns ({param: value}, observed_at).
+    Never fabricates: a sensor with no data that day is simply skipped."""
+    param_of = {sn.get("id"): ((sn.get("parameter") or {}).get("name") or "").lower()
+                for sn in loc.get("sensors", [])}
+    if not AS_OF:
+        st2, latest = _fetch(f"{OPENAQ}/locations/{loc['id']}/latest")
+        if st2 != 200 or not latest:
+            return {}, None
+        vals, obs = {}, None
+        for m in latest.get("results", []):
+            pn = param_of.get(m.get("sensorsId"))
+            if pn in _PARAMS:
+                vals[pn] = m.get("value")
+                obs = obs or ((m.get("datetime") or {}).get("utc"))
+        return vals, obs
+    fr, to = _day_bounds(AS_OF)                            # historical: average each sensor's hourly values
+    vals = {}
+    for sn in loc.get("sensors", []):
+        pn = ((sn.get("parameter") or {}).get("name") or "").lower()
+        if pn not in _PARAMS:
+            continue
+        st2, hist = _fetch(f"{OPENAQ}/sensors/{sn.get('id')}/measurements/hourly"
+                           f"?datetime_from={fr}&datetime_to={to}&limit=168")
+        if st2 != 200 or not hist:
+            continue
+        xs = [m.get("value") for m in hist.get("results", []) if isinstance(m.get("value"), (int, float))]
+        if xs:
+            vals[pn] = round(sum(xs) / len(xs), 1)
+    return (vals, f"{AS_OF}T12:00:00Z") if vals else ({}, None)
+
+
 def main():
-    aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+    T = _tenant()
+    if not T:
+        print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
+    if AOI_ID:                                              # explicit AOI (must belong to this tenant)
+        aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+    else:                                                  # discover the tenant's largest AOI (no hardcoded city)
+        rows = _call("/v1/query", {"scope": "space.aoi", "limit": 500}).get("results", [])
+        mine = [(r.get("object") or r) for r in rows
+                if str((r.get("object") or r).get("id", "")).startswith(f"ds:{T}:")
+                and len((r.get("object") or r).get("bbox") or []) == 4]
+        aoi = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1]))) if mine else None
     if not aoi:
-        print(f"FAIL: no AOI at {AOI_ID}"); return 1
+        print(f"FAIL: no space.aoi for tenant '{T}' — set AOI_ID or run City Setup first. Nothing written."); return 1
     w, s, e, n = aoi["bbox"]; res = aoi["h3_res"]
 
     st, locs = _fetch(f"{OPENAQ}/locations?bbox={w},{s},{e},{n}&limit=100")
@@ -83,22 +142,12 @@ def main():
         lat, lng = coords.get("latitude"), coords.get("longitude")
         if lat is None or lng is None:
             continue
-        param_of = {sn.get("id"): ((sn.get("parameter") or {}).get("name") or "").lower()
-                    for sn in loc.get("sensors", [])}
-        st2, latest = _fetch(f"{OPENAQ}/locations/{loc['id']}/latest")
-        if st2 != 200 or not latest:
-            continue
-        vals, obs = {}, None
-        for m in latest.get("results", []):
-            pn = param_of.get(m.get("sensorsId"))
-            if pn in _PARAMS:
-                vals[pn] = m.get("value")
-                obs = obs or ((m.get("datetime") or {}).get("utc"))
+        vals, obs = _readings(loc)
         if "pm25" not in vals or not obs:                  # need a timestamped PM2.5 to be useful
             continue
         cell = h3.latlng_to_cell(lat, lng, res)
         sid = f"openaq-{loc['id']}"
-        rid = f"ds:kmc:air/sensor_reading/{sid}-{obs[:13]}"
+        rid = f"ds:{T}:air/sensor_reading/{sid}-{obs[:13]}"
         fact = {"schema": "air.sensor_reading", "id": rid, "sensor_id": sid,
                 "space": {"h3": cell, "res": res, "centroid": [round(lng, 5), round(lat, 5)]},
                 "pm25": vals.get("pm25"), "no2": vals.get("no2"), "o3": vals.get("o3"),

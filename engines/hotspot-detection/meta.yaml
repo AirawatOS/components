@@ -1,0 +1,13 @@
+# An ENGINE (kind=engine) — confined; reads facts, writes derived facts.
+component_id: ds:airawat:engine/hotspot-detection
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Air Pollution Hotspot Detection
+entrypoint: run.py
+confinement_min: L1
+reads: [air.quality]
+writes: [air.hotspot]
+scopes:
+  - { verb: read, scope: air.quality }
+  - { verb: write, scope: air.hotspot }

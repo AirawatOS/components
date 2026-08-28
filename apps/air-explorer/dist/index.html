@@ -1,14 +1,123 @@
-<!doctype html><meta charset="utf-8"><title>Air Explorer</title>
-<h1>Air Explorer</h1><p>Latest air-quality analysis for the city.</p>
-<pre id="out">loading…</pre>
+<!doctype html><meta charset="utf-8"><title>Air Intelligence</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--bg:#0b1220;--panel:#111a2b;--edge:#1f2b40;--ink:#e6edf3;--dim:#8b98ad;--accent:#4aa3ff}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:900px;margin:0 auto;padding:26px 20px 60px}
+  h1{font-size:21px;margin:0 0 2px;display:flex;align-items:center;gap:9px}
+  .who{color:var(--dim);font-size:13px;margin:0 0 20px}
+  .hero{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+  .stat{flex:1;min-width:150px;border:1px solid var(--edge);border-radius:13px;background:var(--panel);padding:15px 16px}
+  .stat .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+  .stat .v{font-size:27px;font-weight:700;margin-top:5px;font-variant-numeric:tabular-nums}
+  .stat .s{font-size:12px;color:var(--dim);margin-top:2px}
+  h2{font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);margin:26px 0 11px;font-weight:700}
+  .cards{display:flex;flex-direction:column;gap:9px}
+  .card{border:1px solid var(--edge);border-radius:12px;background:var(--panel);padding:13px 15px;display:flex;align-items:center;gap:13px}
+  .sev{flex:none;width:9px;align-self:stretch;border-radius:5px;min-height:34px}
+  .card .b{flex:1}
+  .card .b .t{font-weight:600;font-size:14.5px}
+  .card .b .m{color:var(--dim);font-size:12.5px;margin-top:2px}
+  .pill{flex:none;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em}
+  .val{flex:none;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;min-width:64px;text-align:right}
+  .empty{color:var(--dim);border:1px dashed var(--edge);border-radius:12px;padding:18px;text-align:center;font-size:13.5px}
+  .advisory{border:1px solid var(--edge);border-left:3px solid var(--accent);border-radius:10px;background:var(--panel);padding:14px 16px;font-size:14px;line-height:1.5}
+  .src{color:var(--dim);font-size:11.5px;margin-top:20px}
+</style>
+<body>
+<div class="wrap">
+  <h1>🌬️ Air Intelligence</h1>
+  <p class="who" id="who">…</p>
+
+  <div class="hero" id="hero"></div>
+
+  <h2>Pollution hotspots</h2>
+  <div class="cards" id="hotspots"><div class="empty">Loading…</div></div>
+
+  <h2>Ground sensors — highest readings</h2>
+  <div class="cards" id="sensors"><div class="empty">Loading…</div></div>
+
+  <h2>Advisory</h2>
+  <div id="advisory"><div class="empty">No advisory issued yet — run the Air Quality Advisory skill.</div></div>
+
+  <p class="src" id="src"></p>
+</div>
 <script>
-// A sandboxed app never talks to the backend directly. It asks its HOST (the app-host shell) over
-// postMessage; the host attaches the USER's token and enforces this app's schema allow-list.
-function ask(op, msg){ return new Promise(res=>{
-  const id = Math.random().toString(36).slice(2);
-  window.addEventListener('message', function h(e){ if((e.data||{}).id===id){ window.removeEventListener('message',h); res(e.data);} });
-  parent.postMessage(Object.assign({id, op}, msg), '*');
-});}
-ask('registry.search', {schema:'intelligence.analysis', id:'ds:kmc:analysis/air/today/descriptive'})
-  .then(r=>{ document.getElementById('out').textContent = JSON.stringify(r.result||r.error, null, 2); });
+const SEV = {critical:{c:'#e5484d',bg:'#3a1416'}, warning:{c:'#e5a23d',bg:'#3a2a12'}, info:{c:'#e6d24a',bg:'#33310f'}};
+function pmBand(v){ return v<30?['Good','#26a659']:v<60?['Satisfactory','#9acd32']:v<90?['Moderate','#e6d24a']:v<120?['Poor','#e5a23d']:v<250?['Very Poor','#e5484d']:['Severe','#8e44ad']; }
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function q(schema, limit=5000){
+  try{
+    const r = await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({app_id:'air-explorer', schema, limit})});
+    if(!r.ok) return [];
+    const d = await r.json();
+    return (d.results||[]).map(x=>x.object||x).filter(o=>o&&o.schema===schema);
+  }catch(e){ return []; }
+}
+
+(async ()=>{
+  try{ const s = await (await fetch('/session')).json();
+    document.getElementById('who').innerHTML = 'Signed in to <b>'+esc(s.tenant||'—')+'</b> as <b>'+esc((s.sub||'').split('/').pop()||'—')+'</b>'; }
+  catch(e){ document.getElementById('who').textContent='(not signed in)'; }
+
+  const [hot, grid, sr, rec] = await Promise.all([
+    q('air.hotspot'), q('air.quality'), q('air.sensor_reading'), q('governance.recommendation') ]);
+
+  // hero stats
+  const pm = grid.map(c=>c.pm25).filter(v=>typeof v==='number').sort((a,b)=>a-b);
+  const med = pm.length? pm[Math.floor(pm.length/2)] : null;
+  const mx  = pm.length? pm[pm.length-1] : null;
+  const worst = hot.slice().sort((a,b)=>(b.value||0)-(a.value||0))[0];
+  const nCrit = hot.filter(h=>h.severity==='critical').length, nWarn = hot.filter(h=>h.severity==='warning').length;
+  const hband = mx!=null?pmBand(mx):null;
+  document.getElementById('hero').innerHTML =
+    `<div class="stat"><div class="k">Hotspots</div><div class="v">${hot.length}</div>
+       <div class="s">${nCrit} critical · ${nWarn} warning</div></div>
+     <div class="stat"><div class="k">City PM2.5 (median)</div><div class="v" style="color:${med!=null?pmBand(med)[1]:'inherit'}">${med!=null?Math.round(med):'—'}</div>
+       <div class="s">${med!=null?pmBand(med)[0]+' · µg/m³':'no grid yet'}</div></div>
+     <div class="stat"><div class="k">Peak PM2.5</div><div class="v" style="color:${hband?hband[1]:'inherit'}">${mx!=null?Math.round(mx):'—'}</div>
+       <div class="s">${hband?hband[0]:''}</div></div>
+     <div class="stat"><div class="k">Grid · sensors</div><div class="v">${grid.length}<span style="font-size:15px;color:var(--dim)"> · ${new Set(sr.map(x=>x.sensor_id)).size}</span></div>
+       <div class="s">H3 cells · stations</div></div>`;
+
+  // hotspots
+  const hEl = document.getElementById('hotspots');
+  if(!hot.length){ hEl.innerHTML = '<div class="empty">No hotspots detected — the grid is within thresholds. 🎉</div>'; }
+  else hEl.innerHTML = hot.slice().sort((a,b)=>(b.value||0)-(a.value||0)).map(h=>{
+    const sv = SEV[h.severity]||SEV.info; const c=(h.space||{}).centroid||['—','—'];
+    return `<div class="card"><span class="sev" style="background:${sv.c}"></span>
+      <div class="b"><div class="t">${esc((h.severity||'info').toUpperCase())} hotspot · ${esc(h.pollutant||'pm25').toUpperCase()}</div>
+        <div class="m">${h.cell_count||1} cell${(h.cell_count||1)>1?'s':''} · @ ${(+c[1]).toFixed?(+c[1]).toFixed(3):c[1]}, ${(+c[0]).toFixed?(+c[0]).toFixed(3):c[0]} · ${esc((h.observed_at||'').slice(0,16).replace('T',' '))}</div></div>
+      <span class="pill" style="color:${sv.c};background:${sv.bg}">${esc(h.severity||'info')}</span>
+      <span class="val" style="color:${sv.c}">${Math.round(h.value||0)}</span></div>`;
+  }).join('');
+
+  // sensors — latest per station, highest first
+  const latest = {};
+  for(const o of sr){ const k=o.sensor_id||JSON.stringify((o.space||{}).centroid), t=o.observed_at||'';
+    if(typeof o.pm25==='number' && (!latest[k]||t>latest[k].observed_at)) latest[k]=o; }
+  const top = Object.values(latest).sort((a,b)=>b.pm25-a.pm25).slice(0,8);
+  const sEl = document.getElementById('sensors');
+  if(!top.length){ sEl.innerHTML = '<div class="empty">No ground-station readings yet — run an air driver.</div>'; }
+  else sEl.innerHTML = top.map(o=>{ const [band,col]=pmBand(o.pm25);
+    const name=(o.prov||{}).station||o.sensor_id||'sensor';
+    return `<div class="card"><span class="sev" style="background:${col}"></span>
+      <div class="b"><div class="t">${esc(String(name).slice(0,52))}</div>
+        <div class="m">${esc(band)} · ${esc((o.observed_at||'').slice(0,16).replace('T',' '))}</div></div>
+      <span class="val" style="color:${col}">${Math.round(o.pm25)}</span></div>`;
+  }).join('');
+
+  // advisory — latest governance.recommendation
+  if(rec.length){
+    const r = rec.slice().sort((a,b)=>String(b.issued_at||b.observed_at||'').localeCompare(String(a.issued_at||a.observed_at||'')))[0];
+    const text = r.recommendation || r.text || r.summary || r.rationale || JSON.stringify(r).slice(0,400);
+    document.getElementById('advisory').innerHTML = `<div class="advisory">${esc(text)}</div>`;
+  }
+
+  document.getElementById('src').textContent =
+    'Air Intelligence · reads air.quality (interpolation) + air.hotspot (detection) + air.sensor_reading (ground truth) + governance.recommendation (advisory). Real data only.';
+})();
 </script>

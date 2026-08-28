@@ -1,0 +1,15 @@
+# An ENGINE (kind=engine) — confined; reads facts, writes derived facts. Turns cell.crowd_density into
+# graded cell.crush_risk per the governed crowd-crush density bands (>=4.5 danger, >=6 critical).
+component_id: ds:airawatdeveloper:engine/crush-risk-engine
+kind: engine
+version: 0.1.1
+provider: ds:airawatdeveloper:developer
+display_name: Crush-Risk Engine
+entrypoint: run.py
+confinement_min: L1
+reads: [cell.crowd_density, governance.rule]
+writes: [cell.crush_risk]
+scopes:
+  - { verb: read, scope: cell.crowd_density }
+  - { verb: read, scope: governance.rule }
+  - { verb: write, scope: cell.crush_risk }

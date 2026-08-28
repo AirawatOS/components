@@ -12,8 +12,18 @@
   .it-title{font-weight:600} .it-body{color:var(--dim);font-size:13px;margin-top:2px}
   .meta{color:#6e7681;font-size:11px;margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;text-transform:uppercase;letter-spacing:.04em}
+  .pill.k-task{color:#7cc4ff;border-color:#234a6e} .pill.k-notification{color:#e6c34a;border-color:#5a4d16} .pill.k-decision{color:#c79bff;border-color:#4a3a6e}
+  .badge{border-radius:999px;padding:1px 8px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  .b-unread{background:#123a5e;color:#7cc4ff} .b-read{background:#1a2333;color:#8b98ad} .b-done{background:#14331f;color:#5fd08a}
+  .item.st-unread{border-left:3px solid #2b6cb0} .item.st-unread .it-title{font-weight:700}
+  .item.is-done{opacity:.5}
+  .more{width:100%;margin-top:4px;padding:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;color:var(--dim);cursor:pointer;font-size:13px}
+  .more:hover{border-color:#2b6cb0;color:var(--ink)}
   .empty{color:var(--dim);text-align:center;padding:48px}
-  .count{margin-left:auto;color:var(--dim);font-size:12px}
+  .count{margin-left:10px;color:var(--dim);font-size:12px}
+  .filters{margin-left:auto;display:flex;gap:5px}
+  .fbtn{background:#141c28;border:1px solid var(--line);color:var(--dim);border-radius:14px;padding:3px 11px;font-size:11.5px;cursor:pointer}
+  .fbtn.on{background:#123a5e;color:#7cc4ff;border-color:#2b6cb0}
   .scrim{position:fixed;inset:0;background:rgba(1,4,9,.6);display:none}.scrim.open{display:block}
   .drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,92vw);background:var(--card);border-left:1px solid var(--line);
           transform:translateX(100%);transition:transform .18s ease;overflow:auto;box-shadow:-16px 0 40px rgba(0,0,0,.4)}
@@ -51,9 +61,13 @@
   .recopt.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
   .receipt{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
   .ev{font:11px ui-monospace,Menlo,monospace;color:var(--dim);padding:2px 0;word-break:break-word}
+  .disc{font-size:12.5px;line-height:1.55;color:var(--ink);white-space:normal}
+  .rblk.clk{cursor:pointer} .rblk.clk:hover{border-color:var(--accent)}
+  .chip.fact{cursor:pointer;font:11px ui-monospace,Menlo,monospace;margin:3px 6px 0 0} .chip.fact:hover{border-color:var(--accent)}
+  .recl{color:var(--dim);font-size:11px;margin:2px 0 6px}
   .ok{color:#3fb950;margin-top:10px;font-size:13px;font-weight:600}
 </style>
-<header><h1>Inbox</h1><span class="who" id="who">…</span><span class="count" id="count"></span></header>
+<header><h1>Inbox</h1><span class="who" id="who">…</span><span class="filters" id="filters"><button class="fbtn on" data-f="open">Open</button><button class="fbtn" data-f="done">Done</button><button class="fbtn" data-f="all">All</button></span><span class="count" id="count"></span></header>
 <div class="wrap" id="list"><div class="empty">loading…</div></div>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer">
@@ -61,7 +75,7 @@
   <div class="dbody" id="d-body"></div>
 </aside>
 <script>
-let APPID, ITEMS=[], NAV=[];
+let APPID, ITEMS=[], NAV=[], FILTER='open';
 const SCALE={viridis:'#5ec962',reds:'#e5484d',blues:'#4c8dff',aqi:'#f5a524'};
 async function bpost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return {ok:r.ok,status:r.status,json:await r.json().catch(()=>({}))};}
 async function query(schema,filter){const r=await bpost('/bridge/query',{app_id:APPID,schema,filter:filter||{}});if(!r.ok)throw new Error('bridge '+r.status);return r.json.results||[];}
@@ -70,21 +84,44 @@ async function resolveRef(ref){const r=await bpost('/bridge/resolve',{ref});if(!
 async function boot(){
   const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
   fetch('/session').then(r=>r.json()).then(se=>{document.getElementById('who').textContent=se.authenticated?se.sub:'';});
+  document.querySelectorAll('.fbtn').forEach(b=>b.onclick=()=>{
+    FILTER=b.dataset.f; document.querySelectorAll('.fbtn').forEach(x=>x.classList.toggle('on',x===b));
+    SHOWN=Math.min(PAGE, filtered().length); paintList(); });
   await loadList();
 }
+const KIND={task:{i:'📋',l:'Task'}, notification:{i:'🔔',l:'Notice'}, decision:{i:'⚖️',l:'Decision'}};
+function rel(ts){                                              // "2 min ago" · "5 days ago"
+  const t=Date.parse(ts); if(isNaN(t)) return '';
+  let d=(Date.now()-t)/1000; if(d<0) d=0;
+  const U=[['year',31536000],['month',2592000],['day',86400],['hour',3600],['min',60]];
+  for(const [n,s] of U){ const v=Math.floor(d/s); if(v>=1) return v+' '+n+(v>1&&n!=='min'?'s':'')+' ago'; }
+  return 'just now';
+}
+let SHOWN=0; const PAGE=25;                                    // paging: render newest PAGE, "load more" for older
 async function loadList(){
   ITEMS=await query('platform.inbox_item',{});
   ITEMS.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
-  document.getElementById('count').textContent=ITEMS.length+' items';
+  SHOWN=Math.min(PAGE, ITEMS.length);
+  paintList();
+}
+function filtered(){                                            // Open (not done) · Done (closed) · All
+  return ITEMS.filter(i=>FILTER==='all'?true:FILTER==='done'?(i.status==='done'):(i.status!=='done'));
+}
+function paintList(){
+  const FI=filtered();
+  document.getElementById('count').textContent=FI.length+' '+FILTER+(FI.length===1?' item':' items')+(SHOWN<FI.length?' · showing '+SHOWN:'');
   const list=document.getElementById('list');
-  if(!ITEMS.length){list.innerHTML='<div class="empty">Nothing in your inbox.</div>';return;}
-  list.innerHTML=ITEMS.map((i,ix)=>`
-    <div class="item" data-ix="${ix}"><span class="dot ${i.kind}"></span>
+  if(!FI.length){list.innerHTML=`<div class="empty">${FILTER==='done'?'No completed items yet.':FILTER==='open'?'No open items — all caught up.':'Nothing in your inbox.'}</div>`;return;}
+  const vis=FI.slice(0,SHOWN);
+  list.innerHTML=vis.map((i,ix)=>{const K=KIND[i.kind]||{i:'•',l:i.kind};return `
+    <div class="item st-${i.status||'unread'} ${i.status==='done'?'is-done':''}" data-ix="${ix}"><span class="dot ${i.kind}"></span>
       <div style="flex:1"><div class="it-title">${esc(i.title)}</div>
         ${i.body?`<div class="it-body">${esc(i.body)}</div>`:''}
-        <div class="meta"><span class="pill">${i.kind}</span>${i.source?`<span>${esc(i.source)}</span>`:''}${i.ref?`<span>${esc(i.ref)}</span>`:''}<span>${(i.created_at||'').replace('T',' ').replace('Z','')}</span></div>
-      </div></div>`).join('');
-  list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(ITEMS[+el.dataset.ix])));
+        <div class="meta"><span class="pill k-${i.kind}">${K.i} ${K.l}</span><span class="badge b-${i.status||'unread'}">${i.status==='done'?'✓ done':(i.status||'unread')}</span>${i.source?`<span>${esc(i.source)}</span>`:''}<span title="${esc(i.created_at||'')}">${rel(i.created_at)}</span></div>
+      </div></div>`;}).join('')
+    + (SHOWN<FI.length?`<button id="more" class="more">Load ${Math.min(PAGE,FI.length-SHOWN)} more · ${FI.length-SHOWN} older</button>`:'');
+  list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(FI[+el.dataset.ix])));
+  const more=document.getElementById('more'); if(more) more.onclick=()=>{ SHOWN=Math.min(SHOWN+PAGE,filtered().length); paintList(); };
 }
 function openItem(it){NAV=[]; document.getElementById('d-dot').className='dot '+it.kind; openDrawer(); push(it.ref,{title:it.title,source:it.source});}
 async function push(ref,ctx){NAV.push({ref,ctx:ctx||{}}); await render();}
@@ -108,6 +145,48 @@ async function render(){
   b.innerHTML=html;
   if(NAV.length>1) document.getElementById('back').onclick=back;
   if(o&&o.schema==='platform.task') await taskControls(b,o);
+  if(o&&o.schema==='governance.decision') await renderReceipt(o,b);   // reconstructable evidence receipt
+}
+// A governance.decision's evidence_manifest IS the reconstruction manifest (ADR-0046): it pins the
+// RECOMMENDATION admitted, the RULE applied, and the FACTS relied on. Render each — resolved + drillable —
+// plus the human DISCRETION basis (rationale). From the decision you can walk back to every input.
+async function renderReceipt(dec,b){
+  const man=(dec.evidence_manifest||[]).filter(x=>typeof x==='string');
+  const recs=man.filter(x=>/\/recommendation\//.test(x));
+  const rules=man.filter(x=>/\/rule\//.test(x));
+  const facts=man.filter(x=>!/\/recommendation\/|\/rule\//.test(x));
+  const wrap=document.createElement('div'); wrap.className='receipt';
+  wrap.innerHTML='<div class="lbl" style="margin-top:0">Decision receipt — reconstructable basis</div>';
+  b.appendChild(wrap);
+  if(dec.rationale){const d=document.createElement('div'); d.className='rblk';
+    d.innerHTML='<div class="rlabel">Discretion basis <span class="rk">rationale</span></div><div class="disc">'+esc(String(dec.rationale)).replace(/\n/g,'<br>')+'</div>';
+    wrap.appendChild(d);}
+  for(const rr of recs) await appendResolved(wrap,rr,'Recommendation');
+  for(const rl of rules) await appendResolved(wrap,rl,'Rule applied');
+  if(facts.length){
+    const fb=document.createElement('div'); fb.className='rblk';
+    let head='<div class="rlabel">Facts relied on <span class="rk">'+facts.length+' cell'+(facts.length>1?'s':'')+'</span></div>';
+    try{const r0=await resolveRef(facts[0]); const o0=r0.object||{};
+      const v=[o0.density_sqm,o0.value,o0.people_per_m2,o0.crush_index].find(x=>x!=null);
+      const parts=[esc((o0.schema||'cell').replace('cell.',''))];
+      if(v!=null) parts.push(esc(String(v))+' /m²'); if(o0.band) parts.push(esc(String(o0.band)));
+      head+='<div class="recl">e.g. '+esc(String(o0.id||facts[0]).split('/').pop())+' — '+parts.join(' · ')+'</div>';
+    }catch(e){}
+    fb.innerHTML=head; wrap.appendChild(fb);
+    facts.slice(0,10).forEach(f=>{const c=document.createElement('span'); c.className='chip fact';
+      c.textContent=f.split('/').pop(); c.onclick=()=>push(f,{title:'Fact'}); fb.appendChild(c);});
+    if(facts.length>10){const m=document.createElement('span'); m.className='recl'; m.textContent=' +'+(facts.length-10)+' more in manifest'; fb.appendChild(m);}
+  }
+}
+async function appendResolved(wrap,ref,label){
+  const d=document.createElement('div'); d.className='rblk clk';
+  try{const r=await resolveRef(ref); const o=r.object||{};
+    d.innerHTML='<div class="rlabel">'+esc(label)+' <span class="rk">'+esc(o.schema||'')+'</span></div>'
+      +'<div class="ctitle">'+esc(String(o.title||o.id||ref))+'</div>'
+      +(o.summary?'<div class="csub">'+esc(String(o.summary))+'</div>':'')
+      +(o.proposed_action?'<div class="recl">→ '+esc(String(o.proposed_action))+'</div>':'');
+  }catch(e){ d.innerHTML='<div class="rlabel">'+esc(label)+'</div><div class="ev">'+esc(ref)+'</div>'; }
+  d.onclick=()=>push(ref,{title:label}); wrap.appendChild(d);
 }
 async function taskControls(b,task){
   const box=document.createElement('div'); box.className='controls';
@@ -147,12 +226,9 @@ async function decide(taskId,outcome,selected){
   const r=await bpost('/bridge/decide',{task:taskId,outcome,selected});
   if(!r.ok){const b=document.getElementById('d-body'); const n=document.createElement('div'); n.className='note'; n.textContent='Decision refused ('+r.status+').'; b.appendChild(n); return;}
   const dec=r.json.decision;
-  await push(dec.id,{title:'Decision recorded'});         // renders the decision via decision-card viz
+  await push(dec.id,{title:'Decision recorded'});         // renders the decision + reconstructable receipt
   const b=document.getElementById('d-body');
-  const rc=document.createElement('div'); rc.className='receipt';
-  rc.innerHTML='<div class="lbl" style="margin-top:0">Receipt — evidence relied on</div>'
-    +(dec.evidence_manifest||[]).map(e=>'<div class="ev">'+esc(e)+'</div>').join('')
-    +'<div class="ok">✓ recorded to case history · case closed</div>';
+  const rc=document.createElement('div'); rc.className='ok'; rc.textContent='✓ recorded to case history · case closed';
   b.appendChild(rc);
   loadList();                                             // task now done; a "Decision recorded" item appears
 }

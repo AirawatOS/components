@@ -13,16 +13,25 @@ import h3
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-WRITE_TENANT = os.environ.get("WRITE_TENANT", "kmc")
+AOI_ID = os.environ.get("AOI_ID", "")      # explicit AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
 POWER = float(os.environ.get("IDW_POWER", "2"))            # distance exponent p in 1/dᵖ
-_PARAMS = ("pm25", "no2", "o3")
+PM_MAX = float(os.environ.get("PM_MAX_PLAUSIBLE", "985"))  # drop implausible station points (offline 0 / sentinel 999) —
+_PARAMS = ("pm25", "no2", "o3")                            # an interpolator must never trust raw low-cost points blindly
 
 
 def _call(path, body):
     req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "X-Run-Token": TOKEN}, method="POST")
     return json.loads(urllib.request.urlopen(req, timeout=30).read())
+
+
+def _tenant():
+    """This run's tenant (broker context) — reads/writes into whoever runs it, never kmc."""
+    try:
+        req = urllib.request.Request(API + "/v1/context", headers={"X-Run-Token": TOKEN})
+        return (json.loads(urllib.request.urlopen(req, timeout=20).read()) or {}).get("tenant")
+    except Exception:
+        return None
 
 
 def cells_in_bbox(bbox, res):
@@ -53,23 +62,39 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 
 def main():
-    aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+    T = _tenant()
+    if not T:
+        print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
+    if AOI_ID:
+        aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+    else:                                                  # discover the tenant's largest AOI (no hardcoded city)
+        qr = _call("/v1/query", {"scope": "space.aoi", "limit": 500}).get("results", [])
+        mine = [(r.get("object") or r) for r in qr
+                if str((r.get("object") or r).get("id", "")).startswith(f"ds:{T}:")
+                and len((r.get("object") or r).get("bbox") or []) == 4]
+        aoi = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1]))) if mine else None
     if not aoi:
-        print(f"FAIL: no AOI at {AOI_ID}"); return 1
+        print(f"FAIL: no space.aoi for tenant '{T}' — set AOI_ID or run City Setup first."); return 1
     bbox, res = aoi["bbox"], aoi["h3_res"]
 
     rows = _call("/v1/query", {"scope": "air.sensor_reading", "limit": 5000}).get("results", [])
-    stations = []                                          # (lat, lng, {param: value}, observed_at)
+    latest, dropped = {}, 0                                # sensor key -> (lat, lng, {param:value}, observed_at)
     for r in rows:
         o = r.get("object") or r
-        sp = o.get("space") or {}; c = sp.get("centroid")
-        if not c or o.get("pm25") is None:                 # need a location and at least PM2.5
+        sp = o.get("space") or {}; c = sp.get("centroid"); pm = o.get("pm25")
+        if not c or pm is None:                            # need a location and at least PM2.5
             continue
-        vals = {p: o[p] for p in _PARAMS if o.get(p) is not None}
-        stations.append((c[1], c[0], vals, o.get("observed_at") or ""))   # centroid is [lng, lat]
+        if pm <= 0 or pm >= PM_MAX:                        # QC: skip device faults so they never seed a false hotspot
+            dropped += 1; continue
+        key = o.get("sensor_id") or (round(c[0], 5), round(c[1], 5))   # ONE reading per station: the most recent
+        obs = o.get("observed_at") or ""
+        if key not in latest or obs > latest[key][3]:      # keep the latest — stale readings must not dilute the surface
+            vals = {p: o[p] for p in _PARAMS if o.get(p) is not None and (p != "pm25" or 0 < o[p] < PM_MAX)}
+            latest[key] = (c[1], c[0], vals, obs)          # centroid is [lng, lat]
+    stations = list(latest.values())
     if not stations:
-        print(f"no air.sensor_reading with PM2.5 in {WRITE_TENANT} — nothing to interpolate. "
-              f"Run the air-sensors driver first (needs a valid OPENAQ_API_KEY). Nothing written.")
+        print(f"no plausible air.sensor_reading with PM2.5 in '{T}' ({dropped} dropped as faulty) — nothing to "
+              f"interpolate. Run an air driver first. Nothing written.")
         return 0
 
     obs = max(s[3] for s in stations) or "1970-01-01T00:00:00Z"
@@ -93,7 +118,7 @@ def main():
             continue
         confidence = round(1.0 / (1.0 + nearest / 5.0), 3)  # within ~5 km of a station ⇒ ~0.5+, decays with distance
         boundary = [[round(lo, 6), round(la, 6)] for (la, lo) in h3.cell_to_boundary(hcell)]  # [lon,lat] ring for map render
-        rid = f"ds:{WRITE_TENANT}:air/quality/{hcell}-{obs[:13]}"
+        rid = f"ds:{T}:air/quality/{hcell}-{obs[:13]}"
         fact = {"schema": "air.quality", "id": rid,
                 "space": {"h3": hcell, "res": res, "centroid": [round(lng, 5), round(lat, 5)], "boundary": boundary},
                 **out, "observed_at": obs, "method": "idw", "confidence": confidence,

@@ -1,0 +1,18 @@
+# A DRIVER (kind=driver) — the machine-actor connector for the MSRTC bus-scheduling SYSTEM. It fulfils
+# crowd-safety transport orders (platform.task assigned to system://<tenant>/msrtc-scheduler): actuates,
+# marks the task done, and rolls the case up. No external egress in the demo (simulated actuation).
+component_id: ds:airawatdeveloper:driver/transit-actuator
+kind: driver
+version: 0.1.2
+provider: ds:airawatdeveloper:developer
+display_name: MSRTC Transit Actuator
+entrypoint: run.py
+confinement_min: L1
+egress: []
+reads: [platform.task, platform.case]
+writes: [platform.task, platform.case]
+scopes:
+  - { verb: read, scope: platform.task }
+  - { verb: read, scope: platform.case }
+  - { verb: write, scope: platform.task }
+  - { verb: write, scope: platform.case }

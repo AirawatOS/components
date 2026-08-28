@@ -32,6 +32,8 @@
   .railtog.l{left:10px}.railtog.r{right:10px}
   .rail-h{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
   .layers{display:flex;flex-direction:column;gap:7px}
+  .lgrp{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:700;margin:13px 0 2px}
+  .lgrp:first-child{margin-top:0}
   .layer-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--edge);
     border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;text-align:left;transition:.13s;width:100%}
   .layer-btn:hover{border-color:var(--edge2);background:var(--panel2)}
@@ -183,6 +185,10 @@
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
     <div class="zoomctl"><button id="tilt" class="rst" title="Toggle 2.5D view — extruded hex towers; ctrl/right-drag to orbit">⬢</button><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
+    <div id="opacctl" style="position:absolute;top:12px;left:44px;z-index:8;display:flex;align-items:center;gap:7px;background:#0e1c2ae6;border:1px solid var(--edge2);border-radius:9px;padding:5px 11px;box-shadow:0 2px 10px #0006">
+      <span style="font-size:12px;opacity:.75" title="Layer opacity">◐</span>
+      <input id="opac" type="range" min="15" max="100" value="60" style="width:120px;accent-color:var(--accent);cursor:pointer" title="Layer transparency — lower to see the map + places underneath">
+      <span id="opacval" style="font-size:10.5px;color:var(--dim);min-width:30px">60%</span></div>
     <div class="attrib" id="attrib">Basemap © OpenStreetMap contributors</div>
   </div>
 
@@ -235,8 +241,9 @@ async function qf(schema,filter){                              // server-side fi
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
-let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false;   // drilled cell state + overlays
-const ELEV_MAX=2600;   // metres a max-value hex rises to in 2.5D (extruded towers), scaled from the layer's value
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false;   // drilled cell state + overlays
+let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
+const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towers) — taller ⇒ value differences read clearly
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
 // geo.facility category → marker colour (schools/hospitals/police-fire/govt/utilities/…)
 const FCOL={healthcare:[239,68,68],education:[59,130,246],emergency:[249,115,22],government:[168,85,247],
@@ -249,17 +256,48 @@ let SCOPE=null;   // union AOI bbox (module scope so the lazy loaders can clip c
 const _M=0.03, inB=p=> !SCOPE||!p||(p[0]>=SCOPE[0]-_M&&p[0]<=SCOPE[2]+_M&&p[1]>=SCOPE[1]-_M&&p[1]<=SCOPE[3]+_M);
 const firstpt=g=>{let c=(g||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0]))c=c[0];return c;};
 
-function parseCells(rows,L){                                    // rows → H3 hexagons (+ temporal series detection)
-  const cells=rows.map(o=>{ const g=o.cell_ref||o.space||{};
-      return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, v:dget(o,L.vf), series:o.series}; })
+function parseCells(rows,L){                                    // rows → H3 hexagons, with GENERIC temporal detection
+  // A layer animates when its DATA carries multiple time frames — detected generically, no per-layer code.
+  // Two shapes are supported, both driven by the layer's declared value_field (L.vf):
+  //   (A) EMBEDDED SERIES  — one row per cell carrying o.series=[{t,<field>}] (e.g. hourly forecast).
+  //   (B) DATED SNAPSHOTS  — many rows per cell, one per observed_at (e.g. air.quality per-hour). Grouped here.
+  const vf=L.vf;
+  const geom=o=>{ const g=o.cell_ref||o.space||{}; return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary}; };
+  // ---- (A) embedded per-cell series ------------------------------------------------------------
+  if(rows.some(o=>Array.isArray(o.series)&&o.series.length)){
+    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,v:dget(o,vf),series:o.series}; })
+      .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
+    const dd={type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
+    const ws=cells.find(c=>Array.isArray(c.series)&&c.series.length);
+    if(ws){ const sk=(vf in ws.series[0]) ? vf : Object.keys(ws.series[0]).find(k=>k!=="t"&&typeof ws.series[0][k]==="number");
+      L.temporal=true; L.times=ws.series.map(s=>s.t); L.sfield=sk;
+      let hi=0; for(const c of cells){ if(Array.isArray(c.series)) for(const s of c.series){ const v=s[sk]; if(typeof v==="number"&&v>hi) hi=v; } }
+      dd.thi=hi||1; }
+    return dd;
+  }
+  // ---- (B) dated snapshots → group records by observed_at into frames ---------------------------
+  let times=[...new Set(rows.map(o=>o.observed_at).filter(Boolean))].sort();
+  if(times.length>1){
+    if(times.length>MAX_FRAMES) times=times.slice(-MAX_FRAMES);   // bound client memory — keep the most recent frames
+    const ti=Object.fromEntries(times.map((t,i)=>[t,i])), byH3={};
+    for(const o of rows){ const g=geom(o), v=dget(o,vf);
+      if(!g.h3||typeof v!=="number"||!inB(g.c)) continue;
+      let cell=byH3[g.h3]; if(!cell) cell=byH3[g.h3]={h3:g.h3,c:g.c,b:g.b,series:times.map(()=>({}))};
+      if(g.c&&!cell.c) cell.c=g.c; if(g.b&&!cell.b) cell.b=g.b;
+      const i=ti[o.observed_at]; if(i!=null) cell.series[i][vf]=v;
+    }
+    const cells=Object.values(byH3);
+    for(const c of cells){ c.v=0; for(let i=c.series.length-1;i>=0;i--){ if(typeof c.series[i][vf]==="number"){ c.v=c.series[i][vf]; break; } } }
+    let hi=0; for(const c of cells) for(const s of c.series){ const v=s[vf]; if(typeof v==="number"&&v>hi) hi=v; }
+    L.temporal=true; L.times=times; L.sfield=vf;
+    return {type:"hex",rows:cells, lo:0, hi:hi||1, thi:hi||1};
+  }
+  // ---- single frame (non-temporal) -------------------------------------------------------------
+  const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,v:dget(o,vf)}; })
     .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
-  const dd={type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
-  const ws=cells.find(c=>Array.isArray(c.series)&&c.series.length);   // TEMPORAL layer (e.g. hourly forecast)
-  if(ws){ L.temporal=true; L.times=ws.series.map(s=>s.t); L.sfield="precip_mm";
-    let hi=0; for(const c of cells){ if(Array.isArray(c.series)) for(const s of c.series){ const v=s[L.sfield]; if(typeof v==="number"&&v>hi) hi=v; } }
-    dd.thi=hi||1; }
-  return dd;
+  return {type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
 }
+const MAX_FRAMES=48;                                            // cap animated frames held client-side (scale guard)
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
@@ -279,6 +317,12 @@ async function ensureOverlay(kind){                            // lazy-load the 
   else if(kind==="facilities" && DATA.facilities==null)
     DATA.facilities=(await q("geo.facility")).map(o=>({c:((o.geometry||{}).coordinates)||o.centroid,cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id}))
       .filter(f=>Array.isArray(f.c)&&f.c.length===2&&inB(f.c));
+  else if(kind==="sensors" && DATA.sensors==null){             // raw ground-station readings → latest-per-station points
+    const raw=await q("air.sensor_reading"), by={};
+    for(const o of raw){ const k=o.sensor_id||JSON.stringify((o.space||{}).centroid), t=o.observed_at||"";
+      if(!by[k]||t>by[k].obs) by[k]={c:(o.space||{}).centroid,pm:o.pm25,name:(o.prov||{}).station||o.sensor_id,obs:t}; }
+    DATA.sensors=Object.values(by).filter(s=>Array.isArray(s.c)&&s.c.length===2&&typeof s.pm==="number"&&inB(s.c));
+  }
 }
 
 async function load(){
@@ -298,7 +342,7 @@ async function load(){
     specs.push({key:d.source_schema,label:d.label||d.source_schema,desc:d.description||"",vf:d.value_field,
                 unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,fmt:fmtFor(d.unit)}); }
   LAYERS=specs;                                                 // metadata only — per-layer data loads on demand
-  DATA={aoi,scope:SB,data:{},coverage:[],roads:null,water:null,facilities:null};   // null overlay = not loaded yet
+  DATA={aoi,scope:SB,data:{},coverage:[],roads:null,water:null,facilities:null,sensors:null};   // null overlay = not loaded yet
   if(LAYERS[0]) await ensureLayer(LAYERS[0]);                   // FIRST PAINT: only the first layer's cells…
   let cov=await q("city.coverage"); cov.sort((a,b)=>String(b.assessed_at||"").localeCompare(String(a.assessed_at||"")));
   const cs={}; cov=cov.filter(c=>{const k=c.layer_noun; if(cs[k])return false; cs[k]=1; return true;});
@@ -338,10 +382,10 @@ function dataLayer(){
   return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
     getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
-    getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?0.94:0.72),   // fade to a carpet in drill mode
+    getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?Math.min(0.95,layerAlpha+0.28):layerAlpha),   // user-set alpha; a touch more solid in 3D so towers read
     getFillColor:c=> zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
-    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx], opacity:[!!drillCell,mode3d]}});
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx], opacity:[!!drillCell,mode3d,layerAlpha]}});
 }
 function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
 const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
@@ -429,12 +473,21 @@ function overlayLayers(){
   }
   if(showRoads && (DATA.roads||[]).length){                    // road network (geo.osm_feature) → light paths on top
     out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",
-      getWidth:drill?4:1,widthMinPixels:drill?2:0.5,
-      getColor:drill?[241,245,249,245]:[226,232,240,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      getWidth:drill?4:1.5,widthMinPixels:drill?2:1.1,   // city-level roads were 0.5px @ alpha150 → washed out over the choropleth
+      getColor:drill?[241,245,249,245]:[240,244,248,230],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
       updateTriggers:{getWidth:[drill],getColor:[drill]}}));
   }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
+  const sen=sensorsLayer(); if(sen) out.push(sen);
   return out;
+}
+function pmcol(v){ return v<30?[38,166,91]:v<60?[241,196,15]:v<90?[230,126,34]:v<120?[231,76,60]:v<250?[142,68,173]:[125,60,45]; }  // CPCB AQI bands
+function sensorsLayer(){                                        // raw air.sensor_reading points → PM2.5-coloured dots
+  if(!showSensors || !(DATA.sensors||[]).length) return null;
+  return new deck.ScatterplotLayer({id:"sensors",data:DATA.sensors,pickable:true,
+    getPosition:s=>s.c, getFillColor:s=>pmcol(s.pm),
+    radiusUnits:"meters", getRadius:150, radiusMinPixels:4, radiusMaxPixels:18,
+    stroked:true, getLineColor:[8,16,26,235], lineWidthMinPixels:1.1});
 }
 function facilitiesLayer(){                                     // critical facilities (geo.facility) → coloured markers
   if(!showFacilities || !(DATA.facilities||[]).length) return null;
@@ -454,7 +507,7 @@ function render(){
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
     $("legbar").style.background=rampCSS(L.ramp);
-    if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=(Math.round(d.thi*10)/10)+" mm/h"; }
+    if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=L.fmt(d.thi); }
     else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi); }
   } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
@@ -481,7 +534,7 @@ function updateScrubber(){
   }
   $("trange").value=tIdx;
   $("tnow").textContent=fmtT(times[tIdx]);
-  $("tsub").textContent=`${tIdx+1}/${times.length} · forecast`;
+  $("tsub").textContent=`${tIdx+1}/${times.length} frames`;
   const pb=$("tplay"); if(pb) pb.textContent=tPlaying?"⏸":"▶";
 }
 function tip(info){
@@ -489,23 +542,45 @@ function tip(info){
   if(!info||!info.object){ t.style.opacity=0; return; }
   const L=LAYERS.find(l=>l.key===active);
   const o=info.object;
-  const label = o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
+  const label = o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
+              : o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
               : o.feature!==undefined ? esc(o.feature||"road")
               : `<b>${esc(L?L.fmt(o.v):o.v)}</b> · <span class="mono" style="color:var(--muted)">${esc((o.h3||"").slice(0,10))}</span>`;
   t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
 function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true; return; } b.textContent=msg; b.hidden=false; }
+const LGROUP={ "air.sensor_reading":"Air Quality","air.quality":"Air Quality","air.hotspot":"Air Quality",
+  "cell.rainfall":"Weather","cell.weather_forecast":"Weather",
+  "cell.heat":"Environment & land","cell.greencover":"Environment & land","geo.landcover":"Environment & land","geo.terrain":"Environment & land","cell.hydrology":"Environment & land",
+  "cell.builtup":"Built environment","geo.building":"Built environment","cell.buildings":"Built environment","cell.roads":"Built environment","geo.facility":"Built environment",
+  "demographics.population":"People" };
+const LORDER=["Air Quality","Weather","Environment & land","Built environment","People","Other"];
 function drawLayers(){
-  $("layers").innerHTML=LAYERS.map(L=>{const d=DATA.data[L.key], n=d?d.rows.length:0;
-    const sub = d ? `${n} ${d.type==="path"?"segments":"cells"} · ${esc(L.desc)}` : esc(L.desc||"click to load");
-    return `<button class="layer-btn ${L.key===active?"on":""}" data-k="${L.key}">
-      <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
-      <span class="lb"><b>${esc(L.label)}</b><span>${sub}</span></span></button>`;}).join("");
-  document.querySelectorAll(".layer-btn").forEach(b=>b.onclick=async()=>{
-    active=b.dataset.k; stopPlay(); tIdx=0;
+  const byG={}; LAYERS.forEach(L=>{ const g=LGROUP[L.key]||"Other"; (byG[g]=byG[g]||[]).push(L); });
+  let html="";
+  for(const g of LORDER){ const ls=byG[g], isAir=(g==="Air Quality");
+    if(!ls && !isAir) continue;
+    html+=`<div class="lgrp">${esc(g)}</div>`;
+    if(isAir)                                                     // raw station readings, grouped WITH the air layers
+      html+=`<button class="layer-btn ${showSensors?"on":""}" data-ov="sensors">
+        <span class="swatch" style="background:linear-gradient(135deg,#26a659,#f1c40f,#e67e22,#e74c3c)"></span>
+        <span class="lb"><b>Air Sensors — readings</b>${showSensors?`<span>${(DATA.sensors||[]).length} stations · hover a dot for PM2.5</span>`:""}</span></button>`;
+    for(const L of (ls||[])){ const d=DATA.data[L.key], n=d?d.rows.length:0, on=L.key===active;
+      const sub = on ? esc(L.desc||"") : (d?`${n} ${d.type==="path"?"segments":"cells"}`:"");   // description ONLY when selected
+      html+=`<button class="layer-btn ${on?"on":""}" data-k="${L.key}">
+        <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
+        <span class="lb"><b>${esc(L.label)}</b>${sub?`<span>${sub}</span>`:""}</span></button>`;
+    }
+  }
+  $("layers").innerHTML=html;
+  document.querySelectorAll('.layer-btn[data-k]').forEach(b=>b.onclick=async()=>{
+    active=(active===b.dataset.k)?null:b.dataset.k; stopPlay(); tIdx=0;   // click the active layer again → hide it (basemap only)
     const L=LAYERS.find(l=>l.key===active);
-    if(L && !DATA.data[L.key]){ setBusy("Loading "+L.label+"…"); render(); await ensureLayer(L); setBusy(null); drawLayers(); }  // lazy fetch on first select
-    render();
+    if(L && !DATA.data[L.key]){ setBusy("Loading "+L.label+"…"); render(); await ensureLayer(L); setBusy(null); }  // lazy fetch on first select
+    drawLayers(); render();
+  });
+  document.querySelectorAll('.layer-btn[data-ov="sensors"]').forEach(b=>b.onclick=async()=>{
+    showSensors=!showSensors; if(showSensors){ setBusy("Loading air sensors…"); await ensureOverlay("sensors"); setBusy(null); } drawLayers(); render();
   });
 }
 // ── Trust roll-up: turn a raw city.coverage record into human bands + a headline + a source trail ──────
@@ -604,7 +679,7 @@ function fitView(bbox){
   $("mapload").remove();
   drawLayers(); drawTrust(); render();                        // FIRST PAINT — instant (only the active layer is loaded)
   // Vector overlays: always available; their (heavy) geometry loads lazily. Default drainage+roads on, facilities off.
-  $("ovsec").hidden=false; $("ovwater").hidden=false; $("ovroads").hidden=false; $("ovfac").hidden=false;
+  $("ovsec").hidden=false; $("ovwater").hidden=false; $("ovroads").hidden=false; $("ovfac").hidden=false;   // Air Sensors readings live in the Air Quality layer group, not here
   $("ovwater").classList.toggle("on",showWater); $("ovroads").classList.toggle("on",showRoads); $("ovfac").classList.toggle("on",showFacilities);
   $("ovwater").onclick=async()=>{ showWater=!showWater; $("ovwater").classList.toggle("on",showWater); if(showWater) await ensureOverlay("water"); render(); };
   $("ovroads").onclick=async()=>{ showRoads=!showRoads; $("ovroads").classList.toggle("on",showRoads); if(showRoads){ setBusy("Loading roads…"); await ensureOverlay("roads"); setBusy(null); } render(); };
@@ -616,6 +691,7 @@ function fitView(bbox){
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
   $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});
   $("zreset").onclick=()=>setV({...fitView(DATA.aoi.bbox||DATA.scope),pitch:mode3d?50:0,transitionDuration:250});
+  if($("opac")) $("opac").oninput=e=>{ layerAlpha=Math.max(0.05,(+e.target.value)/100); if($("opacval"))$("opacval").textContent=e.target.value+"%"; render(); };   // live choropleth transparency
   $("tilt").onclick=()=>{                                       // 2D ⇄ 2.5D: tilt the camera + extrude the hexes into towers
     mode3d=!mode3d;
     $("tilt").style.color=mode3d?"var(--accent)":""; $("tilt").style.borderColor=mode3d?"var(--accent)":"";

@@ -55,6 +55,25 @@ def _match(v, op, val):
         return False
 
 
+def _clean(txt):
+    """Extract ONLY the final advisory from a reasoning model's output (kimi thinks out loud). Prefer the
+    <advisory>…</advisory> the prompt asks for; else strip <think> blocks + drop analysis paragraphs."""
+    import re
+    m = re.search(r"<advisory>\s*(.+?)\s*</advisory>", txt, re.S | re.I)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1)).strip()
+    txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S | re.I).strip()
+    paras = [p.strip() for p in re.split(r"\n\s*\n", txt) if p.strip()]
+    META = ("let me", "i need", "i'm given", "i should", "i can use", "draft:", "sentence ", "wait",
+            "double-check", "hmm", "actually", "maybe", "that's", "constraints", "numbers i", "note:",
+            "okay", "first,", "so ", "- ", "1.", "2.", "3.")
+    good = [p for p in paras if not any(p.lower().startswith(w) for w in META)]
+    for p in reversed(good):                                   # the model's LAST clean advisory-like paragraph
+        if len(p) > 40 and ("µg/m" in p or "PM2.5" in p or "band" in p.lower() or "advisory" in p.lower()):
+            return re.sub(r"\s+", " ", p).strip()
+    return re.sub(r"\s+", " ", (good[-1] if good else txt)).strip()[:600]
+
+
 def _narrative(base, rule, stats):
     """LLM advisory grounded ONLY in the fired rule + stats. Returns (text, model, fell_back)."""
     try:
@@ -65,10 +84,11 @@ def _narrative(base, rule, stats):
               f"Governing rule that fired — band '{rule.get('stage')}', PM2.5 {rule['operator']} {rule['value']} µg/m³, "
               f"authority {rule.get('authority')}, {rule.get('binding')}. Mandated action: {rule.get('proposed_action')}.\n"
               f"Measured now — PM2.5 mean {stats['mean']}, max {stats['max']} µg/m³ across {stats['n']} cells.\n"
-              f"Write the advisory now.")
+              f"Write the advisory now — 2-3 short sentences. Output ONLY the final advisory wrapped in "
+              f"<advisory>…</advisory>, with NO analysis, preamble, drafts, or notes before or after it.")
     try:
         res = _call("/v1/complete", {"messages": [{"role": "user", "content": prompt}]}, timeout=60)
-        txt = (res.get("content") or "").strip()
+        txt = _clean((res.get("content") or "").strip())
         if txt:
             return txt, res.get("model"), False
     except Exception:

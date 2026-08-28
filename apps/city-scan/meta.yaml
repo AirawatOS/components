@@ -12,7 +12,7 @@ entrypoint: index.html
 # Declares the governed viz.layer CATALOG — which, per the host bridge, also authorises reading any map layer
 # the catalog exposes. So new indicator layers (hydrology, population, buildings…) appear with just a descriptor
 # + data — no edit here. space.aoi/geo.landcover/city.coverage are the fixed frame/basemap/trust reads.
-required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature]
+required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature, air.sensor_reading]
 sandboxed: true
 # DECLARED APP EGRESS (broker-for-apps): the viewer may reach ONLY these external hosts, and only through the
 # host's /bridge/fetch (the CSP still blocks direct calls). Used for the OpenStreetMap tile basemap (© OSM).

@@ -1,0 +1,19 @@
+# A SKILL (kind=skill, INT-0002) — Facts × Rules → cited governance.recommendation.
+component_id: ds:airawatdeveloper:skill/crowd-safety-advisor
+kind: skill
+version: 0.1.1
+provider: ds:airawatdeveloper:developer
+display_name: Crowd-Safety Advisor
+entrypoint: run.py
+confinement_min: L1
+domain: safety
+applies_to_facts: [cell.crush_risk]
+rules_domain: cell.crush_risk
+metric: density_sqm
+reasoning: rule
+reads: [cell.crush_risk, governance.rule]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read, scope: cell.crush_risk }
+  - { verb: read, scope: governance.rule }
+  - { verb: write, scope: governance.recommendation }

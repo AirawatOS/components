@@ -51,17 +51,20 @@
   <span class="t">🛠 Studio</span>
   <select id="proj"></select>
   <span class="ic" id="newProj">＋ Project</span>
+  <span class="ic" id="delProj" title="Delete this project">🗑</span>
   <span style="margin-left:auto"></span>
+  <span class="ic" id="guideBtn" title="New to this? A plain-language guide">❓ Guide</span>
   <span class="ic" id="specsBtn">📐 Specs</span>
   <span class="ic" id="reqSchema">Request schema</span>
   <span class="ic" id="myReqBtn">📥 My Requests</span>
+  <span class="ic" id="archBtn" title="See the whole solution as layers of components wired by specs">🗺 Architecture</span>
   <span class="ic" id="composeBtn">Compose → Solution</span>
 </div>
 <div class="body">
   <div class="left" id="left"></div>
   <div class="center">
     <div class="tabs" id="tabs"></div>
-    <div class="edit" id="edit"><div class="welcome" id="welcome">Select a project, then open a file from the explorer.<br><span class="sub">Right-click a kind folder to add a component · right-click a component for actions.</span></div></div>
+    <div class="edit" id="edit"><div class="welcome" id="welcome">Select a project, then open <b>🗺 Architecture</b> to see it as layers of components — or open a file from the explorer.<br><span class="sub">The explorer groups your solution by layer. Right-click a layer to add a component · right-click a component for actions.</span></div></div>
     <div class="bottom" id="bottom"></div>
   </div>
   <div class="right collapsed" id="right"></div>
@@ -73,11 +76,26 @@ const pretty=s=>(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
 const KINDLABEL={app:'Apps',driver:'Drivers',engine:'Engines',skill:'Skills',agent:'AI Experts',pipeline:'Pipelines'};
 const KINDS=['app','driver','engine','skill','agent','pipeline'];
 const nameOf=o=>o.title||pretty((o.component_id||o.ref||'').split('/').pop());
+// ---- ADR-0055 LAYERS: a solution is layered components that talk through specs (Studio DX Slice 1) ----
+const LAYERS=['interaction','governance','intelligence','domain','platform','network'];
+const LAYER_NAME={interaction:'Interaction',governance:'Governance',intelligence:'Intelligence',domain:'Domain',platform:'Platform',network:'Network'};
+const LAYER_HINT={interaction:'apps people use',governance:'decisions & workflows',intelligence:'engines, skills & AI experts',domain:'data acquisition → facts',platform:'shared plumbing',network:'the shared specs everything speaks'};
+const KIND_LAYER={app:'interaction',solution:'interaction',engine:'intelligence',skill:'intelligence',agent:'intelligence',expert:'intelligence',driver:'domain',pipeline:'platform',workflow:'governance',subscription:'governance',decision:'governance'};
+const LAYER_KINDS={interaction:['app'],intelligence:['engine','skill','agent'],domain:['driver'],platform:['pipeline'],governance:[],network:[]};
+function schemaLayer(n){const d=(n||'').split('.')[0];return ({network:'network',ref:'network',platform:'platform',governance:'governance',viz:'interaction',studio:'platform'})[d]||'domain';}
+function layerOf(m){if(m.layer)return m.layer;if(m.kind==='schema'||m.kind==='interface')return m.kind==='interface'?'network':schemaLayer(m.ref);return KIND_LAYER[m.kind]||'domain';}
+// pull reads/writes from a member (set at scaffold) or lazily from its meta.yaml — the wiring the graph draws.
+function metaList(meta,key){if(!meta)return[];let m=meta.match(new RegExp('^'+key+':\\s*\\[([^\\]]*)\\]','m'));if(m)return m[1].split(',').map(s=>s.trim().replace(/['"]/g,'')).filter(Boolean);
+  m=meta.match(new RegExp('^'+key+':\\s*\\n((?:[ \\t]*-[ \\t]*.+\\n?)+)','m'));if(m)return m[1].split('\n').map(l=>l.replace(/^[ \t]*-[ \t]*/,'').trim().replace(/['"]/g,'')).filter(Boolean);return[];}
+const asList=v=>Array.isArray(v)?v:(v?String(v).split(/[,\s]+/).filter(Boolean):[]);
+async function wiringFor(m){if(m._wire)return m._wire;let reads=asList(m.reads),writes=asList(m.writes);
+  if(!reads.length&&!writes.length&&m.kind!=='schema'&&m.kind!=='interface'){try{let fs=FILES[m.ref];if(!fs){const r=await post('/bridge/component-read',{component:m.ref});fs=FILES[m.ref]=r.files||{};}const meta=fs['meta.yaml']||'';reads=metaList(meta,'reads');writes=metaList(meta,'writes');}catch(e){}}
+  m._wire={reads,writes};return m._wire;}
 async function q(schema){try{return (await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:'studio',schema})}).then(r=>r.json())).results||[];}catch(e){return[];}}
 async function save(obj){return fetch('/bridge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:obj.id,object:obj})}).then(r=>r.json());}
 async function post(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
-let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},TABS=[],ACTIVE=null,TENANT='kmc';
+let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},TABS=[],ACTIVE=null,TENANT='kmc',VIEW='files';
 
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;}catch(e){}  // build in the DEVELOPER's own tenant
@@ -89,36 +107,38 @@ async function boot(){
   tree();
   $('tgLeft').onclick=()=>$('left').classList.toggle('collapsed');
   $('newProj').onclick=newProject;
+  $('delProj').onclick=deleteProject;
   $('specsBtn').onclick=specsBrowser;
+  $('guideBtn').onclick=guide;
   $('reqSchema').onclick=requestSchema;
   $('myReqBtn').onclick=myRequests;
   $('composeBtn').onclick=composeSolution;
+  $('archBtn').onclick=toggleArch;
   buildRight();
 }
 // ---------- LEFT TREE ----------
 function tree(){
   const L=$('left'); if(!SEL){L.innerHTML='<div class="sub" style="padding:10px">No project.</div>';return;}
-  const byKind={}; (SEL.members||[]).forEach(m=>{(byKind[m.kind]=byKind[m.kind]||[]).push(m);});
-  let html='';
-  KINDS.forEach(k=>{
-    const mem=byKind[k]||[]; const open=OPENK['k:'+k];
-    html+=`<div class="node" data-kfolder="${k}" style="padding-left:6px"><span class="tw">${open?'▾':'▸'}</span>📁 ${KINDLABEL[k]} <span class="sub">(${mem.length})</span></div>`;
-    if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 30px">— empty —</div>`;
-      mem.forEach((m,mi)=>{const key='c:'+m.ref; const co=OPENK[key];
-        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px"><span class="tw">${co?'▾':'▸'}</span>📦 ${esc(nameOf(m))}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
-        if(co){ const fs=FILES[m.ref];
+  const byLayer={}; (SEL.members||[]).forEach(m=>{const ly=layerOf(m);(byLayer[ly]=byLayer[ly]||[]).push(m);});
+  let html='<div class="sub" style="padding:5px 8px 3px">Your solution, by layer — <b>components that talk through specs</b></div>';
+  LAYERS.forEach(ly=>{
+    const mem=byLayer[ly]||[]; const open=OPENK['ly:'+ly]!==false;   // layers open by default
+    html+=`<div class="node lyr" data-lfolder="${ly}" style="padding-left:6px" title="right-click to add to this layer"><span class="tw">${open?'▾':'▸'}</span><b>${esc(LAYER_NAME[ly])}</b> <span class="sub">· ${esc(LAYER_HINT[ly])} (${mem.length})</span></div>`;
+    if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 26px">— empty —</div>`;
+      mem.forEach((m)=>{const key='c:'+m.ref; const co=OPENK[key]; const spec=(m.kind==='schema'||m.kind==='interface');
+        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px"><span class="tw">${spec?'':(co?'▾':'▸')}</span>${spec?'📐':'📦'} ${esc(nameOf(m))} <span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
+        if(co&&!spec){ const fs=FILES[m.ref];
           if(!fs) html+=`<div class="sub" style="padding-left:44px">loading…</div>`;
           else Object.keys(fs).forEach(fp=>{ html+=`<div class="node" data-file="${esc(m.ref)}::${esc(fp)}" style="padding-left:40px"><span class="tw"></span>📄 ${esc(fp)}</div>`;});
         }});
     }
   });
   L.innerHTML=html;
-  L.querySelectorAll('[data-kfolder]').forEach(el=>{el.onclick=()=>{OPENK['k:'+el.dataset.kfolder]=!OPENK['k:'+el.dataset.kfolder];tree();};
-    el.oncontextmenu=e=>{e.preventDefault();ctxKind(el.dataset.kfolder,e);};});
-  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
-    el.oncontextmenu=e=>{e.preventDefault();ctxComp(ref0(el),e);};});
+  L.querySelectorAll('[data-lfolder]').forEach(el=>{el.onclick=()=>{const k='ly:'+el.dataset.lfolder;OPENK[k]=(OPENK[k]===false)?true:false;tree();};
+    el.oncontextmenu=e=>{e.preventDefault();ctxLayer(el.dataset.lfolder,e);};});
+  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&(m.kind==='schema'||m.kind==='interface')){return;}OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
+    el.oncontextmenu=e=>{e.preventDefault();ctxComp(el.dataset.comp,e);};});
   L.querySelectorAll('[data-file]').forEach(el=>{el.onclick=()=>{const [ref,fp]=el.dataset.file.split('::');openFile(ref,fp);};});
-  function ref0(el){return el.dataset.comp;}
 }
 function memberFor(ref){return (SEL.members||[]).find(m=>m.ref===ref);}
 // ---------- CONTEXT MENUS ----------
@@ -126,17 +146,30 @@ function menu(x,y,items){document.querySelectorAll('.menu').forEach(m=>m.remove(
   items.forEach(([label,fn])=>{const d=document.createElement('div');d.textContent=label;d.onclick=()=>{m.remove();fn();};m.appendChild(d);});
   document.body.appendChild(m);setTimeout(()=>document.addEventListener('click',()=>m.remove(),{once:true}),0);}
 function ctxKind(kind,e){menu(e.clientX,e.clientY,[['＋ New '+ (kind==='agent'?'AI Expert':pretty(kind)),()=>addComponent(kind)]]);}
-function ctxComp(ref,e){const m=memberFor(ref);const isApp=m&&m.kind==='app';
-  menu(e.clientX,e.clientY,[
+function ctxLayer(layer,e){const items=(LAYER_KINDS[layer]||[]).map(k=>['＋ New '+(k==='agent'?'AI Expert':pretty(k)),()=>addComponent(k)]);
+  if(layer==='network'||layer==='domain')items.push(['📐 Browse / add a spec…',specsBrowser]);
+  if(!items.length)items.push(['— configured on the platform, not built here —',()=>{}]);
+  menu(e.clientX,e.clientY,items);}
+function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';const existing=m.origin==='existing';
+  // CONFIG-vs-BUILD fork: an EXISTING platform component is CONFIGURED (install · keys · schedule), a NEW
+  // one is BUILT (edit · generate · test · publish). Same right-click, different verbs — so the developer
+  // learns which is which.
+  const build=[
     ['Open '+(isApp?'index.html':'run.py'),()=>openFile(ref,isApp?'dist/index.html':'run.py')],
     ['Open meta.yaml',()=>openFile(ref,'meta.yaml')],
     [isApp?'Preview':'Test',()=>isApp?window.open('/bridge/component-preview?component='+encodeURIComponent(ref),'_blank'):testComp(ref)],
     ['Publish',()=>publishComp(ref)],
     ['✨ Generate code (AI)',()=>{openFile(ref, m.kind==='app'?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}],
-    ['Remove from project',async()=>{SEL.members=SEL.members.filter(x=>x.ref!==ref);await save(SEL);delete FILES[ref];TABS=TABS.filter(t=>t.ref!==ref);renderTabs();renderEdit();tree();}],
-  ]);}
+  ];
+  const items = existing
+    ? [['⚙ Configure  (install · keys · schedule)',()=>configureComponent(ref)],
+       ['Open meta.yaml (read-only)',()=>openFile(ref,'meta.yaml')]]
+    : build;
+  items.push(['Remove from project',async()=>{SEL.members=SEL.members.filter(x=>x.ref!==ref);await save(SEL);delete FILES[ref];TABS=TABS.filter(t=>t.ref!==ref);renderTabs();renderEdit();tree();}]);
+  menu(e.clientX,e.clientY,items);}
 // ---------- TABS + EDITOR ----------
 async function openFile(ref,path){
+  VIEW='files';
   let fs=FILES[ref]; if(!fs){const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};}
   if(fs[path]===undefined){ // e.g. app has no run.py; fall back
     const alt=Object.keys(fs)[0]; if(!alt){bottom('No files — scaffold the component first.');return;} path=alt;}
@@ -155,14 +188,15 @@ function renderEdit(){
   E.innerHTML=`<div class="edtoolbar"><span class="sub">${esc(t.ref)} / ${esc(t.path)}</span>
       ${isCode?'<button class="btn sm" id="genBtn">✨ Generate with AI</button>':''}
       <span style="margin-left:auto"></span>
-      ${m&&m.kind!=='app'?'<button class="btn sm" id="tBtn">Test</button>':m?'<button class="btn sm" id="pvBtn">Preview</button>':''}
-      <button class="btn sm good" id="pubBtn">Publish</button>
+      ${m&&m.origin==='existing'?'<button class="btn sm" id="cfgBtn">⚙ Configure</button>':(m&&m.kind!=='app'?'<button class="btn sm" id="tBtn">Test</button>':m?'<button class="btn sm" id="pvBtn">Preview</button>':'')}
+      ${m&&m.origin==='existing'?'<span class="sub">reused — already published; configure it, no rebuild</span>':'<button class="btn sm good" id="pubBtn">Publish</button>'}
       <button class="btn sm primary" id="saveBtn">Save</button></div>
     <textarea class="code" id="code" spellcheck="false">${esc(t.content)}</textarea>`;
   const ta=$('code'); ta.oninput=()=>{t.content=ta.value;if(!t.dirty){t.dirty=true;renderTabs();}};
   ta.onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveActive();}};
   $('saveBtn').onclick=saveActive;
-  $('pubBtn').onclick=()=>publishComp(t.ref);
+  if($('pubBtn'))$('pubBtn').onclick=()=>publishComp(t.ref);
+  if($('cfgBtn'))$('cfgBtn').onclick=()=>configureComponent(t.ref);
   if($('tBtn'))$('tBtn').onclick=()=>testComp(t.ref);
   if($('pvBtn'))$('pvBtn').onclick=()=>window.open('/bridge/component-preview?component='+encodeURIComponent(t.ref),'_blank');
   if($('genBtn'))$('genBtn').onclick=()=>generateInto(t);
@@ -188,9 +222,9 @@ async function runGen(ref,req,fixError){
   }else bottom('✗ '+(g.error||'generation failed'));
 }
 async function testComp(ref){bottom('Running '+ref+' …');const r=await post('/bridge/project-test',{component:ref});
-  const ok=r.status==='ok'; const detail=(r.log||r.error||'');
+  const ok=r.status==='ok'; const detail=(r.log||r.detail||r.error||'');
   if(ok){bottom('✓ ran OK\n'+detail);const m=memberFor(ref);if(m&&(m.status==='draft'||m.status==='scaffolded')){m.status='tested';await save(SEL);tree();}}
-  else bottomFix('✗ '+(r.status||r.error||'failed')+'\n'+detail, ref, detail);}
+  else bottomFix('✗ '+(r.error||r.detail||r.status||'failed')+'\n'+detail, ref, detail);}
 async function publishComp(ref){bottom('Publishing '+ref+' …');const r=await post('/bridge/project-publish',{component:ref});
   if(r.published){const m=memberFor(ref);if(m){m.status='published';await save(SEL);tree();}bottom('✓ certified (verified='+r.verified+') + published to the Marketplace');}
   else bottom('✗ '+(r.error||'publish failed')+(r.detail?'\n'+r.detail:''));}
@@ -222,60 +256,131 @@ async function aiSend(msg){if(!msg)return;if(!SEL){aiSay('expert','Create or pic
 function aiCard(a){const t=a.type;const head=t==='add_component'?'♻️ Reuse '+esc(a.title||a.ref):t==='request_schema'?'📐 Request schema '+esc(a.schema_id):t==='scaffold'?'🧱 Build new '+esc(a.title||a.component):esc(t);
   const el=document.createElement('div');el.className='card act';el.innerHTML=`<b>${head}</b><div class="sub">${esc(a.reason||'')}</div><div class="row" style="text-align:right;margin-top:5px"><button class="btn sm good" id="ok">Confirm</button></div>`;
   el.querySelector('#ok').onclick=async()=>{const b=el.querySelector('#ok');b.disabled=true;b.textContent='…';
-    try{ if(t==='add_component'){SEL.members=SEL.members||[];SEL.members.push({ref:a.ref,kind:a.kind,title:a.title,origin:'existing',status:'published'});await save(SEL);}
-      else if(t==='request_schema'){await post('/bridge/schema-request',{schema_id:a.schema_id,version:a.version||'0.1.0',definition:a.definition||{},justification:a.reason||''});}
-      else if(t==='scaffold'){SEL.members=SEL.members||[];SEL.members.push({ref:a.component,kind:a.kind,title:a.title,origin:'new',status:'draft'});await save(SEL);await post('/bridge/component-scaffold',{component:a.component,kind:a.kind,writes:a.writes,egress:a.egress,title:a.title});}
-      b.textContent='✓ done';OPENK['k:'+(a.kind||'')]=true;tree();
+    try{ if(t==='add_component'){SEL.members=SEL.members||[];SEL.members.push({ref:a.ref,kind:a.kind,title:a.title,origin:'existing',status:'published',layer:KIND_LAYER[a.kind]||'domain'});await save(SEL);}
+      else if(t==='request_schema'){b.textContent='review…';requestSchema({schema_id:a.schema_id,version:a.version||'0.1.0',x_kind:a.x_kind||a.kind,reason:a.reason});b.disabled=false;b.textContent='reopen';return;}
+      else if(t==='scaffold'){SEL.members=SEL.members||[];SEL.members.push({ref:a.component,kind:a.kind,title:a.title,origin:'new',status:'draft',layer:KIND_LAYER[a.kind]||'domain',writes:asList(a.writes),reads:asList(a.reads)});await save(SEL);await post('/bridge/component-scaffold',{component:a.component,kind:a.kind,writes:a.writes,egress:a.egress,title:a.title});}
+      b.textContent='✓ done';OPENK['ly:'+(KIND_LAYER[a.kind]||'domain')]=true;tree();
+      if(t==='add_component')configureComponent(a.ref);   // reuse → lead straight into install + configure
     }catch(e){b.disabled=false;b.textContent='Confirm';}
   };return el;}
 // ---------- MODALS ----------
-function newProject(){const m=modal(`<h3>New Project</h3><label class="sub">Name</label><input class="in" id="t"><label class="sub">Goal</label><textarea class="in" id="g" rows="3"></textarea><div style="text-align:right;margin-top:10px"><button class="btn" id="x">Cancel</button> <button class="btn primary" id="ok">Create</button></div>`);
-  m.q('#x').onclick=m.close;m.q('#ok').onclick=async()=>{const t=m.q('#t').value.trim();if(!t)return;const id='ds:'+TENANT+':studio/project/'+t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),status:'active',members:[],tenant:TENANT});m.close();await boot();};}
+function newProject(){const m=modal(`<h3>New Project — tell me what you're building</h3>
+  <div class="sub">A solution is <b>layered components that talk through specs</b>. Answer a few questions; the Solution Expert maps them to the right component in each layer.</div>
+  <label class="sub" style="margin-top:8px">Name</label><input class="in" id="t" placeholder="Urban Flood Response">
+  <label class="sub">① What are you building — the outcome?</label><textarea class="in" id="g" rows="2" placeholder="Warn wards about flood-prone streets before heavy rain"></textarea>
+  <label class="sub">② Who uses it? <span class="sub">— roles → app audiences & governance</span></label><input class="in" id="who" placeholder="ward officer, city engineer, resident">
+  <label class="sub">③ What real-world things does it deal with? <span class="sub">— → nouns/specs</span></label><input class="in" id="ent" placeholder="road, drain, rainfall, flood risk">
+  <label class="sub">④ What data sources feed it? <span class="sub">— → drivers</span></label><input class="in" id="src" placeholder="OpenStreetMap, Open-Meteo forecast, terrain DEM">
+  <label class="sub">⑤ What questions / decisions must it answer? <span class="sub">— → engines & skills</span></label><input class="in" id="dec" placeholder="which streets flood at 100mm? who to alert?">
+  <label class="sub">⑥ What sets it off? <span class="sub">— → triggers / schedule</span></label><input class="in" id="trg" placeholder="daily, or when a heavy-rain forecast arrives">
+  <label style="display:block;margin-top:10px"><input type="checkbox" id="design" checked> Ask the Solution Expert to propose the component graph now</label>
+  <div style="text-align:right;margin-top:10px"><button class="btn" id="x">Cancel</button> <button class="btn primary" id="ok">Create</button></div>`);
+  const lines=id=>((m.q(id)&&m.q(id).value)||'').split(/[,\n;]+/).map(s=>s.trim()).filter(Boolean);
+  m.q('#x').onclick=m.close;
+  m.q('#ok').onclick=async()=>{const t=m.q('#t').value.trim();if(!t)return;
+    const id='ds:'+TENANT+':studio/project/'+t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);
+    const brief={users:lines('#who'),entities:lines('#ent'),data_sources:lines('#src'),decisions:lines('#dec'),triggers:lines('#trg')};
+    const design=m.q('#design').checked;
+    await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),brief,status:'active',members:[],tenant:TENANT});
+    m.close(); await boot();
+    const sel=$('proj'); if([...sel.options].some(o=>o.value===id)){sel.value=id;SEL=PROJECTS.find(p=>p.id===id);TABS=[];FILES={};renderTabs();renderEdit();tree();}
+    if(design&&SEL){expandAI();setTimeout(()=>aiSend(briefPrompt(SEL)),150);}
+  };}
+async function deleteProject(){
+  if(!SEL){bottom('No project selected.');return;}
+  const title=SEL.title, id=SEL.id;
+  const m=modal(`<h3>Delete project</h3><div class="sub">Delete the build workspace <b>${esc(title)}</b>? Its brief + member list are removed. <b>Published components stay in the Marketplace</b> — only this project workspace goes.</div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Cancel</button> <button class="btn" id="ok" style="background:#a12a2a;border-color:#b33;color:#fff">Delete</button></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#ok').onclick=async()=>{m.q('#ok').textContent='…';let r={};try{r=await post('/bridge/project-delete',{id});}catch(e){}m.close();
+    if(r.deleted){SEL=null;TABS=[];FILES={};ACTIVE=null;await boot();bottom('✓ deleted project “'+title+'”');}
+    else bottom('✗ '+(r.error||'delete failed'));};
+}
+function briefPrompt(p){const b=p.brief||{};const j=a=>((a||[]).join(', ')||'—');
+  return `Design the solution for "${p.title}". Goal: ${p.goal||'—'}. Users: ${j(b.users)}. Real-world things: ${j(b.entities)}. Data sources: ${j(b.data_sources)}. Decisions to answer: ${j(b.decisions)}. Triggers: ${j(b.triggers)}. Reuse existing components + specs first; propose the LAYERED component graph — drivers for the data sources (domain), engines/skills for the decisions (intelligence), an app for the users (interaction) — and flag any missing specs.`;}
 function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind===kind);
   const m=modal(`<h3>Add ${kind==='agent'?'AI Expert':pretty(kind)}</h3><div class="sub">Reuse an existing one (recommended) or create a new one to build.</div>
     <label class="sub" style="margin-top:8px">Reuse existing</label><select class="in" id="ex"><option value="">— choose —</option>${comps.map(c=>`<option value="${esc(c.component_id)}">${esc(nameOf(c))}${c.certified?' ✓':''}</option>`).join('')}</select>
     <div style="text-align:right"><button class="btn primary sm" id="addex">Add (reuse)</button></div><hr style="border-color:var(--line)">
-    <label class="sub">New — id</label><input class="in" id="nn" placeholder="ds:${TENANT}:${kind}/my-thing" value="ds:${TENANT}:${kind}/">
+    <label class="sub">New — id <span class="sub">(published under the airawat vendor namespace)</span></label><input class="in" id="nn" placeholder="ds:airawat:${kind}/my-thing" value="ds:airawat:${kind}/">
     <div style="text-align:right"><button class="btn" id="x">Cancel</button> <button class="btn" id="addnew">Add + scaffold</button></div>`);
   m.q('#x').onclick=m.close;
-  m.q('#addex').onclick=async()=>{const ref=m.q('#ex').value;if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'existing',status:'published'});await save(SEL);m.close();OPENK['k:'+kind]=true;tree();};
-  m.q('#addnew').onclick=async()=>{const ref=m.q('#nn').value.trim();if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'new',status:'draft'});await save(SEL);await post('/bridge/component-scaffold',{component:ref,kind});delete FILES[ref];m.close();OPENK['k:'+kind]=true;OPENK['c:'+ref]=true;tree();};}
+  m.q('#addex').onclick=async()=>{const ref=m.q('#ex').value;if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'existing',status:'published',layer:KIND_LAYER[kind]||'domain'});await save(SEL);m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;tree();configureComponent(ref);};
+  m.q('#addnew').onclick=async()=>{const ref=m.q('#nn').value.trim();if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'new',status:'draft',layer:KIND_LAYER[kind]||'domain'});await save(SEL);await post('/bridge/component-scaffold',{component:ref,kind});delete FILES[ref];m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;OPENK['c:'+ref]=true;tree();};}
+// ---------- CONFIG-vs-BUILD: configure an EXISTING platform component (install · keys · schedule) ----------
+function egressHosts(meta){const out=[];const re=/host:\s*([^\s,}'"]+)/g;let m;while((m=re.exec(meta||'')))out.push(m[1]);return [...new Set(out)];}
+async function configureComponent(ref){
+  const m=modal(`<h3>⚙ Configure ${esc(pretty(ref.split('/').pop()))}</h3>
+    <div class="sub">This is an <b>existing platform component</b> — you don't build it, you <b>install it into your city and give it what it needs to run</b>. Configuration ≠ code.</div>
+    <div id="cfg" style="margin-top:10px">reading the component…</div>
+    <div style="text-align:right;margin-top:10px"><button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close;
+  let fs=FILES[ref]; if(!fs){try{const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};}catch(e){fs={};}}
+  const meta=fs['meta.yaml']||'';
+  const secrets=metaList(meta,'secrets'), config=metaList(meta,'config'), hosts=egressHosts(meta);
+  const isDriver=(memberFor(ref)||{}).kind==='driver'||/^\s*kind:\s*driver/m.test(meta);
+  let n=0; const step=()=>++n;
+  let h=`<div class="card"><b>${step()} · Install into your city</b><div class="sub">Grants it permission to read/write your tenant's data (install-as-grant).</div>
+    <div style="text-align:right;margin-top:4px"><button class="btn sm primary" id="inst">Install</button> <span class="sub" id="insts"></span></div></div>`;
+  if(secrets.length) h+=`<div class="card"><b>${step()} · API keys</b><div class="sub">Stored in the vault — never in code or the registry.</div>`+
+    secrets.map(s=>`<div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="sub" style="flex:0 0 150px">${esc(s)}</span><input class="in" data-sec="${esc(s)}" type="password" placeholder="paste value" style="margin:0"><button class="btn sm" data-setsec="${esc(s)}">Set</button></div>`).join('')+`</div>`;
+  if(isDriver) h+=`<div class="card"><b>${step()} · Run schedule <span class="sub">(optional)</span></b><div class="sub">How often it refreshes your data.</div>
+    <div class="row" style="gap:6px;margin-top:4px"><select class="in" id="cron" style="margin:0"><option value="">— manual —</option><option value="0 */6 * * *">every 6 hours</option><option value="0 2 * * *">daily · 2am</option><option value="0 3 * * 0">weekly</option></select><button class="btn sm" id="setcron">Set schedule</button> <span class="sub" id="crons"></span></div></div>`;
+  if(config.length) h+=`<div class="card"><b>Also needs config</b><div class="sub">${config.map(esc).join(', ')} — set these in the <b>City Setup / Connections</b> app (asset upload or area-of-interest).</div></div>`;
+  if(hosts.length) h+=`<div class="sub" style="margin-top:6px">🌐 Calls out to: ${hosts.map(esc).join(', ')}</div>`;
+  m.q('#cfg').innerHTML=h;
+  m.q('#inst').onclick=async()=>{m.q('#insts').textContent='installing…';let r={};try{r=await post('/bridge/install',{id:ref});}catch(e){}
+    m.q('#insts').textContent=(r.installed||r.run_token||r.ok||r.component)?'✓ installed':('✗ '+(r.error||'failed'));
+    const mm=memberFor(ref);if(mm&&!(r.error)){mm.configured=true;await save(SEL);tree();}};
+  m.q('#cfg').querySelectorAll('[data-setsec]').forEach(b=>b.onclick=async()=>{const name=b.dataset.setsec;const el=m.q('[data-sec="'+name+'"]');const val=(el&&el.value||'').trim();if(!val)return;b.textContent='…';let r={};try{r=await post('/bridge/secret',{action:'set',component:ref,name,value:val});}catch(e){}b.textContent=r.error?'✗':'✓ set';if(el&&!r.error)el.value='';});
+  if(m.q('#setcron'))m.q('#setcron').onclick=async()=>{const cron=m.q('#cron').value;if(!cron){m.q('#crons').textContent='pick an interval';return;}let r={};try{r=await post('/bridge/schedule',{component:ref,cron});}catch(e){}m.q('#crons').textContent=r.error?('✗ '+r.error):'✓ scheduled';};
+}
 async function composeSolution(){if(!SEL)return;const pub=(SEL.members||[]).filter(x=>x.status==='published').length;if(!pub){bottom('Publish at least one component before composing.');return;}
   bottom('Composing '+SEL.title+' → solution …');const r=await post('/bridge/project-compose',{project:SEL.id});
   if(r.solution){SEL.target_solution=r.solution;bottom('✓ composed '+r.solution+' ('+r.members.length+' members, verified='+r.verified+') → published to the Marketplace (one install brings all members)');}
   else bottom('✗ '+(r.error||'compose failed'));}
 async function specsBrowser(){
-  const m=modal(`<h3>📐 Network Specifications</h3><div class="sub">The governed vocabulary every component must use. Click one to see its contract.</div>
+  const m=modal(`<h3>📐 Network Specifications</h3><div class="sub">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Click one to see its contract.</div>
     <div class="row" style="gap:10px;margin-top:8px"><div id="slist" style="flex:1;max-height:52vh;overflow:auto;border-right:1px solid var(--line);padding-right:8px">loading…</div>
-    <div id="sdet" style="flex:1.4;max-height:52vh;overflow:auto"><div class="sub">Select a schema.</div></div></div>
+    <div id="sdet" style="flex:1.4;max-height:52vh;overflow:auto"><div class="sub">Select a noun or verb.</div></div></div>
     <div style="text-align:right;margin-top:8px"><button class="btn" id="x">Close</button></div>`);
   m.q('#x').onclick=m.close;
   let d={schemas:[],pending:[]}; try{d=await post('/bridge/schemas',{});}catch(e){}
+  let ifs=[]; try{ifs=(await post('/bridge/interfaces',{})).interfaces||[];}catch(e){}
+  const iid=f=>f.interface_id||f.id||f.name||'';
   const by={}; (d.schemas||[]).forEach(s=>{const k=(s.schema_id||'').split('.')[0]||'other';(by[k]=by[k]||[]).push(s);});
-  const pend=new Set((d.pending||[]).map(p=>p.schema_id));
-  let html=`<div class="sub" style="margin-bottom:6px">${(d.schemas||[]).length} governed · ${(d.pending||[]).length} pending</div>`;
+  let html=`<div class="sub" style="margin-bottom:6px">${(d.schemas||[]).length} nouns · ${ifs.length} verbs · ${(d.pending||[]).length} pending</div>`;
+  html+=`<div style="font-weight:700;margin:4px 0 2px">📄 Nouns <span class="sub">(data schemas)</span></div>`;
   Object.keys(by).sort().forEach(dom=>{html+=`<div style="font-weight:600;margin:6px 0 2px;color:var(--accent)">${esc(dom)}</div>`;
     by[dom].sort((a,b)=>(a.schema_id>b.schema_id?1:-1)).forEach(s=>{const sens=s.sensitivity||'internal';
       html+=`<div class="node sitem" data-sid="${esc(s.schema_id)}" style="padding:3px 4px;cursor:pointer">📄 ${esc(s.schema_id)} <span class="sub">v${esc(s.version||'')}</span> <span class="st st-${sens}" title="${sens}"></span></div>`;});});
   (d.pending||[]).forEach(p=>{html+=`<div class="node" style="padding:3px 4px;color:var(--muted)">⏳ ${esc(p.schema_id)} <span class="sub">pending approval</span></div>`;});
+  if(ifs.length){html+=`<div style="font-weight:700;margin:12px 0 2px">⚡ Verbs <span class="sub">(interfaces — how components CALL each other, ADR-0058)</span></div>`;
+    ifs.sort((a,b)=>(iid(a)>iid(b)?1:-1)).forEach(f=>{html+=`<div class="node iitem" data-iid="${esc(iid(f))}" style="padding:3px 4px;cursor:pointer">⚡ ${esc(iid(f))} <span class="sub">v${esc(f.version||'')}</span></div>`;});}
   m.q('#slist').innerHTML=html;
   m.q('#slist').querySelectorAll('.sitem').forEach(el=>el.onclick=async()=>{
     const sid=el.dataset.sid; m.q('#sdet').innerHTML='<div class="sub">resolving…</div>';
     let r={}; try{r=await post('/bridge/schema-resolve',{schema_id:sid});}catch(e){}
-    m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">${esc(sid)} <span class="sub">v${esc(r.version||'')}</span></h4>
-      <div class="sub">sensitivity: ${esc(r.sensitivity||'internal')} · issued_by ${esc(r.issued_by||'—')} · ${esc((r.issued_at||'').slice(0,10))} · status ${esc(r.status||'active')}</div>
+    m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">📄 ${esc(sid)} <span class="sub">v${esc(r.version||'')}</span></h4>
+      <div class="sub">a NOUN (data schema) · sensitivity: ${esc(r.sensitivity||'internal')} · issued_by ${esc(r.issued_by||'—')} · status ${esc(r.status||'active')}</div>
       <div class="sub" style="margin-top:6px">definition</div>
       <pre style="max-height:34vh;overflow:auto;font-size:12px">${esc(JSON.stringify(r.definition||r,null,2))}</pre>`;});
+  m.q('#slist').querySelectorAll('.iitem').forEach(el=>el.onclick=async()=>{
+    const id=el.dataset.iid; m.q('#sdet').innerHTML='<div class="sub">resolving…</div>';
+    let r={}; try{r=await post('/bridge/interface-resolve',{interface_id:id});}catch(e){}
+    m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">⚡ ${esc(id)} <span class="sub">v${esc(r.version||'')}</span></h4>
+      <div class="sub">a VERB (interface) — a request/response or event contract components call each other through</div>
+      <pre style="max-height:40vh;overflow:auto;font-size:12px">${esc(JSON.stringify(r.definition||r,null,2))}</pre>`;});
 }
-async function requestSchema(){
+async function requestSchema(prefill){prefill=prefill||{};
   // template is HOUSE-RULE COMPLIANT by default (closed + enveloped) so a proposal starts from a passing shape.
-  const tmpl=sid=>JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid||"domain.subject","type":"object","x-kind":"record","additionalProperties":false,"required":["schema","id"],"properties":{"schema":{"const":sid||"domain.subject"},"id":{"type":"string"}}},null,2);
-  const m=modal(`<h3>Request a schema</h3><div class="sub">The AI checks the house rules + suggests reuse before you file — so it arrives at the Semantic Administrator already passing the gate.</div>
-    <div class="row" style="gap:8px"><div style="flex:2"><label class="sub">schema id</label><input class="in" id="sid" placeholder="geo.osm_feature"></div><div style="flex:1"><label class="sub">version</label><input class="in" id="ver" value="0.1.0"></div></div>
-    <label class="sub">definition</label><textarea class="in" id="def" rows="9" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(tmpl(''))}</textarea>
-    <div id="adv" class="sub" style="margin-top:6px"></div>
+  const tmpl=(sid,xk)=>JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid||"domain.subject","type":"object","x-kind":xk||"record","additionalProperties":false,"required":["schema","id"],"properties":{"schema":{"const":sid||"domain.subject"},"id":{"type":"string","pattern":"^ds:[a-z0-9-]+:\\S+$"}}},null,2);
+  const m=modal(`<h3>Request a schema</h3><div class="sub">${prefill.reason?'<b>Proposed by the Solution Expert.</b> ':''}The AI checks the house rules + suggests reuse before you file — so it arrives at the Semantic Administrator already passing the gate.</div>
+    <div class="row" style="gap:8px"><div style="flex:2"><label class="sub">schema id</label><input class="in" id="sid" placeholder="geo.osm_feature" value="${esc(prefill.schema_id||'')}"></div><div style="flex:1"><label class="sub">version</label><input class="in" id="ver" value="${esc(prefill.version||'0.1.0')}"></div></div>
+    <label class="sub">definition <span class="sub">· x-kind: ${esc(prefill.x_kind||'record')}</span></label><textarea class="in" id="def" rows="9" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(tmpl(prefill.schema_id||'',prefill.x_kind))}</textarea>
+    <div id="adv" class="sub" style="margin-top:6px">${prefill.reason?'<span class="sub">'+esc(prefill.reason)+'</span>':''}</div>
     <div style="text-align:right;margin-top:6px"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="advise">🤖 Advise</button> <button class="btn primary" id="file">File request</button></div>`);
-  m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim());};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
+  m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim(),prefill.x_kind);};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
   const advise=async()=>{let d;try{d=JSON.parse(m.q('#def').value);}catch(e){m.q('#adv').innerHTML='<span style="color:var(--err)">bad JSON</span>';return null;}
     const res=await post('/bridge/schema-advise',{schema_id:m.q('#sid').value.trim(),definition:d});
     const rec=res.recommendation, col=rec==='reuse'?'#f0b429':rec==='fix-and-propose'?'var(--err)':'var(--good)';
@@ -288,7 +393,7 @@ async function requestSchema(){
   m.q('#file').onclick=async()=>{const a=await advise(); if(!a)return;
     if((a.house_rule_violations||[]).length){m.q('#rm').innerHTML='<span style="color:var(--err)">fix the house-rule violations first</span>';return;}
     const d=JSON.parse(m.q('#def').value);
-    const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d});
+    const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d,x_kind:prefill.x_kind||d['x-kind']});
     m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};}
 
 async function myRequests(){
@@ -304,5 +409,67 @@ async function myRequests(){
     : '<div class="sub">No change requests yet. Use “Request a schema”.</div>';
 }
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return {q:s=>w.querySelector(s),close:()=>w.remove()};}
+// ---------- PLAIN-LANGUAGE GUIDE (Slice 5): for developers new to layered, spec-driven composition ----------
+function guide(){
+  const L=(n,d)=>`<div style="margin:5px 0"><b>${n}</b> — <span class="sub">${d}</span></div>`;
+  const m=modal(`<h3>❓ How AirawatOS solutions work</h3>
+  <div class="sub">You are not building one app with its own database. You are <b>composing a solution from LAYERED COMPONENTS that talk through SPECS</b> — shared, governed contracts. Here is the vocabulary.</div>
+  <h4 style="margin:14px 0 4px">The building blocks</h4>
+  ${L('📦 Driver','brings the outside world IN — fetches from an external source (an API, OSM, a file) and writes governed facts.')}
+  ${L('📦 Engine','turns facts into MORE facts — reads existing data, computes, writes a derived result. No external calls.')}
+  ${L('📦 Skill / AI Expert','turns facts + rules into a CITED recommendation. It recommends; a human decides.')}
+  ${L('📦 App','what people actually see and use.')}
+  ${L('📐 Spec','the shared CONTRACT two components agree on — a noun (a data schema) or a verb (an interface). Components never guess each other; they speak specs.')}
+  <h4 style="margin:14px 0 4px">The layers <span class="sub">(open 🗺 Architecture to see yours)</span></h4>
+  ${L('Interaction','the apps people use')}
+  ${L('Governance','who decides, and the rules & workflow')}
+  ${L('Intelligence','engines, skills & AI experts — the reasoning')}
+  ${L('Domain','drivers that acquire data → governed facts')}
+  ${L('Platform','shared plumbing')}
+  ${L('Network','the specs & standards everything speaks')}
+  <h4 style="margin:14px 0 4px">Build vs Configure</h4>
+  <div class="sub"><b>Build</b> a NEW component when nothing fits: scaffold → generate/edit code → Test → Publish. <b>Configure</b> an EXISTING platform component when one already does the job: install it, set its API keys & schedule — no code. Reuse first; the Solution Expert always suggests reuse before building.</div>
+  <h4 style="margin:14px 0 4px">The flow</h4>
+  <div class="sub">① <b>＋ Project</b> — answer the wizard (what · who · data · decisions · triggers). ② The <b>🧠 Solution Expert</b> proposes a layered graph — reuse or build each part, confirm-gated. ③ See it in <b>🗺 Architecture</b>. ④ Test each component in your dev sandbox. ⑤ Publish. ⑥ <b>Compose → Solution</b> — one install brings the whole thing.</div>
+  <div style="text-align:right;margin-top:14px"><button class="btn primary" id="x">Got it</button></div>`);
+  m.q('#x').onclick=m.close;
+}
+// ---------- ARCHITECTURE VIEW: the whole solution as layers of components wired by specs ----------
+function toggleArch(){if(!SEL){bottom('Pick or create a project first.');return;}VIEW=(VIEW==='arch')?'files':'arch';if(VIEW==='arch')renderArch();else renderEdit();}
+async function renderArch(){
+  const E=$('edit');if(!SEL){E.innerHTML='<div class="welcome">No project.</div>';return;}
+  E.innerHTML='<div class="welcome">Drawing the architecture…</div>';
+  const members=(SEL.members||[]);
+  await Promise.all(members.map(m=>(m.kind==='schema'||m.kind==='interface')?null:wiringFor(m)));
+  const nodes={},order=[];const addNode=(id,o)=>{if(!nodes[id]){nodes[id]=Object.assign({id},o);order.push(id);}return nodes[id];};
+  members.forEach(m=>{const spec=(m.kind==='schema'||m.kind==='interface');addNode(m.ref,{label:nameOf(m),kind:m.kind,layer:layerOf(m),type:spec?'spec':'component',status:m.status,ref:m.ref});});
+  const edges=[];
+  members.forEach(m=>{if(m.kind==='schema'||m.kind==='interface')return;const w=m._wire||{reads:[],writes:[]};
+    w.writes.forEach(s=>{const id='spec:'+s;if(!nodes[s]&&!nodes[id])addNode(id,{label:s,kind:'schema',layer:schemaLayer(s),type:'spec',ghost:true});edges.push({from:m.ref,to:nodes[s]?s:id,kind:'write'});});
+    w.reads.forEach(s=>{const id='spec:'+s;if(!nodes[s]&&!nodes[id])addNode(id,{label:s,kind:'schema',layer:schemaLayer(s),type:'spec',ghost:true});edges.push({from:nodes[s]?s:id,to:m.ref,kind:'read'});});});
+  const W=Math.max((E.clientWidth||900)-24,600),NW=168,NH=46,GAP=26,BANDPAD=30;
+  const cols=Math.max(1,Math.floor((W-40)/(NW+GAP)));let y=14;const bands=[];
+  LAYERS.forEach(ly=>{const ns=order.map(id=>nodes[id]).filter(n=>n.layer===ly);if(!ns.length)return;
+    const rows=Math.ceil(ns.length/cols),bh=rows*(NH+GAP)+BANDPAD;
+    ns.forEach((n,i)=>{const r=Math.floor(i/cols),c=i%cols;n.x=30+c*(NW+GAP);n.y=y+26+r*(NH+GAP);n.w=NW;n.h=NH;});
+    bands.push({ly,y,h:bh});y+=bh;});
+  const H=y+20;
+  const pth=(a,b)=>{const x1=a.x+a.w/2,y1=a.y+a.h,x2=b.x+b.w/2,y2=b.y,my=(y1+y2)/2;return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;};
+  let svg=`<svg width="${W}" height="${H}" style="display:block"><defs>
+    <marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
+    <marker id="arwW" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f81f7"/></marker></defs>`;
+  bands.forEach((b,i)=>{svg+=`<rect x="6" y="${b.y}" width="${W-12}" height="${b.h-8}" rx="10" fill="${i%2?'#0f141a':'#12181f'}" stroke="#21262d"/><text x="18" y="${b.y+16}" fill="#8b949e" font-size="11" font-weight="700">${esc(LAYER_NAME[b.ly].toUpperCase())} <tspan fill="#586069">· ${esc(LAYER_HINT[b.ly])}</tspan></text>`;});
+  edges.forEach(e=>{const a=nodes[e.from],b=nodes[e.to];if(!a||!b||a.x==null||b.x==null)return;const wr=e.kind==='write';
+    svg+=`<path d="${pth(a,b)}" fill="none" stroke="${wr?'#2f81f7':'#8b949e'}" stroke-width="1.4" ${wr?'':'stroke-dasharray="4 3"'} marker-end="url(#${wr?'arwW':'arw'})" opacity="0.72"/>`;});
+  order.forEach(id=>{const n=nodes[id];if(n.x==null)return;const isSpec=n.type==='spec';
+    svg+=`<g class="anode" data-ref="${esc(n.ref||'')}"><rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="9" fill="${isSpec?(n.ghost?'#161b22':'#1b2430'):'#1b222c'}" stroke="${isSpec?'#30475e':'#2f81f7'}" stroke-width="1.3"/>
+      <text x="${n.x+10}" y="${n.y+19}" fill="#e6edf3" font-size="12" font-weight="600">${esc((n.label||'').slice(0,20))}</text>
+      <text x="${n.x+10}" y="${n.y+35}" fill="#8b949e" font-size="10">${isSpec?'📐 ':''}${esc(n.kind)}${n.status&&!isSpec?' · '+esc(n.status):''}${n.ghost?' · referenced':''}</text></g>`;});
+  svg+='</svg>';
+  E.innerHTML=`<div class="edtoolbar"><b>🗺 Solution architecture</b> <span class="sub">— ${order.length} nodes · ${bands.length} layers · <span style="color:#2f81f7">▬ writes</span> · <span style="color:#8b949e">┈ reads</span> · 📐 spec</span><span style="margin-left:auto"></span><button class="btn sm" id="filesBtn">📄 Files</button></div>
+    <div style="flex:1;overflow:auto;background:var(--bg)">${bands.length?svg:'<div class="welcome">No components yet.<br><span class="sub">Right-click a layer in the explorer to add one, or ask the Solution Expert.</span></div>'}</div>`;
+  $('filesBtn').onclick=()=>{VIEW='files';renderEdit();};
+  E.querySelectorAll('.anode').forEach(g=>{const ref=g.dataset.ref;const m=ref&&memberFor(ref);if(m&&m.kind!=='schema'&&m.kind!=='interface')g.style.cursor='pointer',g.onclick=()=>openFile(ref,m.kind==='app'?'dist/index.html':'run.py');});
+}
 boot();
 </script>

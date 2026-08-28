@@ -63,13 +63,17 @@ function priceLabel(p){ p=p||{}; if(p.model==='free'||!p.model) return '<span cl
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 async function install(kind,id,btn){
   btn.disabled=true; btn.textContent='Installing…';
-  const r=await fetch('/bridge/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,id})}).then(r=>r.json());
   const m=document.getElementById('msg');
-  if(r.error){ m.textContent='✗ '+r.error+' (install needs a tenant-admin session)'; btn.disabled=false; btn.textContent='Install'; }
-  else {
-    const n=(r.members||[]).filter(x=>!x.error).length;   // an AI Expert fans out to its Skills
-    m.textContent='✓ installed '+pretty(id.split('/').pop())+(n?` + ${n} skill${n>1?'s':''}`:'');
+  try{
+    const r=await fetch('/bridge/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,id})}).then(r=>r.json());
+    if(r.error){ m.textContent='✗ '+r.error+' (install needs a tenant-admin session)'; btn.disabled=false; btn.textContent='Install'; return; }
+    // `members` is an ARRAY for a component fan-out but an integer COUNT for a solution install — handle both.
+    const mem=r.members; const n=Array.isArray(mem)?mem.filter(x=>!x.error).length:(typeof mem==='number'?mem:0);
+    const apps=(r.shelved_apps||[]).length;
+    m.textContent='✓ installed '+pretty(id.split('/').pop())+(n?` (${n} component${n>1?'s':''})`:'')+(apps?` — added ${apps} app${apps>1?'s':''} to your desktop (refresh to see it)`:'');
     btn.textContent='Installed';
+  }catch(e){                                               // never leave the button stuck on 'Installing…'
+    m.textContent='✗ install failed: '+(e && e.message || e); btn.disabled=false; btn.textContent='Install';
   }
 }
 function compCard(c){
