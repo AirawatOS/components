@@ -1,0 +1,14 @@
+# My Documents (kind=app) — the citizen's WALLET. Lists the Verifiable Credentials issued to them by agencies
+# (e.g. a Birth Certificate issued when that service completed), each signed by the issuing agency's steward key
+# and verifiable OFFLINE against its published directory key. Read-only holder view; a citizen can re-verify any
+# credential. These VCs can later be presented when applying for other services (reuse, no re-collection).
+component_id: ds:airawatdeveloper:app/my-documents
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: My Documents
+entrypoint: index.html
+required_schemas: [civic.credential]
+writes: []
+sandboxed: true
+roles: [civic.resident]

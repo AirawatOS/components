@@ -16,7 +16,7 @@
   .row{display:flex;gap:8px;align-items:center}
   .muted{color:#8b949e;font-size:13px}
   .rowline{display:grid;grid-template-columns:1.2fr 1fr .7fr auto;gap:6px;align-items:center;margin:6px 0}
-  .stepline{display:grid;grid-template-columns:auto 1fr 1.2fr 1.4fr auto;gap:6px;align-items:center;margin:6px 0}
+  .stepline{display:grid;grid-template-columns:auto .9fr 1.1fr 1.2fr 1fr auto;gap:6px;align-items:center;margin:6px 0}
   .num{width:22px;height:22px;border-radius:50%;background:#21262d;display:grid;place-items:center;font-size:12px}
   .pill{display:inline-block;background:#21262d;border-radius:999px;padding:1px 9px;font-size:12px;margin-left:6px}
   .ok{color:#3fb950}.err{color:#f85149}
@@ -112,6 +112,7 @@ function renderSteps(){
       <input placeholder="stage (e.g. triage)" value="${esc(s.step)}" oninput="STEPS[${i}].step=this.value">
       <select onchange="STEPS[${i}].role=this.value">${ROLES.map(r=>`<option${s.role===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
       <input placeholder="Task for the officer" value="${esc(s.task)}" oninput="STEPS[${i}].task=this.value">
+      <input placeholder="issues credential (optional)" title="if this step issues a Verifiable Credential, name its type (e.g. birth-certificate)" value="${esc(s.issues||'')}" oninput="STEPS[${i}].issues=this.value">
       <span><button class="btn ghost sm" onclick="move(${i},-1)">↑</button><button class="btn danger sm" onclick="STEPS.splice(${i},1);renderSteps()">✕</button></span>
     </div>`).join('');
 }
@@ -120,7 +121,7 @@ function move(i,d){ const j=i+d; if(j<0||j>=STEPS.length) return; [STEPS[i],STEP
 async function publish(){
   const g=id=>document.getElementById(id).value.trim(), out=document.getElementById('out'), btn=document.getElementById('pub');
   if(!g('sid')||!g('title')){ out.innerHTML='<span class="err">service id and title are required</span>'; return; }
-  const wf = STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step', role:s.role, task:s.task||s.step}));
+  const wf = STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step', role:s.role, task:s.task||s.step, ...(s.issues?{issues:slug(s.issues)}:{})}));
   if(!wf.length){ out.innerHTML='<span class="err">add at least one workflow step</span>'; return; }
   btn.disabled=true; out.textContent='Publishing…';
   const body={ service_id:slug(g('sid')), title:g('title'), domain:g('domain'), description:g('desc'),
@@ -149,7 +150,7 @@ function edit(o){
   const props=(o.request_schema||{}).properties||{}, req=(o.request_schema||{}).required||[];
   FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k]['x-widget']==='textarea'?'textarea':(props[k].type==='number'?'number':'text')),required:req.includes(k)}));
   if(!FIELDS.length) FIELDS=[{key:'',label:'',type:'text',required:false}];
-  STEPS=((o.fulfillment||{}).workflow||[]).map(s=>({step:s.step,role:s.role,task:s.task}));
+  STEPS=((o.fulfillment||{}).workflow||[]).map(s=>({step:s.step,role:s.role,task:s.task,issues:s.issues}));
   if(!STEPS.length) STEPS=[{step:'',role:ROLES[0]||'',task:''}];
   renderFields(); renderSteps(); window.scrollTo({top:0,behavior:'smooth'});
 }
