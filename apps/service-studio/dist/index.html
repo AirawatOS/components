@@ -38,6 +38,8 @@
       <div><label>Jurisdiction (where it's valid)</label><select id="jur"></select></div>
       <div><label>Who sees it</label><select id="ent"><option value="residence">Residents</option><option value="property">Property owners</option></select></div>
     </div>
+    <label>Requires documents (credential types, comma-separated — reused from the citizen's wallet)</label>
+    <input id="reqc" placeholder="e.g. birth-certificate">
   </div>
 
   <div class="card">
@@ -126,7 +128,8 @@ async function publish(){
   btn.disabled=true; out.textContent='Publishing…';
   const body={ service_id:slug(g('sid')), title:g('title'), domain:g('domain'), description:g('desc'),
     interaction:['search','init','status'], jurisdiction:document.getElementById('jur').value, entitlement:document.getElementById('ent').value,
-    request_schema:buildSchema(), solution:SOLUTION, fulfillment:{workflow:wf} };
+    request_schema:buildSchema(), solution:SOLUTION, fulfillment:{workflow:wf},
+    required_credentials: g('reqc').split(',').map(s=>slug(s.trim())).filter(Boolean) };
   const r=await api('/bridge/service-offering-save', body);
   out.innerHTML = r.published ? `<span class="ok">✓ Published — citizens in ${esc(body.jurisdiction)} can now use it, work routes to ${esc(wf[0].role)}.</span>`
                               : `<span class="err">✗ ${esc(r.detail||r.error||'failed')}</span>`;
@@ -145,6 +148,7 @@ async function loadList(){
 function edit(o){
   document.getElementById('sid').value=o.service_id||''; document.getElementById('title').value=o.title||'';
   document.getElementById('domain').value=o.domain||''; document.getElementById('desc').value=o.description||'';
+  document.getElementById('reqc').value=(o.required_credentials||[]).join(', ');
   if(o.jurisdiction) document.getElementById('jur').value=o.jurisdiction;
   if(o.entitlement) document.getElementById('ent').value=o.entitlement;
   const props=(o.request_schema||{}).properties||{}, req=(o.request_schema||{}).required||[];

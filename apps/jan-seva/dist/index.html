@@ -19,6 +19,8 @@
   .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .ok{color:#3fb950}.err{color:#f85149}
+  .cred{border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
+  .cred.ok{background:#12331f;color:#3fb950}.cred.err{background:#3a1518;color:#f85149}
   h3{margin:.2em 0}
 </style>
 <header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· Citizen Services</span>
@@ -135,7 +137,9 @@ async function search(){
        <button class="btn ghost" onclick="pick(${i})">Open</button></div></div>`).join('')
     : '<span class="muted">No services offered in your city for that search.</span>';
 }
-function pick(i){
+const titleCase = s => String(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+let CREDMATCH = {};    // required credential type -> matched wallet VC id (reuse)
+async function pick(i){
   SEL = CATALOG[i];
   const canQuote = (SEL.interaction||[]).includes('select');
   // render the intake form the agency AUTHORED (request_schema) — else a plain description box (backward compat)
@@ -149,13 +153,24 @@ function pick(i){
         : `<label>${lbl}</label><input data-k="${esc(k)}" type="${t}">`;
     }).join('')
     : `<label>Describe your request</label><textarea id="msg" rows="3" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea>`;
+  // REUSE: required documents pulled from the citizen's wallet (no re-upload); block if a required VC is missing
+  const rc = SEL.required_credentials || []; CREDMATCH = {}; let missing = false, credHtml = '';
+  if(rc.length){
+    let wallet = []; try{ wallet = (await api('/bridge/my-credentials',{})).credentials||[]; }catch(e){}
+    credHtml = `<label>Required documents (reused from your wallet)</label>` + rc.map(t=>{
+        const vc = wallet.find(c=>c.type===t); if(vc){ CREDMATCH[t]=vc.id; return `<div class="cred ok">✓ ${esc(vc.title||titleCase(t))} — from your wallet</div>`; }
+        missing = true; return `<div class="cred err">✗ ${esc(titleCase(t))} — you don't have this yet</div>`;
+      }).join('');
+  }
   document.getElementById('detail').innerHTML =
     `<div class="card"><h3>${esc(SEL.title)}</h3>
        <div class="muted">provided by <b>${esc(SEL.tenant)}</b> · steps: ${(SEL.interaction||[]).join(' → ')}</div>
        ${canQuote?'<button class="btn ghost" style="margin-top:8px" onclick="quote()">Get fee quote</button>':''}
        <div id="quote" class="muted"></div>
+       ${credHtml}
        <div id="form">${form}</div>
-       <button class="btn" id="submit" onclick="fileIt()">Consent &amp; Submit</button>
+       <button class="btn" id="submit" onclick="fileIt()"${missing?' disabled':''}>Consent &amp; Submit</button>
+       ${missing?'<div class="err" style="font-size:13px;margin-top:6px">Get the missing document from its own service first — it will appear in My Documents, then you can reuse it here.</div>':''}
        <div id="out" class="muted" style="margin-top:8px"></div></div>`;
   document.getElementById('detail').scrollIntoView({behavior:'smooth'});
 }
@@ -176,7 +191,8 @@ async function fileIt(){
   const legacy = document.getElementById('msg');
   const props = (SEL.request_schema||{}).properties||{};
   const description = legacy ? legacy.value : Object.entries(form).map(([k,v])=>((props[k]&&props[k].title)||k)+': '+v).join(' · ');
-  const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{form, description}});
+  const credential_refs = Object.values(CREDMATCH);   // reused wallet VCs the provider will verify
+  const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{form, description, credential_refs}});
   const m = r.message || {};
   out.innerHTML = m.reference
     ? `<span class="ok">✓ Submitted.</span> Reference <b>${esc(m.reference)}</b> — ${esc(SEL.tenant)} has your request.`
