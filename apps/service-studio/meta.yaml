@@ -1,0 +1,15 @@
+# Service Studio (kind=app) — a NO-CODE service builder for a tenant admin. Author a service's intake FORM
+# (request_schema) + WORKFLOW (fulfillment.workflow: ordered steps → governed roles) and PUBLISH it as a
+# governed, steward-signed service offering bound to the generic certified `declarative-service` solution —
+# no solution developer required. Complex services still bind a bespoke certified solution. Talks only to the
+# app-host bridges (service-offering-save / service-offerings / catalog / jurisdictions); the network authorises.
+component_id: ds:airawatdeveloper:app/service-studio
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Service Studio
+entrypoint: index.html
+required_schemas: [network.service_offering]
+writes: []
+sandboxed: true
+roles: [platform.tenant-admin, platform.steward]

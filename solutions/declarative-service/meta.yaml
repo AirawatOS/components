@@ -1,0 +1,15 @@
+# A GENERIC certified SOLUTION that fulfils any DECLARATIVE service. The intake form + workflow live as CONFIG
+# on the service offering (request_schema + fulfillment.workflow), authored by a tenant admin in Service Studio
+# — no bespoke code. This solution is the certified TRUST ANCHOR; the reference interpreter runs the config:
+# open a case on submit, route each step's task to the declared governed role's inbox, advance on completion.
+# Complex services (custom logic / integrations / decisions) bind a BESPOKE certified solution instead.
+component_id: ds:airawatdeveloper:solution/declarative-service
+kind: solution
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Declarative Service Runner
+entrypoint: run.py
+summary: "Run any config-driven civic service: declared intake form + workflow, no bespoke code"
+members: []
+reads: [platform.case]
+writes: [platform.task, platform.inbox_item]

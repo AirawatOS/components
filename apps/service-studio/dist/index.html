@@ -1,0 +1,157 @@
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
+  header{padding:14px 20px;background:#161b22;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:10px}
+  header b{font-size:16px}.who{margin-left:auto;color:#8b949e;font-size:13px}
+  main{max-width:860px;margin:0 auto;padding:18px}
+  .card{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:16px;margin:12px 0}
+  h3{margin:.2em 0 .6em}
+  .btn{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:8px 13px;cursor:pointer;font-size:13px;font-weight:500}
+  .btn.ghost{background:#21262d;color:#e6edf3}.btn.sm{padding:3px 8px;font-size:12px}.btn.danger{background:#b62324}
+  .btn:disabled{opacity:.5}
+  input,select,textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:7px;padding:8px;margin:3px 0;font:inherit}
+  label{font-size:12px;color:#8b949e;margin-top:6px;display:block}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .row{display:flex;gap:8px;align-items:center}
+  .muted{color:#8b949e;font-size:13px}
+  .rowline{display:grid;grid-template-columns:1.2fr 1fr .7fr auto;gap:6px;align-items:center;margin:6px 0}
+  .stepline{display:grid;grid-template-columns:auto 1fr 1.2fr 1.4fr auto;gap:6px;align-items:center;margin:6px 0}
+  .num{width:22px;height:22px;border-radius:50%;background:#21262d;display:grid;place-items:center;font-size:12px}
+  .pill{display:inline-block;background:#21262d;border-radius:999px;padding:1px 9px;font-size:12px;margin-left:6px}
+  .ok{color:#3fb950}.err{color:#f85149}
+  .svc{border-top:1px solid #21262d;padding:10px 0}.svc:first-child{border-top:0}
+</style>
+<header><b>🛠️ Service Studio</b><span class="muted">· build a service, no code</span><span id="who" class="who"></span></header>
+<main>
+  <div class="card">
+    <h3>Service</h3>
+    <div class="grid">
+      <div><label>Service id (slug)</label><input id="sid" placeholder="e.g. birth-certificate"></div>
+      <div><label>Title shown to citizens</label><input id="title" placeholder="e.g. Birth Certificate"></div>
+    </div>
+    <div class="grid">
+      <div><label>Domain</label><input id="domain" placeholder="civic / urban / safety / finance" value="civic"></div>
+      <div><label>Description</label><input id="desc" placeholder="One line"></div>
+    </div>
+    <div class="grid">
+      <div><label>Jurisdiction (where it's valid)</label><select id="jur"></select></div>
+      <div><label>Who sees it</label><select id="ent"><option value="residence">Residents</option><option value="property">Property owners</option></select></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row"><h3 style="margin:0">Intake form</h3><span class="muted" style="margin-left:8px">what the citizen fills in</span>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="addField()">+ Field</button></div>
+    <div id="fields"></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><h3 style="margin:0">Workflow</h3><span class="muted" style="margin-left:8px">who handles it, step by step</span>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="addStep()">+ Step</button></div>
+    <div id="steps"></div>
+    <div class="muted" style="margin-top:6px">Each step's task lands in that role's inbox; completing it advances to the next.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><button class="btn" id="pub" onclick="publish()">Publish service</button>
+      <span id="out" class="muted" style="margin-left:10px"></span></div>
+    <div class="muted" style="margin-top:6px">Fulfilled by the certified <b>declarative-service</b> runner — no developer needed. Complex logic? A developer binds a bespoke solution.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><b>My services</b><button class="btn ghost sm" style="margin-left:auto" onclick="loadList()">Refresh</button></div>
+    <div id="list" class="muted" style="margin-top:8px">—</div>
+  </div>
+</main>
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const get=p=>fetch(p).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const slug=s=>String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const SOLUTION='ds:airawatdeveloper:solution/declarative-service';
+let ME={}, ROLES=[], FIELDS=[], STEPS=[];
+
+async function boot(){
+  try{ ME=await get('/session'); }catch(e){ ME={}; }
+  document.getElementById('who').textContent=(ME.tenant||'')+' · '+(ME.sub||'').split('/').pop();
+  try{ ROLES=((await get('/bridge/catalog?kind=roles')).roles||[]).map(r=>r.role).filter(Boolean).sort(); }catch(e){ ROLES=[]; }
+  try{ const js=((await api('/bridge/jurisdictions',{})).jurisdictions||[]);
+    document.getElementById('jur').innerHTML=js.map(j=>`<option value="${esc(j.code)}"${j.code===ME.tenant?' selected':''}>${esc(j.name)} (${esc(j.kind)})</option>`).join('');
+  }catch(e){}
+  if(!FIELDS.length) addField(); if(!STEPS.length) addStep();
+  loadList();
+}
+// ---- form builder ----
+function addField(f){ FIELDS.push(f||{key:'',label:'',type:'text',required:false}); renderFields(); }
+function renderFields(){
+  document.getElementById('fields').innerHTML = FIELDS.map((f,i)=>`
+    <div class="rowline">
+      <input placeholder="Label (e.g. Full name)" value="${esc(f.label)}" oninput="FIELDS[${i}].label=this.value;FIELDS[${i}].key=FIELDS[${i}].key||slugKey(this.value)">
+      <select onchange="FIELDS[${i}].type=this.value">${['text','textarea','number','date'].map(t=>`<option${f.type===t?' selected':''}>${t}</option>`).join('')}</select>
+      <label style="margin:0"><input type="checkbox" style="width:auto" ${f.required?'checked':''} onchange="FIELDS[${i}].required=this.checked"> req</label>
+      <button class="btn danger sm" onclick="FIELDS.splice(${i},1);renderFields()">✕</button>
+    </div>`).join('');
+}
+function slugKey(s){ return slug(s).replace(/-/g,'_'); }
+function buildSchema(){
+  const props={}, req=[];
+  FIELDS.forEach(f=>{ const key=f.key||slugKey(f.label); if(!key) return;
+    const p={title:f.label||key, type:f.type==='number'?'number':'string'};
+    if(f.type==='date') p.format='date'; if(f.type==='textarea') p['x-widget']='textarea';
+    props[key]=p; if(f.required) req.push(key);
+  });
+  return {type:'object', properties:props, required:req, additionalProperties:false};
+}
+// ---- workflow builder ----
+function addStep(s){ STEPS.push(s||{step:'',role:ROLES[0]||'',task:''}); renderSteps(); }
+function renderSteps(){
+  document.getElementById('steps').innerHTML = STEPS.map((s,i)=>`
+    <div class="stepline">
+      <div class="num">${i+1}</div>
+      <input placeholder="stage (e.g. triage)" value="${esc(s.step)}" oninput="STEPS[${i}].step=this.value">
+      <select onchange="STEPS[${i}].role=this.value">${ROLES.map(r=>`<option${s.role===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
+      <input placeholder="Task for the officer" value="${esc(s.task)}" oninput="STEPS[${i}].task=this.value">
+      <span><button class="btn ghost sm" onclick="move(${i},-1)">↑</button><button class="btn danger sm" onclick="STEPS.splice(${i},1);renderSteps()">✕</button></span>
+    </div>`).join('');
+}
+function move(i,d){ const j=i+d; if(j<0||j>=STEPS.length) return; [STEPS[i],STEPS[j]]=[STEPS[j],STEPS[i]]; renderSteps(); }
+// ---- publish ----
+async function publish(){
+  const g=id=>document.getElementById(id).value.trim(), out=document.getElementById('out'), btn=document.getElementById('pub');
+  if(!g('sid')||!g('title')){ out.innerHTML='<span class="err">service id and title are required</span>'; return; }
+  const wf = STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step', role:s.role, task:s.task||s.step}));
+  if(!wf.length){ out.innerHTML='<span class="err">add at least one workflow step</span>'; return; }
+  btn.disabled=true; out.textContent='Publishing…';
+  const body={ service_id:slug(g('sid')), title:g('title'), domain:g('domain'), description:g('desc'),
+    interaction:['search','init','status'], jurisdiction:document.getElementById('jur').value, entitlement:document.getElementById('ent').value,
+    request_schema:buildSchema(), solution:SOLUTION, fulfillment:{workflow:wf} };
+  const r=await api('/bridge/service-offering-save', body);
+  out.innerHTML = r.published ? `<span class="ok">✓ Published — citizens in ${esc(body.jurisdiction)} can now use it, work routes to ${esc(wf[0].role)}.</span>`
+                              : `<span class="err">✗ ${esc(r.detail||r.error||'failed')}</span>`;
+  btn.disabled=false; loadList();
+}
+async function loadList(){
+  const d=await api('/bridge/service-offerings', {tenant: ME.tenant});
+  const offs=(d.offerings||[]).filter(o=>o.tenant===ME.tenant);
+  document.getElementById('list').innerHTML = offs.length ? offs.map(o=>{
+    const steps=((o.fulfillment||{}).workflow||[]).map(s=>s.role).join(' → ')||'—';
+    return `<div class="svc"><div class="row"><div><b>${esc(o.title)}</b><span class="pill">${esc(o.jurisdiction||'?')}/${esc(o.entitlement||'')}</span><br>
+      <span class="muted">${esc(o.service_id)} · workflow: ${esc(steps)} · via ${esc((o.solution||'—').split('/').pop())}</span></div>
+      <button class="btn ghost sm" style="margin-left:auto" onclick='edit(${JSON.stringify(o).replace(/'/g,"&#39;")})'>Load</button></div></div>`;
+  }).join('') : '<span class="muted">No services yet — build one above.</span>';
+}
+function edit(o){
+  document.getElementById('sid').value=o.service_id||''; document.getElementById('title').value=o.title||'';
+  document.getElementById('domain').value=o.domain||''; document.getElementById('desc').value=o.description||'';
+  if(o.jurisdiction) document.getElementById('jur').value=o.jurisdiction;
+  if(o.entitlement) document.getElementById('ent').value=o.entitlement;
+  const props=(o.request_schema||{}).properties||{}, req=(o.request_schema||{}).required||[];
+  FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k]['x-widget']==='textarea'?'textarea':(props[k].type==='number'?'number':'text')),required:req.includes(k)}));
+  if(!FIELDS.length) FIELDS=[{key:'',label:'',type:'text',required:false}];
+  STEPS=((o.fulfillment||{}).workflow||[]).map(s=>({step:s.step,role:s.role,task:s.task}));
+  if(!STEPS.length) STEPS=[{step:'',role:ROLES[0]||'',task:''}];
+  renderFields(); renderSteps(); window.scrollTo({top:0,behavior:'smooth'});
+}
+boot();
+</script>
