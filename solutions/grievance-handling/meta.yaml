@@ -1,0 +1,15 @@
+# A SOLUTION (kind=solution) that FULFILS a civic grievance service. Bound to a service offering via
+# network.service_offering.solution: when a citizen submits, the provider opens a platform.case and routes
+# the first task ("Triage & assign") into the grievance officer's inbox (platform.inbox_item addressed to
+# the governed role). The reference app-host BPP enacts this declaration (ADR-0067 S4); a full ADR-0050
+# execution engine would interpret a multi-step workflow from it.
+component_id: ds:airawatdeveloper:solution/grievance-handling
+kind: solution
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Grievance Handling
+entrypoint: run.py
+summary: "Fulfil civic grievances: open a case and route work to the grievance officer's inbox"
+members: []
+reads: [platform.case]
+writes: [platform.task, platform.inbox_item]
