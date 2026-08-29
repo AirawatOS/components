@@ -138,12 +138,23 @@ async function search(){
 function pick(i){
   SEL = CATALOG[i];
   const canQuote = (SEL.interaction||[]).includes('select');
+  // render the intake form the agency AUTHORED (request_schema) — else a plain description box (backward compat)
+  const rs = SEL.request_schema || {}; const props = rs.properties || {}; const req = rs.required || [];
+  const keys = Object.keys(props);
+  const form = keys.length ? keys.map(k=>{
+      const p = props[k]||{}; const lbl = esc(p.title||k) + (req.includes(k) ? ' *' : '');
+      const t = p.format==='date' ? 'date' : (p.type==='number' ? 'number' : 'text');
+      return p['x-widget']==='textarea'
+        ? `<label>${lbl}</label><textarea data-k="${esc(k)}" rows="3"></textarea>`
+        : `<label>${lbl}</label><input data-k="${esc(k)}" type="${t}">`;
+    }).join('')
+    : `<label>Describe your request</label><textarea id="msg" rows="3" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea>`;
   document.getElementById('detail').innerHTML =
     `<div class="card"><h3>${esc(SEL.title)}</h3>
        <div class="muted">provided by <b>${esc(SEL.tenant)}</b> · steps: ${(SEL.interaction||[]).join(' → ')}</div>
        ${canQuote?'<button class="btn ghost" style="margin-top:8px" onclick="quote()">Get fee quote</button>':''}
        <div id="quote" class="muted"></div>
-       <textarea id="msg" rows="3" placeholder="Describe your request (e.g. garbage uncollected at ward 5 for 3 days)"></textarea>
+       <div id="form">${form}</div>
        <button class="btn" id="submit" onclick="fileIt()">Consent &amp; Submit</button>
        <div id="out" class="muted" style="margin-top:8px"></div></div>`;
   document.getElementById('detail').scrollIntoView({behavior:'smooth'});
@@ -160,7 +171,12 @@ async function fileIt(){
   btn.disabled = true; out.textContent = 'Requesting your consent…';
   await api('/bridge/service-consent', {app_id:APP, service_id:SEL.service_id, provider:SEL.tenant, expires_at:'2027-01-01T00:00:00Z'});
   out.textContent = 'Submitting to ' + SEL.tenant + '…';
-  const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{description:document.getElementById('msg').value}});
+  // collect the authored form's values → {form, description}. description = a human summary for the officer's inbox.
+  const form = {}; document.querySelectorAll('#form [data-k]').forEach(el=>{ if(el.value!=='') form[el.dataset.k]=el.value; });
+  const legacy = document.getElementById('msg');
+  const props = (SEL.request_schema||{}).properties||{};
+  const description = legacy ? legacy.value : Object.entries(form).map(([k,v])=>((props[k]&&props[k].title)||k)+': '+v).join(' · ');
+  const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{form, description}});
   const m = r.message || {};
   out.innerHTML = m.reference
     ? `<span class="ok">✓ Submitted.</span> Reference <b>${esc(m.reference)}</b> — ${esc(SEL.tenant)} has your request.`
