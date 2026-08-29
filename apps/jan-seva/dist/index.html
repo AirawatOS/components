@@ -156,10 +156,10 @@ async function pick(i){
   // REUSE: required documents pulled from the citizen's wallet (no re-upload); block if a required VC is missing
   const rc = SEL.required_credentials || []; CREDMATCH = {}; let missing = false, credHtml = '';
   if(rc.length){
-    let wallet = []; try{ wallet = (await api('/bridge/my-credentials',{})).credentials||[]; }catch(e){}
+    let held = []; try{ held = (await api('/bridge/my-credentials',{})).held||[]; }catch(e){}
     credHtml = `<label>Required documents (reused from your wallet)</label>` + rc.map(t=>{
-        const vc = wallet.find(c=>c.type===t); if(vc){ CREDMATCH[t]=vc.id; return `<div class="cred ok">✓ ${esc(vc.title||titleCase(t))} — from your wallet</div>`; }
-        missing = true; return `<div class="cred err">✗ ${esc(titleCase(t))} — you don't have this yet</div>`;
+        const h = held.find(c=>c.type===t); if(h){ CREDMATCH[t]=h.vc; return `<div class="cred ok">✓ ${esc(h.title||titleCase(t))} — from your wallet</div>`; }
+        missing = true; return `<div class="cred err">✗ ${esc(titleCase(t))} — accept it in My Documents first</div>`;
       }).join('');
   }
   document.getElementById('detail').innerHTML =

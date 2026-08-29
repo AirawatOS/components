@@ -4,7 +4,9 @@
   body{font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
   header{padding:16px 20px;background:#161b22;border-bottom:1px solid #21262d;font-weight:600;font-size:17px}
   main{max-width:680px;margin:0 auto;padding:18px}
-  .vc{background:linear-gradient(135deg,#12233b,#161b22);border:1px solid #23406a;border-radius:14px;padding:16px;margin:12px 0}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;margin:20px 4px 8px}
+  .vc{background:linear-gradient(135deg,#12233b,#161b22);border:1px solid #23406a;border-radius:14px;padding:16px;margin:10px 0}
+  .vc.offer{border-style:dashed;border-color:#d29922;background:linear-gradient(135deg,#2a2410,#161b22)}
   .vc .top{display:flex;align-items:center;gap:10px}
   .vc .ico{font-size:26px}.vc .t{font-weight:650;font-size:16px}
   .vc .iss{margin-left:auto;font-size:12px;color:#8b949e;text-align:right}
@@ -14,40 +16,53 @@
   .badge{font-size:12px;border-radius:999px;padding:2px 10px}
   .valid{background:#12331f;color:#3fb950}.bad{background:#3a1518;color:#f85149}.unk{background:#21262d;color:#8b949e}
   .btn{background:#21262d;color:#e6edf3;border:0;border-radius:8px;padding:6px 11px;cursor:pointer;font-size:12px}
+  .btn.accept{background:#3fb950;color:#04260f;font-weight:600}
   .muted{color:#8b949e;font-size:13px;padding:16px}
 </style>
 <header>🪪 My Documents <span class="muted" style="font-weight:400;font-size:13px">· your verifiable credentials</span></header>
 <main>
   <div style="display:flex;justify-content:flex-end"><button class="btn" onclick="load()">Refresh</button></div>
-  <div id="list"><div class="muted">Loading your documents…</div></div>
+  <div id="offers"></div>
+  <div id="list"><div class="muted">Loading…</div></div>
 </main>
 <script>
 const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const title=s=>String(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-const ICON={'birth-certificate':'👶','property-tax':'🏠','passport-seva':'🛂','trade-licence':'🏪'};
-let VCS=[];
+const titl=s=>String(s||'').replace(/^credential\./,'').replace(/[-_.]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const ICON={'birth_certificate':'👶','property_tax':'🏠','passport':'🛂','trade_licence':'🏪'};
+const ico=t=>ICON[String(t||'').replace(/^credential\./,'')]||'🎫';
+let HELD=[];
 async function load(){
-  try{ VCS=(await api('/bridge/my-credentials',{})).credentials||[]; }
-  catch(e){ document.getElementById('list').innerHTML='<div class="muted">Could not load documents.</div>'; return; }
-  document.getElementById('list').innerHTML = VCS.length ? VCS.map((c,i)=>card(c,i)).join('')
-    : '<div class="muted">No documents yet. Complete a service in <b>Jan Seva</b> (e.g. Birth Certificate) and the credential appears here.</div>';
+  let d={}; try{ d=await api('/bridge/my-credentials',{}); }catch(e){ document.getElementById('list').innerHTML='<div class="muted">Could not load.</div>'; return; }
+  const offers=d.offers||[]; HELD=d.held||[];
+  document.getElementById('offers').innerHTML = offers.length
+    ? '<h2>Offered to you — accept to add to your wallet</h2>' + offers.map(o=>offerCard(o)).join('') : '';
+  document.getElementById('list').innerHTML = '<h2>My credentials</h2>' + (HELD.length ? HELD.map((h,i)=>heldCard(h,i)).join('')
+    : '<div class="muted">No credentials held yet. Complete a service (e.g. Birth Certificate) and accept the offer above.</div>');
 }
-function card(c,i){
-  const claims=c.claims||{};
-  const rows=Object.keys(claims).map(k=>`<div class="k">${esc(title(k))}</div><div>${esc(claims[k])}</div>`).join('')||'<div class="muted" style="padding:0">—</div>';
-  return `<div class="vc"><div class="top"><span class="ico">${ICON[c.type]||'🎫'}</span>
-      <span class="t">${esc(c.title||title(c.type))}</span>
-      <span class="iss">issued by<br><b>${esc((c.issuer_tenant||'').toUpperCase())}</b></span></div>
-    <div class="claims">${rows}</div>
-    <div class="foot"><span id="v${i}" class="badge unk">signed ✓ (not re-checked)</span>
+function claimRows(claims){claims=claims||{};const ks=Object.keys(claims);return ks.length?ks.map(k=>`<div class="k">${esc(titl(k))}</div><div>${esc(claims[k])}</div>`).join(''):'<div class="muted" style="padding:0">—</div>';}
+function offerCard(o){
+  return `<div class="vc offer"><div class="top"><span class="ico">${ico(o.type)}</span>
+      <span class="t">${esc(o.title||titl(o.type))}</span>
+      <span class="iss">offered by<br><b>${esc((o.issuer_tenant||'').toUpperCase())}</b></span></div>
+    <div class="claims">${claimRows(o.claims)}</div>
+    <div class="foot"><span class="badge unk">pending your acceptance</span>
+      <button class="btn accept" onclick="accept('${esc(o.id)}')">Accept into my wallet</button></div></div>`;
+}
+function heldCard(h,i){
+  return `<div class="vc"><div class="top"><span class="ico">${ico(h.type)}</span>
+      <span class="t">${esc(h.title||titl(h.type))}</span>
+      <span class="iss">issued by<br><b>${esc((h.issuer_tenant||'').toUpperCase())}</b></span></div>
+    <div class="claims">${claimRows(h.claims)}</div>
+    <div class="foot"><span id="v${i}" class="badge unk">held in your wallet</span>
       <button class="btn" onclick="verify(${i})">Verify</button>
-      <span class="muted" style="padding:0;margin-left:auto;font-size:11px">${esc((c.id||'').split('/').pop())}</span></div></div>`;
+      <span class="muted" style="padding:0;margin-left:auto;font-size:11px">${esc((h.id||'').split('/').pop())}</span></div></div>`;
 }
+async function accept(cid){ await api('/bridge/credential-accept',{credential_id:cid}); load(); }
 async function verify(i){
   const el=document.getElementById('v'+i); el.textContent='Checking…'; el.className='badge unk';
-  const r=await api('/bridge/credential-verify',{credential:VCS[i]});
-  if(r.verified){ el.textContent='✓ Verified — signature valid ('+esc(r.key_source||'')+' key)'; el.className='badge valid'; }
+  const r=await api('/bridge/credential-verify',{credential:HELD[i].vc||HELD[i]});
+  if(r.verified){ el.textContent='✓ Verified ('+esc(r.key_source||'')+' key)'; el.className='badge valid'; }
   else { el.textContent='✗ Invalid'; el.className='badge bad'; }
 }
 load();
