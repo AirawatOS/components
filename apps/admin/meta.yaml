@@ -3,7 +3,7 @@
 # no ordinary user sees it. Uses the host role bridges (/bridge/roles, /bridge/role-grant, /bridge/app-install).
 component_id: ds:airawat:app/admin
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Admin
 entrypoint: index.html

@@ -3,7 +3,7 @@
 # It declares required_schemas (its DATA allow-list), not broker scopes.
 component_id: ds:airawat:app/air-explorer
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Air Explorer
 entrypoint: index.html      # SPA entry inside the bundle

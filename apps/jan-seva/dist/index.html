@@ -2,38 +2,128 @@
   :root{color-scheme:light dark}
   *{box-sizing:border-box}
   body{font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
-  header{padding:16px 20px;background:#161b22;border-bottom:1px solid #21262d;font-weight:600;font-size:17px;display:flex;align-items:center;gap:8px}
+  header{padding:14px 20px;background:#161b22;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:8px}
+  header b{font-size:17px}
+  .who{margin-left:auto;font-size:13px;color:#8b949e;text-align:right;line-height:1.35}
+  .who a{color:#58a6ff;cursor:pointer;text-decoration:none}
   main{max-width:660px;margin:0 auto;padding:18px}
   .card{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:16px;margin:12px 0}
   .btn{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:9px 15px;cursor:pointer;font-size:14px;font-weight:500}
   .btn:disabled{opacity:.5}
   .btn.ghost{background:#21262d;color:#e6edf3}
-  input,textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:10px;margin:6px 0;font:inherit}
+  input,textarea,select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:10px;margin:6px 0;font:inherit}
+  label{font-size:13px;color:#8b949e;display:block;margin-top:8px}
   .muted{color:#8b949e;font-size:13px}
   .pill{display:inline-block;background:#21262d;border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
   .svc{border-top:1px solid #21262d;padding:12px 0}.svc:first-child{border-top:0}
   .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .ok{color:#3fb950}.err{color:#f85149}
   h3{margin:.2em 0}
 </style>
-<header>🏛️ Jan Seva <span class="muted" style="font-weight:400">· Citizen Services</span></header>
+<header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· Citizen Services</span>
+  <span id="who" class="who"></span></header>
 <main>
-  <div class="card">
-    <div class="row"><input id="q" placeholder="Search a service — e.g. complaint, water"/><button class="btn" id="go">Search</button></div>
-    <div id="results" class="muted">Type a service and search — services are offered by your city agencies.</div>
-  </div>
-  <div id="detail"></div>
-  <div class="card">
-    <div class="row"><b>My requests</b><button class="btn ghost" id="refresh">Refresh</button></div>
-    <div id="txns" class="muted" style="margin-top:8px">—</div>
+  <div id="gate"></div>
+  <div id="app" style="display:none">
+    <div class="card">
+      <div class="row"><input id="q" placeholder="Search a service — e.g. complaint, water"/><button class="btn" id="go">Search</button></div>
+      <div id="results" class="muted">Type a service and search — you'll see the services offered in <b id="cityname">your city</b>.</div>
+    </div>
+    <div id="detail"></div>
+    <div class="card">
+      <div class="row"><b>My requests</b><button class="btn ghost" id="refresh">Refresh</button></div>
+      <div id="txns" class="muted" style="margin-top:8px">—</div>
+    </div>
   </div>
 </main>
 <script>
 const api = (p, b) => fetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const APP = 'jan-seva';
-let CATALOG = [], SEL = null;
+let CATALOG = [], SEL = null, CITIES = [], PROFILE = null, ME = null;
 
+// ---- boot: who am I? do I have a profile (where I live)? else show Join ----
+async function boot(){
+  try{ ME = await (await fetch('/session')).json(); }catch(e){ ME = {}; }
+  try{ CITIES = ((await api('/bridge/jurisdictions',{})).jurisdictions||[]).filter(j=>j.kind==='city'); }catch(e){ CITIES=[]; }
+  PROFILE = null;
+  if(ME && ME.sub){ try{ PROFILE = (await api('/bridge/profile-get',{})).profile; }catch(e){} }
+  if(ME && ME.sub && PROFILE) renderApp(); else renderJoin();
+}
+const cityName = code => (CITIES.find(c=>c.code===code)||{}).name || code;
+const cityOptions = sel => CITIES.map(c=>`<option value="${esc(c.code)}"${c.code===sel?' selected':''}>${esc(c.name)}</option>`).join('');
+
+// ---- Join: self-signup + set where you live ----
+function renderJoin(){
+  document.getElementById('who').textContent='';
+  document.getElementById('app').style.display='none';
+  document.getElementById('gate').innerHTML = `<div class="card">
+    <h3>Join Jan Seva</h3>
+    <div class="muted">Register once as a citizen. We'll show you the services offered where you live — and remember you if you move.</div>
+    <label>Your name</label><input id="jn" placeholder="e.g. Asha Patil"/>
+    <div class="grid2">
+      <div><label>Pick a username</label><input id="ju" placeholder="e.g. asha.patil"/></div>
+      <div><label>Contact (optional)</label><input id="jc" placeholder="email or phone"/></div>
+    </div>
+    <div class="grid2">
+      <div><label>Where do you live?</label><select id="jr">${cityOptions()}</select></div>
+      <div><label>Own property elsewhere? (optional)</label><select id="jp"><option value="">— none —</option>${cityOptions()}</select></div>
+    </div>
+    <button class="btn" id="joinBtn" style="margin-top:12px">Create my citizen account</button>
+    <div id="joinOut" class="muted" style="margin-top:8px"></div></div>`;
+  document.getElementById('joinBtn').onclick = doJoin;
+}
+async function doJoin(){
+  const g=id=>document.getElementById(id), out=g('joinOut'), btn=g('joinBtn');
+  const username=g('ju').value.trim(), name=g('jn').value.trim();
+  if(!username||!name){ out.innerHTML='<span class="err">Name and username are required.</span>'; return; }
+  btn.disabled=true; out.textContent='Creating your account…';
+  const prop = g('jp').value ? [g('jp').value] : [];
+  const r = await api('/bridge/citizen-register', {username, name, contact:g('jc').value.trim(), residence:[g('jr').value], property:prop});
+  if(r.ok){ out.innerHTML='<span class="ok">✓ Welcome, '+esc(name)+'! Taking you to your home…</span>'; notifyShell();
+    setTimeout(()=>{ try{ top.location='/'; }catch(e){ location.href='/'; } }, 700); }
+  else { btn.disabled=false; out.innerHTML='<span class="err">✗ '+esc(r.detail||r.error||'could not register')+'</span>'; }
+}
+
+// ---- identity bar + "I moved" ----
+function renderWho(){
+  const home = PROFILE && PROFILE.primary ? cityName(PROFILE.primary) : '—';
+  document.getElementById('who').innerHTML =
+    `${esc((PROFILE&&PROFILE.name)||ME.sub)} · 📍 ${esc(home)} · <a onclick="moved()">I moved</a> · <a onclick="logout()">Sign out</a>`;
+  document.getElementById('cityname').textContent = home;
+}
+function moved(){
+  document.getElementById('detail').innerHTML = `<div class="card"><h3>Change your city</h3>
+    <div class="muted">Your account, history and open requests stay — only which services you see will change.</div>
+    <label>I now live in</label><select id="mv">${cityOptions(PROFILE&&PROFILE.primary)}</select>
+    <button class="btn" id="mvBtn" style="margin-top:10px">Update</button>
+    <div id="mvOut" class="muted" style="margin-top:8px"></div></div>`;
+  document.getElementById('detail').scrollIntoView({behavior:'smooth'});
+  document.getElementById('mvBtn').onclick = async ()=>{
+    const city=document.getElementById('mv').value, out=document.getElementById('mvOut');
+    out.textContent='Updating…';
+    const keepProp = (PROFILE&&PROFILE.property)||[];
+    const r = await api('/bridge/profile-save', {app_id:APP, name:(PROFILE&&PROFILE.name)||'', residence:[city], property:keepProp});
+    if(r.profile){ out.innerHTML='<span class="ok">✓ Moved to '+esc(cityName(city))+'.</span>'; PROFILE.primary=city; PROFILE.residence=[city]; renderWho(); document.getElementById('detail').innerHTML=''; search(); }
+    else out.innerHTML='<span class="err">✗ '+esc(r.error||'failed')+'</span>';
+  };
+}
+async function logout(){ try{ await fetch('/logout',{method:'POST'}); }catch(e){} notifyShell(); boot(); }
+// tell the outer run-shell to refresh its identity badge after a sign-in/out change inside the frame
+function notifyShell(){ try{ parent.postMessage({type:'airawat-session'}, '*'); }catch(e){} }
+
+function renderApp(){
+  document.getElementById('gate').innerHTML='';
+  document.getElementById('app').style.display='';
+  renderWho();
+  document.getElementById('go').onclick = search;
+  document.getElementById('q').addEventListener('keydown', e=>{if(e.key==='Enter') search();});
+  document.getElementById('refresh').onclick = track;
+  track();
+}
+
+// ---- discover → file → track (jurisdiction-scoped by the citizen's profile) ----
 async function search(){
   const r = await api('/bridge/service-search', {query: document.getElementById('q').value});
   CATALOG = (r.message || {}).catalog || [];
@@ -42,7 +132,7 @@ async function search(){
     `<div class="svc"><div class="row"><div><b>${esc(o.title)}</b><span class="pill">${esc(o.domain)}</span><br>
        <span class="muted">${esc(o.description||'')}</span></div>
        <button class="btn ghost" onclick="pick(${i})">Open</button></div></div>`).join('')
-    : '<span class="muted">No services found.</span>';
+    : '<span class="muted">No services offered in your city for that search.</span>';
 }
 function pick(i){
   SEL = CATALOG[i];
@@ -84,8 +174,5 @@ async function track(){
         <span><span class="pill">${esc(x.status)}</span> ${x.case?'<span class="muted">'+esc(x.case.split('/').pop())+'</span>':''}</span></div>`).join('')
     : '<span class="muted">No requests yet.</span>';
 }
-document.getElementById('go').onclick = search;
-document.getElementById('q').addEventListener('keydown', e=>{if(e.key==='Enter') search();});
-document.getElementById('refresh').onclick = track;
-track();
+boot();
 </script>

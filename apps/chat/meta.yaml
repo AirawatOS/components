@@ -3,7 +3,7 @@
 # sources; the Expert proposes and informs, it never decides. Uses /bridge/expert-chat + /bridge/market.
 component_id: ds:airawat:app/chat
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Chat
 entrypoint: index.html

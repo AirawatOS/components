@@ -3,7 +3,7 @@
 # authority sees it, never a tenant admin. NOT a system app — it is installed onto the network's own surface.
 component_id: ds:airawat:app/network-admin
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Network Admin
 entrypoint: index.html

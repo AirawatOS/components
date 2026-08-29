@@ -1,0 +1,13 @@
+# My Requests (kind=app) — a citizen's cross-agency tracker. Lists every service request the citizen has
+# filed through the network (via the ADR-0067 transaction ledger) with its live status, regardless of which
+# agency fulfils it. Read-only: it writes nothing, it just reads the citizen's own transactions.
+component_id: ds:airawatdeveloper:app/my-requests
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: My Requests
+entrypoint: index.html
+required_schemas: [platform.case]
+writes: []
+sandboxed: true
+roles: [civic.resident]

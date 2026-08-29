@@ -3,7 +3,7 @@
 # registry via the host's admin-gated /bridge/save. Editing a subscription hot-reloads the automation.
 component_id: ds:airawat:app/studio    # published by the platform developer (NOT a tenant) — apps are airawat-stewarded; tenant DATA it authors stays ds:<tenant>:…
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Studio
 entrypoint: index.html
