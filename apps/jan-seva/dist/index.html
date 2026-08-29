@@ -120,6 +120,7 @@ function renderApp(){
   document.getElementById('go').onclick = search;
   document.getElementById('q').addEventListener('keydown', e=>{if(e.key==='Enter') search();});
   document.getElementById('refresh').onclick = track;
+  search();   // browse: show ALL services available to this citizen on load (national + their city), no guessing
   track();
 }
 
