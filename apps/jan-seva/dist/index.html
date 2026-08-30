@@ -115,8 +115,9 @@ async function doJoin(){
 // ---- identity bar + "I moved" ----
 function renderWho(){
   const home = PROFILE && PROFILE.primary ? cityName(PROFILE.primary) : '—';
+  // the CITY is the change-city control (tap Nashik → change). Sign out lives on the desktop shell, not here.
   document.getElementById('who').innerHTML =
-    `${esc((PROFILE&&PROFILE.name)||ME.sub)} · 📍 ${esc(home)} · <a onclick="moved()">I moved</a> · <a onclick="logout()">Sign out</a>`;
+    `${esc((PROFILE&&PROFILE.name)||ME.sub)} · 📍 <a onclick="moved()" title="Change your city">${esc(home)} ✎</a>`;
   document.getElementById('cityname').textContent = home;
 }
 function moved(){
