@@ -1,0 +1,16 @@
+# An APP (kind=app) — a sandboxed UI served by the host. It reads governed data via the host
+# bridge /bridge/query and writes via /bridge/save (delegated: component://org-setup obo the admin).
+component_id: ds:airawatdeveloper:app/org-setup
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Org Setup
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+# the governed schemas this app READS
+required_schemas: [org.org_unit, org.area, org.employee, org.posting, org.goal]
+# the governed schemas this app may WRITE (authority scope — the solution install grants these per tenant)
+writes: [org.org_unit, org.area, org.employee, org.posting, org.goal]
+# audience: an organisation-setup surface for the tenant admin
+roles: [platform.tenant-admin]

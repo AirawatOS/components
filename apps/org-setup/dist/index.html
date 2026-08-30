@@ -1,0 +1,244 @@
+<!doctype html><meta charset="utf-8"><title>Org Setup</title>
+<!--
+  ORG SETUP (kind=app) — the tenant admin builds its organisation backbone:
+  • Units  = department/division/team hierarchy (org.org_unit, self-ref parent → variable depth)
+  • Areas  = internal boundary hierarchy zone/ward/locality/street (org.area, self-ref parent)
+  • People = employees (org.employee)
+  • Postings = assign an employee to a unit + area + role (org.posting)  ← the (emp×unit×area×role) tuple
+  • Goals  = objectives for a unit or employee (org.goal)
+  Reads via /bridge/query, writes via /bridge/save (delegated: component://org-setup obo the admin).
+-->
+<style>
+  :root{--bg:#0b0f14;--panel:#141a22;--line:#222b36;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6;--good:#2ea043;--soft:#0d1117}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;height:100%}
+  .nav{width:190px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(10,14,20,.4)}
+  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 12px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
+  .nav a:hover{background:#161d27}.nav a.on{background:#17233a;color:#cfe0ff}
+  .nav a .c{margin-left:auto;font-size:11px;color:var(--dim);background:#0d1117;border:1px solid var(--line);border-radius:20px;padding:0 7px}
+  .main{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+  .head{display:flex;align-items:center;margin-bottom:14px}.head h2{margin:0;font-size:18px}.head .sub{color:var(--dim);margin-left:10px;font-size:12px}
+  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#33455a}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.pri:hover{filter:brightness(1.08)}
+  .btn.sm{padding:3px 9px;font-size:12px}.btn.ghost{background:none}.btn.danger:hover{border-color:#8b2c30;color:#ff9b9b}
+  .right{margin-left:auto;display:flex;gap:8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  tr:hover td{background:#121821}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .pill.active,.pill.met{color:#7ee2a8;border-color:#1f6f43}.pill.draft{color:#e6c34a;border-color:#7a5c12}
+  .tree .node{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}.tree .node:hover{background:#121821}
+  .tree .node .nm{font-weight:600}.tree .node .meta{color:var(--dim);font-size:12px}
+  .tree .kids{margin-left:20px;border-left:1px solid var(--line);padding-left:8px}
+  .empty{color:var(--dim);padding:26px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 4px}
+  input,select{width:100%;background:var(--soft);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid.g3{grid-template-columns:1fr 1fr 1fr}
+  .row{margin-bottom:12px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:30}
+  .modal.open{display:flex}.sheet{background:#0f151d;border:1px solid var(--line);border-radius:14px;padding:20px;width:640px;max-width:100%;max-height:90vh;overflow:auto}
+  .sheet h3{margin:0 0 14px}.muted{color:var(--dim)}.err{color:#ff9b9b;font-size:12px;margin-top:8px}
+</style>
+
+<div class="wrap">
+  <nav class="nav">
+    <h1>🏛️ Org Setup</h1>
+    <a data-t="units"><span>🗂️</span> Units <span class="c" id="c-units">0</span></a>
+    <a data-t="areas"><span>🗺️</span> Areas <span class="c" id="c-areas">0</span></a>
+    <a data-t="people"><span>👥</span> People <span class="c" id="c-people">0</span></a>
+    <a data-t="postings"><span>📌</span> Postings <span class="c" id="c-postings">0</span></a>
+    <a data-t="goals"><span>🎯</span> Goals <span class="c" id="c-goals">0</span></a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP='org-setup';
+let TENANT='', ROLES=[], DB={units:[],areas:[],people:[],postings:[],goals:[]}, TAB='units';
+const SCH={units:'org.org_unit',areas:'org.area',people:'org.employee',postings:'org.posting',goals:'org.goal'};
+const rid=(local,code)=>`ds:${TENANT}:${local}/${(code||('x'+Date.now())).toString().replace(/[^a-z0-9_-]/gi,'-')}`;
+const byId=(arr,id)=>arr.find(x=>x.id===id)||{};
+const nameOf=(arr,id)=>{const o=byId(arr,id);return o.name||o.title||o.emp_code||id||'—';};
+
+async function boot(){
+  try{const se=await fetch('/session').then(r=>r.json());
+    TENANT=se.tenant || (se.sub||'').replace(/^user:\/\//,'').split('/')[0] || 'tenant';}catch(e){TENANT='tenant';}
+  try{ROLES=((await api('/bridge/catalog?kind=roles',{})).roles||[]).map(r=>r.role).filter(Boolean).sort();}catch(e){}
+  await loadAll(); wireNav(); render();
+}
+async function loadAll(){ await Promise.all(Object.keys(SCH).map(loadOne)); refreshCounts(); }
+async function loadOne(tab){
+  try{const r=await api('/bridge/query',{app_id:APP,schema:SCH[tab]});
+    DB[tab]=(r.results||[]).map(x=>x.object||x);}catch(e){DB[tab]=[];}
+}
+function refreshCounts(){ for(const t of Object.keys(SCH)) document.getElementById('c-'+t).textContent=DB[t].length; }
+function wireNav(){ document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();}); }
+
+function render(){
+  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));
+  ({units:rUnits,areas:rAreas,people:rPeople,postings:rPostings,goals:rGoals}[TAB])();
+}
+function header(title,sub,addLabel,addFn){
+  return `<div class="head"><h2>${title}</h2><span class="sub">${sub}</span>
+    <div class="right"><button class="btn pri" onclick="${addFn}">＋ ${addLabel}</button></div></div>`;
+}
+
+/* ---------- TREE tabs (units, areas) ---------- */
+function tree(arr, rootLabel, meta){
+  const kids=p=>arr.filter(n=>(n.parent||null)===(p||null));
+  const draw=(p)=>{const ks=kids(p);if(!ks.length)return '';
+    return `<div class="kids">`+ks.map(n=>`<div class="node">
+        <span class="nm">${esc(n.name)}</span> <span class="meta">${meta(n)}</span>
+        <button class="btn sm ghost" style="margin-left:auto" onclick='editRow("${TAB}","${esc(n.id)}")'>edit</button>
+      </div>${draw(n.id)}`).join('')+`</div>`;};
+  const roots=kids(null);
+  if(!arr.length) return `<div class="empty">No ${rootLabel} yet. Add the top level to begin.</div>`;
+  return `<div class="tree card">`+roots.map(n=>`<div class="node">
+      <span class="nm">${esc(n.name)}</span> <span class="meta">${meta(n)}</span>
+      <button class="btn sm ghost" style="margin-left:auto" onclick='editRow("${TAB}","${esc(n.id)}")'>edit</button>
+    </div>${draw(n.id)}`).join('')+`</div>`;
+}
+function rUnits(){
+  document.getElementById('main').innerHTML=header('Organisation units','departments · divisions · teams — nest to any depth','Add unit','addRow("units")')
+    + tree(DB.units,'units',n=>`${n.kind||'unit'}${n.head?' · head: '+esc(nameOf(DB.people,n.head)):''}${n.area?' · '+esc(nameOf(DB.areas,n.area)):''}`);
+}
+function rAreas(){
+  document.getElementById('main').innerHTML=header('Boundary areas','zones · wards · localities · streets — nest to any depth','Add area','addRow("areas")')
+    + tree(DB.areas,'areas',n=>`${n.level||'area'}${n.jurisdiction?' · '+esc(n.jurisdiction):''}`);
+}
+/* ---------- TABLE tabs ---------- */
+function rPeople(){
+  const rows=DB.people.map(e=>`<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.emp_code)}</td>
+     <td>${esc(nameOf(DB.units,e.org_unit))}</td><td>${esc(e.grade||'—')}</td>
+     <td>${e.manager?esc(nameOf(DB.people,e.manager)):'—'}</td>
+     <td><span class="pill ${e.status==='active'?'active':''}">${esc(e.status||'active')}</span></td>
+     <td><button class="btn sm ghost" onclick='editRow("people","${esc(e.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=header('People','employees / staff','Add person','addRow("people")')
+    + (DB.people.length?`<div class="card"><table><thead><tr><th>Name</th><th>Emp code</th><th>Unit</th><th>Grade</th><th>Manager</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No people yet.</div>`);
+}
+function rPostings(){
+  const rows=DB.postings.map(p=>`<tr><td><b>${esc(nameOf(DB.people,p.employee))}</b></td>
+     <td>${esc(nameOf(DB.units,p.org_unit))}</td><td>${p.area?esc(nameOf(DB.areas,p.area)):'—'}</td>
+     <td>${p.role?`<span class="pill">${esc(p.role)}</span>`:'—'}</td><td>${esc(p.designation||'—')}</td>
+     <td>${p.reporting_to?esc(nameOf(DB.people,p.reporting_to)):'—'}</td>
+     <td><span class="pill ${p.status==='active'?'active':''}">${esc(p.status||'active')}</span></td>
+     <td><button class="btn sm ghost" onclick='editRow("postings","${esc(p.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=header('Postings','assign a person to a unit + area + role','Add posting','addRow("postings")')
+    + (DB.postings.length?`<div class="card"><table><thead><tr><th>Employee</th><th>Unit</th><th>Area</th><th>Role</th><th>Designation</th><th>Reports to</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No postings yet. Add people and units first, then place them.</div>`);
+}
+function rGoals(){
+  const rows=DB.goals.map(g=>`<tr><td><b>${esc(g.title)}</b></td>
+     <td>${esc(g.owner_kind==='employee'?nameOf(DB.people,g.owner):nameOf(DB.units,g.owner))}</td>
+     <td>${esc(g.metric||'—')}</td><td>${g.target!=null?esc(g.target):'—'}</td><td>${esc(g.period||'—')}</td>
+     <td><span class="pill ${g.status==='met'?'met':(g.status==='draft'?'draft':'active')}">${esc(g.status||'draft')}</span></td>
+     <td><button class="btn sm ghost" onclick='editRow("goals","${esc(g.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=header('Goals','objectives for a unit or a person','Add goal','addRow("goals")')
+    + (DB.goals.length?`<div class="card"><table><thead><tr><th>Goal</th><th>Owner</th><th>Metric</th><th>Target</th><th>Period</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No goals yet.</div>`);
+}
+
+/* ---------- FORMS ---------- */
+const opt=(list,sel,labelFn)=>`<option value="">—</option>`+list.map(o=>`<option value="${esc(o.id)}"${o.id===sel?' selected':''}>${esc(labelFn(o))}</option>`).join('');
+const optV=(vals,sel)=>`<option value="">—</option>`+vals.map(v=>`<option${v===sel?' selected':''}>${esc(v)}</option>`).join('');
+function fields(tab,o){
+  const unitsOpt=s=>opt(DB.units,s,u=>u.name);
+  const areasOpt=s=>opt(DB.areas,s,a=>a.name+' ('+(a.level||'')+')');
+  const pplOpt=s=>opt(DB.people,s,e=>e.name+' · '+e.emp_code);
+  if(tab==='units') return `
+    <div class="grid"><div class="row"><label>Code</label><input id="f_code" value="${esc(o.code||'')}" placeholder="rev-dept"></div>
+      <div class="row"><label>Name</label><input id="f_name" value="${esc(o.name||'')}" placeholder="Revenue Department"></div></div>
+    <div class="grid g3"><div class="row"><label>Kind</label><select id="f_kind">${optV(['department','division','team','office','unit','board'],o.kind||'department')}</select></div>
+      <div class="row"><label>Parent unit</label><select id="f_parent">${unitsOpt(o.parent)}</select></div>
+      <div class="row"><label>Area</label><select id="f_area">${areasOpt(o.area)}</select></div></div>
+    <div class="grid"><div class="row"><label>Head (person)</label><select id="f_head">${pplOpt(o.head)}</select></div>
+      <div class="row"><label>Jurisdiction code <span class="muted">(optional)</span></label><input id="f_jurisdiction" value="${esc(o.jurisdiction||'')}" placeholder="nashik"></div></div>`;
+  if(tab==='areas') return `
+    <div class="grid"><div class="row"><label>Code</label><input id="f_code" value="${esc(o.code||'')}" placeholder="zone-3"></div>
+      <div class="row"><label>Name</label><input id="f_name" value="${esc(o.name||'')}" placeholder="Zone 3 — East"></div></div>
+    <div class="grid g3"><div class="row"><label>Level</label><input id="f_level" value="${esc(o.level||'')}" placeholder="zone / ward / locality / street"></div>
+      <div class="row"><label>Parent area</label><select id="f_parent">${areasOpt(o.parent)}</select></div>
+      <div class="row"><label>Jurisdiction code</label><input id="f_jurisdiction" value="${esc(o.jurisdiction||'')}" placeholder="nashik"></div></div>`;
+  if(tab==='people') return `
+    <div class="grid"><div class="row"><label>Emp code</label><input id="f_emp_code" value="${esc(o.emp_code||'')}" placeholder="E-1024"></div>
+      <div class="row"><label>Full name</label><input id="f_name" value="${esc(o.name||'')}" placeholder="Asha Patil"></div></div>
+    <div class="grid g3"><div class="row"><label>Grade</label><input id="f_grade" value="${esc(o.grade||'')}" placeholder="Officer / Grade-B"></div>
+      <div class="row"><label>Primary unit</label><select id="f_org_unit">${unitsOpt(o.org_unit)}</select></div>
+      <div class="row"><label>Status</label><select id="f_status">${optV(['active','on_leave','separated'],o.status||'active')}</select></div></div>
+    <div class="grid g3"><div class="row"><label>Manager</label><select id="f_manager">${pplOpt(o.manager)}</select></div>
+      <div class="row"><label>Email</label><input id="f_email" value="${esc((o.contact||{}).email||'')}"></div>
+      <div class="row"><label>Phone</label><input id="f_phone" value="${esc((o.contact||{}).phone||'')}"></div></div>`;
+  if(tab==='postings') return `
+    <div class="grid"><div class="row"><label>Employee</label><select id="f_employee">${pplOpt(o.employee)}</select></div>
+      <div class="row"><label>Unit</label><select id="f_org_unit">${unitsOpt(o.org_unit)}</select></div></div>
+    <div class="grid g3"><div class="row"><label>Area</label><select id="f_area">${areasOpt(o.area)}</select></div>
+      <div class="row"><label>Role <span class="muted">(governed)</span></label><select id="f_role">${optV(ROLES,o.role)}</select></div>
+      <div class="row"><label>Designation</label><input id="f_designation" value="${esc(o.designation||'')}" placeholder="Ward Officer"></div></div>
+    <div class="grid g3"><div class="row"><label>Reports to</label><select id="f_reporting_to">${pplOpt(o.reporting_to)}</select></div>
+      <div class="row"><label>From</label><input id="f_from_date" type="date" value="${esc(o.from_date||'')}"></div>
+      <div class="row"><label>Status</label><select id="f_status">${optV(['active','ended'],o.status||'active')}</select></div></div>`;
+  if(tab==='goals'){const ok=o.owner_kind||'org_unit';return `
+    <div class="row"><label>Title</label><input id="f_title" value="${esc(o.title||'')}" placeholder="Clear 90% of grievances within SLA"></div>
+    <div class="grid"><div class="row"><label>Owner type</label><select id="f_owner_kind" onchange="ownerKind(this.value)">${optV(['org_unit','employee'],ok)}</select></div>
+      <div class="row"><label>Owner</label><select id="f_owner">${ok==='employee'?pplOpt(o.owner):unitsOpt(o.owner)}</select></div></div>
+    <div class="grid g3"><div class="row"><label>Metric</label><input id="f_metric" value="${esc(o.metric||'')}" placeholder="% within SLA"></div>
+      <div class="row"><label>Target</label><input id="f_target" value="${esc(o.target!=null?o.target:'')}" placeholder="90"></div>
+      <div class="row"><label>Period</label><input id="f_period" value="${esc(o.period||'')}" placeholder="FY2026"></div></div>
+    <div class="row" style="max-width:220px"><label>Status</label><select id="f_status">${optV(['draft','active','met','missed'],o.status||'draft')}</select></div>`;}
+}
+function ownerKind(k){ const sel=document.getElementById('f_owner');
+  sel.innerHTML = k==='employee'?opt(DB.people,'',e=>e.name+' · '+e.emp_code):opt(DB.units,'',u=>u.name); }
+
+let EDIT=null;
+function addRow(tab){ TAB=tab; openForm({}); }
+function editRow(tab,id){ TAB=tab; openForm(byId(DB[tab],id)); }
+function openForm(o){
+  EDIT=o; const title=(o.id?'Edit ':'New ')+({units:'unit',areas:'area',people:'person',postings:'posting',goals:'goal'}[TAB]);
+  document.getElementById('sheet').innerHTML=`<h3>${title}</h3>${fields(TAB,o)}
+    <div id="ferr" class="err"></div>
+    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn pri" onclick="submitForm()">Save</button>
+      <button class="btn ghost" onclick="closeModal()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('open'); EDIT=null; }
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+function submitForm(){
+  const o=Object.assign({},EDIT), t=TAB;
+  o.schema=SCH[t];
+  const set=(k,v)=>{ if(v==='' || v==null){ if(k in o) delete o[k]; } else o[k]=v; };
+  if(t==='units'){ const code=val('f_code'); if(!code||!val('f_name'))return ferr('Code and name are required');
+    o.code=code; o.name=val('f_name'); o.kind=val('f_kind'); set('parent',val('f_parent')); set('area',val('f_area')); set('head',val('f_head')); set('jurisdiction',val('f_jurisdiction'));
+    o.id=o.id||rid('org_unit',code); }
+  else if(t==='areas'){ const code=val('f_code'); if(!code||!val('f_name')||!val('f_level'))return ferr('Code, name and level are required');
+    o.code=code; o.name=val('f_name'); o.level=val('f_level'); set('parent',val('f_parent')); set('jurisdiction',val('f_jurisdiction'));
+    o.id=o.id||rid('area',code); }
+  else if(t==='people'){ const ec=val('f_emp_code'); if(!ec||!val('f_name'))return ferr('Emp code and name are required');
+    o.emp_code=ec; o.name=val('f_name'); set('grade',val('f_grade')); set('org_unit',val('f_org_unit')); o.status=val('f_status')||'active'; set('manager',val('f_manager'));
+    const c={}; if(val('f_email'))c.email=val('f_email'); if(val('f_phone'))c.phone=val('f_phone'); if(Object.keys(c).length)o.contact=c; else delete o.contact;
+    o.id=o.id||rid('employee',ec); }
+  else if(t==='postings'){ if(!val('f_employee')||!val('f_org_unit'))return ferr('Employee and unit are required');
+    o.employee=val('f_employee'); o.org_unit=val('f_org_unit'); set('area',val('f_area')); set('role',val('f_role')); set('designation',val('f_designation')); set('reporting_to',val('f_reporting_to')); set('from_date',val('f_from_date')); o.status=val('f_status')||'active';
+    o.id=o.id||rid('posting'); }
+  else if(t==='goals'){ if(!val('f_title')||!val('f_owner'))return ferr('Title and owner are required');
+    o.title=val('f_title'); o.owner_kind=val('f_owner_kind')||'org_unit'; o.owner=val('f_owner'); set('metric',val('f_metric')); set('period',val('f_period')); o.status=val('f_status')||'draft';
+    const tv=val('f_target'); if(tv!==''){ const n=Number(tv); o.target=isNaN(n)?tv:n; } else delete o.target;
+    o.id=o.id||rid('goal'); }
+  o.created_at=o.created_at||new Date().toISOString();
+  save(o);
+}
+function ferr(m){ document.getElementById('ferr').textContent=m; }
+async function save(o){
+  const r=await api('/bridge/save',{app_id:APP,id:o.id,object:o});
+  if(r.error) return ferr(r.error+(r.detail?(' — '+r.detail):''));
+  closeModal(); await loadOne(TAB); refreshCounts(); render();
+}
+boot();
+</script>
