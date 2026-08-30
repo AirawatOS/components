@@ -56,13 +56,36 @@ async function boot(){
 const cityName = code => (CITIES.find(c=>c.code===code)||{}).name || code;
 const cityOptions = sel => CITIES.map(c=>`<option value="${esc(c.code)}"${c.code===sel?' selected':''}>${esc(c.name)}</option>`).join('');
 
-// ---- Join: self-signup + set where you live ----
+// ---- gate: SIGN IN (returning citizen) — with a link to create an account ----
 function renderJoin(){
   document.getElementById('who').textContent='';
   document.getElementById('app').style.display='none';
   document.getElementById('gate').innerHTML = `<div class="card">
-    <h3>Join Jan Seva</h3>
-    <div class="muted">Register once as a citizen. We'll show you the services offered where you live — and remember you if you move.</div>
+    <h3>Sign in to Jan Seva</h3>
+    <div class="muted">Access the civic services offered where you live.</div>
+    <label>Username</label><input id="li" placeholder="e.g. asha.patil"/>
+    <button class="btn" id="loginBtn" style="margin-top:10px">Sign in</button>
+    <div id="loginOut" class="muted" style="margin-top:8px"></div>
+    <div style="margin-top:14px;border-top:1px solid #21262d;padding-top:12px;font-size:14px">
+      New citizen? <a onclick="renderJoinForm()" style="color:#58a6ff;cursor:pointer">Create an account →</a>
+    </div></div>`;
+  const li=document.getElementById('li');
+  document.getElementById('loginBtn').onclick = doLogin;
+  li.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+}
+async function doLogin(){
+  const u=document.getElementById('li').value.trim(), out=document.getElementById('loginOut');
+  if(!u){ out.innerHTML='<span class="err">Enter your username.</span>'; return; }
+  out.textContent='Signing in…';
+  let r={}; try{ r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({realm:'citizens',username:u.toLowerCase()})}).then(x=>x.json()); }catch(e){}
+  if(r && r.ok){ notifyShell(); setTimeout(()=>{ try{ top.location='/'; }catch(e){ location.href='/'; } }, 300); }
+  else out.innerHTML='<span class="err">No such citizen — check your username, or create an account.</span>';
+}
+// ---- create an account (self-signup) ----
+function renderJoinForm(){
+  document.getElementById('gate').innerHTML = `<div class="card">
+    <h3>Create your citizen account</h3>
+    <div class="muted">Register once. We'll show the services offered where you live — and remember you if you move.</div>
     <label>Your name</label><input id="jn" placeholder="e.g. Asha Patil"/>
     <div class="grid2">
       <div><label>Pick a username</label><input id="ju" placeholder="e.g. asha.patil"/></div>
@@ -73,7 +96,8 @@ function renderJoin(){
       <div><label>Own property elsewhere? (optional)</label><select id="jp"><option value="">— none —</option>${cityOptions()}</select></div>
     </div>
     <button class="btn" id="joinBtn" style="margin-top:12px">Create my citizen account</button>
-    <div id="joinOut" class="muted" style="margin-top:8px"></div></div>`;
+    <div id="joinOut" class="muted" style="margin-top:8px"></div>
+    <div style="margin-top:12px;font-size:14px">Already registered? <a onclick="renderJoin()" style="color:#58a6ff;cursor:pointer">← Sign in</a></div></div>`;
   document.getElementById('joinBtn').onclick = doJoin;
 }
 async function doJoin(){

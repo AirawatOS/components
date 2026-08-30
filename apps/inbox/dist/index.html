@@ -146,6 +146,7 @@ async function render(){
   b.innerHTML=html;
   if(NAV.length>1) document.getElementById('back').onclick=back;
   if(o&&o.schema==='platform.task') await taskControls(b,o);
+  if(o&&o.schema==='platform.case') await caseDetails(b,o);           // show the citizen's submitted application
   if(o&&o.schema==='governance.decision') await renderReceipt(o,b);   // reconstructable evidence receipt
 }
 // A governance.decision's evidence_manifest IS the reconstruction manifest (ADR-0046): it pins the
@@ -188,6 +189,20 @@ async function appendResolved(wrap,ref,label){
       +(o.proposed_action?'<div class="recl">→ '+esc(String(o.proposed_action))+'</div>':'');
   }catch(e){ d.innerHTML='<div class="rlabel">'+esc(label)+'</div><div class="ev">'+esc(ref)+'</div>'; }
   d.onclick=()=>push(ref,{title:label}); wrap.appendChild(d);
+}
+async function caseDetails(b,c){
+  // the citizen's submitted APPLICATION lives in a linked civic.submission (same id stem as the case)
+  const subId=(c.id||'').replace(':case/',':civic/submission/');
+  let sub=null; try{ const r=await resolveRef(subId); sub=r.object; }catch(e){}
+  const data=(sub&&sub.data)||{};
+  const box=document.createElement('div'); box.className='controls';
+  let h='<div class="lbl" style="margin-top:0">Application submitted by the citizen</div>';
+  if(Object.keys(data).length){
+    h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px">';
+    for(const k of Object.keys(data)) h+='<div style="color:#8b949e">'+esc(k.replace(/[_-]/g,' '))+'</div><div>'+esc(data[k])+'</div>';
+    h+='</div>';
+  } else { h+='<div class="note">No structured application on file.</div>'; }
+  box.innerHTML=h; b.appendChild(box);
 }
 async function taskControls(b,task){
   const box=document.createElement('div'); box.className='controls';

@@ -2,7 +2,7 @@
 # in one place. Reads platform.inbox_item as the user (host scopes to actor==sub).
 component_id: ds:airawat:app/inbox
 kind: app
-version: 0.1.2
+version: 0.1.3
 provider: ds:airawat:developer
 display_name: Inbox
 entrypoint: index.html
