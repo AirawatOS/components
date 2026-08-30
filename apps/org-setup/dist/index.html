@@ -125,14 +125,19 @@ function rPeople(){
        :`<div class="empty">No people yet.</div>`);
 }
 function rPostings(){
+  const rbac=p=>{ if(!p.role) return '<span class="muted">no role</span>';
+    if(p.status==='ended') return '<span class="muted">revoked</span>';
+    return byId(DB.people,p.employee).citizen ? '<span class="pill met">● live</span>'
+      : '<span class="pill draft" title="set the employee’s Login user">pending login</span>'; };
   const rows=DB.postings.map(p=>`<tr><td><b>${esc(nameOf(DB.people,p.employee))}</b></td>
      <td>${esc(nameOf(DB.units,p.org_unit))}</td><td>${p.area?esc(nameOf(DB.areas,p.area)):'—'}</td>
      <td>${p.role?`<span class="pill">${esc(p.role)}</span>`:'—'}</td><td>${esc(p.designation||'—')}</td>
      <td>${p.reporting_to?esc(nameOf(DB.people,p.reporting_to)):'—'}</td>
+     <td>${rbac(p)}</td>
      <td><span class="pill ${p.status==='active'?'active':''}">${esc(p.status||'active')}</span></td>
      <td><button class="btn sm ghost" onclick='editRow("postings","${esc(p.id)}")'>edit</button></td></tr>`).join('');
   document.getElementById('main').innerHTML=header('Postings','assign a person to a unit + area + role','Add posting','addRow("postings")')
-    + (DB.postings.length?`<div class="card"><table><thead><tr><th>Employee</th><th>Unit</th><th>Area</th><th>Role</th><th>Designation</th><th>Reports to</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    + (DB.postings.length?`<div class="card"><table><thead><tr><th>Employee</th><th>Unit</th><th>Area</th><th>Role</th><th>Designation</th><th>Reports to</th><th>RBAC</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
        :`<div class="empty">No postings yet. Add people and units first, then place them.</div>`);
 }
 function rGoals(){
@@ -175,7 +180,9 @@ function fields(tab,o){
       <div class="row"><label>Status</label><select id="f_status">${optV(['active','on_leave','separated'],o.status||'active')}</select></div></div>
     <div class="grid g3"><div class="row"><label>Manager</label><select id="f_manager">${pplOpt(o.manager)}</select></div>
       <div class="row"><label>Email</label><input id="f_email" value="${esc((o.contact||{}).email||'')}"></div>
-      <div class="row"><label>Phone</label><input id="f_phone" value="${esc((o.contact||{}).phone||'')}"></div></div>`;
+      <div class="row"><label>Phone</label><input id="f_phone" value="${esc((o.contact||{}).phone||'')}"></div></div>
+    <div class="row"><label>Login user <span class="muted">— username of their account; links the employee so a posting grants them the role (RBAC)</span></label>
+      <input id="f_login" value="${esc((o.citizen||'').replace(/^user:\/\/[^/]+\//,''))}" placeholder="asha.patil"></div>`;
   if(tab==='postings') return `
     <div class="grid"><div class="row"><label>Employee</label><select id="f_employee">${pplOpt(o.employee)}</select></div>
       <div class="row"><label>Unit</label><select id="f_org_unit">${unitsOpt(o.org_unit)}</select></div></div>
@@ -223,6 +230,7 @@ function submitForm(){
   else if(t==='people'){ const ec=val('f_emp_code'); if(!ec||!val('f_name'))return ferr('Emp code and name are required');
     o.emp_code=ec; o.name=val('f_name'); set('grade',val('f_grade')); set('org_unit',val('f_org_unit')); o.status=val('f_status')||'active'; set('manager',val('f_manager'));
     const c={}; if(val('f_email'))c.email=val('f_email'); if(val('f_phone'))c.phone=val('f_phone'); if(Object.keys(c).length)o.contact=c; else delete o.contact;
+    const lg=val('f_login'); if(lg) o.citizen=lg.startsWith('user://')?lg:('user://'+TENANT+'/'+lg); else delete o.citizen;
     o.id=o.id||rid('employee',ec); }
   else if(t==='postings'){ if(!val('f_employee')||!val('f_org_unit'))return ferr('Employee and unit are required');
     o.employee=val('f_employee'); o.org_unit=val('f_org_unit'); set('area',val('f_area')); set('role',val('f_role')); set('designation',val('f_designation')); set('reporting_to',val('f_reporting_to')); set('from_date',val('f_from_date')); o.status=val('f_status')||'active';
@@ -238,7 +246,16 @@ function ferr(m){ document.getElementById('ferr').textContent=m; }
 async function save(o){
   const r=await api('/bridge/save',{app_id:APP,id:o.id,object:o});
   if(r.error) return ferr(r.error+(r.detail?(' — '+r.detail):''));
+  let note='';
+  if(TAB==='postings'){                        // project the posting into a live RBAC role-grant
+    try{ const a=await api('/bridge/posting-apply',{posting:o});
+      note=a.live?('✓ '+(o.role||'role')+' is now live for this employee') :('⚠ role not live — '+(a.reason||'')); }catch(e){}
+  }
   closeModal(); await loadOne(TAB); refreshCounts(); render();
+  if(note) toast(note);
 }
+function toast(m){ let t=document.getElementById('toast'); if(!t){t=document.createElement('div');t.id='toast';
+  t.style.cssText='position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#17233a;border:1px solid #33455a;color:#cfe0ff;padding:10px 16px;border-radius:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)';document.body.appendChild(t);}
+  t.textContent=m; t.style.opacity='1'; clearTimeout(t._h); t._h=setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';},3200); }
 boot();
 </script>
