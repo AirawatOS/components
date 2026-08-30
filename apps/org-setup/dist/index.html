@@ -251,6 +251,11 @@ async function save(o){
     try{ const a=await api('/bridge/posting-apply',{posting:o});
       note=a.live?('✓ '+(o.role||'role')+' is now live for this employee') :('⚠ role not live — '+(a.reason||'')); }catch(e){}
   }
+  if(TAB==='people' && o.citizen){             // auto-provision a tenant login for the staff member
+    try{ const p=await api('/bridge/employee-provision',{employee:o});
+      const un=(p.subject||'').split('/').pop();
+      note=p.error?('⚠ login not created — '+p.error):(p.existed?('login '+un+' already exists') :('✓ login created: '+un)); }catch(e){}
+  }
   closeModal(); await loadOne(TAB); refreshCounts(); render();
   if(note) toast(note);
 }
