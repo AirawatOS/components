@@ -64,7 +64,7 @@ const ctitle=t=>String(t||'').replace(/^credential\./,'').replace(/[_-]/g,' ').r
 const SOLUTION='ds:airawatdeveloper:solution/declarative-service';
 let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], SVCS=[], SEL=null, HIST=[];
 let AJUR=null, ALLOWED=[];   // the AGENCY'S own jurisdiction + any sub-jurisdictions it may serve
-let B={service_id:'',title:'',domain:'',description:'',jurisdiction:'',entitlement:'residence'};
+let B={service_id:'',title:'',domain:'',description:'',jurisdiction:'',entitlement:'residence',audience:'civic.resident'};
 let FIELDS=[], STEPS=[], REQCREDS=new Set();
 
 async function boot(){
@@ -87,10 +87,10 @@ async function loadNav(){
        <div>${esc(o.title||o.service_id)}</div><div class="s">${esc(o.jurisdiction||'')} · ${((o.fulfillment||{}).workflow||[]).length} steps</div></div>`).join('')
     : '<div class="muted" style="padding:10px">No services yet.</div>';
 }
-function newSvc(){ SEL=null; B={service_id:'',title:'',domain:(DOMAINS.includes('civic')?'civic':(DOMAINS[0]||'')),description:'',jurisdiction:(AJUR?AJUR.code:(ME.tenant||'')),entitlement:'residence'};
+function newSvc(){ SEL=null; B={service_id:'',title:'',domain:(DOMAINS.includes('civic')?'civic':(DOMAINS[0]||'')),description:'',jurisdiction:(AJUR?AJUR.code:(ME.tenant||'')),entitlement:'residence',audience:(ROLES.includes('civic.resident')?'civic.resident':(ROLES[0]||''))};
   FIELDS=[{key:'',label:'',type:'text',required:false}]; STEPS=[{step:'',role:ROLES[0]||'',task:'',issues:''}]; REQCREDS=new Set(); renderEditor(); loadNav(); }
 function loadSvc(o){ SEL=o.service_id;
-  B={service_id:o.service_id,title:o.title||'',domain:o.domain||'civic',description:o.description||'',jurisdiction:o.jurisdiction||'',entitlement:o.entitlement||'residence'};
+  B={service_id:o.service_id,title:o.title||'',domain:o.domain||'civic',description:o.description||'',jurisdiction:o.jurisdiction||'',entitlement:o.entitlement||'residence',audience:o.audience||'civic.resident'};
   const props=(o.request_schema||{}).properties||{}, req=(o.request_schema||{}).required||[];
   FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k]['x-widget']==='textarea'?'textarea':(props[k].type==='number'?'number':'text')),required:req.includes(k)}));
   if(!FIELDS.length) FIELDS=[{key:'',label:'',type:'text',required:false}];
@@ -119,7 +119,11 @@ function renderEditor(){
         <div><label>Jurisdiction</label>${ALLOWED.length<=1
           ? `<div style="padding:9px 0">📍 <b>${esc(AJUR?AJUR.name:B.jurisdiction)}</b> <span class="muted">— your agency's jurisdiction</span></div>`
           : `<select onchange="B.jurisdiction=this.value">${allowedOpts(B.jurisdiction)}</select>`}</div>
-        <div><label>Who sees it</label><select onchange="B.entitlement=this.value"><option value="residence"${B.entitlement==='residence'?' selected':''}>Residents</option><option value="property"${B.entitlement==='property'?' selected':''}>Property owners</option></select></div>
+        <div><label>Who it's for <span class="muted">(governed role)</span></label><select onchange="B.audience=this.value">${roleOpts(B.audience)}</select></div>
+      </div>
+      <div class="grid">
+        <div><label>Qualifies by <span class="muted">(how a resident matches)</span></label><select onchange="B.entitlement=this.value"><option value="residence"${B.entitlement==='residence'?' selected':''}>Lives in the jurisdiction</option><option value="property"${B.entitlement==='property'?' selected':''}>Owns property in the jurisdiction</option></select></div>
+        <div></div>
       </div>
     </div>
     <div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Intake form</h3><span class="muted" style="margin-left:8px">what the citizen fills in</span><button class="btn ghost sm" style="margin-left:auto" onclick="FIELDS.push({key:'',label:'',type:'text',required:false});renderFields()">+ Field</button></div><div id="fields"></div></div>
@@ -150,7 +154,7 @@ function buildBody(){
     if(f.type==='date')p.format='date'; if(f.type==='textarea')p['x-widget']='textarea'; props[k]=p; if(f.required)req.push(k); });
   const wf=STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step',role:s.role,task:s.task||s.step,...(s.issues?{issues:s.issues}:{})}));
   return {service_id:slug(B.service_id),title:B.title,domain:B.domain,description:B.description,interaction:['search','init','status'],
-    jurisdiction:B.jurisdiction,entitlement:B.entitlement,request_schema:{type:'object',properties:props,required:req,additionalProperties:false},
+    jurisdiction:B.jurisdiction,entitlement:B.entitlement,audience:B.audience||'civic.resident',request_schema:{type:'object',properties:props,required:req,additionalProperties:false},
     solution:SOLUTION,fulfillment:{workflow:wf},required_credentials:[...REQCREDS]};
 }
 async function publish(){
