@@ -12,7 +12,7 @@
   .navi{padding:8px 12px;cursor:pointer;border-left:2px solid transparent;font-size:13px}
   .navi:hover{background:#131922}.navi.on{background:#131922;border-left-color:var(--accent)}
   .navi .s{color:var(--dim);font-size:11px}
-  .edit{flex:1;overflow:auto;padding:18px 22px;max-width:720px}
+  .edit{flex:1;min-width:0;overflow:auto;padding:18px 22px}
   .right{width:320px;flex:0 0 auto;min-width:0;overflow:hidden;background:var(--panel2);border-left:1px solid var(--line);display:flex;flex-direction:column;transition:width .12s}
   .right.collapsed{width:40px}.right.collapsed .rbody,.right.collapsed .rh b,.right.collapsed .rin{display:none}
   .rh{display:flex;align-items:center;gap:6px;padding:10px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
@@ -21,7 +21,7 @@
   .msg.u .bub{background:#12233b;border-color:#23406a}
   .rin{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line);min-width:0}
   .rin input{min-width:0}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px auto;max-width:760px}
   h3{margin:.2em 0 .6em;font-size:14px}
   input,select,textarea{width:100%;background:var(--bg);border:1px solid #30363d;color:var(--txt);border-radius:7px;padding:8px;margin:3px 0;font:inherit}
   label{font-size:12px;color:var(--dim);margin-top:6px;display:block}
@@ -62,8 +62,9 @@ const slug=s=>String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').repl
 const skey=s=>slug(s).replace(/-/g,'_');
 const ctitle=t=>String(t||'').replace(/^credential\./,'').replace(/[_-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 const SOLUTION='ds:airawatdeveloper:solution/declarative-service';
-let ME={}, ROLES=[], CTYPES=[], CITIES=[], SVCS=[], SEL=null, HIST=[];
-let B={service_id:'',title:'',domain:'civic',description:'',jurisdiction:'',entitlement:'residence'};
+let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], SVCS=[], SEL=null, HIST=[];
+let AJUR=null, ALLOWED=[];   // the AGENCY'S own jurisdiction + any sub-jurisdictions it may serve
+let B={service_id:'',title:'',domain:'',description:'',jurisdiction:'',entitlement:'residence'};
 let FIELDS=[], STEPS=[], REQCREDS=new Set();
 
 async function boot(){
@@ -71,7 +72,12 @@ async function boot(){
   document.getElementById('scope').textContent='· '+(ME.tenant||'');
   try{ ROLES=((await get('/bridge/catalog?kind=roles')).roles||[]).map(r=>r.role).filter(Boolean).sort(); }catch(e){}
   try{ CTYPES=((await get('/bridge/catalog?kind=credential-types')).credential_types||[]); }catch(e){}
+  try{ DOMAINS=((await get('/bridge/catalog?kind=domains')).domains||[]).map(d=>d.domain||d).filter(Boolean); }catch(e){}
   try{ CITIES=((await api('/bridge/jurisdictions',{})).jurisdictions||[]); }catch(e){}
+  // the agency's HOME jurisdiction (the jurisdiction linked to this tenant, else jurisdiction==tenant name)
+  AJUR = CITIES.find(j=>j.tenant===ME.tenant) || CITIES.find(j=>j.code===ME.tenant) || {code:ME.tenant||'', name:(ME.tenant||'your jurisdiction'), kind:'jurisdiction'};
+  const inScope=j=>{ let c=j, seen=new Set(); while(c && !seen.has(c.code)){ if(c.code===AJUR.code) return true; seen.add(c.code); c=CITIES.find(x=>x.code===c.parent); } return false; };
+  ALLOWED = CITIES.filter(inScope); if(!ALLOWED.length) ALLOWED=[AJUR];
   await loadNav(); newSvc();
 }
 async function loadNav(){
@@ -81,7 +87,7 @@ async function loadNav(){
        <div>${esc(o.title||o.service_id)}</div><div class="s">${esc(o.jurisdiction||'')} · ${((o.fulfillment||{}).workflow||[]).length} steps</div></div>`).join('')
     : '<div class="muted" style="padding:10px">No services yet.</div>';
 }
-function newSvc(){ SEL=null; B={service_id:'',title:'',domain:'civic',description:'',jurisdiction:ME.tenant||'',entitlement:'residence'};
+function newSvc(){ SEL=null; B={service_id:'',title:'',domain:(DOMAINS.includes('civic')?'civic':(DOMAINS[0]||'')),description:'',jurisdiction:(AJUR?AJUR.code:(ME.tenant||'')),entitlement:'residence'};
   FIELDS=[{key:'',label:'',type:'text',required:false}]; STEPS=[{step:'',role:ROLES[0]||'',task:'',issues:''}]; REQCREDS=new Set(); renderEditor(); loadNav(); }
 function loadSvc(o){ SEL=o.service_id;
   B={service_id:o.service_id,title:o.title||'',domain:o.domain||'civic',description:o.description||'',jurisdiction:o.jurisdiction||'',entitlement:o.entitlement||'residence'};
@@ -93,6 +99,8 @@ function loadSvc(o){ SEL=o.service_id;
   REQCREDS=new Set(o.required_credentials||[]); renderEditor(); loadNav();
 }
 const cityOpts=sel=>CITIES.map(c=>`<option value="${esc(c.code)}"${c.code===sel?' selected':''}>${esc(c.name)} (${esc(c.kind)})</option>`).join('');
+const domainOpts=sel=>(DOMAINS.length?DOMAINS:['civic']).map(d=>`<option${d===sel?' selected':''}>${esc(d)}</option>`).join('');
+const allowedOpts=sel=>ALLOWED.map(j=>`<option value="${esc(j.code)}"${j.code===sel?' selected':''}>${esc(j.name)} (${esc(j.kind)})</option>`).join('');
 const roleOpts=sel=>ROLES.map(r=>`<option${r===sel?' selected':''}>${esc(r)}</option>`).join('');
 const issOpts=sel=>'<option value="">— issues nothing —</option>'+CTYPES.map(c=>`<option value="${esc(c.type)}"${c.type===sel?' selected':''}>${esc(c.title)}</option>`).join('');
 
@@ -104,11 +112,13 @@ function renderEditor(){
         <div><label>Title shown to citizens</label><input id="title" value="${esc(B.title)}" placeholder="Birth Certificate" oninput="B.title=this.value"></div>
       </div>
       <div class="grid">
-        <div><label>Domain</label><input value="${esc(B.domain)}" oninput="B.domain=this.value" placeholder="civic / urban / safety"></div>
+        <div><label>Domain</label><select onchange="B.domain=this.value">${domainOpts(B.domain)}</select></div>
         <div><label>Description</label><input value="${esc(B.description)}" oninput="B.description=this.value" placeholder="One line"></div>
       </div>
       <div class="grid">
-        <div><label>Jurisdiction (where it's valid)</label><select onchange="B.jurisdiction=this.value">${cityOpts(B.jurisdiction)}</select></div>
+        <div><label>Jurisdiction</label>${ALLOWED.length<=1
+          ? `<div style="padding:9px 0">📍 <b>${esc(AJUR?AJUR.name:B.jurisdiction)}</b> <span class="muted">— your agency's jurisdiction</span></div>`
+          : `<select onchange="B.jurisdiction=this.value">${allowedOpts(B.jurisdiction)}</select>`}</div>
         <div><label>Who sees it</label><select onchange="B.entitlement=this.value"><option value="residence"${B.entitlement==='residence'?' selected':''}>Residents</option><option value="property"${B.entitlement==='property'?' selected':''}>Property owners</option></select></div>
       </div>
     </div>
