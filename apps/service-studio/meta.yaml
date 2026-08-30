@@ -5,7 +5,7 @@
 # app-host bridges (service-offering-save / service-offerings / catalog / jurisdictions); the network authorises.
 component_id: ds:airawatdeveloper:app/service-studio
 kind: app
-version: 0.1.2
+version: 0.2.0
 provider: ds:airawatdeveloper:developer
 display_name: Service Studio
 entrypoint: index.html
