@@ -123,7 +123,7 @@ function paintList(){
   list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(FI[+el.dataset.ix])));
   const more=document.getElementById('more'); if(more) more.onclick=()=>{ SHOWN=Math.min(SHOWN+PAGE,filtered().length); paintList(); };
 }
-function openItem(it){NAV=[]; document.getElementById('d-dot').className='dot '+it.kind; openDrawer(); push(it.ref,{title:it.title,source:it.source});}
+function openItem(it){NAV=[]; document.getElementById('d-dot').className='dot '+it.kind; openDrawer(); push(it.ref,{title:it.title,source:it.source,body:it.body});}
 async function push(ref,ctx){NAV.push({ref,ctx:ctx||{}}); await render();}
 async function back(){NAV.pop(); await render();}
 // the drawer renders WHATEVER ref is on top of the nav stack, generically via viz.layer; a task also
@@ -136,6 +136,7 @@ async function render(){
   let res; try{res=await resolveRef(ref);}catch(e){b.innerHTML='<div class="note">Could not resolve '+esc(ref)+' ('+esc(e.message)+').</div>';return;}
   const loc=res.location||'?', o=res.object;
   let html = NAV.length>1 ? '<span class="crumb" id="back">← back</span>' : '';
+  if(ctx.body) html += '<div class="note" style="border-left:3px solid #3b82f6"><b>Submitted by applicant</b><br>'+esc(ctx.body)+'</div>';
   html+='<div class="lbl" style="margin-top:0">Subject <span class="loc loc-'+loc+'">'+loc+'</span></div>';
   if(loc==='local'&&o) html+=renderSubject(o,res.viz||[]);
   else if(loc==='local') html+='<div class="note">Local subject '+esc(ref)+' — not found (pending).</div>';
@@ -224,13 +225,19 @@ async function taskControls(b,task){
 // and the event lands in the case history. We then render the decision itself — via its viz.layer.
 async function decide(taskId,outcome,selected){
   const r=await bpost('/bridge/decide',{task:taskId,outcome,selected});
-  if(!r.ok){const b=document.getElementById('d-body'); const n=document.createElement('div'); n.className='note'; n.textContent='Decision refused ('+r.status+').'; b.appendChild(n); return;}
-  const dec=r.json.decision;
-  await push(dec.id,{title:'Decision recorded'});         // renders the decision + reconstructable receipt
   const b=document.getElementById('d-body');
-  const rc=document.createElement('div'); rc.className='ok'; rc.textContent='✓ recorded to case history · case closed';
-  b.appendChild(rc);
-  loadList();                                             // task now done; a "Decision recorded" item appears
+  if(!r.ok){const n=document.createElement('div'); n.className='note'; n.textContent='Action refused ('+r.status+').'; b.appendChild(n); return;}
+  if(r.json && r.json.via==='workflow'){                  // a SERVICE-WORKFLOW step: advanced / closed (no decision receipt)
+    const rc=document.createElement('div'); rc.className='ok';
+    rc.textContent = r.json.case_closed
+      ? ('✓ '+(outcome==='rejected'?'Rejected — case closed':'Approved — completed'+(r.json.issued?' · credential issued to the applicant':'')))
+      : ('✓ Approved — advanced to “'+(r.json.advanced_to||'next step')+'”'+(r.json.routed_to?' · now with '+r.json.routed_to:''));
+    b.appendChild(rc); loadList(); return;
+  }
+  const dec=r.json.decision;                              // classic decision path → render the receipt
+  if(dec&&dec.id){ await push(dec.id,{title:'Decision recorded'});
+    const rc=document.createElement('div'); rc.className='ok'; rc.textContent='✓ recorded to case history · case closed'; b.appendChild(rc); }
+  loadList();
 }
 async function complete(taskId){
   const r=await bpost('/bridge/complete',{task:taskId});
