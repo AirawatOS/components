@@ -62,7 +62,7 @@ const slug=s=>String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').repl
 const skey=s=>slug(s).replace(/-/g,'_');
 const ctitle=t=>String(t||'').replace(/^credential\./,'').replace(/[_-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 const SOLUTION='ds:airawatdeveloper:solution/declarative-service';
-let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], SVCS=[], SEL=null, HIST=[];
+let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], AREAS=[], UNITS=[], SVCS=[], SEL=null, HIST=[];
 let AJUR=null, ALLOWED=[];   // the AGENCY'S own jurisdiction + any sub-jurisdictions it may serve
 let B={service_id:'',title:'',domain:'',description:'',jurisdiction:'',entitlement:'residence',audience:'civic.resident'};
 let FIELDS=[], STEPS=[], REQCREDS=new Set();
@@ -74,6 +74,8 @@ async function boot(){
   try{ CTYPES=((await get('/bridge/catalog?kind=credential-types')).credential_types||[]); }catch(e){}
   try{ DOMAINS=((await get('/bridge/catalog?kind=domains')).domains||[]).map(d=>d.domain||d).filter(Boolean); }catch(e){}
   try{ CITIES=((await api('/bridge/jurisdictions',{})).jurisdictions||[]); }catch(e){}
+  try{ AREAS=((await get('/bridge/catalog?kind=areas')).areas||[]); }catch(e){}          // the agency's org.area (📍 Area picker)
+  try{ UNITS=((await get('/bridge/catalog?kind=org_units')).org_units||[]); }catch(e){}   // the agency's org.org_unit (📍 Org unit)
   // the agency's HOME jurisdiction (the jurisdiction linked to this tenant, else jurisdiction==tenant name)
   AJUR = CITIES.find(j=>j.tenant===ME.tenant) || CITIES.find(j=>j.code===ME.tenant) || {code:ME.tenant||'', name:(ME.tenant||'your jurisdiction'), kind:'jurisdiction'};
   const inScope=j=>{ let c=j, seen=new Set(); while(c && !seen.has(c.code)){ if(c.code===AJUR.code) return true; seen.add(c.code); c=CITIES.find(x=>x.code===c.parent); } return false; };
@@ -154,7 +156,14 @@ function renderReqc(){ document.getElementById('reqc').innerHTML = CTYPES.length
 
 function buildBody(){
   const props={},req=[]; FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(!k)return; const p={title:f.label||k,type:f.type==='number'?'number':'string'};
-    if(f.type==='date')p.format='date'; if(f.type==='textarea')p['x-widget']='textarea'; props[k]=p; if(f.required)req.push(k); });
+    if(f.type==='date')p.format='date'; if(f.type==='textarea')p['x-widget']='textarea';
+    if(f.scope_dim){                                    // 📍 location field → bake a picker of the agency's places (value = the code the scope routes on)
+      const opts = f.scope_dim==='area' ? AREAS.map(a=>[a.id, a.name+(a.level?' ('+a.level+')':'')])
+                 : f.scope_dim==='org_unit' ? UNITS.map(u=>[u.id, u.name])
+                 : CITIES.map(c=>[c.code, c.name]);      // jurisdiction
+      if(opts.length){ p.type='string'; p.enum=opts.map(o=>o[0]); p['x-enum-labels']=Object.fromEntries(opts); }
+    }
+    props[k]=p; if(f.required)req.push(k); });
   const wf=STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step',role:s.role,task:s.task||s.step,...(s.issues?{issues:s.issues}:{})}));
   const scope_map={}; FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(k && f.scope_dim) scope_map[f.scope_dim]=k; });  // form field → case scope
   return {service_id:slug(B.service_id),title:B.title,domain:B.domain,description:B.description,interaction:['search','init','status'],

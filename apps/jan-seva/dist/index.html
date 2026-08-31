@@ -173,6 +173,11 @@ async function pick(i){
   const form = keys.length ? keys.map(k=>{
       const p = props[k]||{}; const lbl = esc(p.title||k) + (req.includes(k) ? ' *' : '');
       const t = p.format==='date' ? 'date' : (p.type==='number' ? 'number' : 'text');
+      if(Array.isArray(p.enum)){                          // a picker (e.g. a 📍 location field baked with the agency's areas)
+        const L = p['x-enum-labels']||{};
+        return `<label>${lbl}</label><select data-k="${esc(k)}"><option value="">— select —</option>`
+          + p.enum.map(v=>`<option value="${esc(v)}">${esc(L[v]||v)}</option>`).join('') + `</select>`;
+      }
       return p['x-widget']==='textarea'
         ? `<label>${lbl}</label><textarea data-k="${esc(k)}" rows="3"></textarea>`
         : `<label>${lbl}</label><input data-k="${esc(k)}" type="${t}">`;
