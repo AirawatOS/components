@@ -5,10 +5,13 @@
 # Delegates all writes to the finance-engine (holds NO finance write grant of its own). Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/payroll-engine
 kind: engine
-version: 0.1.0
+version: 0.3.0
 provider: ds:airawat:developer
 display_name: Payroll Engine
 entrypoint: run.py
-# reads: allocations, employees, compensation (the cost source), budgets (target) + transactions (idempotency check).
-required_schemas: [project.allocation, org.employee, hr.compensation, finance.budget, finance.transaction]
-writes: []
+# 0.3.0: headless SCHEDULED run needs RUN-TOKEN read grants — the steward grant is built from `reads`+`writes`
+# (the interactive user-token path used required_schemas, but a headless cron has no user token). It posts under
+# its OWN run-token, so the scheduled path also needs the finance write grants.
+required_schemas: [project.allocation, org.employee, hr.compensation, finance.budget, finance.transaction, finance.account]
+reads: [project.allocation, org.employee, hr.compensation, finance.budget, finance.transaction, finance.account]
+writes: [finance.transaction, finance.budget]

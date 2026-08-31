@@ -96,9 +96,68 @@ def h_payroll_apportion(ctx):
 HANDLERS = {"payroll-preview": h_payroll_preview, "payroll-apportion": h_payroll_apportion}
 
 
+# --- HEADLESS / SCHEDULED RUN (the monthly cron path) --------------------------------------------------------
+# The platform scheduler fires this engine once a month via the app-host launcher (confined, its OWN install
+# run-token). Here we build a broker-backed ctx (the /v1/query + /v1/write contract the launcher injects
+# AIRAWAT_API + RUN_TOKEN for) and run the SAME h_payroll_apportion. ctx["call"] loads the finance-engine's
+# code in-process and runs its handler over the shared store — so the double-entry logic is reused, and writes
+# go through THIS run-token (so the scheduled path needs payroll-engine's own finance write grants).
+def _headless_ctx(period):
+    import os, json, urllib.request, importlib.util
+    API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
+    TOKEN = os.environ.get("RUN_TOKEN", "")
+    tenant = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""
+
+    def bcall(path, body):
+        req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", "X-Run-Token": TOKEN}, method="POST")
+        return json.loads(urllib.request.urlopen(req, timeout=60).read() or b"{}")
+
+    store = {}                                             # id → object, preloaded per scope (read-free kget/kfind + write-through)
+    for scope in ("project.allocation", "org.employee", "hr.compensation", "finance.budget", "finance.transaction", "finance.account"):
+        for r in bcall("/v1/query", {"scope": scope, "limit": 10000}).get("results", []):
+            o = r.get("object") or r
+            if o.get("id"):
+                store[o["id"]] = o
+
+    def kfind(schema, where=None):
+        out = [o for o in store.values() if o.get("schema") == schema]
+        return [o for o in out if all(o.get(k) == v for k, v in where.items())] if where else out
+
+    def kget(oid):
+        return store.get(oid)
+
+    def kwrite(oid, obj):
+        bcall("/v1/write", {"scope": obj.get("schema"), "id": oid, "object": obj}); store[oid] = obj; return {"id": oid}
+
+    _mods = {}
+    def call(eng, verb, body):
+        if eng not in _mods:                               # load the sibling engine's code once (in-process composition)
+            d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", eng.rsplit("/", 1)[-1])
+            spec = importlib.util.spec_from_file_location("hl_" + eng.rsplit("/", 1)[-1], os.path.join(d, "run.py"))
+            m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); _mods[eng] = m
+        return _mods[eng].HANDLERS[verb]({**ctx, "body": body})
+
+    ctx = {"tenant": tenant, "sub": f"service://{tenant}/payroll-scheduler",
+           "claims": {"tenant": tenant, "sub": f"service://{tenant}/payroll-scheduler", "roles": ["platform.scheduler"]},
+           "body": {"period": period}, "kfind": kfind, "kget": kget, "kwrite": kwrite, "call": call}
+    return ctx
+
+
 def main():
-    print("Payroll Engine — handlers:", ", ".join(sorted(HANDLERS)))
-    return 0
+    import os, time as _t
+    if not os.environ.get("RUN_TOKEN"):                    # not a scheduled run (e.g. `python run.py` sanity check)
+        print("Payroll Engine — handlers:", ", ".join(sorted(HANDLERS)))
+        return 0
+    period = (os.environ.get("PAYROLL_PERIOD") or _t.strftime("%Y-%m", _t.gmtime()))[:7]
+    res, err = h_payroll_apportion(_headless_ctx(period))
+    if err:
+        print(f"[payroll] {period} FAILED: {err}"); return 1
+    print(f"[payroll] {period}: posted {res['posted_count']} (total {res['posted_total']}), "
+          f"already {res['already_posted']}, skipped {len(res['skipped'])}, errors {len(res['errors'])}")
+    for e in res["errors"]:
+        print("   error:", e.get("employee"), e.get("error"))
+    return 1 if res["errors"] else 0
 
 
 if __name__ == "__main__":
