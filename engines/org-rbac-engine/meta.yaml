@@ -1,0 +1,11 @@
+# ORG RBAC ENGINE (kind=engine) — projects an org.posting into a live governance.role_grant (subject = the employee's
+# login; role = the posting's role; scope = unit/area). Makes a posting grant real platform RBAC. Called via
+# /bridge/posting-apply. Writes governance.role_grant with this engine's grant (component://org-rbac-engine obo admin).
+component_id: ds:airawatdeveloper:engine/org-rbac-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Org RBAC Engine
+entrypoint: run.py
+required_schemas: [org.employee, org.posting]
+writes: [governance.role_grant]

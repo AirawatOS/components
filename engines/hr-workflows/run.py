@@ -19,9 +19,34 @@ def _now():
     return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
 
 
+POLICY_ENG = "ds:airawatdeveloper:engine/policy-engine"
+FINANCE_ENG = "ds:airawatdeveloper:engine/finance-engine"
+
+
 def _me(ctx):
     """The signed-in user's org.employee record (linked by their login), or None."""
     return next((e for e in ctx["kfind"]("org.employee") if e.get("citizen") == ctx["sub"]), None)
+
+
+def _leave_balance(ctx, ltype, applicant_login):
+    """Policy-driven leave balance for a type: accrued (via the policy engine) − approved − pending this year.
+    Returns None if no policy caps that type (e.g. unpaid = uncapped)."""
+    res, err = ctx["call"](POLICY_ENG, "policy-resolve", {"domain": "leave"})
+    if err or not res:
+        return None
+    rules = next(((p.get("rules") or {}) for p in res.get("policies", []) if (p.get("rules") or {}).get("leave_type") == ltype), None)
+    if not rules or rules.get("annual_entitlement") is None:
+        return None
+    g = _t.gmtime(); yr = str(g.tm_year)
+    ent = rules["annual_entitlement"]
+    if rules.get("accrual_per_month"):
+        ent = min(ent, round(rules["accrual_per_month"] * g.tm_mon, 1))
+    reqs = [l for l in ctx["kfind"]("hr.leave_request") if l.get("applicant_login") == applicant_login
+            and l.get("leave_type") == ltype and str(l.get("from_date", "")).startswith(yr)]
+    taken = sum(l.get("days", 0) or 0 for l in reqs if l.get("status") == "approved")
+    pending = sum(l.get("days", 0) or 0 for l in reqs if l.get("status") == "pending")
+    return {"entitlement": rules["annual_entitlement"], "accrued": ent, "taken": taken, "pending": pending,
+            "available": max(0, ent - taken - pending)}
 
 
 def h_leave_apply(ctx):
@@ -32,7 +57,7 @@ def h_leave_apply(ctx):
     mgr = next((e for e in ctx["kfind"]("org.employee") if e.get("id") == me.get("manager")), None)
     mgr_login = (mgr or {}).get("citizen")
     ltype, reqd = body.get("leave_type", "casual"), body.get("days") or 0
-    bal = ctx["leave_balance"](ltype, me["id"])                # policy-driven balance; None = uncapped
+    bal = _leave_balance(ctx, ltype, sub)                       # policy-driven balance (via the policy engine); None = uncapped
     if bal and reqd > bal["available"]:
         return None, (f"only {bal['available']} day(s) of {ltype} leave available "
                       f"(accrued {bal['accrued']} - taken {bal['taken']} - pending {bal['pending']}); requested {reqd}")
@@ -137,21 +162,19 @@ def h_expense_decide(ctx):
         return None, "only the applicant's manager may decide this claim"
     now = _now(); finance_txn = None
     if decision == "approve":
-        # 1) approver authority — the manager's expense approval_limit policy (most-specific)
-        pols = ctx["policy_resolve"]("expense").get("policies", [])
+        # 1) approver authority — the manager's expense approval_limit policy (via the POLICY ENGINE)
+        pres, perr = ctx["call"](POLICY_ENG, "policy-resolve", {"domain": "expense"})
+        pols = (pres or {}).get("policies", [])
         limit = next(((p.get("rules") or {}).get("approval_limit") for p in pols
                       if (p.get("rules") or {}).get("approval_limit") is not None), None)
         if limit is not None and claim.get("amount", 0) > limit:
             return None, f"amount {claim.get('amount')} exceeds your approval limit of {limit} — needs higher approval"
-        # 2) settle into the ledger against a budget (Cr the Payables liability account)
+        # 2) settle into the ledger via the FINANCE ENGINE (Dr expense / Cr Payables, committed to the budget)
         budget = body.get("budget") or claim.get("budget")
         if not budget:
             return None, "select a budget to charge this expense to"
-        contra = ctx["first_account"]("liability")
-        if not contra:
-            return None, "no liability (Payables) account — seed the chart in Finance Console"
-        fr, ferr = ctx["finance_post"]({"direction": "expenditure", "amount": claim["amount"], "budget": budget,
-            "contra_account": contra, "status": "committed", "source": eid, "source_kind": "hr.expense_claim",
+        fr, ferr = ctx["call"](FINANCE_ENG, "finance-post", {"direction": "expenditure", "amount": claim["amount"],
+            "budget": budget, "contra_type": "liability", "status": "committed", "source": eid, "source_kind": "hr.expense_claim",
             "project": claim.get("project"), "org_unit": (claim.get("scope") or {}).get("org_unit"),
             "memo": (claim.get("description") or claim.get("category") or "Expense") + " — " + (claim.get("applicant_login", "").rsplit("/", 1)[-1])})
         if ferr:

@@ -4,10 +4,11 @@
 # engine holds the write grants (the HR Desk app is just screens). Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/hr-workflows
 kind: engine
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: HR Workflows Engine
 entrypoint: run.py
-# reads the org tree + policies + finance (for expense settlement); writes the HR records + inbox + (on expense) the ledger
-required_schemas: [org.employee, org.posting, org.position, hr.job_level, org.policy, finance.account, finance.budget, hr.leave_request, hr.attendance, hr.expense_claim]
-writes: [hr.leave_request, hr.attendance, hr.expense_claim, platform.inbox_item, finance.transaction, finance.budget]
+# reads employees + own HR records (for balances); DELEGATES policy resolution + ledger settlement to sibling engines
+# (ctx.call → policy-engine / finance-engine) — so it needs NO org-tree or finance grants of its own.
+required_schemas: [org.employee, hr.leave_request]
+writes: [hr.leave_request, hr.attendance, hr.expense_claim, platform.inbox_item]

@@ -1,0 +1,11 @@
+# FINANCE ENGINE (kind=engine) — the double-entry SETTLEMENT seam. Posts a balanced journal entry (Σdr = Σcr) to
+# finance.transaction and rolls the charge into a budget with an availability check. Called via /bridge/finance-post
+# or ctx.call from Expense/Travel/Payroll. Writes are attributed component://finance-engine — it holds the ledger grants.
+component_id: ds:airawatdeveloper:engine/finance-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Finance Engine
+entrypoint: run.py
+required_schemas: [finance.account, finance.budget, finance.transaction]
+writes: [finance.transaction, finance.budget]

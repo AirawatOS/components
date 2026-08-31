@@ -1,0 +1,11 @@
+# POLICY ENGINE (kind=engine) — resolves the applicable org.policy for an employee × domain (most-specific first),
+# from their classification context (rank via posting→position→level, stream, role, unit). Reads the org tree via
+# ITS OWN read grants (no elevated token). Any module calls it via /bridge/policy-resolve or ctx.call.
+component_id: ds:airawatdeveloper:engine/policy-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Policy Engine
+entrypoint: run.py
+required_schemas: [org.employee, org.posting, org.position, hr.job_level, org.policy]
+writes: []
