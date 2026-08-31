@@ -1,0 +1,13 @@
+# CAMPAIGN ENGINE (kind=engine) — the field-verification loop for tax-gap candidates: create a campaign, assign officers
+# to candidates (→ an ACTIONABLE Inbox item), and record on-site ground truth → a governance.decision that verifies or
+# dismisses each candidate (ADR-0029: AI flags, humans decide). Handlers: campaign-create, campaign-assign, verify-submit,
+# campaign-progress. Editable + versioned in Studio.
+component_id: ds:airawatdeveloper:engine/campaign-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Campaign Engine
+entrypoint: run.py
+required_schemas: [campaign.campaign, campaign.assignment, tax.candidate, org.employee, platform.inbox_item]
+reads: [campaign.campaign, campaign.assignment, tax.candidate, org.employee, platform.inbox_item]
+writes: [campaign.campaign, campaign.assignment, tax.candidate, governance.decision, platform.inbox_item]

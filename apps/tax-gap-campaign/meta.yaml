@@ -1,0 +1,15 @@
+# TAX GAP CAMPAIGN (kind=app) — the field-verification cockpit for tax-gap candidates. Create a campaign, see flagged
+# candidates (by ward/confidence), assign officers (→ the officer's Inbox), and track assignment progress/completion.
+# The officer completes the verification IN their Inbox (the actionable "Record verification" item). All logic is in the
+# campaign-engine; this app is screens only.
+component_id: ds:airawatdeveloper:app/tax-gap-campaign
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Tax Gap Campaign
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [tax.candidate, campaign.campaign, campaign.assignment, org.employee, geo.parcel]
+writes: []
+roles: [platform.tenant-admin]

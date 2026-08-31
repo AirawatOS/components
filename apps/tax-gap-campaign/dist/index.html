@@ -1,0 +1,111 @@
+<!doctype html><meta charset="utf-8"><title>Tax Gap Campaign</title>
+<!--
+  TAX GAP CAMPAIGN — the field-verification cockpit. Flagged tax.candidates (by ward/confidence) → assign an officer
+  (→ their Inbox) → track progress. The officer completes the ground-truth IN their Inbox (the actionable "Record
+  verification" item, campaign-engine verify-submit) → a governance.decision verifies or dismisses the candidate.
+-->
+<style>
+  :root{--bg:#0b0f16;--panel:#141b26;--line:#232d3b;--ink:#e6edf3;--dim:#8b98a9;--accent:#c9832b;--good:#2ea043;--warn:#d29922;--bad:#e5534b}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;height:100%}
+  .nav{width:190px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(8,12,18,.5)}
+  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 12px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
+  .nav a:hover{background:#161f2b}.nav a.on{background:#3a2a12;color:#f0c88a}.nav a .c{margin-left:auto;font-size:11px;color:var(--dim);background:#0d1117;border:1px solid var(--line);border-radius:20px;padding:0 7px}
+  .main{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+  .head{display:flex;align-items:center;margin-bottom:14px}.head h2{margin:0;font-size:18px}.head .sub{color:var(--dim);margin-left:10px;font-size:12px}.right{margin-left:auto;display:flex;gap:8px}
+  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#4a5a70}.btn.pri{background:var(--accent);border-color:var(--accent);color:#1a1206}.btn.sm{padding:3px 9px;font-size:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:#121a25}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .pill.flagged{color:#e6c34a;border-color:#7a5c12}.pill.assigned,.pill.onsite{color:#9fd0ff;border-color:#274a6b}.pill.verified,.pill.done,.pill.confirmed{color:#7ee2a8;border-color:#1f6f43}.pill.dismissed,.pill.not_found{color:#ffb3ae;border-color:#6d2b2b}
+  .bar{height:6px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden;width:90px;display:inline-block;vertical-align:middle}.bar>i{display:block;height:100%;background:linear-gradient(90deg,#2ea043,#d29922,#e5534b)}
+  .kpi{display:inline-block;background:#0f1720;border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:0 8px 8px 0}.kpi .l{font-size:11px;color:var(--dim);text-transform:uppercase}.kpi .v{font-size:20px;font-weight:600}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--dim);margin:0 0 4px}
+  input,select{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding:6vh 16px;z-index:30}.modal.open{display:flex}
+  .sheet{background:#0f151d;border:1px solid var(--line);border-radius:14px;padding:20px;width:520px;max-width:100%}.sheet h3{margin:0 0 12px}.err{color:#ffb3ae;font-size:12px;margin-top:8px}.muted{color:var(--dim)}.empty{color:var(--dim);padding:22px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#3a2a12;border:1px solid #7a5c12;color:#f0c88a;padding:10px 16px;border-radius:10px;z-index:50;opacity:0;transition:opacity .3s}
+</style>
+<div class="wrap">
+  <nav class="nav"><h1>🚩 Tax Campaign</h1>
+    <a data-t="candidates"><span>🏚</span> Candidates <span class="c" id="c-cand"></span></a>
+    <a data-t="campaigns"><span>📋</span> Campaigns <span class="c" id="c-camp"></span></a>
+    <a data-t="assignments"><span>👷</span> Assignments <span class="c" id="c-asg"></span></a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP='tax-gap-campaign'; let TAB='candidates', CAND=[], CAMP=[], ASG=[], EMP=[];
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+const empNm=id=>{const e=EMP.find(x=>x.id===id||x.citizen===id);return e?(e.name||e.id):(id||'—');};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',3000);}
+function closeM(){document.getElementById('modal').classList.remove('open');}
+function ferr(m){const e=document.getElementById('sf_err');if(e)e.textContent=m;}
+async function query(s){try{const r=await api('/bridge/query',{app_id:APP,schema:s});return (r.results||[]).map(x=>x.object||x);}catch(e){return[];}}
+async function boot(){await reload();document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});render();}
+async function reload(){[CAND,CAMP,ASG,EMP]=await Promise.all([query('tax.candidate'),query('campaign.campaign'),query('campaign.assignment'),query('org.employee')]);
+  document.getElementById('c-cand').textContent=CAND.length||''; document.getElementById('c-camp').textContent=CAMP.length||''; document.getElementById('c-asg').textContent=ASG.length||'';}
+function render(){document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));({candidates:rCand,campaigns:rCamp,assignments:rAsg}[TAB])();}
+
+/* ---------- CANDIDATES ---------- */
+function rCand(){
+  const rows=CAND.sort((a,b)=>(b.confidence||0)-(a.confidence||0)).map(c=>`<tr>
+     <td>${esc((c.parcel_id||'').split('/').pop())}</td>
+     <td><div class="bar"><i style="width:${Math.round((c.confidence||0)*100)}%"></i></div> ${c.confidence}</td>
+     <td>${(c.evidence||[]).map(e=>`<span class="pill" title="${esc(e.detail||'')}">${(e.signal||'').replace(/_/g,' ')}</span>`).join(' ')}</td>
+     <td>${esc(c.ward||'')}</td><td><span class="pill ${esc(c.status)}">${esc(c.status)}</span></td>
+     <td>${c.status==='flagged'?`<button class="btn sm pri" onclick='assign("${esc(c.id)}")'>Assign</button>`:''}</td></tr>`).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Flagged candidates</h2><span class="sub">assign an officer to ground-verify</span></div>`
+    +(CAND.length?`<div class="card"><table><thead><tr><th>Parcel</th><th>Confidence</th><th>Evidence</th><th>Ward</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">No candidates — run the gap-scan in the Tax Config Console.</div>`);
+}
+function assign(cid){const c=CAND.find(x=>x.id===cid)||{};
+  document.getElementById('sheet').innerHTML=`<h3>Assign field officer</h3><p class="muted">Parcel ${esc((c.parcel_id||'').split('/').pop())} · confidence ${c.confidence}</p>
+    <div class="row" style="margin-bottom:10px"><label>Officer</label><select id="sf_officer"><option value="">— select —</option>${EMP.map(e=>`<option value="${esc(e.id)}">${esc(e.name||e.id)}</option>`).join('')}</select></div>
+    <div class="row" style="margin-bottom:10px"><label>Campaign (optional)</label><select id="sf_camp"><option value="">—</option>${CAMP.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></div>
+    <div id="sf_err" class="err"></div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn pri" onclick='doAssign("${esc(cid)}")'>Assign → Inbox</button><button class="btn" onclick="closeM()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open');}
+async function doAssign(cid){const off=val('sf_officer');if(!off)return ferr('Pick an officer');
+  const emp=EMP.find(e=>e.id===off)||{}; const officer=emp.citizen||off;
+  const r=await api('/bridge/campaign-assign',{app_id:APP,candidate:cid,officer,campaign:val('sf_camp')||undefined});
+  if(r.error)return ferr(r.error); closeM(); toast('Assigned → '+empNm(off)+"'s Inbox"); await reload(); render();}
+
+/* ---------- CAMPAIGNS ---------- */
+async function rCamp(){
+  const rows=await Promise.all(CAMP.map(async c=>{const p=await api('/bridge/campaign-progress',{app_id:APP,campaign:c.id});
+    return `<tr><td><b>${esc(c.name)}</b><div class="muted" style="font-size:11px">${esc(c.ward||'')}</div></td>
+      <td><span class="pill ${esc(c.status)}">${esc(c.status)}</span></td><td class="num">${p.assignments||0}</td>
+      <td><div class="bar"><i style="width:${Math.round(p.completion_pct||0)}%"></i></div> ${p.completion_pct||0}%</td>
+      <td>${Object.entries(p.by_outcome||{}).map(([k,v])=>`<span class="pill ${k}">${k.replace(/_/g,' ')} ${v}</span>`).join(' ')}</td></tr>`;}));
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Campaigns</h2><span class="sub">field-verification drives</span><div class="right"><button class="btn pri" onclick="newCampaign()">＋ Campaign</button></div></div>`
+    +(CAMP.length?`<div class="card"><table><thead><tr><th>Campaign</th><th>Status</th><th class="num">Assignments</th><th>Completion</th><th>Outcomes</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`:`<div class="empty">No campaigns yet.</div>`);
+}
+function newCampaign(){document.getElementById('sheet').innerHTML=`<h3>New campaign</h3>
+    <div class="row" style="margin-bottom:10px"><label>Name</label><input id="sf_name" placeholder="Ward 3 pre-monsoon drive"></div>
+    <div class="row" style="margin-bottom:10px"><label>Ward / area</label><input id="sf_ward" placeholder="W-3"></div>
+    <div id="sf_err" class="err"></div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn pri" onclick="doCampaign()">Create</button><button class="btn" onclick="closeM()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open');}
+async function doCampaign(){const name=val('sf_name');if(!name)return ferr('Name required');
+  const r=await api('/bridge/campaign-create',{app_id:APP,name,ward:val('sf_ward')});
+  if(r.error)return ferr(r.error); closeM(); toast('Campaign created'); await reload(); render();}
+
+/* ---------- ASSIGNMENTS ---------- */
+function rAsg(){
+  const rows=ASG.sort((a,b)=>(b.assigned_at||'').localeCompare(a.assigned_at||'')).map(a=>`<tr>
+     <td>${esc((a.parcel_id||a.candidate||'').split('/').pop())}</td><td>${esc(empNm(a.assignee))}</td>
+     <td><span class="pill ${esc(a.status)}">${esc(a.status)}</span></td>
+     <td>${a.outcome?`<span class="pill ${esc(a.outcome)}">${esc(a.outcome.replace(/_/g,' '))}</span>`:'<span class="muted">—</span>'}</td>
+     <td>${a.ground_truth&&a.ground_truth.assessed_value?('₹'+Number(a.ground_truth.assessed_value).toLocaleString('en-IN')):''}</td></tr>`).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Assignments</h2><span class="sub">officer field verifications</span></div>`
+    +(ASG.length?`<div class="card"><table><thead><tr><th>Parcel</th><th>Officer</th><th>Status</th><th>Outcome</th><th class="num">Assessed</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">No assignments yet — assign officers from Candidates.</div>`);
+}
+boot();
+</script>
