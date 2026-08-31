@@ -48,6 +48,9 @@
     <h1>🏛️ Org Setup</h1>
     <a data-t="units"><span>🗂️</span> Units <span class="c" id="c-units">0</span></a>
     <a data-t="areas"><span>🗺️</span> Areas <span class="c" id="c-areas">0</span></a>
+    <a data-t="levels"><span>📶</span> Levels <span class="c" id="c-levels">0</span></a>
+    <a data-t="streams"><span>🧭</span> Streams <span class="c" id="c-streams">0</span></a>
+    <a data-t="positions"><span>💼</span> Positions <span class="c" id="c-positions">0</span></a>
     <a data-t="people"><span>👥</span> People <span class="c" id="c-people">0</span></a>
     <a data-t="postings"><span>📌</span> Postings <span class="c" id="c-postings">0</span></a>
     <a data-t="goals"><span>🎯</span> Goals <span class="c" id="c-goals">0</span></a>
@@ -61,10 +64,11 @@
 const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const APP='org-setup';
-let TENANT='', ROLES=[], DB={units:[],areas:[],people:[],postings:[],goals:[]}, TAB='units';
-const SCH={units:'org.org_unit',areas:'org.area',people:'org.employee',postings:'org.posting',goals:'org.goal'};
+let TENANT='', ROLES=[], DB={units:[],areas:[],levels:[],streams:[],positions:[],people:[],postings:[],goals:[]}, TAB='units';
+const SCH={units:'org.org_unit',areas:'org.area',levels:'hr.job_level',streams:'hr.career_stream',positions:'org.position',people:'org.employee',postings:'org.posting',goals:'org.goal'};
 const rid=(local,code)=>`ds:${TENANT}:${local}/${(code||('x'+Date.now())).toString().replace(/[^a-z0-9_-]/gi,'-')}`;
 const byId=(arr,id)=>arr.find(x=>x.id===id)||{};
+const byCode=(arr,code)=>arr.find(x=>x.code===code)||{};
 const nameOf=(arr,id)=>{const o=byId(arr,id);return o.name||o.title||o.emp_code||id||'—';};
 
 async function boot(){
@@ -83,7 +87,7 @@ function wireNav(){ document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=
 
 function render(){
   document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));
-  ({units:rUnits,areas:rAreas,people:rPeople,postings:rPostings,goals:rGoals}[TAB])();
+  ({units:rUnits,areas:rAreas,levels:rLevels,streams:rStreams,positions:rPositions,people:rPeople,postings:rPostings,goals:rGoals}[TAB])();
 }
 function header(title,sub,addLabel,addFn){
   return `<div class="head"><h2>${title}</h2><span class="sub">${sub}</span>
@@ -151,13 +155,60 @@ function rGoals(){
        :`<div class="empty">No goals yet.</div>`);
 }
 
+/* ---------- CLASSIFICATION tabs ---------- */
+function rLevels(){
+  const rows=DB.levels.slice().sort((a,b)=>(a.rank||0)-(b.rank||0)).map(l=>`<tr><td><b>${esc(l.name)}</b></td><td>${esc(l.code)}</td><td>${esc(l.rank)}</td><td>${esc(l.description||'—')}</td>
+     <td><button class="btn sm ghost" onclick='editRow("levels","${esc(l.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=header('Job levels','grades / bands — rank orders seniority (policy uses ≥)','Add level','addRow("levels")')
+    + (DB.levels.length?`<div class="card"><table><thead><tr><th>Name</th><th>Code</th><th>Rank</th><th>Description</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">No levels yet (e.g. L1…L5, Officer, Deputy Commissioner).</div>`);
+}
+function rStreams(){
+  const rows=DB.streams.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.code)}</td><td>${esc(s.description||'—')}</td>
+     <td><button class="btn sm ghost" onclick='editRow("streams","${esc(s.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=header('Career streams','job families / tracks','Add stream','addRow("streams")')
+    + (DB.streams.length?`<div class="card"><table><thead><tr><th>Name</th><th>Code</th><th>Description</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">No streams yet (e.g. Administrative, Technical, Health, Sanitation).</div>`);
+}
+function rPositions(){
+  const rows=DB.positions.map(p=>`<tr><td><b>${esc(p.title)}</b></td>
+     <td>${esc(byCode(DB.streams,p.stream).name||p.stream||'—')}</td><td>${esc(byCode(DB.levels,p.level).name||p.level||'—')}</td>
+     <td>${esc(nameOf(DB.units,p.org_unit))}</td>
+     <td>${(p.eligible_roles||[]).map(r=>`<span class="pill">${esc(r)}</span>`).join(' ')||'—'}</td>
+     <td>${p.reports_to?esc(byId(DB.positions,p.reports_to).title||p.reports_to):'—'}</td>
+     <td><button class="btn sm ghost" onclick='editRow("positions","${esc(p.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=header('Positions','job slots = stream × level × unit; postings fill them','Add position','addRow("positions")')
+    + (DB.positions.length?`<div class="card"><table><thead><tr><th>Title</th><th>Stream</th><th>Level</th><th>Unit</th><th>Eligible roles</th><th>Reports to</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">No positions yet. A position = a job slot a person is posted into.</div>`);
+}
+
 /* ---------- FORMS ---------- */
 const opt=(list,sel,labelFn)=>`<option value="">—</option>`+list.map(o=>`<option value="${esc(o.id)}"${o.id===sel?' selected':''}>${esc(labelFn(o))}</option>`).join('');
+const optC=(list,sel,labelFn)=>`<option value="">—</option>`+list.map(o=>`<option value="${esc(o.code)}"${o.code===sel?' selected':''}>${esc(labelFn(o))}</option>`).join('');
 const optV=(vals,sel)=>`<option value="">—</option>`+vals.map(v=>`<option${v===sel?' selected':''}>${esc(v)}</option>`).join('');
 function fields(tab,o){
   const unitsOpt=s=>opt(DB.units,s,u=>u.name);
   const areasOpt=s=>opt(DB.areas,s,a=>a.name+' ('+(a.level||'')+')');
   const pplOpt=s=>opt(DB.people,s,e=>e.name+' · '+e.emp_code);
+  const lvlOpt=s=>optC(DB.levels.slice().sort((a,b)=>(a.rank||0)-(b.rank||0)),s,l=>l.name+' (rank '+l.rank+')');
+  const strOpt=s=>optC(DB.streams,s,x=>x.name);
+  const posOpt=s=>opt(DB.positions,s,p=>p.title);
+  if(tab==='levels') return `
+    <div class="grid g3"><div class="row"><label>Code</label><input id="f_code" value="${esc(o.code||'')}" placeholder="L3"></div>
+      <div class="row"><label>Name</label><input id="f_name" value="${esc(o.name||'')}" placeholder="Senior Officer"></div>
+      <div class="row"><label>Rank <span class="muted">(1 = lowest)</span></label><input id="f_rank" type="number" value="${esc(o.rank!=null?o.rank:'')}" placeholder="3"></div></div>
+    <div class="row"><label>Description</label><input id="f_description" value="${esc(o.description||'')}"></div>`;
+  if(tab==='streams') return `
+    <div class="grid"><div class="row"><label>Code</label><input id="f_code" value="${esc(o.code||'')}" placeholder="sanitation"></div>
+      <div class="row"><label>Name</label><input id="f_name" value="${esc(o.name||'')}" placeholder="Sanitation"></div></div>
+    <div class="row"><label>Description</label><input id="f_description" value="${esc(o.description||'')}"></div>`;
+  if(tab==='positions') return `
+    <div class="grid"><div class="row"><label>Code</label><input id="f_code" value="${esc(o.code||'')}" placeholder="pos-ward-officer"></div>
+      <div class="row"><label>Title</label><input id="f_title" value="${esc(o.title||'')}" placeholder="Ward Officer"></div></div>
+    <div class="grid g3"><div class="row"><label>Stream</label><select id="f_stream">${strOpt(o.stream)}</select></div>
+      <div class="row"><label>Level</label><select id="f_level">${lvlOpt(o.level)}</select></div>
+      <div class="row"><label>Unit</label><select id="f_org_unit">${unitsOpt(o.org_unit)}</select></div></div>
+    <div class="row"><label>Eligible roles <span class="muted">— a posting into this position may grant one of these</span></label>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">${ROLES.map(r=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;text-transform:none;letter-spacing:0;color:var(--ink)"><input type="checkbox" style="width:auto" data-role="${esc(r)}" ${(o.eligible_roles||[]).includes(r)?'checked':''}> ${esc(r)}</label>`).join('')}</div></div>
+    <div class="grid"><div class="row"><label>Reports to (position)</label><select id="f_reports_to">${posOpt(o.reports_to)}</select></div>
+      <div class="row"><label>Headcount</label><input id="f_headcount" type="number" value="${esc(o.headcount!=null?o.headcount:'')}" placeholder="1"></div></div>`;
   if(tab==='units') return `
     <div class="grid"><div class="row"><label>Code</label><input id="f_code" value="${esc(o.code||'')}" placeholder="rev-dept"></div>
       <div class="row"><label>Name</label><input id="f_name" value="${esc(o.name||'')}" placeholder="Revenue Department"></div></div>
@@ -184,6 +235,7 @@ function fields(tab,o){
     <div class="row"><label>Login user <span class="muted">— username of their account; links the employee so a posting grants them the role (RBAC)</span></label>
       <input id="f_login" value="${esc((o.citizen||'').replace(/^user:\/\/[^/]+\//,''))}" placeholder="asha.patil"></div>`;
   if(tab==='postings') return `
+    <div class="row"><label>Position <span class="muted">(job slot — fills the unit + limits the role to its eligible set)</span></label><select id="f_position" onchange="posPick(this.value)">${posOpt(o.position)}</select></div>
     <div class="grid"><div class="row"><label>Employee</label><select id="f_employee">${pplOpt(o.employee)}</select></div>
       <div class="row"><label>Unit</label><select id="f_org_unit">${unitsOpt(o.org_unit)}</select></div></div>
     <div class="grid g3"><div class="row"><label>Area</label><select id="f_area">${areasOpt(o.area)}</select></div>
@@ -203,12 +255,16 @@ function fields(tab,o){
 }
 function ownerKind(k){ const sel=document.getElementById('f_owner');
   sel.innerHTML = k==='employee'?opt(DB.people,'',e=>e.name+' · '+e.emp_code):opt(DB.units,'',u=>u.name); }
+function posPick(pid){ const p=byId(DB.positions,pid); if(!p.id)return;   // fill unit + constrain the role to the position's eligible set
+  const u=document.getElementById('f_org_unit'); if(u&&p.org_unit)u.value=p.org_unit;
+  const r=document.getElementById('f_role'); if(r){ const roles=(p.eligible_roles&&p.eligible_roles.length)?p.eligible_roles:ROLES; r.innerHTML=optV(roles,r.value); }
+  const d=document.getElementById('f_designation'); if(d&&!d.value&&p.title)d.value=p.title; }
 
 let EDIT=null;
 function addRow(tab){ TAB=tab; openForm({}); }
 function editRow(tab,id){ TAB=tab; openForm(byId(DB[tab],id)); }
 function openForm(o){
-  EDIT=o; const title=(o.id?'Edit ':'New ')+({units:'unit',areas:'area',people:'person',postings:'posting',goals:'goal'}[TAB]);
+  EDIT=o; const title=(o.id?'Edit ':'New ')+({units:'unit',areas:'area',levels:'level',streams:'stream',positions:'position',people:'person',postings:'posting',goals:'goal'}[TAB]);
   document.getElementById('sheet').innerHTML=`<h3>${title}</h3>${fields(TAB,o)}
     <div id="ferr" class="err"></div>
     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn pri" onclick="submitForm()">Save</button>
@@ -232,8 +288,19 @@ function submitForm(){
     const c={}; if(val('f_email'))c.email=val('f_email'); if(val('f_phone'))c.phone=val('f_phone'); if(Object.keys(c).length)o.contact=c; else delete o.contact;
     const lg=val('f_login'); if(lg) o.citizen=lg.startsWith('user://')?lg:('user://'+TENANT+'/'+lg); else delete o.citizen;
     o.id=o.id||rid('employee',ec); }
+  else if(t==='levels'){ const code=val('f_code'); if(!code||!val('f_name')||val('f_rank')==='')return ferr('Code, name and rank are required');
+    o.code=code; o.name=val('f_name'); o.rank=Number(val('f_rank')); set('description',val('f_description'));
+    o.id=o.id||rid('job_level',code); }
+  else if(t==='streams'){ const code=val('f_code'); if(!code||!val('f_name'))return ferr('Code and name are required');
+    o.code=code; o.name=val('f_name'); set('description',val('f_description'));
+    o.id=o.id||rid('career_stream',code); }
+  else if(t==='positions'){ const code=val('f_code'); if(!code||!val('f_title'))return ferr('Code and title are required');
+    o.code=code; o.title=val('f_title'); set('stream',val('f_stream')); set('level',val('f_level')); set('org_unit',val('f_org_unit')); set('reports_to',val('f_reports_to'));
+    const hc=val('f_headcount'); if(hc!=='')o.headcount=Number(hc); else delete o.headcount;
+    o.eligible_roles=[...document.querySelectorAll('[data-role]:checked')].map(el=>el.dataset.role);
+    o.id=o.id||rid('position',code); }
   else if(t==='postings'){ if(!val('f_employee')||!val('f_org_unit'))return ferr('Employee and unit are required');
-    o.employee=val('f_employee'); o.org_unit=val('f_org_unit'); set('area',val('f_area')); set('role',val('f_role')); set('designation',val('f_designation')); set('reporting_to',val('f_reporting_to')); set('from_date',val('f_from_date')); o.status=val('f_status')||'active';
+    o.employee=val('f_employee'); o.org_unit=val('f_org_unit'); set('position',val('f_position')); set('area',val('f_area')); set('role',val('f_role')); set('designation',val('f_designation')); set('reporting_to',val('f_reporting_to')); set('from_date',val('f_from_date')); o.status=val('f_status')||'active';
     o.id=o.id||rid('posting'); }
   else if(t==='goals'){ if(!val('f_title')||!val('f_owner'))return ferr('Title and owner are required');
     o.title=val('f_title'); o.owner_kind=val('f_owner_kind')||'org_unit'; o.owner=val('f_owner'); set('metric',val('f_metric')); set('period',val('f_period')); o.status=val('f_status')||'draft';

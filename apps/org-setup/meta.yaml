@@ -2,15 +2,15 @@
 # bridge /bridge/query and writes via /bridge/save (delegated: component://org-setup obo the admin).
 component_id: ds:airawatdeveloper:app/org-setup
 kind: app
-version: 0.3.1
+version: 0.4.0
 provider: ds:airawat:developer
 display_name: Org Setup
 entrypoint: index.html
 bundle: dist
 sandboxed: true
 # the governed schemas this app READS
-required_schemas: [org.org_unit, org.area, org.employee, org.posting, org.goal]
+required_schemas: [org.org_unit, org.area, org.employee, org.posting, org.goal, hr.job_level, hr.career_stream, org.position]
 # the governed schemas this app may WRITE (authority scope — the solution install grants these per tenant)
-writes: [org.org_unit, org.area, org.employee, org.posting, org.goal]
+writes: [org.org_unit, org.area, org.employee, org.posting, org.goal, hr.job_level, hr.career_stream, org.position]
 # audience: an organisation-setup surface for the tenant admin
 roles: [platform.tenant-admin]
