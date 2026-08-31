@@ -18,7 +18,19 @@
   .tab.on{background:var(--bg);color:var(--txt)} .tab .x{opacity:.6} .tab .x:hover{opacity:1;color:var(--err)} .tab .dot{color:var(--warn)}
   .edit{flex:1;min-height:0;display:flex;flex-direction:column}
   .edtoolbar{display:flex;gap:6px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
-  textarea.code{flex:1;width:100%;resize:none;background:var(--bg);color:var(--txt);border:0;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.55;outline:none}
+  /* ---- highlighting code editor (self-contained overlay: transparent textarea over a coloured <pre>) ---- */
+  .ceditor{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--bg);--cfont:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;--cpad:12px;--cgut:46px}
+  .cgutter{position:absolute;left:0;top:0;width:var(--cgut);padding:var(--cpad) 8px var(--cpad) 0;box-sizing:border-box;text-align:right;color:#4b5563;font:var(--cfont);white-space:pre;pointer-events:none;overflow:hidden;border-right:1px solid var(--line);will-change:transform}
+  .cgutter .fold{pointer-events:auto;cursor:pointer;color:var(--dim)}
+  .chl{position:absolute;left:var(--cgut);top:0;margin:0;padding:var(--cpad);box-sizing:border-box;font:var(--cfont);white-space:pre;color:var(--txt);pointer-events:none;overflow:hidden;will-change:transform}
+  textarea.code{position:absolute;left:var(--cgut);right:0;top:0;bottom:0;width:auto;resize:none;background:transparent;color:transparent;caret-color:var(--txt);border:0;padding:var(--cpad);box-sizing:border-box;font:var(--cfont);white-space:pre;overflow:auto;outline:none}
+  textarea.code::selection{background:#264f78;color:transparent}
+  .chl .c-com{color:#3fb950;font-style:italic}.chl .c-str{color:#a5d6ff}.chl .c-kw{color:#ff7b72}.chl .c-num{color:#79c0ff}.chl .c-fn{color:#d2a8ff}.chl .c-dec{color:#f0b72f}
+  .csymbtn{position:absolute;top:6px;right:12px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--dim);cursor:pointer;font-size:12px;padding:2px 8px}
+  .csym{position:absolute;top:32px;right:12px;z-index:6;width:230px;max-height:60%;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none}
+  .csym.open{display:block}.csym .sh{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);padding:3px 6px}
+  .csym .si{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:5px;cursor:pointer;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--txt)}
+  .csym .si:hover{background:#1b222c}.csym .si.cls{color:#d2a8ff}.csym .si .tw{width:12px;color:var(--dim);text-align:center}.csym .si.child{padding-left:20px;color:#e6edf3}.csym .si .kw{color:#ff7b72;margin-right:2px}
   .welcome{flex:1;display:grid;place-items:center;color:var(--dim);text-align:center;padding:30px}
   .bottom{height:0;background:var(--panel2);border-top:1px solid var(--line);overflow:auto;flex:0 0 auto;transition:height .12s}
   .bottom.open{height:210px} .bottom .bh{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
@@ -181,6 +193,42 @@ function renderTabs(){$('tabs').innerHTML=TABS.map((t,i)=>`<div class="tab ${t==
   $('tabs').querySelectorAll('[data-ti]').forEach(el=>el.onclick=e=>{if(e.target.dataset.tx!==undefined)return;ACTIVE=TABS[+el.dataset.ti];renderTabs();renderEdit();});
   $('tabs').querySelectorAll('[data-tx]').forEach(el=>el.onclick=e=>{e.stopPropagation();const i=+el.dataset.tx;const cl=TABS[i]===ACTIVE;TABS.splice(i,1);if(cl)ACTIVE=TABS[0]||null;renderTabs();renderEdit();});
 }
+// ---- self-contained syntax highlighter (Python + JS-aware) : comments green, strings, keywords, numbers, call/def names ----
+function hlCode(src){
+  const e=src.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const T=/(#[^\n]*|\/\/[^\n]*)|(\/\*[\s\S]*?\*\/)|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(@[A-Za-z_]\w*)|\b(def|class|return|if|elif|else|for|while|in|not|and|or|is|None|True|False|import|from|as|with|try|except|finally|raise|lambda|yield|pass|break|continue|async|await|function|const|let|var|new|typeof|this|export|default|extends|super|require|of)\b|\b(\d[\d_.]*)\b|\b([A-Za-z_]\w*)(?=\s*\()/g;
+  return e.replace(T,(m,com,blk,str,dec,kw,num,fn)=>com||blk?'<span class="c-com">'+m+'</span>':str?'<span class="c-str">'+m+'</span>':dec?'<span class="c-dec">'+m+'</span>':kw?'<span class="c-kw">'+m+'</span>':num?'<span class="c-num">'+m+'</span>':fn?'<span class="c-fn">'+m+'</span>':m);
+}
+function paintCode(){
+  const ta=$('code'),chl=$('chl'),g=$('cgutter'); if(!ta||!chl)return;
+  const v=ta.value; chl.innerHTML=hlCode(v)+'\n';
+  const n=v.split('\n').length; let gut=''; for(let i=1;i<=n;i++)gut+=i+'\n'; g.textContent=gut;
+  syncScroll(); if(window.__symOpen)paintSymbols();
+}
+function syncScroll(){
+  const ta=$('code'),chl=$('chl'),g=$('cgutter'); if(!ta||!chl)return;
+  chl.style.transform='translate('+(-ta.scrollLeft)+'px,'+(-ta.scrollTop)+'px)';
+  g.style.transform='translateY('+(-ta.scrollTop)+'px)';
+}
+function paintSymbols(){
+  const ta=$('code'),panel=$('csym'); if(!ta||!panel)return;
+  const lines=ta.value.split('\n'), syms=[];
+  const py=/^(\s*)(async\s+def|def|class)\s+([A-Za-z_]\w*)/, js=/^(\s*)(?:export\s+)?(?:const|let|var)\s+([A-Za-z_]\w*)\s*=\s*(?:async\s*)?\(?[^=]*=>/, jf=/^(\s*)(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_]\w*)/;
+  lines.forEach((ln,i)=>{let m=ln.match(py);if(m){syms.push({line:i,indent:m[1].length,kw:m[2].indexOf('class')>=0?'class':'def',name:m[3]});return;}
+    m=ln.match(jf)||ln.match(js);if(m){syms.push({line:i,indent:m[1].length,kw:'def',name:m[2]});}});
+  if(!syms.length){panel.innerHTML='<div class="sh">no functions or classes</div>';return;}
+  panel.innerHTML='<div class="sh">Outline · '+syms.length+'</div>'+syms.map(s=>{const cls=s.kw==='class',child=!cls&&s.indent>0;
+    return '<div class="si '+(cls?'cls':'')+(child?' child':'')+'" data-l="'+s.line+'"><span class="tw">'+(cls?'▾':'')+'</span><span class="kw">'+s.kw+'</span>'+esc(s.name)+'</div>';}).join('');
+  panel.querySelectorAll('.si').forEach(el=>el.onclick=()=>jumpToLine(+el.dataset.l));
+  panel.querySelectorAll('.si.cls .tw').forEach(tw=>{tw.style.pointerEvents='auto';tw.style.cursor='pointer';
+    tw.onclick=ev=>{ev.stopPropagation();const cls=tw.parentElement,coll=cls.dataset.c==='1';cls.dataset.c=coll?'':'1';tw.textContent=coll?'▾':'▸';
+      let el=cls.nextElementSibling;while(el&&el.classList.contains('child')){el.style.display=coll?'':'none';el=el.nextElementSibling;}};});
+}
+function jumpToLine(ln){
+  const ta=$('code'),lines=ta.value.split('\n'); let pos=0; for(let i=0;i<ln;i++)pos+=lines[i].length+1;
+  ta.focus(); ta.setSelectionRange(pos,pos+(lines[ln]||'').length);
+  const lh=ta.scrollHeight/Math.max(1,lines.length); ta.scrollTop=Math.max(0,ln*lh-ta.clientHeight/3); syncScroll();
+}
 function renderEdit(){
   const E=$('edit');
   if(!ACTIVE){E.innerHTML='<div class="welcome" id="welcome">Open a file from the explorer, or right-click a component.</div>';return;}
@@ -191,9 +239,22 @@ function renderEdit(){
       ${m&&m.origin==='existing'?'<button class="btn sm" id="cfgBtn">⚙ Configure</button>':(m&&m.kind!=='app'?'<button class="btn sm" id="tBtn">Test</button>':m?'<button class="btn sm" id="pvBtn">Preview</button>':'')}
       ${m&&m.origin==='existing'?'<span class="sub">reused — already published; configure it, no rebuild</span>':'<button class="btn sm good" id="pubBtn">Publish</button>'}
       <button class="btn sm primary" id="saveBtn">Save</button></div>
-    <textarea class="code" id="code" spellcheck="false">${esc(t.content)}</textarea>`;
-  const ta=$('code'); ta.oninput=()=>{t.content=ta.value;if(!t.dirty){t.dirty=true;renderTabs();}};
-  ta.onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveActive();}};
+    <div class="ceditor" id="ceditor">
+       <div class="cgutter" id="cgutter"></div>
+       <pre class="chl" id="chl"></pre>
+       <textarea class="code" id="code" spellcheck="false" wrap="off">${esc(t.content)}</textarea>
+       <button class="csymbtn" id="symbtn" title="Outline (functions & classes)">☰ Symbols</button>
+       <div class="csym" id="csym"></div>
+    </div>`;
+  const ta=$('code'); ta.oninput=()=>{t.content=ta.value;paintCode();if(!t.dirty){t.dirty=true;renderTabs();}};
+  ta.onkeydown=e=>{
+    if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveActive();return;}
+    if(e.key==='Tab'){e.preventDefault();const s=ta.selectionStart,en=ta.selectionEnd;ta.value=ta.value.slice(0,s)+'    '+ta.value.slice(en);ta.selectionStart=ta.selectionEnd=s+4;t.content=ta.value;paintCode();}
+  };
+  ta.onscroll=syncScroll;
+  window.__symOpen=false;
+  $('symbtn').onclick=()=>{window.__symOpen=!window.__symOpen;$('csym').classList.toggle('open',window.__symOpen);if(window.__symOpen)paintSymbols();};
+  paintCode();
   $('saveBtn').onclick=saveActive;
   if($('pubBtn'))$('pubBtn').onclick=()=>publishComp(t.ref);
   if($('cfgBtn'))$('cfgBtn').onclick=()=>configureComponent(t.ref);
