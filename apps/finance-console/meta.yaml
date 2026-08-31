@@ -1,0 +1,14 @@
+# FINANCE CONSOLE (kind=app) — the ledger backbone. Chart of accounts + budget heads + a double-entry journal.
+# Posts go through /bridge/finance-post (balanced entry + budget rollup + availability check) — the same seam
+# Expense / Travel / Payroll will call. Accounts/budgets are edited via /bridge/save (admin). Admin-authored.
+component_id: ds:airawatdeveloper:app/finance-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Finance Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [finance.account, finance.budget, finance.transaction, org.org_unit]
+writes: [finance.account, finance.budget, finance.transaction]
+roles: [platform.tenant-admin]

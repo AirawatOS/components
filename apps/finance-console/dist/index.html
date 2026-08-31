@@ -1,0 +1,168 @@
+<!doctype html><meta charset="utf-8"><title>Finance Console</title>
+<!--
+  FINANCE CONSOLE — the ledger backbone. Chart of ACCOUNTS + BUDGET heads + a double-entry JOURNAL (balanced
+  debit/credit lines). Entries post via /bridge/finance-post (auto-balances a convenience posting, validates
+  explicit lines, checks budget availability, rolls the charge into the budget). This is the seam Expense /
+  Travel / Payroll settle into. Extends cleanly to full double-entry (the entries already ARE balanced lines).
+-->
+<style>
+  :root{--bg:#0b0f14;--panel:#141a22;--line:#222b36;--ink:#e6edf3;--dim:#8b949e;--accent:#1f9d55;--good:#2ea043;--warn:#d29922}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;height:100%}
+  .nav{width:180px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(10,14,20,.4)}
+  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 12px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
+  .nav a:hover{background:#161d27}.nav a.on{background:#14311f;color:#9fe6bf}
+  .nav a .c{margin-left:auto;font-size:11px;color:var(--dim);background:#0d1117;border:1px solid var(--line);border-radius:20px;padding:0 7px}
+  .main{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+  .head{display:flex;align-items:center;margin-bottom:14px}.head h2{margin:0;font-size:18px}.head .sub{color:var(--dim);margin-left:10px;font-size:12px}
+  .right{margin-left:auto;display:flex;gap:8px}
+  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#33455a}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.pri:hover{filter:brightness(1.1)}
+  .btn.sm{padding:3px 9px;font-size:12px}.btn.ghost{background:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:0;margin-bottom:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:#121821}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .pill.expense{color:#ff9b9b;border-color:#6d2b2b}.pill.asset{color:#9fd0ff;border-color:#274a6b}.pill.liability{color:#e6c34a;border-color:#7a5c12}
+  .pill.revenue{color:#7ee2a8;border-color:#1f6f43}.pill.equity{color:#d8ccff;border-color:#3a2f66}
+  .pill.posted{color:#7ee2a8;border-color:#1f6f43}.pill.committed{color:#e6c34a;border-color:#7a5c12}
+  .bar{height:7px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden;min-width:120px}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,#2ea043,#d29922)}
+  .empty{color:var(--dim);padding:24px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 4px}
+  input,select{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid.g3{grid-template-columns:1fr 1fr 1fr}.row{margin-bottom:12px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:30}
+  .modal.open{display:flex}.sheet{background:#0f151d;border:1px solid var(--line);border-radius:14px;padding:20px;width:560px;max-width:100%;max-height:90vh;overflow:auto}
+  .sheet h3{margin:0 0 14px}.muted{color:var(--dim)}.err{color:#ff9b9b;font-size:12px;margin-top:8px}
+  .ln{font-size:12px;color:var(--dim)} .ln b{color:var(--ink)}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#14311f;border:1px solid #2a6b45;color:#9fe6bf;padding:10px 16px;border-radius:10px;z-index:50;opacity:0;transition:opacity .3s}
+</style>
+
+<div class="wrap">
+  <nav class="nav">
+    <h1>💰 Finance</h1>
+    <a data-t="accounts"><span>📒</span> Accounts <span class="c" id="c-accounts">0</span></a>
+    <a data-t="budgets"><span>🎯</span> Budgets <span class="c" id="c-budgets">0</span></a>
+    <a data-t="journal"><span>📓</span> Journal <span class="c" id="c-journal">0</span></a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP='finance-console';
+const NORMAL={asset:'debit',expense:'debit',liability:'credit',equity:'credit',revenue:'credit'};
+let TENANT='', TAB='accounts', ACC=[], BUD=[], TXN=[], UNITS=[];
+const money=n=>Number(n||0).toLocaleString('en-IN');
+const acctName=id=>{const a=ACC.find(x=>x.id===id);return a?(a.code+' '+a.name):(id||'—');};
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',3000);}
+async function query(schema){ try{ const r=await api('/bridge/query',{app_id:APP,schema}); return (r.results||[]).map(x=>x.object||x);}catch(e){return [];} }
+async function save(o){ const r=await api('/bridge/save',{app_id:APP,id:o.id,object:o}); return r; }
+
+async function boot(){
+  try{const se=await fetch('/session').then(r=>r.json()); TENANT=se.tenant||(se.sub||'').replace(/^user:\/\//,'').split('/')[0];}catch(e){}
+  await reload();
+  document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
+  render();
+}
+async function reload(){ [ACC,BUD,TXN,UNITS]=await Promise.all([query('finance.account'),query('finance.budget'),query('finance.transaction'),query('org.org_unit')]);
+  document.getElementById('c-accounts').textContent=ACC.length; document.getElementById('c-budgets').textContent=BUD.length; document.getElementById('c-journal').textContent=TXN.length; }
+function render(){ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB)); ({accounts:rAcc,budgets:rBud,journal:rJnl}[TAB])(); }
+
+/* ---------- ACCOUNTS ---------- */
+function rAcc(){
+  const rows=ACC.slice().sort((a,b)=>(a.code||'').localeCompare(b.code||'')).map(a=>`<tr><td>${esc(a.code)}</td><td><b>${esc(a.name)}</b></td>
+     <td><span class="pill ${esc(a.type)}">${esc(a.type)}</span></td><td>${esc(a.normal||NORMAL[a.type])}</td>
+     <td><button class="btn sm ghost" onclick='editAcc("${esc(a.id)}")'>edit</button></td></tr>`).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Chart of accounts</h2><span class="sub">the GL backbone</span>
+      <div class="right">${ACC.length?'':'<button class="btn" onclick="seedChart()">Seed default chart</button>'}<button class="btn pri" onclick='addAcc()'>＋ Account</button></div></div>`
+    + (ACC.length?`<div class="card"><table><thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Normal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No accounts yet — seed a default chart to get started.</div>`);
+}
+async function seedChart(){
+  const defs=[['1000','Cash / Bank','asset'],['2000','Payables','liability'],['3000','Reserves','equity'],
+    ['4000','Revenue','revenue'],['5000','Expenses','expense'],['5100','Travel expense','expense'],['5200','Office expense','expense']];
+  for(const [code,name,type] of defs){ await save({schema:'finance.account',id:`ds:${TENANT}:finance/account/${code}`,code,name,type,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()}); }
+  await reload(); toast('Seeded '+defs.length+' accounts'); render();
+}
+function addAcc(){ openAcc({}); } function editAcc(id){ openAcc(ACC.find(a=>a.id===id)||{}); }
+function openAcc(a){ document.getElementById('sheet').innerHTML=`<h3>${a.id?'Edit':'New'} account</h3>
+    <div class="grid"><div class="row"><label>Code</label><input id="a_code" value="${esc(a.code||'')}" placeholder="5300"></div>
+      <div class="row"><label>Name</label><input id="a_name" value="${esc(a.name||'')}" placeholder="Utilities expense"></div></div>
+    <div class="row" style="max-width:220px"><label>Type</label><select id="a_type">${['asset','liability','equity','revenue','expense'].map(t=>`<option${a.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="saveAcc('${esc(a.id||'')}')">Save</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open'); }
+async function saveAcc(id){ const code=val('a_code'),name=val('a_name'),type=val('a_type'); if(!code||!name)return ferr('Code and name required');
+  const r=await save({schema:'finance.account',id:id||`ds:${TENANT}:finance/account/${code}`,code,name,type,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()});
+  if(r.error)return ferr(r.error); closeM(); await reload(); render(); }
+
+/* ---------- BUDGETS ---------- */
+function rBud(){
+  const rows=BUD.map(b=>{const av=(b.allocated||0)-(b.committed||0)-(b.spent||0); const used=(b.allocated? (100*((b.committed||0)+(b.spent||0))/b.allocated):0);
+    return `<tr><td><b>${esc(b.name)}</b><div class="muted" style="font-size:11px">${esc(b.fiscal_year)}${b.account?' · '+esc(acctName(b.account)):''}</div></td>
+      <td class="num">${money(b.allocated)}</td><td class="num">${money(b.committed)}</td><td class="num">${money(b.spent)}</td>
+      <td class="num"><b>${money(av)}</b></td><td><div class="bar"><i style="width:${Math.min(100,used).toFixed(0)}%"></i></div></td>
+      <td><button class="btn sm ghost" onclick='editBud("${esc(b.id)}")'>edit</button></td></tr>`;}).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Budgets</h2><span class="sub">allocation control per fiscal year</span><div class="right"><button class="btn pri" onclick='addBud()'>＋ Budget</button></div></div>`
+    + (BUD.length?`<div class="card"><table><thead><tr><th>Head</th><th class="num">Allocated</th><th class="num">Committed</th><th class="num">Spent</th><th class="num">Available</th><th>Used</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No budgets yet.</div>`);
+}
+function addBud(){ openBud({}); } function editBud(id){ openBud(BUD.find(b=>b.id===id)||{}); }
+function openBud(b){ const exp=ACC.filter(a=>a.type==='expense');
+  document.getElementById('sheet').innerHTML=`<h3>${b.id?'Edit':'New'} budget</h3>
+    <div class="grid"><div class="row"><label>Code</label><input id="b_code" value="${esc(b.code||'')}" placeholder="B-TRAVEL-26"></div>
+      <div class="row"><label>Name</label><input id="b_name" value="${esc(b.name||'')}" placeholder="Travel — FY2026"></div></div>
+    <div class="grid g3"><div class="row"><label>Fiscal year</label><input id="b_fy" value="${esc(b.fiscal_year||'FY2026')}"></div>
+      <div class="row"><label>Expense account</label><select id="b_account"><option value="">—</option>${exp.map(a=>`<option value="${esc(a.id)}"${a.id===b.account?' selected':''}>${esc(a.code+' '+a.name)}</option>`).join('')}</select></div>
+      <div class="row"><label>Org unit</label><select id="b_unit"><option value="">—</option>${UNITS.map(u=>`<option value="${esc(u.id)}"${u.id===b.org_unit?' selected':''}>${esc(u.name)}</option>`).join('')}</select></div></div>
+    <div class="row" style="max-width:220px"><label>Allocated</label><input id="b_alloc" type="number" value="${esc(b.allocated!=null?b.allocated:'')}" placeholder="500000"></div>
+    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="saveBud('${esc(b.id||'')}')">Save</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open'); }
+async function saveBud(id){ const code=val('b_code'),name=val('b_name'),alloc=val('b_alloc'); if(!code||!name||alloc==='')return ferr('Code, name and allocated required');
+  const cur=BUD.find(x=>x.id===id)||{};
+  const o={schema:'finance.budget',id:id||`ds:${TENANT}:finance/budget/${code}`,code,name,fiscal_year:val('b_fy')||'FY2026',allocated:Number(alloc),
+    committed:cur.committed||0,spent:cur.spent||0,status:'active',tenant:TENANT,created_at:cur.created_at||new Date().toISOString()};
+  if(val('b_account'))o.account=val('b_account'); if(val('b_unit'))o.org_unit=val('b_unit');
+  const r=await save(o); if(r.error)return ferr(r.error); closeM(); await reload(); render(); }
+
+/* ---------- JOURNAL ---------- */
+function rJnl(){
+  const rows=TXN.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).map(t=>{
+    const lns=(t.lines||[]).map(l=>`<div class="ln">${esc(acctName(l.account))} — ${l.debit?('Dr <b>'+money(l.debit)+'</b>'):('Cr <b>'+money(l.credit)+'</b>')}</div>`).join('');
+    return `<tr><td>${esc(t.date)}</td><td><b>${esc(t.memo||'—')}</b>${t.source_kind?`<div class="muted" style="font-size:11px">${esc(t.source_kind)}</div>`:''}<div style="margin-top:3px">${lns}</div></td>
+      <td class="num">${money(t.amount)}</td><td>${t.direction?`<span class="pill">${esc(t.direction)}</span>`:''}</td><td><span class="pill ${esc(t.status)}">${esc(t.status)}</span></td></tr>`;}).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Journal</h2><span class="sub">double-entry — every entry balances (Σ Dr = Σ Cr)</span><div class="right"><button class="btn pri" onclick='newEntry()'>＋ Entry</button></div></div>`
+    + (TXN.length?`<div class="card"><table><thead><tr><th>Date</th><th>Entry (lines)</th><th class="num">Amount</th><th>Dir</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No journal entries yet. Post one — or an Expense/Travel approval will.</div>`);
+}
+function newEntry(){ const exp=ACC.filter(a=>a.type==='expense'), other=ACC.filter(a=>a.type!=='expense');
+  document.getElementById('sheet').innerHTML=`<h3>New journal entry</h3><div class="muted" style="margin-bottom:8px">A convenience posting — the balancing line is generated for you.</div>
+    <div class="grid"><div class="row"><label>Direction</label><select id="j_dir">${['expenditure','revenue'].map(d=>`<option>${d}</option>`).join('')}</select></div>
+      <div class="row"><label>Amount</label><input id="j_amt" type="number" placeholder="12000"></div></div>
+    <div class="grid"><div class="row"><label>Charge to budget</label><select id="j_bud" onchange="budAcct()"><option value="">— none —</option>${BUD.map(b=>`<option value="${esc(b.id)}" data-acct="${esc(b.account||'')}">${esc(b.name)}</option>`).join('')}</select></div>
+      <div class="row"><label>Account</label><select id="j_acct">${ACC.map(a=>`<option value="${esc(a.id)}">${esc(a.code+' '+a.name)}</option>`).join('')}</select></div></div>
+    <div class="grid"><div class="row"><label>Contra (cash/payable)</label><select id="j_contra">${other.map(a=>`<option value="${esc(a.id)}"${a.code==='2000'?' selected':''}>${esc(a.code+' '+a.name)}</option>`).join('')}</select></div>
+      <div class="row"><label>Status</label><select id="j_status">${['posted','committed'].map(s=>`<option>${s}</option>`).join('')}</select></div></div>
+    <div class="row"><label>Memo</label><input id="j_memo" placeholder="Field travel — Sept"></div>
+    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="postEntry()">Post</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open'); }
+function budAcct(){ const s=document.getElementById('j_bud'); const acct=s.options[s.selectedIndex].dataset.acct; if(acct){const ja=document.getElementById('j_acct'); ja.value=acct;} }
+async function postEntry(){ const amt=Number(val('j_amt')); if(!amt||amt<=0)return ferr('Amount required');
+  const body={app_id:APP,direction:val('j_dir'),amount:amt,account:val('j_acct'),contra_account:val('j_contra'),status:val('j_status'),memo:val('j_memo')};
+  if(val('j_bud'))body.budget=val('j_bud');
+  const r=await api('/bridge/finance-post',body);
+  if(r.error)return ferr(r.error); closeM(); await reload(); render(); toast('Posted '+money(r.amount)+(r.committed?(' · committed to budget'):'')); }
+
+function ferr(m){ const e=document.getElementById('ferr'); if(e)e.textContent=m; }
+function closeM(){ document.getElementById('modal').classList.remove('open'); }
+boot();
+</script>
