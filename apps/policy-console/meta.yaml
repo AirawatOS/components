@@ -1,0 +1,14 @@
+# POLICY CONSOLE (kind=app) — one place to govern tenant policy across domains (leave, travel, expense,
+# attendance...). Each org.policy targets whom via applies_to (min level / stream / role / unit) and carries a
+# domain-specific rules payload. Modules resolve the applicable policy via /bridge/policy-resolve. Admin-authored.
+component_id: ds:airawatdeveloper:app/policy-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Policy Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [org.policy, org.employee, org.org_unit, hr.job_level, hr.career_stream]
+writes: [org.policy]
+roles: [platform.tenant-admin]
