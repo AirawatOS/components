@@ -1,0 +1,16 @@
+# TAX GAP ENGINE (kind=engine) — the config-driven analytical spine for property-tax enforcement. Fuzzy record-linkage
+# (mobile/name/address, weighted) + spatial join (point-in-polygon) + geocode banding + geometric hygiene + change
+# detection → scored tax.candidate + a governance.recommendation (AI flags, humans decide). EVERY threshold + weight is
+# read from tax.match_policy (Tax Config Console-editable) — nothing hardcoded. Handlers: matchpolicy-get/set,
+# match-preview (weight tuning), gap-scan (the spine). Editable + versioned in Studio.
+component_id: ds:airawatdeveloper:engine/tax-gap-engine
+kind: engine
+version: 0.2.0
+provider: ds:airawat:developer
+display_name: Tax Gap Engine
+entrypoint: run.py
+# reads: the config, the ledger/utility/cadastre/footprint/change layers it triangulates.
+required_schemas: [tax.match_policy, tax.assessment, util.connection, geo.parcel, geo.building, tax.change_signal]
+reads: [tax.match_policy, tax.assessment, util.connection, geo.parcel, geo.building, tax.change_signal]
+# writes: the matching policy (config console), the flagged candidates, and the AI recommendation behind each flag.
+writes: [tax.match_policy, tax.candidate, governance.recommendation]

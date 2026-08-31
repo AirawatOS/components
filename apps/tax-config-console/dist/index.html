@@ -1,0 +1,169 @@
+<!doctype html><meta charset="utf-8"><title>Tax Config Console</title>
+<!--
+  TAX CONFIG CONSOLE — the control panel for the property-tax GAP finder. Manage the MATCHING POLICY (geocode
+  confidence bands, address-parse quality tiers, geometric-hygiene rules, fuzzy record-linkage weights + thresholds),
+  TUNE the fuzzy matcher against two sample records, RUN the gap-scan, and REVIEW the scored candidates. All the logic
+  lives in the tax-gap-engine (/bridge/matchpolicy-get·set · match-preview · gap-scan); this is screens only.
+-->
+<style>
+  :root{--bg:#0b0f16;--panel:#141b26;--line:#232d3b;--ink:#e6edf3;--dim:#8b98a9;--accent:#c9832b;--good:#2ea043;--warn:#d29922;--bad:#e5534b}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;height:100%}
+  .nav{width:190px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(8,12,18,.5)}
+  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 12px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
+  .nav a:hover{background:#161f2b}.nav a.on{background:#3a2a12;color:#f0c88a}
+  .main{flex:1;min-width:0;overflow:auto;padding:20px 24px;max-width:1000px}
+  .head{display:flex;align-items:center;margin-bottom:14px}.head h2{margin:0;font-size:18px}.head .sub{color:var(--dim);margin-left:10px;font-size:12px}
+  .right{margin-left:auto;display:flex;gap:8px}
+  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#4a5a70}.btn.pri{background:var(--accent);border-color:var(--accent);color:#1a1206}.btn.pri:hover{filter:brightness(1.08)}
+  .sec{border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+  .sec>h3{margin:0;padding:11px 15px;background:#0f1720;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
+  .sec .body{padding:14px 15px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--dim);margin:0 0 4px}
+  input,select{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .pill.match,.pill.high,.pill.flagged{color:#7ee2a8;border-color:#1f6f43}.pill.review,.pill.medium{color:#e6c34a;border-color:#7a5c12}
+  .pill.no_link,.pill.low,.pill.reject{color:#ffb3ae;border-color:#6d2b2b}
+  .kpi{display:inline-block;background:#0f1720;border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:0 8px 8px 0}
+  .kpi .l{font-size:11px;color:var(--dim);text-transform:uppercase}.kpi .v{font-size:20px;font-weight:600}
+  .bar{height:6px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden;min-width:90px;display:inline-block;vertical-align:middle}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#2ea043,#d29922,#e5534b)}
+  .muted{color:var(--dim)}.empty{color:var(--dim);padding:22px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#3a2a12;border:1px solid #7a5c12;color:#f0c88a;padding:10px 16px;border-radius:10px;z-index:50;opacity:0;transition:opacity .3s}
+</style>
+<div class="wrap">
+  <nav class="nav">
+    <h1>🏛 Tax Gap</h1>
+    <a data-t="policy"><span>⚙️</span> Thresholds</a>
+    <a data-t="match"><span>🔗</span> Match tester</a>
+    <a data-t="scan"><span>🛰</span> Scan</a>
+    <a data-t="candidates"><span>🚩</span> Candidates <span class="c" id="c-cand"></span></a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<div id="toast"></div>
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP='tax-config-console'; let TAB='policy', POL={}, CAND=[];
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+const num=id=>{const v=val(id);return v===''?undefined:Number(v);};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',3200);}
+async function query(schema){try{const r=await api('/bridge/query',{app_id:APP,schema});return (r.results||[]).map(x=>x.object||x);}catch(e){return[];}}
+
+async function boot(){
+  const r=await api('/bridge/matchpolicy-get',{app_id:APP}); POL=(r&&r.policy)||{};
+  CAND=await query('tax.candidate'); const cc=document.getElementById('c-cand'); if(cc)cc.textContent=CAND.length||'';
+  document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
+  render();
+}
+function render(){document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));({policy:rPolicy,match:rMatch,scan:rScan,candidates:rCand}[TAB])();}
+const g=(o,p,d)=>{try{return p.split('.').reduce((a,k)=>a[k],o)}catch(e){return d}};
+
+/* ---------- THRESHOLDS ---------- */
+function rPolicy(){
+  const P=POL;
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Thresholds & weights</h2><span class="sub">every knob the gap-scan reads — nothing hardcoded</span>
+      <div class="right"><button class="btn pri" onclick="savePolicy()">Save policy</button></div></div>
+    <div class="sec"><h3>Geocode confidence bands</h3><div class="body grid">
+      <div><label>Floor (reject below)</label><input id="p_gc_floor" type="number" step="0.05" value="${g(P,'geocode.floor','')}"></div>
+      <div><label>High ≥</label><input id="p_gc_high" type="number" step="0.05" value="${g(P,'geocode.bands.high','')}"></div>
+      <div><label>Medium ≥</label><input id="p_gc_med" type="number" step="0.05" value="${g(P,'geocode.bands.medium','')}"></div>
+      <div><label>Low ≥</label><input id="p_gc_low" type="number" step="0.05" value="${g(P,'geocode.bands.low','')}"></div></div></div>
+    <div class="sec"><h3>Address parse quality (min tokens)</h3><div class="body grid">
+      <div><label>High</label><input id="p_ap_high" type="number" value="${g(P,'address_parse.high.min_tokens','')}"></div>
+      <div><label>Medium</label><input id="p_ap_med" type="number" value="${g(P,'address_parse.medium.min_tokens','')}"></div>
+      <div><label>Low</label><input id="p_ap_low" type="number" value="${g(P,'address_parse.low.min_tokens','')}"></div></div></div>
+    <div class="sec"><h3>Geometric hygiene</h3><div class="body grid">
+      <div><label>On-boundary tolerance (m)</label><input id="p_gh_tol" type="number" value="${g(P,'geometry_hygiene.on_boundary_tolerance_m','')}"></div>
+      ${['single_parcel','on_boundary','multi_parcel','outside_all'].map(k=>`<div><label>${k.replace(/_/g,' ')}</label><select id="p_gh_${k}">${['accept','flag','reject'].map(o=>`<option${g(P,'geometry_hygiene.'+k,'')===o?' selected':''}>${o}</option>`).join('')}</select></div>`).join('')}</div></div>
+    <div class="sec"><h3>Fuzzy record-linkage weights <span class="muted" style="text-transform:none">(mobile / name / address across datasets)</span></h3><div class="body grid">
+      <div><label>Mobile</label><input id="p_fw_mobile" type="number" step="0.05" value="${g(P,'fuzzy_weights.mobile','')}"></div>
+      <div><label>Name</label><input id="p_fw_name" type="number" step="0.05" value="${g(P,'fuzzy_weights.name','')}"></div>
+      <div><label>Address</label><input id="p_fw_address" type="number" step="0.05" value="${g(P,'fuzzy_weights.address','')}"></div>
+      <div><label>Match ≥ (auto-link)</label><input id="p_ft_match" type="number" step="0.05" value="${g(P,'fuzzy_thresholds.match','')}"></div>
+      <div><label>Review ≥ (candidate)</label><input id="p_ft_review" type="number" step="0.05" value="${g(P,'fuzzy_thresholds.review','')}"></div></div></div>
+    <div class="sec"><h3>Candidate scoring — signal weights</h3><div class="body grid">
+      <div><label>Min confidence</label><input id="p_cd_min" type="number" step="0.05" value="${g(P,'candidate.min_confidence','')}"></div>
+      ${['utility_no_tax','footprint_no_assessment','change_detected','under_assessed'].map(k=>`<div><label>${k.replace(/_/g,' ')}</label><input id="p_cs_${k}" type="number" step="0.05" value="${g(P,'candidate.signal_weights.'+k,'')}"></div>`).join('')}</div></div>`;
+}
+async function savePolicy(){
+  const gh={}; ['single_parcel','on_boundary','multi_parcel','outside_all'].forEach(k=>gh[k]=val('p_gh_'+k));
+  const cs={}; ['utility_no_tax','footprint_no_assessment','change_detected','under_assessed'].forEach(k=>cs[k]=num('p_cs_'+k));
+  const policy={
+    geocode:{floor:num('p_gc_floor'),bands:{high:num('p_gc_high'),medium:num('p_gc_med'),low:num('p_gc_low')}},
+    address_parse:{high:{min_tokens:num('p_ap_high')},medium:{min_tokens:num('p_ap_med')},low:{min_tokens:num('p_ap_low')}},
+    geometry_hygiene:Object.assign({on_boundary_tolerance_m:num('p_gh_tol')},gh),
+    fuzzy_weights:{mobile:num('p_fw_mobile'),name:num('p_fw_name'),address:num('p_fw_address')},
+    fuzzy_thresholds:{match:num('p_ft_match'),review:num('p_ft_review')},
+    candidate:{min_confidence:num('p_cd_min'),signal_weights:cs}};
+  const r=await api('/bridge/matchpolicy-set',{app_id:APP,policy}); if(r.error)return toast(r.error);
+  POL=r.policy||policy; toast('Policy saved');
+}
+
+/* ---------- MATCH TESTER ---------- */
+function rMatch(){
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Fuzzy match tester</h2><span class="sub">tune the weights against two real-shaped records</span></div>
+    <div class="sec"><h3>Record A (e.g. tax ledger)</h3><div class="body grid">
+      <div><label>Mobile</label><input id="a_mobile" placeholder="9876543210"></div><div><label>Owner name</label><input id="a_name" placeholder="Ramesh Kumar"></div>
+      <div style="grid-column:1/-1"><label>Address</label><input id="a_addr" placeholder="12 MG Road, Shivaji Nagar"></div></div></div>
+    <div class="sec"><h3>Record B (e.g. electricity connection)</h3><div class="body grid">
+      <div><label>Mobile</label><input id="b_mobile" placeholder="09876543210"></div><div><label>Consumer name</label><input id="b_name" placeholder="R Kumar"></div>
+      <div style="grid-column:1/-1"><label>Address</label><input id="b_addr" placeholder="12, M.G. Rd, Shivajinagar"></div></div></div>
+    <div class="head"><div class="right" style="margin-left:0"><button class="btn pri" onclick="runMatch()">Score match</button></div></div>
+    <div id="match_out"></div>`;
+}
+async function runMatch(){
+  const a={mobile:val('a_mobile'),owner:val('a_name'),address_string:val('a_addr')};
+  const b={mobile:val('b_mobile'),consumer_name:val('b_name'),address_string:val('b_addr')};
+  const r=await api('/bridge/match-preview',{app_id:APP,a,b}); if(r.error)return toast(r.error);
+  const rows=Object.entries(r.contributions||{}).map(([k,v])=>`<tr><td>${k}</td><td class="num">${v}</td><td class="num">${(r.weights[k]||0)}</td></tr>`).join('');
+  document.getElementById('match_out').innerHTML=`<div class="sec"><div class="body">
+     <span class="kpi"><div class="l">Score</div><div class="v">${r.score}</div></span>
+     <span class="kpi"><div class="l">Verdict</div><div class="v"><span class="pill ${r.verdict}">${r.verdict.replace('_',' ')}</span></div></span>
+     <div class="bar" style="width:220px;margin:6px 0"><i style="width:${Math.round(r.score*100)}%"></i></div>
+     <table style="margin-top:10px"><thead><tr><th>Field</th><th class="num">Similarity</th><th class="num">Weight</th></tr></thead><tbody>${rows||'<tr><td colspan=3 class="muted">no shared fields</td></tr>'}</tbody></table>
+     <div class="muted" style="margin-top:8px;font-size:12px">match ≥ ${r.thresholds.match} → auto-link · review ≥ ${r.thresholds.review} → candidate</div></div></div>`;
+}
+
+/* ---------- SCAN ---------- */
+function rScan(){
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Run gap-scan</h2><span class="sub">spatial-join + fuzzy-link + score, over the loaded layers</span>
+      <div class="right"><button class="btn pri" onclick="runScan()">Run scan</button></div></div>
+    <div class="sec"><div class="body"><div class="muted">The scan reads the tax ledger, utility connections, cadastral parcels, building footprints and change signals currently in this tenant, applies the saved policy, and writes scored <b>tax.candidate</b> records. With no source data loaded it finds nothing (no fabrication).</div></div></div>
+    <div id="scan_out"></div>`;
+}
+async function runScan(){
+  document.getElementById('scan_out').innerHTML='<div class="sec"><div class="body muted">scanning…</div></div>';
+  const r=await api('/bridge/gap-scan',{app_id:APP}); if(r.error){document.getElementById('scan_out').innerHTML=`<div class="sec"><div class="body" style="color:#ffb3ae">${esc(r.error)}</div></div>`;return;}
+  const sig=Object.entries(r.by_signal||{}).map(([k,v])=>`<span class="kpi"><div class="l">${k.replace(/_/g,' ')}</div><div class="v">${v}</div></span>`).join('');
+  const top=(r.top||[]).map(c=>`<tr><td>${esc(c.parcel.split('/').pop())}</td><td class="num">${c.confidence}</td><td>${c.signals.map(s=>`<span class="pill">${s.replace(/_/g,' ')}</span>`).join(' ')}</td></tr>`).join('');
+  document.getElementById('scan_out').innerHTML=`<div class="sec"><div class="body">
+    <span class="kpi"><div class="l">Parcels scanned</div><div class="v">${r.scanned_parcels}</div></span>
+    <span class="kpi"><div class="l">Candidates</div><div class="v">${r.candidates}</div></span>${sig}
+    ${top?`<table style="margin-top:10px"><thead><tr><th>Parcel</th><th class="num">Confidence</th><th>Signals</th></tr></thead><tbody>${top}</tbody></table>`:'<div class="muted" style="margin-top:8px">No candidates — load ledger / utility / cadastre / footprint data, then re-scan.</div>'}</div></div>`;
+  CAND=await query('tax.candidate'); const cc=document.getElementById('c-cand'); if(cc)cc.textContent=CAND.length||'';
+}
+
+/* ---------- CANDIDATES ---------- */
+async function rCand(){
+  CAND=await query('tax.candidate');
+  const rows=CAND.sort((a,b)=>(b.confidence||0)-(a.confidence||0)).map(c=>`<tr>
+     <td>${esc((c.parcel_id||'').split('/').pop())}</td>
+     <td><div class="bar" style="width:80px"><i style="width:${Math.round((c.confidence||0)*100)}%"></i></div> ${c.confidence}</td>
+     <td>${(c.evidence||[]).map(e=>`<span class="pill" title="${esc(e.detail||'')}">${(e.signal||'').replace(/_/g,' ')}</span>`).join(' ')}</td>
+     <td><span class="pill ${esc(c.status)}">${esc(c.status)}</span></td>
+     <td>${esc(c.ward||'')}</td></tr>`).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Candidates</h2><span class="sub">flagged tax-gaps for field verification</span></div>`
+    + (CAND.length?`<div class="sec"><div class="body" style="padding:0"><table><thead><tr><th>Parcel</th><th>Confidence</th><th>Evidence</th><th>Status</th><th>Ward</th></tr></thead><tbody>${rows}</tbody></table></div></div>`
+       :`<div class="empty">No candidates yet — run a scan on loaded data.</div>`);
+}
+boot();
+</script>

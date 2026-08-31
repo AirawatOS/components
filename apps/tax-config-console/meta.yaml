@@ -1,0 +1,14 @@
+# TAX CONFIG CONSOLE (kind=app) — manage the tax-gap MATCHING POLICY (geocode confidence bands, address-parse tiers,
+# geometric-hygiene rules, fuzzy record-linkage weights + thresholds), tune the fuzzy matcher against sample records,
+# run the gap-scan, and review the scored candidates. All logic is in the tax-gap-engine; this app is screens only.
+component_id: ds:airawatdeveloper:app/tax-config-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Tax Config Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [tax.match_policy, tax.candidate, geo.parcel, tax.assessment, util.connection]
+writes: []
+roles: [platform.tenant-admin]
