@@ -4,7 +4,7 @@
 # grants these writes to the hr-desk component; reads (org.employee, hr.*) let it resolve the manager + list records.
 component_id: ds:airawatdeveloper:app/hr-desk
 kind: app
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: HR Desk
 entrypoint: index.html

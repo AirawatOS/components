@@ -79,28 +79,51 @@ function render(){
 }
 
 /* ---------- LEAVE ---------- */
+let LEAVE={pol:{},mine:[]};                    // per-type leave policy rules + my requests (for balances)
+const daysBetween=(a,b)=>Math.max(1, Math.round((new Date(b)-new Date(a))/86400000)+1);
+function accrued(r){ if(r.accrual_per_month){ const m=new Date().getMonth()+1; return Math.min(r.annual_entitlement, +(r.accrual_per_month*m).toFixed(1)); } return r.annual_entitlement; }
+function daysOf(status,type){ const yr=String(new Date().getFullYear());
+  return LEAVE.mine.filter(l=>l.leave_type===type && l.status===status && String(l.from_date||'').startsWith(yr)).reduce((s,l)=>s+(l.days||0),0); }
+function balance(type){ const r=LEAVE.pol[type]; if(!r||r.annual_entitlement==null) return null;
+  const acc=accrued(r), t=daysOf('approved',type), p=daysOf('pending',type); return {entitlement:r.annual_entitlement,accrued:acc,taken:t,pending:p,available:Math.max(0,acc-t-p)}; }
 async function rLeave(){
+  // policy-driven balances (resolves for ME) + my requests
+  let pols=[]; try{ pols=(await api('/bridge/policy-resolve',{domain:'leave'})).policies||[]; }catch(e){}
+  LEAVE.pol={}; pols.forEach(p=>{const t=(p.rules||{}).leave_type; if(t&&!LEAVE.pol[t])LEAVE.pol[t]=p.rules;});  // most-specific first → keep first per type
+  LEAVE.mine=(await query('hr.leave_request',{applicant_login:SUB})).filter(l=>l.applicant_login===SUB);
+  const types=['casual','sick','earned','unpaid','other'];
+  const withPol=types.filter(t=>LEAVE.pol[t]);
+  const balCards = withPol.length ? `<div class="card"><div class="muted" style="margin-bottom:8px">Your leave balances <span class="muted">(per policy)</span></div>
+      <table><thead><tr><th>Type</th><th>Entitlement</th><th>Accrued</th><th>Taken</th><th>Pending</th><th>Available</th></tr></thead><tbody>`
+      + withPol.map(t=>{const b=balance(t);return `<tr><td>${esc(t)}</td><td>${b.entitlement}</td><td>${b.accrued}</td><td>${b.taken}</td><td>${b.pending}</td><td><b>${b.available}</b></td></tr>`;}).join('')
+      + `</tbody></table></div>` : '';
+  const typeOpt=t=>{const b=balance(t);return `<option value="${t}">${t}${b?` — ${b.available} left`:''}</option>`;};
   const main=document.getElementById('main');
   main.innerHTML=`<h2>Leave</h2><div class="sub">Apply for leave — it goes to your manager${ME&&ME.manager?' ('+esc(nameOfEmp(ME.manager))+')':''} for approval.</div>
+    ${balCards}
     <div class="card"><div class="grid g3">
-        <div class="row"><label>Type</label><select id="lt">${['casual','sick','earned','unpaid','other'].map(t=>`<option>${t}</option>`).join('')}</select></div>
-        <div class="row"><label>From</label><input id="lf" type="date"></div>
-        <div class="row"><label>To</label><input id="lto" type="date"></div></div>
+        <div class="row"><label>Type</label><select id="lt" onchange="lhint()">${types.map(typeOpt).join('')}</select></div>
+        <div class="row"><label>From</label><input id="lf" type="date" onchange="lhint()"></div>
+        <div class="row"><label>To</label><input id="lto" type="date" onchange="lhint()"></div></div>
       <div class="row"><label>Reason</label><input id="lr" placeholder="optional"></div>
+      <div id="lhint" class="muted" style="font-size:12px;margin-bottom:6px"></div>
       <div id="lerr" class="err"></div>
       <button class="btn pri" onclick="applyLeave()"${ME?'':' disabled title="no employee record linked to your login"'}>Apply for leave</button>
       ${ME?'':'<div class="muted" style="margin-top:8px">Ask your admin to set your <b>Login user</b> on your employee record in Org Setup.</div>'}</div>
     <h2 style="font-size:15px">My requests</h2><div id="mine"></div>`;
-  const mine=(await query('hr.leave_request',{applicant_login:SUB})).filter(l=>l.applicant_login===SUB)
-     .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
-  document.getElementById('mine').innerHTML = mine.length ? `<div class="card"><table><thead><tr><th>Type</th><th>From</th><th>To</th><th>Reason</th><th>Status</th></tr></thead><tbody>`
-      + mine.map(l=>`<tr><td>${esc(l.leave_type)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td><td>${esc(l.reason||'—')}</td><td><span class="pill ${esc(l.status)}">${esc(l.status)}</span></td></tr>`).join('')
+  const mine=LEAVE.mine.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  document.getElementById('mine').innerHTML = mine.length ? `<div class="card"><table><thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th></tr></thead><tbody>`
+      + mine.map(l=>`<tr><td>${esc(l.leave_type)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td><td>${esc(l.days!=null?l.days:'—')}</td><td>${esc(l.reason||'—')}</td><td><span class="pill ${esc(l.status)}">${esc(l.status)}</span></td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="empty">No leave requests yet.</div>`;
 }
+function lhint(){ const t=val('lt'), from=val('lf'), to=val('lto'); const b=balance(t); const el=document.getElementById('lhint'); if(!el)return;
+  const d=(from&&to)?daysBetween(from,to):null;
+  el.textContent = b ? `${d!=null?d+' day(s) requested · ':''}${b.available} of ${b.accrued} accrued ${t} leave available` : (t?`No balance policy for ${t} leave — unlimited / unpaid`:''); }
 async function applyLeave(){
   const from=val('lf'), to=val('lto'); if(!from||!to){document.getElementById('lerr').textContent='From and To dates are required';return;}
-  const days=Math.max(1, Math.round((new Date(to)-new Date(from))/86400000)+1);
-  const r=await api('/bridge/leave-apply',{app_id:APP,leave_type:val('lt'),from_date:from,to_date:to,days,reason:val('lr')});
+  const type=val('lt'), days=daysBetween(from,to), b=balance(type);
+  if(b && days>b.available){ document.getElementById('lerr').textContent=`Only ${b.available} day(s) of ${type} leave available (accrued ${b.accrued} − taken ${b.taken} − pending ${b.pending}). Requested ${days}.`; return; }
+  const r=await api('/bridge/leave-apply',{app_id:APP,leave_type:type,from_date:from,to_date:to,days,reason:val('lr')});
   if(r.error){document.getElementById('lerr').textContent=r.error+(r.detail?(' — '+r.detail):'');return;}
   toast(r.routed_to?('Applied — sent to '+(r.manager||'your manager')+' for approval'):'Applied (no manager set — pending)');
   render();
