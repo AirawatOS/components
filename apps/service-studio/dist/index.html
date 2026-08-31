@@ -92,7 +92,8 @@ function newSvc(){ SEL=null; B={service_id:'',title:'',domain:(DOMAINS.includes(
 function loadSvc(o){ SEL=o.service_id;
   B={service_id:o.service_id,title:o.title||'',domain:o.domain||'civic',description:o.description||'',jurisdiction:o.jurisdiction||'',entitlement:o.entitlement||'residence',audience:o.audience||'civic.resident'};
   const props=(o.request_schema||{}).properties||{}, req=(o.request_schema||{}).required||[];
-  FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k]['x-widget']==='textarea'?'textarea':(props[k].type==='number'?'number':'text')),required:req.includes(k)}));
+  const smap=o.scope_map||{}, dimOf=k=>Object.keys(smap).find(d=>smap[d]===k)||'';   // restore the 📍 location marker
+  FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k]['x-widget']==='textarea'?'textarea':(props[k].type==='number'?'number':'text')),required:req.includes(k),scope_dim:dimOf(k)}));
   if(!FIELDS.length) FIELDS=[{key:'',label:'',type:'text',required:false}];
   STEPS=((o.fulfillment||{}).workflow||[]).map(s=>({step:s.step,role:s.role,task:s.task,issues:s.issues||''}));
   if(!STEPS.length) STEPS=[{step:'',role:ROLES[0]||'',task:'',issues:''}];
@@ -136,8 +137,10 @@ function renderFields(){ document.getElementById('fields').innerHTML=FIELDS.map(
     <div class="rowline">
       <input placeholder="Label (e.g. Full name)" value="${esc(f.label)}" oninput="FIELDS[${i}].label=this.value;FIELDS[${i}].key=FIELDS[${i}].key||skey(this.value)">
       <select onchange="FIELDS[${i}].type=this.value">${['text','textarea','number','date'].map(t=>`<option${f.type===t?' selected':''}>${t}</option>`).join('')}</select>
+      <select title="Mark as the LOCATION of the work → routes the case to the officer for that area/jurisdiction (org RBAC)" onchange="FIELDS[${i}].scope_dim=this.value">${[['','📍 —'],['area','📍 Area'],['jurisdiction','📍 Jurisdiction'],['org_unit','📍 Org unit']].map(([v,l])=>`<option value="${v}"${(f.scope_dim||'')===v?' selected':''}>${l}</option>`).join('')}</select>
       <label style="margin:0"><input type="checkbox" style="width:auto" ${f.required?'checked':''} onchange="FIELDS[${i}].required=this.checked"> req</label>
-      <button class="btn danger sm" onclick="FIELDS.splice(${i},1);renderFields()">✕</button></div>`).join(''); }
+      <button class="btn danger sm" onclick="FIELDS.splice(${i},1);renderFields()">✕</button></div>`).join('')
+    + '<div class="muted" style="margin-top:6px">Tag one field as 📍 <b>Location</b> — its value (an area/jurisdiction code) routes the request to the officer scoped to that place.</div>'; }
 function renderSteps(){ document.getElementById('steps').innerHTML=STEPS.map((s,i)=>`
     <div class="stepline"><div class="num">${i+1}</div>
       <input placeholder="stage" value="${esc(s.step)}" oninput="STEPS[${i}].step=this.value">
@@ -153,9 +156,10 @@ function buildBody(){
   const props={},req=[]; FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(!k)return; const p={title:f.label||k,type:f.type==='number'?'number':'string'};
     if(f.type==='date')p.format='date'; if(f.type==='textarea')p['x-widget']='textarea'; props[k]=p; if(f.required)req.push(k); });
   const wf=STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step',role:s.role,task:s.task||s.step,...(s.issues?{issues:s.issues}:{})}));
+  const scope_map={}; FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(k && f.scope_dim) scope_map[f.scope_dim]=k; });  // form field → case scope
   return {service_id:slug(B.service_id),title:B.title,domain:B.domain,description:B.description,interaction:['search','init','status'],
     jurisdiction:B.jurisdiction,entitlement:B.entitlement,audience:B.audience||'civic.resident',request_schema:{type:'object',properties:props,required:req,additionalProperties:false},
-    solution:SOLUTION,fulfillment:{workflow:wf},required_credentials:[...REQCREDS]};
+    solution:SOLUTION,fulfillment:{workflow:wf},required_credentials:[...REQCREDS],scope_map};
 }
 async function publish(){
   if(!slug(B.service_id)||!B.title){ alert('Service id and title are required'); return; }
