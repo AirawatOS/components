@@ -3,7 +3,7 @@
 # Expense / Travel / Payroll will call. Accounts/budgets are edited via /bridge/save (admin). Admin-authored.
 component_id: ds:airawatdeveloper:app/finance-console
 kind: app
-version: 0.3.0
+version: 0.3.1
 provider: ds:airawat:developer
 display_name: Finance Console
 entrypoint: index.html

@@ -17,6 +17,32 @@ PAYROLL_ENGINE_ID = "ds:airawatdeveloper:engine/payroll-engine"
 _ADMIN = {"platform.tenant-admin", "platform.steward", "admin"}
 
 
+def _proration(period, from_date, to_date):
+    """Fraction of the month `period` (YYYY-MM) that the allocation [from_date, to_date] actually covers, at DAY
+    granularity — so a mid-month JOINER (from_date inside the month) or LEAVER (to_date inside the month) is charged
+    pro-rata, while an allocation spanning the whole month gets factor 1.0. Returns (factor, active_days, days_in_month)."""
+    import calendar
+    y, m = int(period[:4]), int(period[5:7])
+    dim = calendar.monthrange(y, m)[1]
+    start, end = 1, dim
+    if from_date:
+        fm = from_date[:7]
+        if fm > period:
+            return 0.0, 0, dim                              # starts after this month
+        if fm == period:
+            try: start = min(max(1, int(from_date[8:10])), dim)
+            except Exception: pass
+    if to_date:
+        tm = to_date[:7]
+        if tm < period:
+            return 0.0, 0, dim                              # ended before this month
+        if tm == period:
+            try: end = min(max(1, int(to_date[8:10])), dim)
+            except Exception: pass
+    active = max(0, end - start + 1)
+    return round(active / dim, 6), active, dim
+
+
 def _current_comp(ctx, employee, period):
     """Latest ACTIVE hr.compensation for the employee effective on/before the period (YYYY-MM). None if absent."""
     rows = [c for c in ctx["kfind"]("hr.compensation", {"employee": employee})
@@ -52,12 +78,16 @@ def _plan(ctx, period, only_project):
             skipped.append({**base, "reason": "no compensation record for this employee"}); continue
         if not bud:
             skipped.append({**base, "reason": "project has no committed budget (not approved?)"}); continue
-        cost = round((comp.get("monthly_cost") or 0) * (a.get("percent") or 0) / 100.0, 2)
+        factor, active_days, dim = _proration(period, a.get("from_date"), a.get("to_date"))
+        full = round((comp.get("monthly_cost") or 0) * (a.get("percent") or 0) / 100.0, 2)
+        cost = round(full * factor, 2)                     # pro-rata for a mid-month joiner/leaver (factor 1.0 = full month)
         if cost <= 0:
-            skipped.append({**base, "reason": "computed cost is zero"}); continue
+            skipped.append({**base, "reason": "no active days in this month"}); continue
         tid = f"ds:{ctx['tenant']}:finance/transaction/payroll-{local}-{period}"
-        lines.append({**base, "monthly_cost": comp.get("monthly_cost"), "cost": cost, "budget": bud.get("id"),
-                      "org_unit": emp.get("org_unit") or bud.get("org_unit"), "txn_id": tid, "date": period + "-28"})
+        lines.append({**base, "monthly_cost": comp.get("monthly_cost"), "full_cost": full, "cost": cost,
+                      "proration": factor, "active_days": active_days, "days_in_month": dim, "prorated": factor < 1.0,
+                      "budget": bud.get("id"), "org_unit": emp.get("org_unit") or bud.get("org_unit"),
+                      "txn_id": tid, "date": period + "-28"})
     return lines, skipped, now
 
 
@@ -80,10 +110,11 @@ def h_payroll_apportion(ctx):
     for l in lines:
         if ctx["kget"](l["txn_id"]):                          # idempotent: already apportioned this (allocation, period)
             already += 1; continue
+        pr = f" · {l['active_days']}/{l['days_in_month']}d pro-rata" if l.get("prorated") else ""
         res, err = ctx["call"](FINANCE_ENG, "finance-post", {
             "id": l["txn_id"], "direction": "expenditure", "amount": l["cost"], "budget": l["budget"],
             "project": l["project"], "org_unit": l["org_unit"], "contra_type": "liability", "date": l["date"],
-            "memo": f"Salary apportionment {period} — {l.get('employee_name') or l['employee']} @ {l['percent']}%",
+            "memo": f"Salary apportionment {period} — {l.get('employee_name') or l['employee']} @ {l['percent']}%{pr}",
             "source": l["allocation"], "source_kind": "payroll", "status": "posted", "allow_overspend": True})
         if err:
             errors.append({**l, "error": err})

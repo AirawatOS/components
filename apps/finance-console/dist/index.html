@@ -213,7 +213,7 @@ async function saveComp(eid){const cost=Number(val('cm_cost'));if(!cost||cost<=0
 async function previewPay(){const period=val('pay_period');const r=await api('/bridge/payroll-preview',{app_id:APP,period});
   const el=document.getElementById('pay_result');
   if(r.error){el.innerHTML=`<div class="err" style="padding:12px 16px">${esc(r.error)}</div>`;return;}
-  PREVIEW=r;const lines=(r.lines||[]).map(l=>`<tr><td>${esc(l.employee_name||l.employee)}</td><td>${esc(projName(l.project))}</td><td class="num">${l.percent}%</td><td class="num">${money(l.monthly_cost)}</td><td class="num"><b>${money(l.cost)}</b></td></tr>`).join('');
+  PREVIEW=r;const lines=(r.lines||[]).map(l=>`<tr><td>${esc(l.employee_name||l.employee)}</td><td>${esc(projName(l.project))}</td><td class="num">${l.percent}%</td><td class="num">${money(l.monthly_cost)}</td><td class="num"><b>${money(l.cost)}</b>${l.prorated?('<div class="muted" style="font-size:11px">pro-rata '+l.active_days+'/'+l.days_in_month+'d</div>'):''}</td></tr>`).join('');
   const skip=(r.skipped||[]).map(s=>`<tr><td>${esc(s.employee_name||s.employee)}</td><td>${esc(projName(s.project))}</td><td colspan=3 class="muted">skipped — ${esc(s.reason)}</td></tr>`).join('');
   el.innerHTML=`<div style="padding:0 16px 14px"><table><thead><tr><th>Employee</th><th>Project</th><th class="num">%</th><th class="num">Monthly</th><th class="num">Apportioned</th></tr></thead><tbody>${lines}${skip}</tbody></table>
     <div style="margin-top:8px" class="muted">${r.count} line(s) · total <b>${money(r.total)}</b>${r.skipped.length?(' · '+r.skipped.length+' skipped'):''}</div></div>`;
