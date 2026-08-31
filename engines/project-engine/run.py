@@ -9,7 +9,9 @@ finance.transactions tagged with `project` (no fabrication) — the project is t
 Handlers: proposal-submit · proposal-decide · project-rollup · project-review · project-evaluate · project-adjust.
 Writes with THIS engine's grants (component://project-engine obo user).
 """
-import time as _t
+import time as _t, json as _json
+
+_j = _json.dumps                                          # an inbox action-spec, carried as a JSON string in inbox_item.actions
 
 
 def _now():
@@ -93,7 +95,16 @@ def h_proposal_submit(ctx):
         "milestones": prop.get("milestones") or [], "deliverables": prop.get("deliverables") or [], "outlay": outlay,
         "total_outlay": total, "currency": pj.get("currency") or "INR", "submitted_by": sub, "submitted_at": now,
         "supersedes": (existing.get("baseline_version") if body.get("adjust") else None), "created_at": now})
-    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total, "status": "submitted"}, None
+    # route the approval to the Inbox — to the sponsor if they have a login, else to any tenant admin (role-addressed).
+    sponsor = pj.get("sponsor") or existing.get("sponsor")
+    approver = sponsor if (sponsor and str(sponsor).startswith("user://")) else f"role://{tenant}/platform.tenant-admin"
+    iid = f"ds:{tenant}:platform/inbox_item/proposal-{code}-v{version}"
+    ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
+        "title": f"Project proposal — {code} v{version}", "body": f"{pj.get('name') or existing.get('name') or code} · outlay {total}",
+        "ref": prid, "kind": "task", "status": "unread", "created_at": now,
+        "actions": [_j({"label": "Approve", "verb": "proposal-decide", "style": "pri", "args": {"project": pid, "version": version, "decision": "approve"}}),
+                    _j({"label": "Reject", "verb": "proposal-decide", "style": "danger", "args": {"project": pid, "version": version, "decision": "reject"}})]})
+    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total, "status": "submitted", "routed_to": approver}, None
 
 
 # --- 2) APPROVE / REJECT (decided change-request → governance.decision) ---------------------------------------
@@ -127,6 +138,16 @@ def h_proposal_decide(ctx):
         "outcome": "approved" if decision == "approve" else "rejected",
         "authority": sub, "decided_at": now, "rationale": body.get("rationale") or f"{decision} project {proj['code']} baseline v{prop['version']}",
         "subjects": [pid], "considered": [prop["id"]], "evidence_manifest": [prop["id"]]})
+    # close the approver's Inbox task + notify the submitter of the outcome
+    iid = f"ds:{tenant}:platform/inbox_item/proposal-{proj['code']}-v{prop['version']}"
+    prior_i = ctx["kget"](iid)
+    if prior_i:
+        ctx["kwrite"](iid, {**prior_i, "status": "done"})
+    if prop.get("submitted_by"):
+        nid = f"ds:{tenant}:platform/inbox_item/proposalres-{proj['code']}-v{prop['version']}"
+        ctx["kwrite"](nid, {"schema": "platform.inbox_item", "id": nid, "tenant": tenant, "actor": prop["submitted_by"],
+            "title": f"Project proposal {'approved' if decision == 'approve' else 'rejected'} — {proj['code']}",
+            "body": body.get("rationale") or "", "ref": prop["id"], "kind": "notification", "status": "unread", "created_at": now})
     if decision == "reject":
         ctx["kwrite"](prop["id"], {**prop, "status": "rejected", "decision": did, "reason": body.get("rationale")})
         ctx["kwrite"](pid, {**proj, "status": "rejected"})

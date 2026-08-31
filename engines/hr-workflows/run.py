@@ -12,7 +12,9 @@ attributed component://hr-workflows obo the signed-in user (ADR-0052 — this en
 Every handler returns (result_dict, None) on success or (None, "error string") on failure.
 Edit this file in Studio to change HR behaviour, then Publish → Compose → upgrade the solution.
 """
-import time as _t, uuid as _u
+import time as _t, uuid as _u, json as _json
+
+_j = _json.dumps                                          # an inbox action-spec, carried as a JSON string in inbox_item.actions
 
 
 def _now():
@@ -74,7 +76,9 @@ def h_leave_apply(ctx):
         ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": mgr_login,
             "title": f"Leave request — {me.get('name') or me['id']}",
             "body": f"{ltype} · {leave['from_date']} → {leave['to_date']}", "ref": lid, "kind": "task",
-            "status": "unread", "created_at": now})
+            "status": "unread", "created_at": now,
+            "actions": [_j({"label": "Approve", "verb": "leave-decide", "style": "pri", "args": {"leave_id": lid, "decision": "approve"}}),
+                        _j({"label": "Reject", "verb": "leave-decide", "style": "danger", "args": {"leave_id": lid, "decision": "reject"}})]})
         routed = mgr_login
     return {"filed": lid, "status": "pending", "routed_to": routed, "manager": (mgr or {}).get("name")}, None
 
@@ -145,7 +149,11 @@ def h_expense_apply(ctx):
         ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": mgr_login,
             "title": f"Expense claim — {me.get('name') or me['id']}",
             "body": f"{claim.get('category') or 'expense'} · {body['amount']}", "ref": eid, "kind": "task",
-            "status": "unread", "created_at": now})
+            "status": "unread", "created_at": now,
+            # approve settles into the ledger → the manager picks a budget to charge (a `ref` param the inbox fills from finance.budget)
+            "actions": [_j({"label": "Approve", "verb": "expense-decide", "style": "pri", "args": {"expense_id": eid, "decision": "approve"},
+                            "params": [{"name": "budget", "label": "Charge to budget", "type": "ref", "ref_schema": "finance.budget"}]}),
+                        _j({"label": "Reject", "verb": "expense-decide", "style": "danger", "args": {"expense_id": eid, "decision": "reject"}})]})
         routed = mgr_login
     return {"filed": eid, "status": "pending", "routed_to": routed, "manager": (mgr or {}).get("name")}, None
 

@@ -67,7 +67,7 @@
   .recl{color:var(--dim);font-size:11px;margin:2px 0 6px}
   .ok{color:#3fb950;margin-top:10px;font-size:13px;font-weight:600}
 </style>
-<header><h1>Inbox</h1><span class="who" id="who">…</span><span class="filters" id="filters"><button class="fbtn on" data-f="open">Open</button><button class="fbtn" data-f="done">Done</button><button class="fbtn" data-f="all">All</button></span><span class="count" id="count"></span></header>
+<header><h1>Inbox</h1><span class="who" id="who">…</span><span class="filters" id="filters"><button class="fbtn on" data-f="open">Open</button><button class="fbtn" data-f="done">Done</button><button class="fbtn" data-f="all">All</button></span><span class="count" id="count"></span><button id="newreq" style="margin-left:auto;border:1px solid var(--line);background:#14311f;color:#9fe6bf;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer">＋ New request</button></header>
 <div class="wrap" id="list"><div class="empty">loading…</div></div>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer">
@@ -87,6 +87,7 @@ async function boot(){
   document.querySelectorAll('.fbtn').forEach(b=>b.onclick=()=>{
     FILTER=b.dataset.f; document.querySelectorAll('.fbtn').forEach(x=>x.classList.toggle('on',x===b));
     SHOWN=Math.min(PAGE, filtered().length); paintList(); });
+  const nr=document.getElementById('newreq'); if(nr) nr.onclick=openNewRequest;
   await loadList();
 }
 const KIND={task:{i:'📋',l:'Task'}, notification:{i:'🔔',l:'Notice'}, decision:{i:'⚖️',l:'Decision'}};
@@ -123,7 +124,7 @@ function paintList(){
   list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(FI[+el.dataset.ix])));
   const more=document.getElementById('more'); if(more) more.onclick=()=>{ SHOWN=Math.min(SHOWN+PAGE,filtered().length); paintList(); };
 }
-function openItem(it){NAV=[]; document.getElementById('d-dot').className='dot '+it.kind; openDrawer(); push(it.ref,{title:it.title,source:it.source,body:it.body});}
+function openItem(it){NAV=[]; document.getElementById('d-dot').className='dot '+it.kind; openDrawer(); push(it.ref,{title:it.title,source:it.source,body:it.body,actions:it.actions});}
 async function push(ref,ctx){NAV.push({ref,ctx:ctx||{}}); await render();}
 async function back(){NAV.pop(); await render();}
 // the drawer renders WHATEVER ref is on top of the nav stack, generically via viz.layer; a task also
@@ -148,7 +149,93 @@ async function render(){
   if(o&&o.schema==='platform.task') await taskControls(b,o);
   if(o&&o.schema==='platform.case') await caseDetails(b,o);           // show the citizen's submitted application
   if(o&&o.schema==='governance.decision') await renderReceipt(o,b);   // reconstructable evidence receipt
+  if(NAV.length===1 && ctx.actions && ctx.actions.length) renderActions(b, ctx.actions);  // in-inbox approve/reject (ERP)
 }
+
+// GENERIC INBOX ACTIONS (ADR-0048): an inbox item can carry `actions` = JSON strings {label, verb, args, style, params?}.
+// We render each as a button that calls /bridge/<verb> directly — so leave/expense/project approvals are actioned IN the
+// inbox, one code path, any domain. A `param` {name,label,type,ref_schema?} collects extra input (e.g. the budget to
+// charge an expense to) before the verb fires. Non-JSON action strings are ignored here (rendered elsewhere as labels).
+function parseActions(actions){return (actions||[]).map(a=>{try{const o=(typeof a==='string')?JSON.parse(a):a;return (o&&o.verb)?o:null;}catch(e){return null;}}).filter(Boolean);}
+function renderActions(b, actions){
+  const acts=parseActions(actions); if(!acts.length) return;
+  const bar=document.createElement('div'); bar.style.cssText='margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px';
+  const IST='width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 9px;font-size:13px';
+  acts.forEach((a,i)=>{
+    const wrap=document.createElement('div'); wrap.style.cssText='display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap';
+    (a.params||[]).forEach(p=>{
+      const f=document.createElement('div'); f.style.flex='1 1 160px';
+      f.innerHTML='<label style="display:block;font-size:11px;color:var(--dim);margin-bottom:3px">'+esc(p.label||p.name)+'</label>';
+      const inp=document.createElement((p.type==='select'||p.type==='ref')?'select':'input');
+      inp.id='ap_'+i+'_'+p.name; inp.style.cssText=IST; if(p.type==='number')inp.type='number';
+      f.appendChild(inp); wrap.appendChild(f);
+      if(p.type==='ref'){ inp.innerHTML='<option value="">…</option>';
+        bpost('/bridge/query',{app_id:APPID,schema:p.ref_schema}).then(r=>{const rows=(r.json.results||[]).map(x=>x.object||x);
+          inp.innerHTML='<option value="">— select —</option>'+rows.map(o=>'<option value="'+esc(o.id)+'">'+esc(o[p.ref_label||'name']||o.code||o.id)+'</option>').join('');}); }
+      else if(p.type==='select'){ inp.innerHTML=(p.options||[]).map(o=>'<option>'+esc(o)+'</option>').join(''); }
+    });
+    const btn=document.createElement('button'); btn.textContent=a.label||a.verb;
+    btn.style.cssText='border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;border:1px solid var(--line);'
+      +(a.style==='pri'?'background:#2ea043;border-color:#2ea043;color:#fff':a.style==='danger'?'background:#3a1b1b;border-color:#6d2b2b;color:#ffb3ae':'background:#1b232e;color:var(--ink)');
+    btn.onclick=()=>doAction(a,i,btn);
+    wrap.appendChild(btn); bar.appendChild(wrap);
+  });
+  const err=document.createElement('div'); err.id='act_err'; err.style.cssText='color:#ffb3ae;font-size:12px'; bar.appendChild(err);
+  b.appendChild(bar);
+}
+async function doAction(a,i,btn){
+  const args=Object.assign({app_id:APPID}, a.args||{}); const e=document.getElementById('act_err'); e.textContent='';
+  for(const p of (a.params||[])){ const el=document.getElementById('ap_'+i+'_'+p.name); const v=el?el.value:'';
+    if(p.required!==false && !v){ e.textContent='Please choose '+(p.label||p.name); return; } if(v) args[p.name]=p.type==='number'?Number(v):v; }
+  const lab=btn.textContent; btn.disabled=true; btn.textContent='…';
+  const r=await bpost('/bridge/'+a.verb,args);
+  if(!r.ok||r.json.error){ e.textContent=(r.json&&r.json.error)||('failed ('+r.status+')'); btn.disabled=false; btn.textContent=lab; return; }
+  toast(lab+' ✓'); closeDrawer(); await loadList();
+}
+
+// ＋ NEW REQUEST — file an ERP self-service request from the inbox (the apply verbs write via their engine's grant).
+const REQS={
+  leave:{title:'🏖 Apply for leave', verb:'leave-apply', fields:[
+    {name:'leave_type',label:'Type',type:'select',options:['earned','casual','sick']},
+    {name:'from_date',label:'From',type:'date'},{name:'to_date',label:'To',type:'date'},
+    {name:'days',label:'Days',type:'number'},{name:'reason',label:'Reason',type:'text',required:false}]},
+  expense:{title:'🧾 File an expense', verb:'expense-apply', fields:[
+    {name:'category',label:'Category',type:'select',options:['travel','office','other']},
+    {name:'amount',label:'Amount (₹)',type:'number'},{name:'description',label:'Description',type:'text',required:false},
+    {name:'project',label:'Project (optional)',type:'ref',ref_schema:'project.project',required:false}]}};
+function openNewRequest(){ NAV=[]; document.getElementById('d-dot').className='dot task'; document.getElementById('d-title').textContent='New request'; openDrawer();
+  const b=document.getElementById('d-body');
+  b.innerHTML='<div class="lbl" style="margin-top:0">Choose a request</div>'+Object.entries(REQS).map(([k,r])=>
+    '<button class="reqpick" data-k="'+k+'" style="display:block;width:100%;text-align:left;margin:8px 0;padding:13px;border:1px solid var(--line);border-radius:10px;background:#12203a;color:var(--ink);cursor:pointer;font-size:14px">'+esc(r.title)+'</button>').join('');
+  b.querySelectorAll('.reqpick').forEach(el=>el.onclick=()=>renderRequestForm(el.dataset.k));
+}
+function renderRequestForm(k){ const r=REQS[k]; const b=document.getElementById('d-body');
+  const IST='width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px';
+  b.innerHTML='<span class="crumb" id="rback">← back</span><div class="lbl" style="margin-top:8px">'+esc(r.title)+'</div>'
+    + r.fields.map(f=>'<div style="margin:9px 0"><label style="display:block;font-size:11px;color:var(--dim);margin-bottom:3px">'+esc(f.label)+'</label>'
+      + (f.type==='select'?'<select id="rf_'+f.name+'" style="'+IST+'">'+(f.options||[]).map(o=>'<option>'+esc(o)+'</option>').join('')+'</select>'
+        : (f.type==='ref')?'<select id="rf_'+f.name+'" style="'+IST+'"><option value="">—</option></select>'
+        :'<input id="rf_'+f.name+'" type="'+(f.type==='number'?'number':f.type==='date'?'date':'text')+'" style="'+IST+'">')
+      + '</div>').join('')
+    + '<div id="rf_err" class="note" style="color:#ffb3ae;display:none;margin-top:6px"></div>'
+    + '<button id="rf_submit" style="margin-top:12px;background:#2ea043;border:none;color:#fff;border-radius:8px;padding:9px 20px;cursor:pointer;font-size:14px">Submit</button>';
+  r.fields.filter(f=>f.type==='ref').forEach(f=>{ bpost('/bridge/query',{app_id:APPID,schema:f.ref_schema}).then(res=>{
+    const rows=(res.json.results||[]).map(x=>x.object||x); const el=document.getElementById('rf_'+f.name);
+    if(el) el.innerHTML='<option value="">—</option>'+rows.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.code||o.name||o.id)+'</option>').join(''); });});
+  document.getElementById('rback').onclick=openNewRequest;
+  document.getElementById('rf_submit').onclick=()=>submitRequest(k);
+}
+async function submitRequest(k){ const r=REQS[k]; const body={app_id:APPID};
+  for(const f of r.fields){ const el=document.getElementById('rf_'+f.name); const v=el?el.value:'';
+    if(!v){ if(f.required===false) continue; document.getElementById('rf_err').style.display='block'; document.getElementById('rf_err').textContent='Please fill '+f.label; return; }
+    body[f.name]=f.type==='number'?Number(v):v; }
+  const res=await bpost('/bridge/'+r.verb, body);
+  if(!res.ok||res.json.error){ const e=document.getElementById('rf_err'); e.style.display='block'; e.textContent=(res.json&&res.json.error)||('failed '+res.status); return; }
+  toast('Request submitted ✓'); closeDrawer(); await loadList();
+}
+function toast(m){ let t=document.getElementById('toast'); if(!t){ t=document.createElement('div'); t.id='toast';
+  t.style.cssText='position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#14311f;border:1px solid #2a6b45;color:#9fe6bf;padding:10px 16px;border-radius:10px;z-index:100;transition:opacity .3s'; document.body.appendChild(t); }
+  t.textContent=m; t.style.opacity='1'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.opacity='0',2600); }
 // A governance.decision's evidence_manifest IS the reconstruction manifest (ADR-0046): it pins the
 // RECOMMENDATION admitted, the RULE applied, and the FACTS relied on. Render each — resolved + drillable —
 // plus the human DISCRETION basis (rationale). From the decision you can walk back to every input.
