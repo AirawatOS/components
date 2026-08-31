@@ -75,8 +75,9 @@ async function boot(){
   document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
   render();
 }
-let EMP=[],COMP=[],ALLOC=[],PROJ=[];
+let EMP=[],COMP=[],ALLOC=[],PROJ=[],SCHED={};
 async function reload(){ [ACC,BUD,TXN,UNITS,EMP,COMP,ALLOC,PROJ]=await Promise.all([query('finance.account'),query('finance.budget'),query('finance.transaction'),query('org.org_unit'),query('org.employee'),query('hr.compensation'),query('project.allocation'),query('project.project')]);
+  try{SCHED=await api('/bridge/payroll-schedule',{app_id:APP,action:'get'})||{};}catch(e){SCHED={};}
   document.getElementById('c-accounts').textContent=ACC.length; document.getElementById('c-budgets').textContent=BUD.length; document.getElementById('c-journal').textContent=TXN.length;
   const cp=document.getElementById('c-payroll'); if(cp)cp.textContent=COMP.length; }
 function render(){ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB)); ({accounts:rAcc,budgets:rBud,journal:rJnl,payroll:rPay}[TAB])(); }
@@ -178,8 +179,17 @@ function rPay(){
       <td><button class="btn sm ghost" onclick='setComp("${esc(e.id)}")'>${c?'edit':'set cost'}</button></td></tr>`;}).join('');
   const salaryTxn=TXN.filter(t=>t.source_kind==='payroll').sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
   const txnRows=salaryTxn.map(t=>`<tr><td>${esc((t.memo||'').replace('Salary apportionment ',''))}</td><td>${esc(projName(t.project))}</td><td class="num">${money(t.amount)}</td><td><span class="pill posted">${esc(t.status)}</span></td></tr>`).join('');
-  document.getElementById('main').innerHTML=`<div class="head"><h2>Payroll → projects</h2><span class="sub">apportion labour cost to projects by allocation %</span></div>
-    <div class="card"><div style="padding:12px 16px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+  const sc=SCHED||{};
+  const schedCard=`<div class="card"><div style="padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <div><b>⏱ Automatic monthly run</b><div class="muted" style="font-size:12px">${sc.enabled?('ON · day '+sc.day+' each month'):'off'}${sc.next_run?(' · next '+String(sc.next_run).slice(0,10)):''}${sc.last_run?(' · last '+String(sc.last_run).slice(0,10)+' ('+(sc.last_status||'')+')'):''}</div></div>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;letter-spacing:0"><span class="muted">Day of month</span><input id="sc_day" type="number" min="1" max="28" value="${sc.day||28}" style="width:66px"></label>
+      <button class="btn ${sc.enabled?'':'pri'}" onclick="toggleSchedule(${sc.enabled?'false':'true'})">${sc.enabled?'Turn off':'Turn on'}</button>
+      ${sc.enabled?'<button class="btn ghost" onclick="toggleSchedule(true)">Save day</button>':''}
+      <span class="muted" style="margin-left:auto;font-size:12px">Apportions the current month, hands-off (the platform scheduler fires it).</span>
+    </div></div>`;
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Payroll → projects</h2><span class="sub">apportion labour cost to projects by allocation %</span></div>`
+    + schedCard
+    + `<div class="card"><div style="padding:12px 16px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
         <div style="max-width:150px"><label>Period</label><input id="pay_period" value="${curPeriod()}" placeholder="2026-08"></div>
         <button class="btn" onclick="previewPay()">Preview</button>
         <button class="btn pri" onclick="runPay()">Run apportionment</button>
@@ -207,6 +217,11 @@ async function previewPay(){const period=val('pay_period');const r=await api('/b
   const skip=(r.skipped||[]).map(s=>`<tr><td>${esc(s.employee_name||s.employee)}</td><td>${esc(projName(s.project))}</td><td colspan=3 class="muted">skipped — ${esc(s.reason)}</td></tr>`).join('');
   el.innerHTML=`<div style="padding:0 16px 14px"><table><thead><tr><th>Employee</th><th>Project</th><th class="num">%</th><th class="num">Monthly</th><th class="num">Apportioned</th></tr></thead><tbody>${lines}${skip}</tbody></table>
     <div style="margin-top:8px" class="muted">${r.count} line(s) · total <b>${money(r.total)}</b>${r.skipped.length?(' · '+r.skipped.length+' skipped'):''}</div></div>`;
+}
+async function toggleSchedule(enabled){const day=Number(val('sc_day'))||28;
+  const r=await api('/bridge/payroll-schedule',{app_id:APP,action:'set',enabled,day});
+  if(r.error){toast(r.error);return;}
+  SCHED=r; render(); toast(enabled?('Automatic run ON · day '+r.day+(r.install==='ready'?'':(r.install?(' ('+r.install+')'):'')) ):'Automatic run OFF');
 }
 async function runPay(){const period=val('pay_period');const r=await api('/bridge/payroll-apportion',{app_id:APP,period});
   if(r.error){document.getElementById('pay_result').innerHTML=`<div class="err" style="padding:12px 16px">${esc(r.error)}</div>`;return;}

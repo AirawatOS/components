@@ -13,6 +13,8 @@ Handlers: payroll-preview (dry-run: what would post) · payroll-apportion (post)
 import time as _t
 
 FINANCE_ENG = "ds:airawatdeveloper:engine/finance-engine"
+PAYROLL_ENGINE_ID = "ds:airawatdeveloper:engine/payroll-engine"
+_ADMIN = {"platform.tenant-admin", "platform.steward", "admin"}
 
 
 def _current_comp(ctx, employee, period):
@@ -93,7 +95,51 @@ def h_payroll_apportion(ctx):
             "already_posted": already, "skipped": skipped, "errors": errors}, None
 
 
-HANDLERS = {"payroll-preview": h_payroll_preview, "payroll-apportion": h_payroll_apportion}
+# --- SCHEDULE TOGGLE: manage the automatic monthly run (a platform.schedule record) -------------------------
+_SCHED_SUFFIX = "platform/schedule/payroll-monthly"
+
+
+def _day_from_cron(cron):
+    try:
+        return int((cron or "").split()[2])
+    except Exception:
+        return None
+
+
+def _sched_state(rec):
+    rec = rec or {}
+    return {"exists": bool(rec.get("id")), "enabled": bool(rec.get("enabled")),
+            "day": _day_from_cron(rec.get("cron")) or 28, "cron": rec.get("cron"),
+            "next_run": rec.get("next_run"), "last_run": rec.get("last_run"), "last_status": rec.get("last_status")}
+
+
+def h_payroll_schedule(ctx):
+    """get → the current automatic-run state; set {enabled, day} → upsert the platform.schedule + (on enable) ensure
+    the per-tenant install-as-grant so the scheduler can actually fire it. Admin-gated for set."""
+    body, tenant = ctx["body"], ctx["tenant"]
+    sid = f"ds:{tenant}:{_SCHED_SUFFIX}"
+    cur = ctx["kget"](sid) or {}
+    if body.get("action", "get") == "get":
+        return _sched_state(cur), None
+    if not (set(ctx["claims"].get("roles", [])) & _ADMIN):
+        return None, "managing the payroll schedule requires a tenant admin"
+    enabled = bool(body.get("enabled"))
+    day = int(body.get("day") or _day_from_cron(cur.get("cron")) or 28)
+    day = max(1, min(28, day))                              # 1–28 so it exists in every month (5-field cron has no last-day)
+    rec = {**cur, "schema": "platform.schedule", "id": sid, "tenant": tenant,
+           "name": "Monthly payroll apportionment", "component": PAYROLL_ENGINE_ID,
+           "cron": f"0 2 {day} * *", "enabled": enabled, "overlap": "skip"}
+    ctx["kwrite"](sid, rec)
+    install = None
+    if enabled and ctx.get("ensure_install"):              # mint the scheduler's run-token (idempotent) so it can fire
+        install = ctx["ensure_install"](PAYROLL_ENGINE_ID)
+    st = _sched_state(rec)
+    st["install"] = ("error: " + install["error"]) if (install and install.get("error")) else ("ready" if install else None)
+    return st, None
+
+
+HANDLERS = {"payroll-preview": h_payroll_preview, "payroll-apportion": h_payroll_apportion,
+            "payroll-schedule": h_payroll_schedule}
 
 
 # --- HEADLESS / SCHEDULED RUN (the monthly cron path) --------------------------------------------------------
