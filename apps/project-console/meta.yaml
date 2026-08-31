@@ -1,0 +1,15 @@
+# PROJECT CONSOLE (kind=app) — the results-contract cockpit. Author a proposal (outcome→output→milestones→
+# deliverables→outlay), submit for approval, and once active track Plan vs Actual (real posted ledger), run reviews,
+# and file the evaluation report. Every state change flows through the project-engine verbs (/bridge/proposal-submit,
+# proposal-decide, project-rollup/review/evaluate/adjust) — the app is screens only; the engine holds the logic + grants.
+component_id: ds:airawatdeveloper:app/project-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Project Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [project.project, project.proposal, project.review, project.evaluation, org.org_unit, org.employee, finance.budget]
+writes: []
+roles: [platform.tenant-admin]

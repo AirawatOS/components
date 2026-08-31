@@ -1,0 +1,320 @@
+<!doctype html><meta charset="utf-8"><title>Project Console</title>
+<!--
+  PROJECT CONSOLE — the results-contract cockpit. Author a PROPOSAL (outcome→output→milestones→deliverables→outlay),
+  submit for APPROVAL (a decided change-request → governance.decision + committed budget), then track Plan vs Actual
+  from the REAL posted ledger, run REVIEWS, and file the EVALUATION report. Adjustments re-baseline (new version →
+  re-approval). All logic is in the project-engine (/bridge/proposal-submit · proposal-decide · project-rollup ·
+  project-review · project-evaluate · project-adjust) — this app is screens only.
+-->
+<style>
+  :root{--bg:#0b0f16;--panel:#141b26;--line:#232d3b;--ink:#e6edf3;--dim:#8b98a9;--accent:#4c6ef5;--good:#2ea043;--warn:#d29922;--bad:#e5534b}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;height:100%}
+  .nav{width:196px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(8,12,18,.5)}
+  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 12px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
+  .nav a:hover{background:#161f2b}.nav a.on{background:#1b2748;color:#b9c7ff}
+  .nav a .c{margin-left:auto;font-size:11px;color:var(--dim);background:#0d1117;border:1px solid var(--line);border-radius:20px;padding:0 7px}
+  .main{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+  .head{display:flex;align-items:center;margin-bottom:14px}.head h2{margin:0;font-size:18px}.head .sub{color:var(--dim);margin-left:10px;font-size:12px}
+  .right{margin-left:auto;display:flex;gap:8px}
+  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#3b4a63}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.pri:hover{filter:brightness(1.1)}
+  .btn.sm{padding:3px 9px;font-size:12px}.btn.ghost{background:none}.btn.danger{color:#ffb3ae;border-color:#6d2b2b}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:0;margin-bottom:12px;overflow:hidden}
+  .card .pad{padding:14px 16px}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:#121a25}tr.clk{cursor:pointer}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .pill.draft,.pill.submitted{color:#e6c34a;border-color:#7a5c12}.pill.approved,.pill.active,.pill.on_track{color:#7ee2a8;border-color:#1f6f43}
+  .pill.rejected,.pill.off_track,.pill.closed{color:#ffb3ae;border-color:#6d2b2b}.pill.review,.pill.at_risk,.pill.evaluation{color:#9fd0ff;border-color:#274a6b}
+  .bar{height:7px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden;min-width:120px}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,#2ea043,#d29922)}
+  .bar > i.over{background:linear-gradient(90deg,#d29922,#e5534b)}
+  .empty{color:var(--dim);padding:24px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 4px}
+  input,select,textarea{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
+  textarea{resize:vertical;min-height:56px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid.g3{grid-template-columns:1fr 1fr 1fr}.grid.g4{grid-template-columns:1fr 1fr 1fr 1fr}.row{margin-bottom:12px}
+  .sec{border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+  .sec > h4{margin:0;padding:10px 14px;background:#0f1720;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);display:flex;align-items:center}
+  .sec > h4 .btn{margin-left:auto}.sec .body{padding:12px 14px}
+  .rowline{display:grid;gap:8px;align-items:end;margin-bottom:8px}
+  .x{cursor:pointer;color:var(--dim);border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:#131a24}.x:hover{color:#ffb3ae;border-color:#6d2b2b}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding:4vh 16px;z-index:30}
+  .modal.open{display:flex}.sheet{background:#0f151d;border:1px solid var(--line);border-radius:14px;padding:20px;width:720px;max-width:100%;max-height:92vh;overflow:auto}
+  .sheet.wide{width:860px}.sheet h3{margin:0 0 4px}.muted{color:var(--dim)}.err{color:#ffb3ae;font-size:12px;margin-top:8px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+  .kpi{background:#0f1720;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim)}.kpi .v{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chain{font-size:13px}.chain .o{margin-bottom:10px;padding-left:12px;border-left:2px solid #2b3852}
+  .chain .out{margin:4px 0 4px 14px;padding-left:10px;border-left:2px solid #22303f;color:var(--ink)}
+  .chain .st{color:var(--dim);font-size:12px}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1b2748;border:1px solid #33468a;color:#b9c7ff;padding:10px 16px;border-radius:10px;z-index:50;opacity:0;transition:opacity .3s}
+</style>
+
+<div class="wrap">
+  <nav class="nav">
+    <h1>📁 Projects</h1>
+    <a data-t="portfolio"><span>📊</span> Portfolio <span class="c" id="c-portfolio">0</span></a>
+    <a data-t="propose"><span>✍️</span> Propose</a>
+    <a data-t="approvals"><span>⚖️</span> Approvals <span class="c" id="c-approvals">0</span></a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP='project-console';
+let TENANT='', TAB='portfolio', PROJ=[], PROP=[], BUD=[], UNITS=[], EMP=[], ROLL={projects:[],by_unit:[],totals:{}};
+const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+const uname=id=>{const u=UNITS.find(x=>x.id===id);return u?u.name:(id||'—');};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',3200);}
+function closeM(){document.getElementById('modal').classList.remove('open');}
+function ferr(m){const e=document.getElementById('ferr');if(e)e.textContent=m;}
+async function query(schema){try{const r=await api('/bridge/query',{app_id:APP,schema});return (r.results||[]).map(x=>x.object||x);}catch(e){return [];}}
+
+async function boot(){
+  try{const se=await fetch('/session').then(r=>r.json());TENANT=se.tenant||(se.sub||'').replace(/^user:\/\//,'').split('/')[0];}catch(e){}
+  await reload();
+  document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
+  render();
+}
+async function reload(){
+  [PROJ,PROP,BUD,UNITS,EMP]=await Promise.all([query('project.project'),query('project.proposal'),query('finance.budget'),query('org.org_unit'),query('org.employee')]);
+  try{ROLL=await api('/bridge/project-rollup',{app_id:APP});}catch(e){ROLL={projects:[],by_unit:[],totals:{}};}
+  document.getElementById('c-portfolio').textContent=PROJ.length;
+  document.getElementById('c-approvals').textContent=PROP.filter(p=>p.status==='submitted').length;
+}
+function render(){document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));({portfolio:rPortfolio,propose:rPropose,approvals:rApprovals}[TAB])();}
+
+/* ---------------- PORTFOLIO (rollup) ---------------- */
+function rPortfolio(){
+  const R=ROLL.projects||[];
+  const rows=R.map(r=>{const used=r.allocated?100*(r.spent)/r.allocated:0;const over=r.spent>r.allocated;
+    return `<tr class="clk" data-p="${esc(r.project)}"><td><b>${esc(r.code)}</b><div class="muted" style="font-size:11px">${esc(r.name||'')}</div></td>
+      <td>${esc(uname(r.org_unit))}</td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td>
+      <td class="num">${money(r.allocated)}</td><td class="num">${money(r.spent)}</td><td class="num">${money(r.revenue)}</td>
+      <td class="num"><b style="color:${r.variance<0?'#ffb3ae':'#7ee2a8'}">${money(r.variance)}</b></td>
+      <td><div class="bar"><i class="${over?'over':''}" style="width:${Math.min(100,used).toFixed(0)}%"></i></div>
+        <span class="muted" style="font-size:11px">${r.milestone_progress==null?'—':r.milestone_progress+'% milestones'}</span></td></tr>`;}).join('');
+  const t=ROLL.totals||{};
+  const unitRows=(ROLL.by_unit||[]).map(u=>`<tr><td><b>${esc(uname(u.org_unit))}</b></td><td class="num">${u.projects}</td>
+     <td class="num">${money(u.allocated)}</td><td class="num">${money(u.spent)}</td><td class="num">${money(u.revenue)}</td></tr>`).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Portfolio</h2><span class="sub">plan vs actual · real posted ledger</span>
+      <div class="right"><button class="btn pri" onclick="TAB='propose';render()">＋ New proposal</button></div></div>
+    <div class="kpis"><div class="kpi"><div class="l">Projects</div><div class="v">${R.length}</div></div>
+      <div class="kpi"><div class="l">Allocated</div><div class="v">${money(t.allocated)}</div></div>
+      <div class="kpi"><div class="l">Spent</div><div class="v">${money(t.spent)}</div></div>
+      <div class="kpi"><div class="l">Revenue</div><div class="v">${money(t.revenue)}</div></div></div>`
+    + (R.length?`<div class="card"><table><thead><tr><th>Project</th><th>Unit</th><th>Status</th><th class="num">Allocated</th><th class="num">Spent</th><th class="num">Revenue</th><th class="num">Variance</th><th>Progress</th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">No projects yet — author a proposal to get started.</div>`)
+    + (unitRows?`<div class="head" style="margin-top:6px"><h2 style="font-size:15px">By owning unit</h2><span class="sub">Budget · Actuals</span></div>
+        <div class="card"><table><thead><tr><th>Unit</th><th class="num">Projects</th><th class="num">Allocated</th><th class="num">Spent</th><th class="num">Revenue</th></tr></thead><tbody>${unitRows}</tbody></table></div>`:'');
+  document.querySelectorAll('tr.clk').forEach(tr=>tr.onclick=()=>openProject(tr.dataset.p));
+}
+
+/* ---------------- PROPOSE (results-chain authoring) ---------------- */
+let F={outcomes:[],outputs:[],milestones:[],deliverables:[],outlay:[]};
+const RES_TYPES=['labour','travel','asset','procurement','services','other'];
+function rPropose(){
+  F={outcomes:[{}],outputs:[{}],milestones:[],deliverables:[],outlay:[{}]};
+  ADJ=null;
+  paintPropose('New project proposal','Author the results contract — why, how, proof, cost.','submitProposal');
+}
+function paintPropose(title,sub,submitFn){
+  const unitOpts=`<option value="">— unit —</option>`+UNITS.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+  const empOpts=`<option value="">— sponsor —</option>`+EMP.map(e=>`<option value="${esc(e.citizen||e.id)}">${esc(e.name||e.id)}</option>`).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span></div>
+    <div class="card"><div class="pad">
+      <div class="grid g3"><div class="row"><label>Code</label><input id="p_code" placeholder="ROADS-26" ${ADJ?'disabled':''} value="${ADJ?esc(ADJ.code):''}"></div>
+        <div class="row"><label>Name</label><input id="p_name" placeholder="Ward road resurfacing" value="${ADJ?esc(ADJ.name||''):''}"></div>
+        <div class="row"><label>Owning unit</label><select id="p_unit">${unitOpts}</select></div></div>
+      <div class="grid g3"><div class="row"><label>Sponsor</label><select id="p_sponsor">${empOpts}</select></div>
+        <div class="row"><label>Start</label><input id="p_start" type="date" value="${ADJ?esc(ADJ.start_date||''):''}"></div>
+        <div class="row"><label>End</label><input id="p_end" type="date" value="${ADJ?esc(ADJ.end_date||''):''}"></div></div>
+      <div class="row"><label>Summary</label><textarea id="p_summary" placeholder="One-paragraph description of the project"></textarea></div>
+    </div></div>
+    <div id="secs"></div>
+    <div class="head" style="margin-top:4px"><div class="right" style="margin-left:0"><b id="totalv" class="muted"></b></div>
+      <div class="right"><button class="btn ghost" onclick="TAB='portfolio';render()">Cancel</button><button class="btn pri" onclick="${submitFn}()">${ADJ?'Submit adjustment':'Submit for approval'}</button></div></div>
+    <div id="ferr" class="err"></div>`;
+  if(ADJ){document.getElementById('p_unit').value=ADJ.org_unit||'';document.getElementById('p_sponsor').value=ADJ.sponsor||'';}
+  paintSecs();
+}
+function paintSecs(){
+  const outcomeOpts=()=>F.outcomes.map((o,i)=>`<option value="OC${i}">${esc(o.statement||('outcome '+(i+1)))}</option>`).join('');
+  const outputOpts=()=>F.outputs.map((o,i)=>`<option value="OP${i}">${esc(o.statement||('output '+(i+1)))}</option>`).join('');
+  const msOpts=()=>F.milestones.map((m,i)=>`<option value="MS${i}">${esc(m.name||('milestone '+(i+1)))}</option>`).join('');
+  const H=[];
+  // OUTCOMES
+  H.push(sec('🎯 Outcomes — the WHY','addRow("outcomes")',F.outcomes.map((o,i)=>
+    `<div class="rowline" style="grid-template-columns:2fr 1fr 1fr auto">
+      <div><label>Outcome statement</label><input value="${esc(o.statement||'')}" oninput="setF('outcomes',${i},'statement',this.value)" placeholder="Fewer waterlogging complaints"></div>
+      <div><label>Indicator</label><input value="${esc(o.indicator||'')}" oninput="setF('outcomes',${i},'indicator',this.value)" placeholder="complaints/monsoon"></div>
+      <div><label>Target</label><input value="${esc(o.target||'')}" oninput="setF('outcomes',${i},'target',this.value)" placeholder="−40%"></div>
+      <div class="x" onclick="delRow('outcomes',${i})">✕</div></div>`).join('')));
+  // OUTPUTS
+  H.push(sec('🔧 Outputs — the HOW (each → an outcome)','addRow("outputs")',F.outputs.map((o,i)=>
+    `<div class="rowline" style="grid-template-columns:2fr 1.2fr 1fr auto">
+      <div><label>Output statement</label><input value="${esc(o.statement||'')}" oninput="setF('outputs',${i},'statement',this.value)" placeholder="3.2 km of drains desilted"></div>
+      <div><label>Contributes to</label><select onchange="setF('outputs',${i},'outcome',this.value)">${F.outcomes.map((c,ci)=>`<option value="OC${ci}"${o.outcome==='OC'+ci?' selected':''}>${esc(c.statement||('outcome '+(ci+1)))}</option>`).join('')}</select></div>
+      <div><label>Target</label><input value="${esc(o.target||'')}" oninput="setF('outputs',${i},'target',this.value)" placeholder="3.2 km"></div>
+      <div class="x" onclick="delRow('outputs',${i})">✕</div></div>`).join('')));
+  // MILESTONES
+  H.push(sec('📅 Milestones','addRow("milestones")',F.milestones.map((m,i)=>
+    `<div class="rowline" style="grid-template-columns:2fr 1fr auto">
+      <div><label>Milestone</label><input value="${esc(m.name||'')}" oninput="setF('milestones',${i},'name',this.value)" placeholder="Phase 1 drains complete"></div>
+      <div><label>Due date</label><input type="date" value="${esc(m.due_date||'')}" oninput="setF('milestones',${i},'due_date',this.value)"></div>
+      <div class="x" onclick="delRow('milestones',${i})">✕</div></div>`).join('')));
+  // DELIVERABLES
+  H.push(sec('📦 Deliverables','addRow("deliverables")',F.deliverables.map((d,i)=>
+    `<div class="rowline" style="grid-template-columns:2fr 1fr 1fr auto">
+      <div><label>Deliverable</label><input value="${esc(d.name||'')}" oninput="setF('deliverables',${i},'name',this.value)" placeholder="Completion certificate"></div>
+      <div><label>Milestone</label><select onchange="setF('deliverables',${i},'milestone',this.value)"><option value="">—</option>${F.milestones.map((m,mi)=>`<option value="MS${mi}"${d.milestone==='MS'+mi?' selected':''}>${esc(m.name||('milestone '+(mi+1)))}</option>`).join('')}</select></div>
+      <div><label>Output</label><select onchange="setF('deliverables',${i},'output',this.value)"><option value="">—</option>${F.outputs.map((o,oi)=>`<option value="OP${oi}"${d.output==='OP'+oi?' selected':''}>${esc(o.statement||('output '+(oi+1)))}</option>`).join('')}</select></div>
+      <div class="x" onclick="delRow('deliverables',${i})">✕</div></div>`).join('')));
+  // OUTLAY
+  H.push(sec('💵 Outlay — resources × rates','addRow("outlay")',F.outlay.map((o,i)=>
+    `<div class="rowline" style="grid-template-columns:1fr 1.6fr .8fr .8fr .8fr 1fr auto">
+      <div><label>Type</label><select onchange="setF('outlay',${i},'resource_type',this.value)">${RES_TYPES.map(t=>`<option${o.resource_type===t?' selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Description</label><input value="${esc(o.description||'')}" oninput="setF('outlay',${i},'description',this.value)" placeholder="Excavator hire"></div>
+      <div><label>Qty</label><input type="number" value="${o.quantity!=null?esc(o.quantity):''}" oninput="setOutlay(${i},'quantity',this.value)"></div>
+      <div><label>Unit</label><input value="${esc(o.unit||'')}" oninput="setF('outlay',${i},'unit',this.value)" placeholder="days"></div>
+      <div><label>Rate</label><input type="number" value="${o.rate!=null?esc(o.rate):''}" oninput="setOutlay(${i},'rate',this.value)"></div>
+      <div><label>Amount</label><input id="amt${i}" value="${o.amount!=null?esc(o.amount):''}" oninput="setF('outlay',${i},'amount',Number(this.value)||0)"></div>
+      <div class="x" onclick="delRow('outlay',${i})">✕</div></div>`).join('')));
+  document.getElementById('secs').innerHTML=H.join('');
+  updTotal();
+}
+function sec(title,addFn,body){return `<div class="sec"><h4>${title}<button class="btn sm" onclick='${addFn}'>＋ Add</button></h4><div class="body">${body||'<span class="muted">none yet</span>'}</div></div>`;}
+function setF(arr,i,k,v){F[arr][i][k]=v;}
+function setOutlay(i,k,v){F.outlay[i][k]=Number(v)||0;const o=F.outlay[i];if(o.quantity&&o.rate){o.amount=Math.round(o.quantity*o.rate*100)/100;const a=document.getElementById('amt'+i);if(a)a.value=o.amount;}updTotal();}
+function addRow(arr){F[arr].push({});paintSecs();}
+function delRow(arr,i){F[arr].splice(i,1);paintSecs();}
+function updTotal(){const t=F.outlay.reduce((s,o)=>s+(Number(o.amount)||0),0);const e=document.getElementById('totalv');if(e)e.textContent='Total outlay: '+money(t);}
+function collectProposal(){
+  return {project:{code:val('p_code'),name:val('p_name'),org_unit:val('p_unit'),sponsor:val('p_sponsor'),start_date:val('p_start'),end_date:val('p_end'),
+      objective:(F.outcomes[0]||{}).statement},
+    proposal:{summary:val('p_summary'),outcomes:F.outcomes.filter(o=>o.statement),outputs:F.outputs.filter(o=>o.statement),
+      milestones:F.milestones.filter(m=>m.name),deliverables:F.deliverables.filter(d=>d.name),outlay:F.outlay.filter(o=>o.amount)}};
+}
+async function submitProposal(){
+  const b=collectProposal();
+  if(!b.project.code)return ferr('Project code required');
+  if(!b.proposal.outcomes.length)return ferr('At least one outcome (the why) is required');
+  if(!b.proposal.outputs.length)return ferr('At least one output (the how) is required');
+  const r=await api('/bridge/proposal-submit',{app_id:APP,...b});
+  if(r.error)return ferr(r.error);
+  toast('Submitted '+r.proposal.split('/').pop()+' · '+money(r.total_outlay));await reload();TAB='approvals';render();
+}
+
+/* ---------------- APPROVALS ---------------- */
+function rApprovals(){
+  const subs=PROP.filter(p=>p.status==='submitted').sort((a,b)=>(b.submitted_at||'').localeCompare(a.submitted_at||''));
+  const rows=subs.map(p=>{const proj=PROJ.find(x=>x.id===p.project)||{};
+    return `<tr class="clk" data-p="${esc(p.project)}"><td><b>${esc(proj.code||'')}</b> <span class="muted">v${p.version}</span><div class="muted" style="font-size:11px">${esc(p.title||'')}</div></td>
+      <td>${esc(uname(proj.org_unit))}</td><td class="num">${money(p.total_outlay)}</td>
+      <td>${(p.outcomes||[]).length} oc · ${(p.outputs||[]).length} op · ${(p.milestones||[]).length} ms</td>
+      <td><button class="btn sm pri" onclick='event.stopPropagation();decide("${esc(p.project)}",${p.version},"approve")'>Approve</button>
+          <button class="btn sm danger" onclick='event.stopPropagation();decide("${esc(p.project)}",${p.version},"reject")'>Reject</button></td></tr>`;}).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Approvals</h2><span class="sub">submitted proposals — a decided change-request</span></div>`
+    + (subs.length?`<div class="card"><table><thead><tr><th>Proposal</th><th>Unit</th><th class="num">Outlay</th><th>Results</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+       :`<div class="empty">Nothing awaiting approval.</div>`);
+  document.querySelectorAll('tr.clk').forEach(tr=>tr.onclick=()=>openProject(tr.dataset.p));
+}
+function decide(pid,version,decision){
+  const proj=PROJ.find(x=>x.id===pid)||{};const isApprove=decision==='approve';
+  document.getElementById('sheet').className='sheet';
+  document.getElementById('sheet').innerHTML=`<h3>${isApprove?'Approve':'Reject'} · ${esc(proj.code||'')} v${version}</h3>
+    <p class="muted">${isApprove?'Approving activates the project and commits the budget from the outlay (a governance.decision is recorded).':'Rejection records a decision with your reason.'}</p>
+    ${isApprove?`<div class="grid"><div class="row"><label>Fiscal year</label><input id="d_fy" value="FY${new Date().getFullYear()}"></div>
+      <div class="row"><label>Charge to account (optional)</label><input id="d_acct" placeholder="ds:${esc(TENANT)}:finance/account/5000"></div></div>`:''}
+    <div class="row"><label>Rationale</label><textarea id="d_rat" placeholder="${isApprove?'Aligned with ward drainage priorities; outlay reasonable.':'Reason for rejection'}"></textarea></div>
+    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn ${isApprove?'pri':'danger'}" onclick='doDecide("${esc(pid)}",${version},"${decision}")'>${isApprove?'Approve & commit budget':'Confirm rejection'}</button>
+      <button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function doDecide(pid,version,decision){
+  const body={app_id:APP,project:pid,version,decision,rationale:val('d_rat')};
+  if(decision==='approve'){if(val('d_fy'))body.fiscal_year=val('d_fy');if(val('d_acct'))body.account=val('d_acct');}
+  const r=await api('/bridge/proposal-decide',body);
+  if(r.error)return ferr(r.error);
+  closeM();toast(decision==='approve'?('Approved · budget '+money(r.allocated)+' committed'):'Rejected');
+  await reload();render();
+}
+
+/* ---------------- PROJECT DETAIL (drawer) ---------------- */
+function openProject(pid){
+  const proj=PROJ.find(x=>x.id===pid);if(!proj)return;
+  const roll=(ROLL.projects||[]).find(r=>r.project===pid)||{};
+  const base=PROP.filter(p=>p.project===pid).sort((a,b)=>(b.version||0)-(a.version||0)).find(p=>p.version===proj.baseline_version)
+           ||PROP.filter(p=>p.project===pid).sort((a,b)=>(b.version||0)-(a.version||0))[0]||{};
+  const chain=(base.outcomes||[]).map((oc,ci)=>{const ops=(base.outputs||[]).filter(o=>o.outcome==='OC'+ci);
+    return `<div class="o"><b>🎯 ${esc(oc.statement||'')}</b> <span class="st">${esc(oc.indicator||'')}${oc.target?' → '+esc(oc.target):''}</span>`
+      +ops.map(o=>`<div class="out">🔧 ${esc(o.statement||'')} <span class="st">${o.target?'→ '+esc(o.target):''}</span></div>`).join('')+`</div>`;}).join('')
+    ||'<span class="muted">no baseline yet</span>';
+  const ms=(base.milestones||[]).map(m=>`<span class="pill ${m.status==='done'?'active':''}">${esc(m.name||'')}${m.due_date?' · '+esc(m.due_date):''}</span>`).join(' ');
+  const outlay=(base.outlay||[]).map(o=>`<tr><td>${esc(o.resource_type||'')}</td><td>${esc(o.description||'')}</td><td class="num">${o.quantity||''} ${esc(o.unit||'')}</td><td class="num">${money(o.rate)}</td><td class="num">${money(o.amount)}</td></tr>`).join('');
+  const active=['active','review','evaluation'].includes(proj.status);
+  document.getElementById('sheet').className='sheet wide';
+  document.getElementById('sheet').innerHTML=`<div style="display:flex;align-items:center"><h3>${esc(proj.code)} — ${esc(proj.name||'')}</h3>
+      <span class="pill ${esc(proj.status)}" style="margin-left:10px">${esc(proj.status)}</span>
+      <span class="muted" style="margin-left:auto">baseline v${proj.baseline_version||'—'} · ${esc(uname(proj.org_unit))}</span></div>
+    <div class="kpis"><div class="kpi"><div class="l">Plan / Allocated</div><div class="v">${money(roll.allocated)}</div></div>
+      <div class="kpi"><div class="l">Spent (actual)</div><div class="v">${money(roll.spent)}</div></div>
+      <div class="kpi"><div class="l">Variance</div><div class="v" style="color:${(roll.variance||0)<0?'#ffb3ae':'#7ee2a8'}">${money(roll.variance)}</div></div>
+      <div class="kpi"><div class="l">Milestones</div><div class="v">${roll.milestone_progress==null?'—':roll.milestone_progress+'%'}</div></div></div>
+    <div class="sec"><h4>Results chain</h4><div class="body chain">${chain}</div></div>
+    ${ms?`<div class="sec"><h4>Milestones</h4><div class="body">${ms}</div></div>`:''}
+    ${outlay?`<div class="sec"><h4>Outlay → budget ${money(base.total_outlay)}</h4><div class="body" style="padding:0"><table><thead><tr><th>Type</th><th>Description</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody>${outlay}</tbody></table></div></div>`:''}
+    <div id="ferr" class="err"></div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      ${active?`<button class="btn" onclick='runReview("${esc(pid)}")'>Run review</button>
+        <button class="btn" onclick='openEvaluate("${esc(pid)}")'>Evaluation report</button>
+        <button class="btn" onclick='startAdjust("${esc(pid)}")'>Adjust (re-baseline)</button>`:''}
+      <button class="btn ghost" style="margin-left:auto" onclick="closeM()">Close</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function runReview(pid){const narrative=prompt('Review note (optional):')||'';const r=await api('/bridge/project-review',{app_id:APP,project:pid,narrative});
+  if(r.error)return ferr(r.error);closeM();toast('Review: '+r.status+' · spent '+money(r.spent_to_date)+' of '+money(r.planned_to_date));await reload();render();}
+function openEvaluate(pid){
+  document.getElementById('sheet').className='sheet';
+  document.getElementById('sheet').innerHTML=`<h3>Evaluation report</h3><p class="muted">Assess outcomes achieved, outputs delivered, value for money.</p>
+    <div class="grid"><div class="row"><label>Overall rating</label><select id="e_rating">${['satisfactory','highly_satisfactory','moderate','unsatisfactory'].map(x=>`<option>${x}</option>`).join('')}</select></div>
+      <div class="row"><label>Recommendation</label><select id="e_rec">${['continue','close','scale','redesign'].map(x=>`<option>${x}</option>`).join('')}</select></div></div>
+    <div class="row"><label>Value for money</label><textarea id="e_vfm" placeholder="Cost per output vs benchmark; efficiency notes"></textarea></div>
+    <div class="row"><label>Lessons (one per line)</label><textarea id="e_lessons"></textarea></div>
+    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn pri" onclick='doEvaluate("${esc(pid)}")'>File report</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
+}
+async function doEvaluate(pid){
+  const lessons=val('e_lessons').split('\n').map(s=>s.trim()).filter(Boolean).map(t=>({lesson:t}));
+  const r=await api('/bridge/project-evaluate',{app_id:APP,project:pid,rating:val('e_rating'),recommendation:val('e_rec'),value_for_money:val('e_vfm'),lessons});
+  if(r.error)return ferr(r.error);closeM();toast('Evaluation filed · '+r.recommendation+' · actual '+money(r.outlay_actual));await reload();render();
+}
+let ADJ=null;
+function startAdjust(pid){const proj=PROJ.find(x=>x.id===pid);const base=PROP.filter(p=>p.project===pid).find(p=>p.version===proj.baseline_version)||{};
+  ADJ=proj;closeM();TAB='propose';
+  F={outcomes:base.outcomes&&base.outcomes.length?JSON.parse(JSON.stringify(base.outcomes)):[{}],
+     outputs:base.outputs&&base.outputs.length?JSON.parse(JSON.stringify(base.outputs)):[{}],
+     milestones:JSON.parse(JSON.stringify(base.milestones||[])),deliverables:JSON.parse(JSON.stringify(base.deliverables||[])),
+     outlay:base.outlay&&base.outlay.length?JSON.parse(JSON.stringify(base.outlay)):[{}]};
+  paintPropose('Adjust — '+proj.code+' (new baseline)','Revise the contract; the new version needs re-approval.','submitAdjust');
+}
+async function submitAdjust(){
+  const b=collectProposal();b.project.code=ADJ.code;b.adjust=true;
+  if(!b.proposal.outcomes.length)return ferr('At least one outcome required');
+  const r=await api('/bridge/project-adjust',{app_id:APP,project:ADJ.id,proposal:b.proposal});
+  if(r.error)return ferr(r.error);ADJ=null;toast('Adjustment submitted · v'+r.version);await reload();TAB='approvals';render();
+}
+boot();
+</script>
