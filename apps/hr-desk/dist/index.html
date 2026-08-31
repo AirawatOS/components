@@ -44,6 +44,7 @@
     <h1>🗓️ HR Desk</h1><div class="me" id="me">…</div>
     <a data-t="leave"><span>🏖️</span> Leave</a>
     <a data-t="attendance"><span>⏱️</span> Attendance</a>
+    <a data-t="expenses"><span>🧾</span> Expenses</a>
     <a data-t="approvals"><span>✅</span> Approvals <span class="c" id="c-appr">0</span></a>
   </nav>
   <main class="main" id="main"></main>
@@ -70,12 +71,13 @@ async function boot(){
 }
 async function refreshApprovalsCount(){
   if(!ME){document.getElementById('c-appr').textContent='0';return;}
-  const p=(await query('hr.leave_request',{manager_login:SUB})).filter(l=>l.manager_login===SUB && l.status==='pending');
-  document.getElementById('c-appr').textContent=p.length;
+  const [pl,pe]=await Promise.all([query('hr.leave_request',{manager_login:SUB}),query('hr.expense_claim',{manager_login:SUB})]);
+  const n=pl.filter(l=>l.manager_login===SUB&&l.status==='pending').length + pe.filter(e=>e.manager_login===SUB&&e.status==='pending').length;
+  document.getElementById('c-appr').textContent=n;
 }
 function render(){
   document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));
-  ({leave:rLeave,attendance:rAtt,approvals:rApprovals}[TAB])();
+  ({leave:rLeave,attendance:rAtt,expenses:rExpenses,approvals:rApprovals}[TAB])();
 }
 
 /* ---------- LEAVE ---------- */
@@ -150,18 +152,57 @@ async function rAtt(){
 async function mark(action){ const r=await api('/bridge/attendance-mark',{app_id:APP,action}); if(r.error){toast(r.error);return;} toast(action==='check_in'?('Checked in at '+r.check_in):('Checked out at '+r.check_out)); render(); }
 
 /* ---------- APPROVALS ---------- */
+/* ---------- EXPENSES ---------- */
+async function rExpenses(){
+  const main=document.getElementById('main');
+  main.innerHTML=`<h2>Expenses</h2><div class="sub">Claim a reimbursement — it goes to your manager; on approval it posts to the ledger.</div>
+    <div class="card"><div class="grid g3">
+        <div class="row"><label>Category</label><select id="e_cat">${['travel','office','meals','other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+        <div class="row"><label>Amount</label><input id="e_amt" type="number" placeholder="12000"></div>
+        <div class="row"><label>Incurred on</label><input id="e_date" type="date"></div></div>
+      <div class="grid"><div class="row"><label>Description</label><input id="e_desc" placeholder="Field visit — taxi + stay"></div>
+        <div class="row"><label>Project <span class="muted">(optional)</span></label><input id="e_proj" placeholder="project code"></div></div>
+      <div id="eerr" class="err"></div>
+      <button class="btn pri" onclick="applyExpense()"${ME?'':' disabled'}>Submit claim</button>
+      ${ME?'':'<div class="muted" style="margin-top:8px">No employee record linked to your login.</div>'}</div>
+    <h2 style="font-size:15px">My claims</h2><div id="mine"></div>`;
+  const mine=(await query('hr.expense_claim',{applicant_login:SUB})).filter(e=>e.applicant_login===SUB).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  document.getElementById('mine').innerHTML = mine.length ? `<div class="card"><table><thead><tr><th>Category</th><th>Amount</th><th>Description</th><th>Project</th><th>Status</th></tr></thead><tbody>`
+      + mine.map(e=>`<tr><td>${esc(e.category||'—')}</td><td>${esc(e.amount)}</td><td>${esc(e.description||'—')}</td><td>${esc(e.project||'—')}</td><td><span class="pill ${esc(e.status)}">${esc(e.status)}</span></td></tr>`).join('')
+      + `</tbody></table></div>` : `<div class="empty">No claims yet.</div>`;
+}
+async function applyExpense(){
+  const amt=Number(val('e_amt')); if(!amt||amt<=0){document.getElementById('eerr').textContent='Amount is required';return;}
+  const b={app_id:APP,category:val('e_cat'),amount:amt,description:val('e_desc'),incurred_on:val('e_date')}; if(val('e_proj'))b.project=val('e_proj');
+  const r=await api('/bridge/expense-apply',b);
+  if(r.error){document.getElementById('eerr').textContent=r.error+(r.detail?(' — '+r.detail):'');return;}
+  toast(r.routed_to?('Claim sent to '+(r.manager||'your manager')):'Claim filed (pending)'); render();
+}
+
+/* ---------- APPROVALS (leave + expense) ---------- */
 async function rApprovals(){
   const main=document.getElementById('main');
-  const pend=(await query('hr.leave_request',{manager_login:SUB})).filter(l=>l.manager_login===SUB && l.status==='pending')
-     .sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
-  main.innerHTML=`<h2>Approvals</h2><div class="sub">Leave your team has filed, awaiting your decision.</div>`
-    + (pend.length ? `<div class="card"><table><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th></th></tr></thead><tbody>`
-        + pend.map(l=>`<tr><td><b>${esc(nameOfEmp(l.employee))}</b></td><td>${esc(l.leave_type)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td><td>${esc(l.days!=null?l.days:'—')}</td><td>${esc(l.reason||'—')}</td>
-           <td style="white-space:nowrap"><button class="btn ok sm" onclick="decide('${esc(l.id)}','approve')">Approve</button>
-             <button class="btn sm no" onclick="decide('${esc(l.id)}','reject')">Reject</button></td></tr>`).join('')
-        + `</tbody></table></div>` : `<div class="empty">Nothing awaiting your approval.</div>`);
+  const [pl,pe,buds]=await Promise.all([query('hr.leave_request',{manager_login:SUB}),query('hr.expense_claim',{manager_login:SUB}),query('finance.budget')]);
+  const leaves=pl.filter(l=>l.manager_login===SUB&&l.status==='pending').sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
+  const exps=pe.filter(e=>e.manager_login===SUB&&e.status==='pending').sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
+  const budOpts=id=>`<option value="">— charge to budget —</option>`+buds.map(b=>{const av=(b.allocated||0)-(b.committed||0)-(b.spent||0);return `<option value="${esc(b.id)}">${esc(b.name)} (${av} left)</option>`;}).join('');
+  const leaveTbl = leaves.length ? `<h2 style="font-size:15px">Leave</h2><div class="card"><table><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th></th></tr></thead><tbody>`
+      + leaves.map(l=>`<tr><td><b>${esc(nameOfEmp(l.employee))}</b></td><td>${esc(l.leave_type)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td><td>${esc(l.days!=null?l.days:'—')}</td>
+         <td style="white-space:nowrap"><button class="btn ok sm" onclick="decideLeave('${esc(l.id)}','approve')">Approve</button> <button class="btn sm no" onclick="decideLeave('${esc(l.id)}','reject')">Reject</button></td></tr>`).join('')+`</tbody></table></div>` : '';
+  const expTbl = exps.length ? `<h2 style="font-size:15px">Expense</h2><div class="card"><table><thead><tr><th>Employee</th><th>Category</th><th>Amount</th><th>Project</th><th>Budget</th><th></th></tr></thead><tbody>`
+      + exps.map(e=>`<tr><td><b>${esc(nameOfEmp(e.employee))}</b></td><td>${esc(e.category||'—')}</td><td>${esc(e.amount)}</td><td>${esc(e.project||'—')}</td>
+         <td><select id="eb_${esc(e.id.split('/').pop())}">${budOpts()}</select></td>
+         <td style="white-space:nowrap"><button class="btn ok sm" onclick="decideExpense('${esc(e.id)}','approve')">Approve</button> <button class="btn sm no" onclick="decideExpense('${esc(e.id)}','reject')">Reject</button></td></tr>`).join('')+`</tbody></table></div>` : '';
+  main.innerHTML=`<h2>Approvals</h2><div class="sub">Your team's requests awaiting your decision.</div>`
+    + (leaveTbl||expTbl ? (leaveTbl+expTbl) : `<div class="empty">Nothing awaiting your approval.</div>`);
 }
-async function decide(id,decision){ const r=await api('/bridge/leave-decide',{app_id:APP,leave_id:id,decision}); if(r.error){toast(r.error);return;} toast('Leave '+r.status); await refreshApprovalsCount(); render(); }
+async function decideLeave(id,decision){ const r=await api('/bridge/leave-decide',{app_id:APP,leave_id:id,decision}); if(r.error){toast(r.error);return;} toast('Leave '+r.status); await refreshApprovalsCount(); render(); }
+async function decideExpense(id,decision){
+  const sel=document.getElementById('eb_'+id.split('/').pop()); const budget=sel?sel.value:'';
+  if(decision==='approve'&&!budget){toast('Pick a budget to charge');return;}
+  const r=await api('/bridge/expense-decide',{app_id:APP,expense_id:id,decision,budget});
+  if(r.error){toast(r.error);return;} toast(decision==='approve'?('Approved — posted to ledger'):'Rejected'); await refreshApprovalsCount(); render();
+}
 
 boot();
 </script>

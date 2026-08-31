@@ -4,12 +4,13 @@
 # grants these writes to the hr-desk component; reads (org.employee, hr.*) let it resolve the manager + list records.
 component_id: ds:airawatdeveloper:app/hr-desk
 kind: app
-version: 0.2.0
+version: 0.3.0
 provider: ds:airawat:developer
 display_name: HR Desk
 entrypoint: index.html
 bundle: dist
 sandboxed: true
-required_schemas: [org.employee, hr.leave_request, hr.attendance, platform.inbox_item]
-writes: [hr.leave_request, hr.attendance, platform.inbox_item]
+required_schemas: [org.employee, hr.leave_request, hr.attendance, hr.expense_claim, platform.inbox_item, finance.budget]
+# writes: HR records + (on expense approval) the settlement seam posts finance.transaction + rolls the budget
+writes: [hr.leave_request, hr.attendance, hr.expense_claim, platform.inbox_item, finance.transaction, finance.budget]
 roles: []          # open to every staff member in the tenant (self-service)
