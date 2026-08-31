@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Org Foundation — Basic ERP — a composed SOLUTION bundle (INT-0003). Installing it fans out to its members."""
-MEMBERS = ["ds:airawatdeveloper:app/org-setup"]
+MEMBERS = ["ds:airawatdeveloper:app/org-setup", "ds:airawatdeveloper:app/hr-desk"]
 
 def main():
     print("Solution:", "Org Foundation \u2014 Basic ERP")
