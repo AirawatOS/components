@@ -1,11 +1,15 @@
-# ORG RBAC ENGINE (kind=engine) — projects an org.posting into a live governance.role_grant (subject = the employee's
-# login; role = the posting's role; scope = unit/area). Makes a posting grant real platform RBAC. Called via
-# /bridge/posting-apply. Writes governance.role_grant with this engine's grant (component://org-rbac-engine obo admin).
+# ORG RBAC ENGINE (kind=engine) — the org-RBAC AUTHORITY. Three handlers, each attributed to this engine + gated by
+# its own grants: posting-apply (org.posting → live governance.role_grant), authz-check (scope-aware PDP: may the user
+# act as <role> on <scope>?), employee-provision (mint a staff LOGIN — the identity secret stays host-side, exposed to
+# the engine only as the ctx.provision_login capability). Reads the org tree (org_unit/area) + role_grants to
+# materialise a target scope + resolve the caller's holdings. Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/org-rbac-engine
 kind: engine
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: Org RBAC Engine
 entrypoint: run.py
-required_schemas: [org.employee, org.posting]
+# reads: employees + postings (posting-apply), the org unit/area tree (materialise authz-check targets), role_grants
+# (resolve the caller's effective grants). writes: role_grant (posting-apply projects into it).
+required_schemas: [org.employee, org.posting, org.org_unit, org.area, governance.role_grant]
 writes: [governance.role_grant]
