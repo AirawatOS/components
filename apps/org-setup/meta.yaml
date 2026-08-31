@@ -2,7 +2,7 @@
 # bridge /bridge/query and writes via /bridge/save (delegated: component://org-setup obo the admin).
 component_id: ds:airawatdeveloper:app/org-setup
 kind: app
-version: 0.3.0
+version: 0.3.1
 provider: ds:airawat:developer
 display_name: Org Setup
 entrypoint: index.html
