@@ -1,0 +1,20 @@
+# geocode-ledger (kind=driver) — geocode a property-tax ledger (address strings → lat/long) into tax.assessment.
+# Optionally ingests a ledger CSV asset first (LEDGER_FILE_ID). Real geocoder (Nominatim by default), egress-gated
+# through the broker; an unresolved address is left WITHOUT a point (never guessed). Confined — only I/O is the broker.
+component_id: ds:airawat:driver/geocode-ledger
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Geocode Ledger
+entrypoint: run.py
+confinement_min: L1
+reads: [tax.assessment]
+writes: [tax.assessment]
+egress:
+  - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/geocode-ledger (+https://airawat.org; contact@airawat.org)" }
+config: [CITY_HINT, MAX, GEOCODER_URL]
+sources:
+  - { ref: "ds:airawat:ref/source/nominatim", host: nominatim.openstreetmap.org, provides: [tax.assessment] }
+scopes:
+  - { verb: read,  scope: tax.assessment }
+  - { verb: write, scope: tax.assessment }
