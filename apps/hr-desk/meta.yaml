@@ -1,0 +1,15 @@
+# HR DESK (kind=app) — employee self-service: apply for leave, mark attendance; managers approve their team's leave.
+# Self-service writes go through the dedicated /bridge/leave-apply, /bridge/leave-decide, /bridge/attendance-mark
+# bridges (NOT admin-gated /bridge/save) — attributed component://hr-desk obo the employee (ADR-0052). The install
+# grants these writes to the hr-desk component; reads (org.employee, hr.*) let it resolve the manager + list records.
+component_id: ds:airawatdeveloper:app/hr-desk
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: HR Desk
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [org.employee, hr.leave_request, hr.attendance, platform.inbox_item]
+writes: [hr.leave_request, hr.attendance, platform.inbox_item]
+roles: []          # open to every staff member in the tenant (self-service)

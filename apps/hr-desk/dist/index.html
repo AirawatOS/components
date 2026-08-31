@@ -1,0 +1,144 @@
+<!doctype html><meta charset="utf-8"><title>HR Desk</title>
+<!--
+  HR DESK — employee self-service (Leave + Attendance) + a manager's approval queue.
+  • Leave:      apply → routed to your reporting MANAGER (from the org backbone) → they approve/reject.
+  • Attendance: check in / out for the day.
+  • Approvals:  leave your team has filed, awaiting YOUR decision.
+  Writes go through /bridge/leave-apply · /bridge/leave-decide · /bridge/attendance-mark (component-attributed,
+  NOT admin-gated) so any staff member acts on their own records. Reads via /bridge/query.
+-->
+<style>
+  :root{--bg:#0b0f14;--panel:#141a22;--line:#222b36;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6;--good:#2ea043}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;height:100%}
+  .nav{width:190px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(10,14,20,.4)}
+  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 4px}
+  .nav .me{font-size:12px;color:var(--dim);margin:0 8px 12px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
+  .nav a:hover{background:#161d27}.nav a.on{background:#17233a;color:#cfe0ff}
+  .nav a .c{margin-left:auto;font-size:11px;color:#cfe0ff;background:#17233a;border:1px solid #2a3b57;border-radius:20px;padding:0 7px}
+  .main{flex:1;min-width:0;overflow:auto;padding:22px 26px;max-width:760px}
+  h2{margin:0 0 4px;font-size:18px}.sub{color:var(--dim);margin:0 0 16px;font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 4px}
+  input,select,textarea{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid.g3{grid-template-columns:1fr 1fr 1fr}
+  .row{margin-bottom:12px}
+  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#33455a}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.pri:hover{filter:brightness(1.08)}
+  .btn.ok{background:var(--good);border-color:var(--good);color:#fff}.btn.no:hover{border-color:#8b2c30;color:#ff9b9b}
+  .btn.sm{padding:4px 10px;font-size:12px}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .pill{display:inline-block;font-size:11px;padding:1px 9px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .pill.approved{color:#7ee2a8;border-color:#1f6f43}.pill.pending{color:#e6c34a;border-color:#7a5c12}.pill.rejected{color:#ff9b9b;border-color:#8b2c30}
+  .empty{color:var(--dim);padding:24px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  .big{font-size:26px;font-weight:600;margin:2px 0}
+  .muted{color:var(--dim)} .err{color:#ff9b9b;font-size:12px;margin-top:8px}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#17233a;border:1px solid #33455a;color:#cfe0ff;padding:10px 16px;border-radius:10px;z-index:50;opacity:0;transition:opacity .3s}
+</style>
+
+<div class="wrap">
+  <nav class="nav">
+    <h1>🗓️ HR Desk</h1><div class="me" id="me">…</div>
+    <a data-t="leave"><span>🏖️</span> Leave</a>
+    <a data-t="attendance"><span>⏱️</span> Attendance</a>
+    <a data-t="approvals"><span>✅</span> Approvals <span class="c" id="c-appr">0</span></a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<div id="toast"></div>
+
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const APP='hr-desk';
+let SUB='', TENANT='', ME=null, TAB='leave', EMPS=[];
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+const nameOfEmp=id=>{const e=EMPS.find(x=>x.id===id);return e?(e.name||e.emp_code||id):id;};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',3000);}
+async function query(schema,filter){ try{ const r=await api('/bridge/query',{app_id:APP,schema,filter:filter||{}}); return (r.results||[]).map(x=>x.object||x); }catch(e){ return []; } }
+
+async function boot(){
+  try{const se=await fetch('/session').then(r=>r.json()); SUB=se.sub||''; TENANT=se.tenant||(SUB.replace(/^user:\/\//,'').split('/')[0]);}catch(e){}
+  EMPS=await query('org.employee');
+  ME=EMPS.find(e=>e.citizen===SUB)||null;
+  document.getElementById('me').textContent = ME?(ME.name+' · '+(ME.emp_code||'')):'(no employee record linked)';
+  document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
+  await refreshApprovalsCount(); render();
+}
+async function refreshApprovalsCount(){
+  if(!ME){document.getElementById('c-appr').textContent='0';return;}
+  const p=(await query('hr.leave_request',{manager_login:SUB})).filter(l=>l.manager_login===SUB && l.status==='pending');
+  document.getElementById('c-appr').textContent=p.length;
+}
+function render(){
+  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB));
+  ({leave:rLeave,attendance:rAtt,approvals:rApprovals}[TAB])();
+}
+
+/* ---------- LEAVE ---------- */
+async function rLeave(){
+  const main=document.getElementById('main');
+  main.innerHTML=`<h2>Leave</h2><div class="sub">Apply for leave — it goes to your manager${ME&&ME.manager?' ('+esc(nameOfEmp(ME.manager))+')':''} for approval.</div>
+    <div class="card"><div class="grid g3">
+        <div class="row"><label>Type</label><select id="lt">${['casual','sick','earned','unpaid','other'].map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <div class="row"><label>From</label><input id="lf" type="date"></div>
+        <div class="row"><label>To</label><input id="lto" type="date"></div></div>
+      <div class="row"><label>Reason</label><input id="lr" placeholder="optional"></div>
+      <div id="lerr" class="err"></div>
+      <button class="btn pri" onclick="applyLeave()"${ME?'':' disabled title="no employee record linked to your login"'}>Apply for leave</button>
+      ${ME?'':'<div class="muted" style="margin-top:8px">Ask your admin to set your <b>Login user</b> on your employee record in Org Setup.</div>'}</div>
+    <h2 style="font-size:15px">My requests</h2><div id="mine"></div>`;
+  const mine=(await query('hr.leave_request',{applicant_login:SUB})).filter(l=>l.applicant_login===SUB)
+     .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  document.getElementById('mine').innerHTML = mine.length ? `<div class="card"><table><thead><tr><th>Type</th><th>From</th><th>To</th><th>Reason</th><th>Status</th></tr></thead><tbody>`
+      + mine.map(l=>`<tr><td>${esc(l.leave_type)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td><td>${esc(l.reason||'—')}</td><td><span class="pill ${esc(l.status)}">${esc(l.status)}</span></td></tr>`).join('')
+      + `</tbody></table></div>` : `<div class="empty">No leave requests yet.</div>`;
+}
+async function applyLeave(){
+  const from=val('lf'), to=val('lto'); if(!from||!to){document.getElementById('lerr').textContent='From and To dates are required';return;}
+  const days=Math.max(1, Math.round((new Date(to)-new Date(from))/86400000)+1);
+  const r=await api('/bridge/leave-apply',{app_id:APP,leave_type:val('lt'),from_date:from,to_date:to,days,reason:val('lr')});
+  if(r.error){document.getElementById('lerr').textContent=r.error+(r.detail?(' — '+r.detail):'');return;}
+  toast(r.routed_to?('Applied — sent to '+(r.manager||'your manager')+' for approval'):'Applied (no manager set — pending)');
+  render();
+}
+
+/* ---------- ATTENDANCE ---------- */
+async function rAtt(){
+  const main=document.getElementById('main'); const today=new Date().toISOString().slice(0,10);
+  let rec=null; if(ME){ rec=(await query('hr.attendance',{employee:ME.id})).find(a=>a.date===today)||null; }
+  main.innerHTML=`<h2>Attendance</h2><div class="sub">${esc(today)}</div>
+    <div class="card"><div class="grid">
+        <div><div class="muted">Check-in</div><div class="big">${rec&&rec.check_in?esc(rec.check_in):'—'}</div></div>
+        <div><div class="muted">Check-out</div><div class="big">${rec&&rec.check_out?esc(rec.check_out):'—'}</div></div></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn ok" onclick="mark('check_in')"${(!ME||rec&&rec.check_in)?' disabled':''}>Check in</button>
+        <button class="btn pri" onclick="mark('check_out')"${(!ME||!(rec&&rec.check_in)||rec&&rec.check_out)?' disabled':''}>Check out</button></div>
+      ${ME?'':'<div class="muted" style="margin-top:8px">No employee record linked to your login.</div>'}</div>
+    <h2 style="font-size:15px">Recent</h2><div id="hist"></div>`;
+  if(ME){ const hist=(await query('hr.attendance',{employee:ME.id})).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,14);
+    document.getElementById('hist').innerHTML = hist.length ? `<div class="card"><table><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Status</th></tr></thead><tbody>`
+      + hist.map(a=>`<tr><td>${esc(a.date)}</td><td>${esc(a.check_in||'—')}</td><td>${esc(a.check_out||'—')}</td><td>${esc(a.status||'present')}</td></tr>`).join('')+`</tbody></table></div>`
+      : `<div class="empty">No attendance yet.</div>`; }
+}
+async function mark(action){ const r=await api('/bridge/attendance-mark',{app_id:APP,action}); if(r.error){toast(r.error);return;} toast(action==='check_in'?('Checked in at '+r.check_in):('Checked out at '+r.check_out)); render(); }
+
+/* ---------- APPROVALS ---------- */
+async function rApprovals(){
+  const main=document.getElementById('main');
+  const pend=(await query('hr.leave_request',{manager_login:SUB})).filter(l=>l.manager_login===SUB && l.status==='pending')
+     .sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
+  main.innerHTML=`<h2>Approvals</h2><div class="sub">Leave your team has filed, awaiting your decision.</div>`
+    + (pend.length ? `<div class="card"><table><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th></th></tr></thead><tbody>`
+        + pend.map(l=>`<tr><td><b>${esc(nameOfEmp(l.employee))}</b></td><td>${esc(l.leave_type)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td><td>${esc(l.days!=null?l.days:'—')}</td><td>${esc(l.reason||'—')}</td>
+           <td style="white-space:nowrap"><button class="btn ok sm" onclick="decide('${esc(l.id)}','approve')">Approve</button>
+             <button class="btn sm no" onclick="decide('${esc(l.id)}','reject')">Reject</button></td></tr>`).join('')
+        + `</tbody></table></div>` : `<div class="empty">Nothing awaiting your approval.</div>`);
+}
+async function decide(id,decision){ const r=await api('/bridge/leave-decide',{app_id:APP,leave_id:id,decision}); if(r.error){toast(r.error);return;} toast('Leave '+r.status); await refreshApprovalsCount(); render(); }
+
+boot();
+</script>
