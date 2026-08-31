@@ -1,0 +1,13 @@
+# HR WORKFLOWS ENGINE (kind=engine) — the LOGIC for HR self-service: leave, attendance, expense (apply/decide).
+# The host dispatches /bridge/{leave-apply,leave-decide,attendance-mark,expense-apply,expense-decide} to this
+# engine's HANDLERS (run.py). Writes are attributed component://hr-workflows obo the employee (ADR-0052) — so THIS
+# engine holds the write grants (the HR Desk app is just screens). Editable + versioned in Studio like any component.
+component_id: ds:airawatdeveloper:engine/hr-workflows
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: HR Workflows Engine
+entrypoint: run.py
+# reads the org tree + policies + finance (for expense settlement); writes the HR records + inbox + (on expense) the ledger
+required_schemas: [org.employee, org.posting, org.position, hr.job_level, org.policy, finance.account, finance.budget, hr.leave_request, hr.attendance, hr.expense_claim]
+writes: [hr.leave_request, hr.attendance, hr.expense_claim, platform.inbox_item, finance.transaction, finance.budget]
