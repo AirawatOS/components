@@ -72,7 +72,8 @@
 const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const APP='project-console';
-let TENANT='', TAB='portfolio', PROJ=[], PROP=[], BUD=[], UNITS=[], EMP=[], ROLL={projects:[],by_unit:[],totals:{}};
+let TENANT='', TAB='portfolio', PROJ=[], PROP=[], BUD=[], UNITS=[], EMP=[], ALLOC=[], ROLL={projects:[],by_unit:[],totals:{}};
+const empNm=id=>{const e=EMP.find(x=>x.id===id||x.citizen===id);return e?(e.name||e.id):(id||'—');};
 const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
 const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
 const uname=id=>{const u=UNITS.find(x=>x.id===id);return u?u.name:(id||'—');};
@@ -88,7 +89,7 @@ async function boot(){
   render();
 }
 async function reload(){
-  [PROJ,PROP,BUD,UNITS,EMP]=await Promise.all([query('project.project'),query('project.proposal'),query('finance.budget'),query('org.org_unit'),query('org.employee')]);
+  [PROJ,PROP,BUD,UNITS,EMP,ALLOC]=await Promise.all([query('project.project'),query('project.proposal'),query('finance.budget'),query('org.org_unit'),query('org.employee'),query('project.allocation')]);
   try{ROLL=await api('/bridge/project-rollup',{app_id:APP});}catch(e){ROLL={projects:[],by_unit:[],totals:{}};}
   document.getElementById('c-portfolio').textContent=PROJ.length;
   document.getElementById('c-approvals').textContent=PROP.filter(p=>p.status==='submitted').length;
@@ -276,6 +277,8 @@ function openProject(pid){
     <div class="sec"><h4>Results chain</h4><div class="body chain">${chain}</div></div>
     ${ms?`<div class="sec"><h4>Milestones</h4><div class="body">${ms}</div></div>`:''}
     ${outlay?`<div class="sec"><h4>Outlay → budget ${money(base.total_outlay)}</h4><div class="body" style="padding:0"><table><thead><tr><th>Type</th><th>Description</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody>${outlay}</tbody></table></div></div>`:''}
+    <div class="sec"><h4>Team — allocations <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px">salaries apportion to this project by %</span></h4>
+      <div class="body" id="allocBody">${allocHtml(pid)}</div></div>
     <div id="ferr" class="err"></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       ${active?`<button class="btn" onclick='runReview("${esc(pid)}")'>Run review</button>
@@ -309,6 +312,26 @@ function startAdjust(pid){const proj=PROJ.find(x=>x.id===pid);const base=PROP.fi
      milestones:JSON.parse(JSON.stringify(base.milestones||[])),deliverables:JSON.parse(JSON.stringify(base.deliverables||[])),
      outlay:base.outlay&&base.outlay.length?JSON.parse(JSON.stringify(base.outlay)):[{}]};
   paintPropose('Adjust — '+proj.code+' (new baseline)','Revise the contract; the new version needs re-approval.','submitAdjust');
+}
+function allocHtml(pid){
+  const rows=ALLOC.filter(a=>a.project===pid&&a.status!=='ended');
+  const list=rows.map(a=>`<div class="rowline" style="grid-template-columns:2fr 1fr auto;margin-bottom:6px">
+      <div>${esc(empNm(a.employee))}${a.role_on_project?' <span class="muted">· '+esc(a.role_on_project)+'</span>':''}</div>
+      <div class="num">${a.percent}%</div>
+      <div class="x" onclick='endAlloc("${esc(a.employee)}","${esc(pid)}")' title="end">✕</div></div>`).join('')||'<span class="muted">no one allocated yet</span>';
+  const opts=EMP.map(e=>`<option value="${esc(e.id)}">${esc(e.name||e.id)}</option>`).join('');
+  return `${list}<div class="rowline" style="grid-template-columns:2fr 1fr auto;margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <div><select id="al_emp"><option value="">— employee —</option>${opts}</select></div>
+      <div><input id="al_pct" type="number" placeholder="%"></div>
+      <div><button class="btn sm pri" onclick='allocate("${esc(pid)}")'>Allocate</button></div></div>`;
+}
+async function allocate(pid){const emp=val('al_emp'),pct=Number(val('al_pct'));
+  if(!emp||!pct)return ferr('Pick an employee and a %');
+  const r=await api('/bridge/allocation-set',{app_id:APP,employee:emp,project:pid,percent:pct});
+  if(r.error)return ferr(r.error);await reload();document.getElementById('allocBody').innerHTML=allocHtml(pid);toast('Allocated '+empNm(emp)+' at '+pct+'%');
+}
+async function endAlloc(emp,pid){const r=await api('/bridge/allocation-set',{app_id:APP,employee:emp,project:pid,percent:0,end:true});
+  if(r.error)return ferr(r.error);await reload();document.getElementById('allocBody').innerHTML=allocHtml(pid);toast('Ended allocation');
 }
 async function submitAdjust(){
   const b=collectProposal();b.project.code=ADJ.code;b.adjust=true;

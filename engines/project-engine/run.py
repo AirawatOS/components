@@ -263,9 +263,36 @@ def h_project_adjust(ctx):
     return h_proposal_submit(ctx)
 
 
+# --- ALLOCATIONS (people → project %; the basis for labour apportionment) ------------------------------------
+def h_allocation_set(ctx):
+    """Assign an employee to a project at a % of time (or end an assignment). Idempotent per (employee, project)."""
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    emp, proj, pct = body.get("employee"), body.get("project"), body.get("percent")
+    if not emp or not proj:
+        return None, "employee and project required"
+    if not isinstance(pct, (int, float)) or pct < 0 or pct > 100:
+        return None, "percent must be 0–100"
+    local = f"{emp.rsplit('/', 1)[-1]}--{proj.rsplit('/', 1)[-1]}"
+    aid = f"ds:{tenant}:project/allocation/{local}"
+    now = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
+    prior = ctx["kget"](aid) or {}
+    ctx["kwrite"](aid, {"schema": "project.allocation", "id": aid, "tenant": tenant, "employee": emp, "project": proj,
+        "percent": pct, "role_on_project": body.get("role_on_project"), "from_date": body.get("from_date") or prior.get("from_date") or now[:10],
+        "to_date": body.get("to_date"), "status": "ended" if body.get("end") else "active",
+        "created_at": prior.get("created_at") or now})
+    return {"allocation": aid, "employee": emp, "project": proj, "percent": pct, "status": "ended" if body.get("end") else "active"}, None
+
+
+def h_allocation_list(ctx):
+    proj = ctx["body"].get("project")
+    rows = [a for a in ctx["kfind"]("project.allocation") if (not proj or a.get("project") == proj)]
+    return {"allocations": rows}, None
+
+
 HANDLERS = {"proposal-submit": h_proposal_submit, "proposal-decide": h_proposal_decide,
             "project-rollup": h_project_rollup, "project-review": h_project_review,
-            "project-evaluate": h_project_evaluate, "project-adjust": h_project_adjust}
+            "project-evaluate": h_project_evaluate, "project-adjust": h_project_adjust,
+            "allocation-set": h_allocation_set, "allocation-list": h_allocation_list}
 
 
 def main():

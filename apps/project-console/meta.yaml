@@ -4,12 +4,13 @@
 # proposal-decide, project-rollup/review/evaluate/adjust) — the app is screens only; the engine holds the logic + grants.
 component_id: ds:airawatdeveloper:app/project-console
 kind: app
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: Project Console
 entrypoint: index.html
 bundle: dist
 sandboxed: true
-required_schemas: [project.project, project.proposal, project.review, project.evaluation, org.org_unit, org.employee, finance.budget]
+# 0.2.0: + Team/allocations in the project drawer (allocation-set/list → project-engine); feeds payroll apportionment.
+required_schemas: [project.project, project.proposal, project.review, project.evaluation, project.allocation, org.org_unit, org.employee, finance.budget]
 writes: []
 roles: [platform.tenant-admin]

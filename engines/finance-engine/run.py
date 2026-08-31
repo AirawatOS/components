@@ -44,7 +44,9 @@ def h_finance_post(ctx):
         avail = (bud.get("allocated", 0) or 0) - (bud.get("committed", 0) or 0) - (bud.get("spent", 0) or 0)
         if commit_amt > avail and not body.get("allow_overspend"):
             return None, f"budget '{bud.get('name')}' has {avail} available; this entry needs {commit_amt}"
-    tid = f"ds:{tenant}:finance/transaction/{_u.uuid4().hex[:8]}"
+    tid = body.get("id") or f"ds:{tenant}:finance/transaction/{_u.uuid4().hex[:8]}"
+    if body.get("id") and ctx["kget"](tid):                  # idempotent post (e.g. payroll re-run) — don't double-charge
+        return {"posted": tid, "amount": dr, "balanced": True, "status": status, "budget": budget_id, "duplicate": True}, None
     ctx["kwrite"](tid, {"schema": "finance.transaction", "id": tid, "tenant": tenant, "date": date, "memo": body.get("memo"),
         "lines": lines, "amount": dr, "direction": direction, "budget": budget_id, "org_unit": body.get("org_unit"),
         "project": body.get("project"), "source": body.get("source"), "source_kind": body.get("source_kind"),

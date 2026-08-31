@@ -3,7 +3,8 @@
 # or ctx.call from Expense/Travel/Payroll. Writes are attributed component://finance-engine — it holds the ledger grants.
 component_id: ds:airawatdeveloper:engine/finance-engine
 kind: engine
-version: 0.1.0
+version: 0.2.0
+# 0.2.0: optional deterministic `id` on a post → idempotent settlement (payroll apportionment re-runs don't double-charge).
 provider: ds:airawat:developer
 display_name: Finance Engine
 entrypoint: run.py

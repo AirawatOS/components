@@ -1,0 +1,14 @@
+# PAYROLL ENGINE (kind=engine) — apportions LABOUR cost to projects: for a period, each project.allocation (employee →
+# project at %) becomes a project-tagged salary transaction (cost = hr.compensation.monthly_cost × percent), posted via
+# the finance-engine (ctx.call → finance-post) so it rolls into the project's budget + the rollup's `spent`. NO
+# fabrication: allocations lacking compensation / budget are reported skipped. Idempotent per (allocation, period).
+# Delegates all writes to the finance-engine (holds NO finance write grant of its own). Editable + versioned in Studio.
+component_id: ds:airawatdeveloper:engine/payroll-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Payroll Engine
+entrypoint: run.py
+# reads: allocations, employees, compensation (the cost source), budgets (target) + transactions (idempotency check).
+required_schemas: [project.allocation, org.employee, hr.compensation, finance.budget, finance.transaction]
+writes: []
