@@ -1,0 +1,26 @@
+# change-detect-alphaearth (kind=driver) — flag parcels whose built form CHANGED between two years using Google's
+# AlphaEarth Foundations satellite embeddings (per-parcel mean 64-D vector, cosine distance A↔B). Writes tax.change_signal
+# (new_build / expanded) as corroborating evidence for the tax-gap-engine. REAL Earth Engine — fails loudly without GEE,
+# never fabricates. Runs in the earth-observation runtime; the GEE service-account key is Vault-materialised.
+component_id: ds:airawat:driver/change-detect-alphaearth
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Change Detect (AlphaEarth)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads: [geo.parcel]
+writes: [tax.change_signal]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/change-detect-alphaearth" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/change-detect-alphaearth" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/change-detect-alphaearth" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, FROM_YEAR, TO_YEAR, CHANGE_MIN]
+sources:
+  - { ref: "ds:airawat:ref/source/alphaearth", host: earthengine.googleapis.com, provides: [tax.change_signal] }
+scopes:
+  - { verb: read,  scope: geo.parcel }
+  - { verb: write, scope: tax.change_signal }
