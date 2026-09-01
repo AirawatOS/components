@@ -239,7 +239,7 @@ async function qf(schema,filter){                              // server-side fi
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
 
-let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=true, showWater=true, drillCell=null;
+let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showWater=false, drillCell=null;
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
 let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false;   // drilled cell state + overlays
 let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
@@ -684,9 +684,7 @@ function fitView(bbox){
   $("ovwater").onclick=async()=>{ showWater=!showWater; $("ovwater").classList.toggle("on",showWater); if(showWater) await ensureOverlay("water"); render(); };
   $("ovroads").onclick=async()=>{ showRoads=!showRoads; $("ovroads").classList.toggle("on",showRoads); if(showRoads){ setBusy("Loading roads…"); await ensureOverlay("roads"); setBusy(null); } render(); };
   $("ovfac").onclick=async()=>{ showFacilities=!showFacilities; $("ovfac").classList.toggle("on",showFacilities); if(showFacilities){ setBusy("Loading facilities…"); await ensureOverlay("facilities"); setBusy(null); } render(); };
-  // background-load the default-on overlays AFTER first paint so they appear without blocking (drainage is light; roads are 66k)
-  ensureOverlay("water").then(render);
-  ensureOverlay("roads").then(render);
+  // Overlays (roads / drainage / facilities) are OFF on load — the base map shows first; each loads lazily only when the user toggles it on.
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
   $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});
