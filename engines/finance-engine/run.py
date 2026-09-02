@@ -50,6 +50,9 @@ def h_finance_post(ctx):
     ctx["kwrite"](tid, {"schema": "finance.transaction", "id": tid, "tenant": tenant, "date": date, "memo": body.get("memo"),
         "lines": lines, "amount": dr, "direction": direction, "budget": budget_id, "org_unit": body.get("org_unit"),
         "project": body.get("project"), "source": body.get("source"), "source_kind": body.get("source_kind"),
+        # voucher classification + invoice link (Finance Console voucher entry); all optional/nullable
+        "voucher_type": body.get("voucher_type"), "party": body.get("party"),
+        "invoice_ref": body.get("invoice_ref"), "invoice_url": body.get("invoice_url"),
         "status": status, "posted_by": sub, "created_at": now})
     if budget_id and commit_amt:
         bud = ctx["kget"](budget_id); key = "committed" if status == "committed" else "spent"

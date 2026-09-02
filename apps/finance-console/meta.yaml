@@ -3,11 +3,13 @@
 # Expense / Travel / Payroll will call. Accounts/budgets are edited via /bridge/save (admin). Admin-authored.
 component_id: ds:airawatdeveloper:app/finance-console
 kind: app
-version: 0.3.1
+version: 0.4.0
 provider: ds:airawat:developer
 display_name: Finance Console
 entrypoint: index.html
 bundle: dist
+# 0.4.0: account SUB-TYPES (Type→Sub-type dependent dropdown) + JOURNAL voucher entry (payment/receipt/contra/
+#        journal/sales/purchase) with party + invoice ref/link + a Reports tab (Trial Balance · P&L · Balance Sheet).
 # 0.3.0: Payroll tab gains the "Automatic monthly run" toggle (payroll-schedule verb → platform.schedule).
 # 0.2.0: + Payroll tab — set hr.compensation + run payroll→project apportionment (payroll-engine composes finance-engine).
 required_schemas: [finance.account, finance.budget, finance.transaction, org.org_unit, org.employee, hr.compensation, project.allocation, project.project]

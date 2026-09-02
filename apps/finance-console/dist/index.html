@@ -26,6 +26,7 @@
   th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   tr:hover td{background:#121821}
+  tr.sub td{background:#0f1620;color:var(--ink)} tfoot td{border-top:2px solid var(--line)}
   .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
   .pill.expense{color:#ff9b9b;border-color:#6d2b2b}.pill.asset{color:#9fd0ff;border-color:#274a6b}.pill.liability{color:#e6c34a;border-color:#7a5c12}
   .pill.revenue{color:#7ee2a8;border-color:#1f6f43}.pill.equity{color:#d8ccff;border-color:#3a2f66}
@@ -49,6 +50,7 @@
     <a data-t="accounts"><span>📒</span> Accounts <span class="c" id="c-accounts">0</span></a>
     <a data-t="budgets"><span>🎯</span> Budgets <span class="c" id="c-budgets">0</span></a>
     <a data-t="journal"><span>📓</span> Journal <span class="c" id="c-journal">0</span></a>
+    <a data-t="reports"><span>📊</span> Reports</a>
     <a data-t="payroll"><span>🧑‍💼</span> Payroll <span class="c" id="c-payroll">0</span></a>
   </nav>
   <main class="main" id="main"></main>
@@ -61,6 +63,22 @@ const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/jso
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const APP='finance-console';
 const NORMAL={asset:'debit',expense:'debit',liability:'credit',equity:'credit',revenue:'credit'};
+// Standard chart-of-accounts SUB-TYPES per account type (the "usual" set; editable per install later).
+const SUBTYPES={
+  asset:['Current Asset','Bank & Cash','Accounts Receivable','Inventory','Prepaid Expense','Fixed Asset','Investment'],
+  liability:['Current Liability','Accounts Payable','Accrued Liability','Duties & Taxes','Loan / Borrowing','Long-term Liability'],
+  equity:['Share Capital','Reserves & Surplus','Retained Earnings'],
+  revenue:['Operating Revenue','Other Income','Grants & Subsidies'],
+  expense:['Direct Expense','Indirect Expense','Operating Expense','Financial Expense','Depreciation & Amortization']};
+// VOUCHER TYPES — each drives which two GL sides the entry debits/credits + the party label. Double-entry stays
+// intact: the app builds the balanced 2 lines and posts them through /bridge/finance-post (budget check + rollup).
+const VTYPES={
+  payment :{label:'Payment',  dir:'expenditure', drLabel:'Expense / Payable (debit)',   crLabel:'Paid from — Bank/Cash (credit)', party:'Paid to',        crHint:'asset'},
+  receipt :{label:'Receipt',  dir:'revenue',     drLabel:'Received into — Bank/Cash (debit)', crLabel:'Income / Receivable (credit)', party:'Received from', drHint:'asset'},
+  contra  :{label:'Contra',   dir:null,          drLabel:'To — Bank/Cash (debit)',      crLabel:'From — Bank/Cash (credit)',      party:null,             drHint:'asset', crHint:'asset'},
+  journal :{label:'Journal',  dir:null,          drLabel:'Debit account',               crLabel:'Credit account',                 party:null},
+  sales   :{label:'Sales',    dir:'revenue',     drLabel:'Receivable / Bank (debit)',   crLabel:'Revenue (credit)',               party:'Customer',       crHint:'revenue'},
+  purchase:{label:'Purchase', dir:'expenditure', drLabel:'Expense / Asset (debit)',     crLabel:'Payable / Bank (credit)',        party:'Supplier',       crHint:'liability'}};
 let TENANT='', TAB='accounts', ACC=[], BUD=[], TXN=[], UNITS=[];
 const money=n=>Number(n||0).toLocaleString('en-IN');
 const acctName=id=>{const a=ACC.find(x=>x.id===id);return a?(a.code+' '+a.name):(id||'—');};
@@ -80,7 +98,7 @@ async function reload(){ [ACC,BUD,TXN,UNITS,EMP,COMP,ALLOC,PROJ]=await Promise.a
   try{SCHED=await api('/bridge/payroll-schedule',{app_id:APP,action:'get'})||{};}catch(e){SCHED={};}
   document.getElementById('c-accounts').textContent=ACC.length; document.getElementById('c-budgets').textContent=BUD.length; document.getElementById('c-journal').textContent=TXN.length;
   const cp=document.getElementById('c-payroll'); if(cp)cp.textContent=COMP.length; }
-function render(){ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB)); ({accounts:rAcc,budgets:rBud,journal:rJnl,payroll:rPay}[TAB])(); }
+function render(){ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB)); ({accounts:rAcc,budgets:rBud,journal:rJnl,reports:rReports,payroll:rPay}[TAB])(); }
 const empName=id=>{const e=EMP.find(x=>(x.citizen===id||x.id===id));return e?(e.name||e.id):(id||'—');};
 const projName=id=>{const p=PROJ.find(x=>x.id===id);return p?(p.code||p.name):(id||'—');};
 const compFor=eid=>COMP.filter(c=>c.employee===eid&&c.status!=='ended').sort((a,b)=>(b.effective_from||'').localeCompare(a.effective_from||''))[0];
@@ -88,28 +106,36 @@ const compFor=eid=>COMP.filter(c=>c.employee===eid&&c.status!=='ended').sort((a,
 /* ---------- ACCOUNTS ---------- */
 function rAcc(){
   const rows=ACC.slice().sort((a,b)=>(a.code||'').localeCompare(b.code||'')).map(a=>`<tr><td>${esc(a.code)}</td><td><b>${esc(a.name)}</b></td>
-     <td><span class="pill ${esc(a.type)}">${esc(a.type)}</span></td><td>${esc(a.normal||NORMAL[a.type])}</td>
+     <td><span class="pill ${esc(a.type)}">${esc(a.type)}</span></td><td>${esc(a.subtype||'')}</td><td>${esc(a.normal||NORMAL[a.type])}</td>
      <td><button class="btn sm ghost" onclick='editAcc("${esc(a.id)}")'>edit</button></td></tr>`).join('');
   document.getElementById('main').innerHTML=`<div class="head"><h2>Chart of accounts</h2><span class="sub">the GL backbone</span>
       <div class="right">${ACC.length?'':'<button class="btn" onclick="seedChart()">Seed default chart</button>'}<button class="btn pri" onclick='addAcc()'>＋ Account</button></div></div>`
-    + (ACC.length?`<div class="card"><table><thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Normal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    + (ACC.length?`<div class="card"><table><thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Sub-type</th><th>Normal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
        :`<div class="empty">No accounts yet — seed a default chart to get started.</div>`);
 }
 async function seedChart(){
-  const defs=[['1000','Cash / Bank','asset'],['2000','Payables','liability'],['3000','Reserves','equity'],
-    ['4000','Revenue','revenue'],['5000','Expenses','expense'],['5100','Travel expense','expense'],['5200','Office expense','expense']];
-  for(const [code,name,type] of defs){ await save({schema:'finance.account',id:`ds:${TENANT}:finance/account/${code}`,code,name,type,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()}); }
+  const defs=[['1000','Cash / Bank','asset','Bank & Cash'],['1100','Accounts Receivable','asset','Accounts Receivable'],
+    ['2000','Payables','liability','Accounts Payable'],['2100','Duties & Taxes','liability','Duties & Taxes'],['3000','Reserves','equity','Reserves & Surplus'],
+    ['4000','Revenue','revenue','Operating Revenue'],['5000','Expenses','expense','Direct Expense'],
+    ['5100','Travel expense','expense','Indirect Expense'],['5200','Office expense','expense','Operating Expense']];
+  for(const [code,name,type,subtype] of defs){ await save({schema:'finance.account',id:`ds:${TENANT}:finance/account/${code}`,code,name,type,subtype,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()}); }
   await reload(); toast('Seeded '+defs.length+' accounts'); render();
 }
 function addAcc(){ openAcc({}); } function editAcc(id){ openAcc(ACC.find(a=>a.id===id)||{}); }
 function openAcc(a){ document.getElementById('sheet').innerHTML=`<h3>${a.id?'Edit':'New'} account</h3>
     <div class="grid"><div class="row"><label>Code</label><input id="a_code" value="${esc(a.code||'')}" placeholder="5300"></div>
       <div class="row"><label>Name</label><input id="a_name" value="${esc(a.name||'')}" placeholder="Utilities expense"></div></div>
-    <div class="row" style="max-width:220px"><label>Type</label><select id="a_type">${['asset','liability','equity','revenue','expense'].map(t=>`<option${a.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="grid"><div class="row"><label>Type</label><select id="a_type" onchange="subOpts()">${['asset','liability','equity','revenue','expense'].map(t=>`<option${a.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="row"><label>Sub-type</label><select id="a_subtype"></select></div></div>
     <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="saveAcc('${esc(a.id||'')}')">Save</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
-  document.getElementById('modal').classList.add('open'); }
-async function saveAcc(id){ const code=val('a_code'),name=val('a_name'),type=val('a_type'); if(!code||!name)return ferr('Code and name required');
-  const r=await save({schema:'finance.account',id:id||`ds:${TENANT}:finance/account/${code}`,code,name,type,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()});
+  document.getElementById('modal').classList.add('open'); subOpts(a.subtype); }
+// (re)fill the Sub-type dropdown for the chosen Type; keep the current value selected when it still applies.
+function subOpts(sel){ const t=val('a_type'); const cur=sel!=null?sel:val('a_subtype'); const list=SUBTYPES[t]||[];
+  document.getElementById('a_subtype').innerHTML='<option value="">— none —</option>'+list.map(s=>`<option${s===cur?' selected':''}>${esc(s)}</option>`).join(''); }
+async function saveAcc(id){ const code=val('a_code'),name=val('a_name'),type=val('a_type'),subtype=val('a_subtype'); if(!code||!name)return ferr('Code and name required');
+  const o={schema:'finance.account',id:id||`ds:${TENANT}:finance/account/${code}`,code,name,type,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()};
+  if(subtype)o.subtype=subtype;
+  const r=await save(o);
   if(r.error)return ferr(r.error); closeM(); await reload(); render(); }
 
 /* ---------- BUDGETS ---------- */
@@ -145,29 +171,48 @@ async function saveBud(id){ const code=val('b_code'),name=val('b_name'),alloc=va
 function rJnl(){
   const rows=TXN.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).map(t=>{
     const lns=(t.lines||[]).map(l=>`<div class="ln">${esc(acctName(l.account))} — ${l.debit?('Dr <b>'+money(l.debit)+'</b>'):('Cr <b>'+money(l.credit)+'</b>')}</div>`).join('');
-    return `<tr><td>${esc(t.date)}</td><td><b>${esc(t.memo||'—')}</b>${t.source_kind?`<div class="muted" style="font-size:11px">${esc(t.source_kind)}</div>`:''}<div style="margin-top:3px">${lns}</div></td>
-      <td class="num">${money(t.amount)}</td><td>${t.direction?`<span class="pill">${esc(t.direction)}</span>`:''}</td><td><span class="pill ${esc(t.status)}">${esc(t.status)}</span></td></tr>`;}).join('');
+    const meta=[t.party?('· '+esc(t.party)):'', t.invoice_ref?('· Inv '+esc(t.invoice_ref)):'',
+      t.invoice_url?`· <a href="${esc(t.invoice_url)}" target="_blank" rel="noopener" style="color:#7ee2a8">invoice ↗</a>`:''].filter(Boolean).join(' ');
+    const vt=t.voucher_type?`<span class="pill">${esc((VTYPES[t.voucher_type]||{}).label||t.voucher_type)}</span>`:(t.direction?`<span class="pill">${esc(t.direction)}</span>`:'');
+    return `<tr><td>${esc(t.date)}</td><td><b>${esc(t.memo||'—')}</b>${meta?`<div class="muted" style="font-size:11px">${meta}</div>`:''}${t.source_kind?`<div class="muted" style="font-size:11px">${esc(t.source_kind)}</div>`:''}<div style="margin-top:3px">${lns}</div></td>
+      <td class="num">${money(t.amount)}</td><td>${vt}</td><td><span class="pill ${esc(t.status)}">${esc(t.status)}</span></td></tr>`;}).join('');
   document.getElementById('main').innerHTML=`<div class="head"><h2>Journal</h2><span class="sub">double-entry — every entry balances (Σ Dr = Σ Cr)</span><div class="right"><button class="btn pri" onclick='newEntry()'>＋ Entry</button></div></div>`
     + (TXN.length?`<div class="card"><table><thead><tr><th>Date</th><th>Entry (lines)</th><th class="num">Amount</th><th>Dir</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`
        :`<div class="empty">No journal entries yet. Post one — or an Expense/Travel approval will.</div>`);
 }
-function newEntry(){ const exp=ACC.filter(a=>a.type==='expense'), other=ACC.filter(a=>a.type!=='expense');
-  document.getElementById('sheet').innerHTML=`<h3>New journal entry</h3><div class="muted" style="margin-bottom:8px">A convenience posting — the balancing line is generated for you.</div>
-    <div class="grid"><div class="row"><label>Direction</label><select id="j_dir">${['expenditure','revenue'].map(d=>`<option>${d}</option>`).join('')}</select></div>
-      <div class="row"><label>Amount</label><input id="j_amt" type="number" placeholder="12000"></div></div>
-    <div class="grid"><div class="row"><label>Charge to budget</label><select id="j_bud" onchange="budAcct()"><option value="">— none —</option>${BUD.map(b=>`<option value="${esc(b.id)}" data-acct="${esc(b.account||'')}">${esc(b.name)}</option>`).join('')}</select></div>
-      <div class="row"><label>Account</label><select id="j_acct">${ACC.map(a=>`<option value="${esc(a.id)}">${esc(a.code+' '+a.name)}</option>`).join('')}</select></div></div>
-    <div class="grid"><div class="row"><label>Contra (cash/payable)</label><select id="j_contra">${other.map(a=>`<option value="${esc(a.id)}"${a.code==='2000'?' selected':''}>${esc(a.code+' '+a.name)}</option>`).join('')}</select></div>
-      <div class="row"><label>Status</label><select id="j_status">${['posted','committed'].map(s=>`<option>${s}</option>`).join('')}</select></div></div>
-    <div class="row"><label>Memo</label><input id="j_memo" placeholder="Field travel — Sept"></div>
+function acctOpts(sel){ return ACC.map(a=>`<option value="${esc(a.id)}"${a.id===sel?' selected':''}>${esc(a.code+' '+a.name)}</option>`).join(''); }
+function newEntry(){ const today=new Date().toISOString().slice(0,10);
+  document.getElementById('sheet').innerHTML=`<h3>New voucher</h3>
+    <div class="grid"><div class="row"><label>Voucher type</label><select id="v_type" onchange="vChange()">${Object.keys(VTYPES).map(k=>`<option value="${k}">${VTYPES[k].label}</option>`).join('')}</select></div>
+      <div class="row"><label>Date</label><input id="v_date" type="date" value="${today}"></div></div>
+    <div class="row" id="v_party_row"><label id="v_party_lbl">Party</label><input id="v_party" placeholder="Name of party"></div>
+    <div class="grid"><div class="row"><label id="v_dr_lbl">Debit account</label><select id="v_dr">${acctOpts()}</select></div>
+      <div class="row"><label id="v_cr_lbl">Credit account</label><select id="v_cr">${acctOpts()}</select></div></div>
+    <div class="grid"><div class="row"><label>Amount</label><input id="v_amt" type="number" placeholder="12000"></div>
+      <div class="row"><label>Charge to budget</label><select id="v_bud" onchange="budAcct()"><option value="">— none —</option>${BUD.map(b=>`<option value="${esc(b.id)}" data-acct="${esc(b.account||'')}">${esc(b.name)}</option>`).join('')}</select></div></div>
+    <div class="grid"><div class="row"><label>Invoice no. / ref</label><input id="v_inv" placeholder="INV-2026-014"></div>
+      <div class="row"><label>Invoice link (URL)</label><input id="v_invurl" placeholder="https://…/invoice.pdf"></div></div>
+    <div class="grid"><div class="row"><label>Status</label><select id="v_status">${['posted','committed'].map(s=>`<option>${s}</option>`).join('')}</select></div>
+      <div class="row"><label>Memo</label><input id="v_memo" placeholder="Narration"></div></div>
     <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="postEntry()">Post</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
-  document.getElementById('modal').classList.add('open'); }
-function budAcct(){ const s=document.getElementById('j_bud'); const acct=s.options[s.selectedIndex].dataset.acct; if(acct){const ja=document.getElementById('j_acct'); ja.value=acct;} }
-async function postEntry(){ const amt=Number(val('j_amt')); if(!amt||amt<=0)return ferr('Amount required');
-  const body={app_id:APP,direction:val('j_dir'),amount:amt,account:val('j_acct'),contra_account:val('j_contra'),status:val('j_status'),memo:val('j_memo')};
-  if(val('j_bud'))body.budget=val('j_bud');
+  document.getElementById('modal').classList.add('open'); vChange(); }
+// adapt the voucher form to the chosen type: line labels + party field visibility.
+function vChange(){ const v=VTYPES[val('v_type')]||VTYPES.journal;
+  document.getElementById('v_dr_lbl').textContent=v.drLabel; document.getElementById('v_cr_lbl').textContent=v.crLabel;
+  const pr=document.getElementById('v_party_row'); pr.style.display=v.party?'block':'none';
+  if(v.party)document.getElementById('v_party_lbl').textContent=v.party; }
+function budAcct(){ const s=document.getElementById('v_bud'); const acct=s.options[s.selectedIndex].dataset.acct; if(acct){document.getElementById('v_dr').value=acct;} }
+async function postEntry(){ const vt=val('v_type'), v=VTYPES[vt]||VTYPES.journal, amt=Number(val('v_amt'));
+  if(!amt||amt<=0)return ferr('Amount required');
+  const dr=val('v_dr'), cr=val('v_cr'); if(!dr||!cr)return ferr('Pick both accounts'); if(dr===cr)return ferr('Debit and credit accounts must differ');
+  const body={app_id:APP,voucher_type:vt,direction:v.dir||undefined,date:val('v_date')||undefined,status:val('v_status'),memo:val('v_memo'),
+    lines:[{account:dr,debit:amt,credit:0},{account:cr,debit:0,credit:amt}]};
+  if(v.party&&val('v_party'))body.party=val('v_party');
+  if(val('v_inv'))body.invoice_ref=val('v_inv');
+  if(val('v_invurl'))body.invoice_url=val('v_invurl');
+  if(val('v_bud'))body.budget=val('v_bud');
   const r=await api('/bridge/finance-post',body);
-  if(r.error)return ferr(r.error); closeM(); await reload(); render(); toast('Posted '+money(r.amount)+(r.committed?(' · committed to budget'):'')); }
+  if(r.error)return ferr(r.error); closeM(); await reload(); render(); toast(v.label+' posted · '+money(r.amount)+(r.committed?' · committed to budget':'')); }
 
 /* ---------- PAYROLL → PROJECT APPORTIONMENT ---------- */
 let PREVIEW=null;
@@ -227,6 +272,50 @@ async function runPay(){const period=val('pay_period');const r=await api('/bridg
   if(r.error){document.getElementById('pay_result').innerHTML=`<div class="err" style="padding:12px 16px">${esc(r.error)}</div>`;return;}
   await reload();render();
   toast(`Posted ${r.posted_count} entr${r.posted_count===1?'y':'ies'} · ${money(r.posted_total)}${r.already_posted?(' · '+r.already_posted+' already'):''}${r.skipped.length?(' · '+r.skipped.length+' skipped'):''}`);
+}
+
+/* ---------- REPORTS: Trial Balance · P&L · Balance Sheet ---------- */
+// Balance per account = Σdebit − Σcredit over POSTED entries (committed = a reservation, excluded from actuals).
+function acctBal(){ const bal={}; TXN.filter(t=>(t.status||'posted')==='posted').forEach(t=>(t.lines||[]).forEach(l=>{ bal[l.account]=(bal[l.account]||0)+(Number(l.debit)||0)-(Number(l.credit)||0); })); return bal; }
+function bySub(type,bal,amtFn){ const g={}; ACC.filter(a=>a.type===type).forEach(a=>{ const amt=amtFn(bal[a.id]||0); if(Math.abs(amt)<0.005)return; const s=a.subtype||'Unclassified'; (g[s]=g[s]||[]).push({a,amt}); });
+  return Object.keys(g).sort().map(s=>({sub:s,rows:g[s],total:g[s].reduce((x,y)=>x+y.amt,0)})); }
+function secRows(groups){ return groups.map(gp=>`<tr class="sub"><td colspan="2"><b>${esc(gp.sub)}</b></td><td class="num muted">${money(gp.total)}</td></tr>`
+    +gp.rows.map(r=>`<tr><td style="padding-left:26px">${esc(r.a.code)}</td><td>${esc(r.a.name)}</td><td class="num">${money(r.amt)}</td></tr>`).join('')).join(''); }
+function rReports(){
+  const bal=acctBal(); const posted=TXN.filter(t=>(t.status||'posted')==='posted').length;
+  // TRIAL BALANCE — every account with a balance, split into its debit/credit column; totals must match.
+  const tbRows=ACC.slice().sort((a,b)=>(a.code||'').localeCompare(b.code||'')).map(a=>{const b=bal[a.id]||0; if(Math.abs(b)<0.005)return'';
+      return `<tr><td>${esc(a.code)}</td><td>${esc(a.name)}</td><td class="num">${b>0?money(b):''}</td><td class="num">${b<0?money(-b):''}</td></tr>`;}).join('');
+  const tbDr=Object.entries(bal).reduce((s,[,b])=>s+(b>0?b:0),0), tbCr=Object.entries(bal).reduce((s,[,b])=>s+(b<0?-b:0),0);
+  // P&L — income = credit balances of revenue; expense = debit balances of expense; net = income − expense.
+  const inc=bySub('revenue',bal,b=>-b), exp=bySub('expense',bal,b=>b);
+  const incT=inc.reduce((s,g)=>s+g.total,0), expT=exp.reduce((s,g)=>s+g.total,0), net=incT-expT;
+  // BALANCE SHEET — assets (debit) vs liabilities+equity (credit); current-year net result folds into equity.
+  const asset=bySub('asset',bal,b=>b), liab=bySub('liability',bal,b=>-b), eq=bySub('equity',bal,b=>-b);
+  const assetT=asset.reduce((s,g)=>s+g.total,0), liabT=liab.reduce((s,g)=>s+g.total,0), eqBase=eq.reduce((s,g)=>s+g.total,0), eqT=eqBase+net;
+  const bsBalanced=Math.abs(assetT-(liabT+eqT))<0.5;
+  const T=(head,body,foot)=>`<div class="card"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot?`<tfoot>${foot}</tfoot>`:''}</table></div>`;
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Financial statements</h2><span class="sub">from ${posted} posted entr${posted===1?'y':'ies'} · as of ${new Date().toISOString().slice(0,10)}</span></div>`
+    + `<div class="head" style="margin:6px 0"><h2 style="font-size:15px">Trial Balance</h2></div>`
+    + (tbRows?T(`<th>Code</th><th>Account</th><th class="num">Debit</th><th class="num">Credit</th>`, tbRows,
+        `<tr><td></td><td><b>Total</b></td><td class="num"><b>${money(tbDr)}</b></td><td class="num"><b>${money(tbCr)}</b></td></tr>`
+        +(Math.abs(tbDr-tbCr)<0.5?'':`<tr><td colspan="4" class="err" style="padding:8px 12px">⚠ out of balance by ${money(Math.abs(tbDr-tbCr))}</td></tr>`))
+      :`<div class="empty">No posted entries yet.</div>`)
+    + `<div class="head" style="margin:14px 0 6px"><h2 style="font-size:15px">Profit &amp; Loss</h2></div>`
+    + T(`<th>Code</th><th>Account</th><th class="num">Amount</th>`,
+        `<tr class="sub"><td colspan="3"><b>Income</b></td></tr>${secRows(inc)||'<tr><td colspan=3 class="muted" style="padding-left:26px">—</td></tr>'}`
+        +`<tr><td></td><td><b>Total income</b></td><td class="num"><b>${money(incT)}</b></td></tr>`
+        +`<tr class="sub"><td colspan="3"><b>Expenses</b></td></tr>${secRows(exp)||'<tr><td colspan=3 class="muted" style="padding-left:26px">—</td></tr>'}`
+        +`<tr><td></td><td><b>Total expenses</b></td><td class="num"><b>${money(expT)}</b></td></tr>`,
+        `<tr><td></td><td><b>${net>=0?'Surplus (Net Profit)':'Deficit (Net Loss)'}</b></td><td class="num"><b style="color:${net>=0?'#7ee2a8':'#ff9b9b'}">${money(net)}</b></td></tr>`)
+    + `<div class="head" style="margin:14px 0 6px"><h2 style="font-size:15px">Balance Sheet</h2>${bsBalanced?'<span class="sub">✓ balances</span>':'<span class="sub err">⚠ does not balance</span>'}</div>`
+    + T(`<th>Code</th><th>Account</th><th class="num">Amount</th>`,
+        `<tr class="sub"><td colspan="3"><b>Assets</b></td></tr>${secRows(asset)||'<tr><td colspan=3 class="muted" style="padding-left:26px">—</td></tr>'}`
+        +`<tr><td></td><td><b>Total assets</b></td><td class="num"><b>${money(assetT)}</b></td></tr>`
+        +`<tr class="sub"><td colspan="3"><b>Liabilities</b></td></tr>${secRows(liab)||'<tr><td colspan=3 class="muted" style="padding-left:26px">—</td></tr>'}`
+        +`<tr class="sub"><td colspan="3"><b>Equity</b></td></tr>${secRows(eq)}`
+        +`<tr><td style="padding-left:26px">—</td><td>Current-year result</td><td class="num">${money(net)}</td></tr>`,
+        `<tr><td></td><td><b>Total liabilities + equity</b></td><td class="num"><b>${money(liabT+eqT)}</b></td></tr>`);
 }
 
 function ferr(m){ const e=document.getElementById('ferr'); if(e)e.textContent=m; }
