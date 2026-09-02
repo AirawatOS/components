@@ -7,7 +7,9 @@ APP=http://localhost:8099 NET=http://network:8090 IDN=http://identity:8093, or l
 import json, os, urllib.request, urllib.error, http.cookiejar
 APP=os.environ.get("APP","http://localhost:8099"); NET=os.environ.get("NET","http://localhost:8090"); IDN=os.environ.get("IDN","http://localhost:8093")
 DEV_REALM=os.environ.get("DEV_REALM","airawatdeveloper"); DEV_USER=os.environ.get("DEV_USER","devrick")
-ID_PAT=r"^ds:[a-z0-9-]+:\S+$"; VER="0.2.0"
+ID_PAT=r"^ds:[a-z0-9-]+:\S+$"
+# per-schema target version (transaction 0.2.0 already existed from the project-layer work → bump to 0.3.0)
+VERS={"finance.account":"0.2.0","finance.transaction":"0.3.0"}
 
 def post(url, body, token=None, cj=None):
     req=urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type":"application/json"}, method="POST")
@@ -39,10 +41,11 @@ SCHEMAS={
 STOK=post(IDN+"/realms/airawat/login",{"username":"steward"})[0]["access_token"]
 cj=http.cookiejar.CookieJar(); post(APP+"/login",{"realm":DEV_REALM,"username":DEV_USER},cj=cj)
 for sid,defn in SCHEMAS.items():
-    pr,pe=post(APP+"/bridge/schema-request",{"schema_id":sid,"version":VER,"definition":defn,"x_kind":"entity","justification":"Finance Console 0.4.0: sub-types + voucher/invoice fields (additive)."},cj=cj)
-    if pe: print(f"  {sid}@{VER}: PROPOSE {pe}"); continue
-    dr,de=post(NET+"/v1/schema-requests/decide",{"schema_id":sid,"version":VER,"decision":"approve"},token=STOK)
-    print(f"  {sid}@{VER}: {'OK '+dr['published_schema'] if dr else 'ERR '+str(de)}")
-# make the new version take effect immediately (drop the kernel's resolved-schema cache)
-kc,_=post(os.environ.get("KERNEL","http://kernel:8080")+"/v1/registry/schema-cache/refresh",{})
-print("  schema-cache refresh:", kc)
+    ver=VERS[sid]
+    pr,pe=post(APP+"/bridge/schema-request",{"schema_id":sid,"version":ver,"definition":defn,"x_kind":"entity","justification":"Finance Console 0.4.0: sub-types + voucher/invoice fields (additive)."},cj=cj)
+    if pe: print(f"  {sid}@{ver}: PROPOSE {pe}"); continue
+    dr,de=post(NET+"/v1/schema-requests/decide",{"schema_id":sid,"version":ver,"decision":"approve"},token=STOK)
+    print(f"  {sid}@{ver}: {'OK '+dr['published_schema'] if dr else 'ERR '+str(de)}")
+# make the new versions take effect immediately (drop the kernel's resolved-schema cache — needs a steward token)
+kc,ke=post(os.environ.get("KERNEL","http://kernel:8080")+"/v1/registry/schema-cache/refresh",{},token=STOK)
+print("  schema-cache refresh:", kc or ke)
