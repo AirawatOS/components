@@ -170,6 +170,7 @@
         <button class="ovbtn on" id="ovwater" hidden><span class="dotb" style="background:#60a5fa"></span>Drainage</button>
         <button class="ovbtn on" id="ovroads" hidden><span class="dotb" style="background:#e2e8f0"></span>Roads</button>
         <button class="ovbtn" id="ovfac" hidden><span class="dotb" style="background:#ef4444"></span>Facilities</button>
+        <button class="ovbtn on" id="ovsites" hidden><span class="dotb" style="background:#2ecc71"></span>AI-City sites</button>
       </div>
     </div>
   </aside>
@@ -241,7 +242,7 @@ async function qf(schema,filter){                              // server-side fi
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showWater=false, drillCell=null;
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
-let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false;   // drilled cell state + overlays
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=true;   // drilled cell state + overlays
 let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
 const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towers) — taller ⇒ value differences read clearly
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
@@ -315,8 +316,16 @@ async function ensureOverlay(kind){                            // lazy-load the 
   else if(kind==="water" && DATA.water==null)
     DATA.water=(await q("geo.hydro_feature")).filter(o=>o.geometry&&inB(firstpt(o.geometry)));
   else if(kind==="facilities" && DATA.facilities==null)
-    DATA.facilities=(await q("geo.facility")).map(o=>({c:((o.geometry||{}).coordinates)||o.centroid,cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id}))
+    DATA.facilities=(await q("geo.facility")).filter(o=>o.category!=="ai-city-site").map(o=>({c:((o.geometry||{}).coordinates)||o.centroid,cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id}))
       .filter(f=>Array.isArray(f.c)&&f.c.length===2&&inB(f.c));
+  else if(kind==="sites" && DATA.sites==null){                 // AI-City candidate sites (site-suitability, ADR-0029) → ranked markers
+    const idv=(o,s)=>((o.identifiers||[]).find(i=>i.scheme===s)||{}).value;
+    DATA.sites=(await q("geo.facility")).filter(o=>o.category==="ai-city-site").map(o=>({
+      c:((o.geometry||{}).coordinates)||o.centroid, tag:o.subcategory, name:o.name,
+      score:+(idv(o,"suitability-score")||0), rec:idv(o,"recommended")==="true",
+      vac:idv(o,"vacant-pct"), road:idv(o,"nearest-road-m")}))
+      .filter(f=>Array.isArray(f.c)&&f.c.length===2).sort((a,b)=>b.score-a.score);
+  }
   else if(kind==="sensors" && DATA.sensors==null){             // raw ground-station readings → latest-per-station points
     const raw=await q("air.sensor_reading"), by={};
     for(const o of raw){ const k=o.sensor_id||JSON.stringify((o.space||{}).centroid), t=o.observed_at||"";
@@ -479,7 +488,41 @@ function overlayLayers(){
   }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
   const sen=sensorsLayer(); if(sen) out.push(sen);
+  const st=sitesLayer(); if(st) out.push(...st);
   return out;
+}
+function siteCol(v){ return v>=85?[46,204,113]:v>=78?[241,196,15]:[230,126,34]; }   // suitability bands
+function sitesLayer(){                                          // AI-City candidate sites → ranked, score-coloured markers
+  if(!showSites || !(DATA.sites||[]).length) return null;
+  const rec=DATA.sites.filter(s=>s.rec);
+  return [
+    new deck.ScatterplotLayer({id:"sites-ring",data:rec,getPosition:s=>s.c,       // pulsing ring on the recommended site
+      filled:false,stroked:true,getLineColor:[46,204,113,255],lineWidthUnits:"pixels",getLineWidth:2.5,
+      radiusUnits:"meters",getRadius:300,radiusMinPixels:24,radiusMaxPixels:70,pickable:false}),
+    new deck.ScatterplotLayer({id:"sites",data:DATA.sites,pickable:true,getPosition:s=>s.c,
+      getFillColor:s=>siteCol(s.score).concat(240),stroked:true,getLineColor:[8,16,26,235],lineWidthMinPixels:1.6,
+      radiusUnits:"meters",getRadius:s=>s.rec?165:130,radiusMinPixels:9,radiusMaxPixels:22,
+      onHover:info=>tip(info)})
+  ];
+}
+function drawSites(){                                           // floating ranking card (reliable HTML, no TextLayer dep)
+  let el=document.getElementById("sitecard");
+  if(!showSites || !(DATA.sites||[]).length){ if(el) el.hidden=true; return; }
+  if(!el){ el=document.createElement("div"); el.id="sitecard";
+    el.style.cssText="position:absolute;left:14px;bottom:16px;z-index:6;background:rgba(11,15,20,.92);border:1px solid #223;"
+      +"border-radius:12px;padding:12px 14px;max-width:290px;font:13px/1.45 system-ui,sans-serif;color:#e6edf3;box-shadow:0 12px 30px rgba(0,0,0,.5)";
+    (document.querySelector(".map-wrap")||document.body).appendChild(el); }
+  el.hidden=false;
+  const rows=DATA.sites.map(s=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;border-top:1px solid #1b2430">
+      <span style="width:20px;height:20px;border-radius:50%;flex:0 0 auto;background:rgb(${siteCol(s.score).join(',')});
+        display:grid;place-items:center;color:#08101a;font-weight:800;font-size:11px">${s.tag}</span>
+      <span style="flex:1"><b>${s.name.split(' · ')[0].replace(/^Site .— /,'')}</b>
+        <span style="color:#8b949e;font-size:11.5px">· ${s.vac}% vacant · road ${s.road} m</span></span>
+      <span style="font-variant-numeric:tabular-nums;font-weight:700">${s.score}</span>
+      ${s.rec?'<span title="recommended" style="color:#2ecc71">✓</span>':''}</div>`).join('');
+  el.innerHTML=`<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8b949e;margin-bottom:2px">AI-City site suitability</div>`
+    +`<div style="font-size:12px;color:#8b949e;margin-bottom:4px">20 MW GPU / data centre — ranked on real building-density + road access</div>`+rows
+    +`<div style="font-size:11px;color:#6b7684;margin-top:7px">Power / fibre / cooling indicative · a signed recommendation (human admits)</div>`;
 }
 function pmcol(v){ return v<30?[38,166,91]:v<60?[241,196,15]:v<90?[230,126,34]:v<120?[231,76,60]:v<250?[142,68,173]:[125,60,45]; }  // CPCB AQI bands
 function sensorsLayer(){                                        // raw air.sensor_reading points → PM2.5-coloured dots
@@ -684,6 +727,9 @@ function fitView(bbox){
   $("ovwater").onclick=async()=>{ showWater=!showWater; $("ovwater").classList.toggle("on",showWater); if(showWater) await ensureOverlay("water"); render(); };
   $("ovroads").onclick=async()=>{ showRoads=!showRoads; $("ovroads").classList.toggle("on",showRoads); if(showRoads){ setBusy("Loading roads…"); await ensureOverlay("roads"); setBusy(null); } render(); };
   $("ovfac").onclick=async()=>{ showFacilities=!showFacilities; $("ovfac").classList.toggle("on",showFacilities); if(showFacilities){ setBusy("Loading facilities…"); await ensureOverlay("facilities"); setBusy(null); } render(); };
+  $("ovsites").hidden=false; $("ovsites").classList.toggle("on",showSites);   // AI-City candidate sites (Plan interaction)
+  $("ovsites").onclick=async()=>{ showSites=!showSites; $("ovsites").classList.toggle("on",showSites); if(showSites) await ensureOverlay("sites"); drawSites(); render(); };
+  ensureOverlay("sites").then(()=>{ drawSites(); render(); });                 // load + draw the ranked sites on first paint
   // Overlays (roads / drainage / facilities) are OFF on load — the base map shows first; each loads lazily only when the user toggles it on.
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
