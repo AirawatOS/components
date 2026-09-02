@@ -1,0 +1,31 @@
+# LUCKNOW 3D (kind=app) — a photoreal 3D viewer for the AI-City twin. Renders the greenfield LAND-USE PLAN
+# (developable vacant cells → zoning → massing, from the shared planner) over the real building footprints on a
+# CesiumJS globe. Tokenless it shows our own geometry; with a Cesium ion token (set at install) it gains world
+# terrain + real-city 3D buildings + imagery. Same governed plan as City Scan's "Land-use plan (3D)" overlay —
+# ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
+component_id: ds:airawatdeveloper:app/lucknow-3d
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Lucknow 3D
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+# CSP PROFILE: Cesium needs Web Workers + WebAssembly, which the default app CSP (default-src 'none') blocks.
+# app-host emits a relaxed CSP for csp_profile:3d — adds worker-src 'self' blob: + 'wasm-unsafe-eval' + blob: — while
+# keeping connect-src pinned to 'self' (all external I/O still flows only through the host bridge). Opt-in, per app.
+csp_profile: 3d
+required_schemas: [space.aoi, geo.building, viz.layer]
+writes: []
+roles: [platform.tenant-admin]
+# INSTALL-TIME CONFIG (component setup, ADR-0027): a Cesium ion access token (a CLIENT token, safe in-browser by
+# design → config, not a secret). Unlocks photoreal terrain + OSM Buildings + imagery. Empty ⇒ tokenless preview.
+config: [CESIUM_ION_TOKEN]
+# DECLARED EGRESS (broker-for-apps): with a token, Cesium's terrain/3d-tiles/imagery are proxied through the host's
+# /bridge/fetch to these hosts only (the CSP still blocks direct calls). Wired in the photoreal slice.
+egress:
+  - { host: assets.ion.cesium.com, rate_per_min: 600 }
+  - { host: api.cesium.com, rate_per_min: 120 }
+  - { host: tile.googleapis.com, rate_per_min: 600 }
+sources:
+  - { ref: "ds:airawat:ref/source/cesium-ion", host: assets.ion.cesium.com, provides: [viz.basemap, viz.terrain] }
