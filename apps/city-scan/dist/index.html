@@ -171,6 +171,7 @@
         <button class="ovbtn on" id="ovroads" hidden><span class="dotb" style="background:#e2e8f0"></span>Roads</button>
         <button class="ovbtn" id="ovfac" hidden><span class="dotb" style="background:#ef4444"></span>Facilities</button>
         <button class="ovbtn on" id="ovsites" hidden><span class="dotb" style="background:#2ecc71"></span>AI-City sites</button>
+        <button class="ovbtn" id="ovplan" hidden><span class="dotb" style="background:#39d3e0"></span>Land-use plan (3D)</button>
       </div>
     </div>
   </aside>
@@ -202,6 +203,9 @@
 <!-- deck.gl (GPU map): core+layers+geo-layers bundled into one self-contained IIFE (esbuild), self-hosted
      under the sandbox CSP (script-src 'self'). window.deck exposes Deck/MapView/H3HexagonLayer/TileLayer/… -->
 <script src="./vendor/deck-bundle.min.js"></script>
+<!-- h3-js (self-hosted UMD → window.h3) + the renderer-agnostic land-use planner (greenfield vacancy → zoning → massing) -->
+<script src="./vendor/h3-js.umd.js"></script>
+<script src="./plan-core.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -243,6 +247,7 @@ async function qf(schema,filter){                              // server-side fi
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showWater=false, drillCell=null;
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
 let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=true;   // drilled cell state + overlays
+let showPlan=false, PLAN=null, PLAN_BLD=null;   // greenfield land-use plan (3D): developable cells → zoning → massing
 let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
 const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towers) — taller ⇒ value differences read clearly
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
@@ -524,6 +529,62 @@ function drawSites(){                                           // floating rank
     +`<div style="font-size:12px;color:#8b949e;margin-bottom:4px">20 MW GPU / data centre — ranked on real building-density + road access</div>`+rows
     +`<div style="font-size:11px;color:#6b7684;margin-top:7px">Power / fibre / cooling indicative · a signed recommendation (human admits)</div>`;
 }
+// ---- GREENFIELD LAND-USE PLAN (3D) — the "plan the vacant cells" interaction ---------------------------
+// From the REAL building footprints: per-cell built-up % → the largest CONTIGUOUS block of near-vacant cells
+// (≤2% built) is the developable parcel → illustrative land-use zoning + massing. Computed client-side by
+// plan-core.js (LandUsePlan). Vacancy is real data; zoning + massing are a labelled illustrative proposal.
+async function ensurePlan(){
+  if(PLAN) return PLAN;
+  if(typeof LandUsePlan==="undefined" || typeof h3==="undefined") return null;   // deps not bundled → no-op
+  const rows=await q("geo.building");
+  if(!rows.length) return null;
+  const feats=rows.filter(o=>o&&o.geometry).map(o=>({type:"Feature",geometry:o.geometry,
+    properties:{area:o.area_m2||0, h:(typeof o.height_m==="number"&&o.height_m>0)?o.height_m:NOMINAL_H}}));
+  PLAN_BLD={type:"FeatureCollection",features:feats};
+  const bb=DATA.scope||(DATA.aoi&&DATA.aoi.bbox);
+  const aoi=Array.isArray(bb)&&bb.length===4
+    ? [[bb[0],bb[1]],[bb[2],bb[1]],[bb[2],bb[3]],[bb[0],bb[3]],[bb[0],bb[1]]] : null;
+  try{ PLAN=LandUsePlan.computePlan(PLAN_BLD,{aoi}); }catch(e){ PLAN=null; }
+  return PLAN;
+}
+const ZCOL=z=> (PLAN&&PLAN.zones[z]?PLAN.zones[z].col:[150,150,150]);
+function planLayers(){
+  if(!showPlan||!PLAN) return [];
+  return [
+    // existing city as grey context (real footprints, extruded)
+    new deck.GeoJsonLayer({id:"plan-context",data:PLAN_BLD,extruded:true,filled:true,pickable:false,
+      getElevation:f=>f.properties.h, getFillColor:[70,86,120,150], material:{ambient:0.5,diffuse:0.6}}),
+    // vacant cells OUTSIDE the chosen parcel → faint, so the plan reads as one block
+    new deck.PolygonLayer({id:"plan-reserve",data:PLAN.reserve,getPolygon:d=>d.poly,extruded:false,stroked:true,filled:true,
+      getFillColor:[120,130,170,18],getLineColor:[120,130,170,60],getLineWidth:1,lineWidthUnits:"pixels"}),
+    // the zoned developable cells (land-use plates)
+    new deck.PolygonLayer({id:"plan-zones",data:PLAN.dev,getPolygon:d=>d.poly,extruded:false,stroked:true,filled:true,
+      getFillColor:d=>ZCOL(d.zone).concat(72),getLineColor:[10,14,26,190],getLineWidth:2,lineWidthUnits:"pixels"}),
+    // planned massing per zone (extruded blocks)
+    new deck.PolygonLayer({id:"plan-mass",data:PLAN.mass,getPolygon:d=>d.poly,extruded:true,filled:true,
+      getElevation:d=>d.h,getFillColor:d=>d.col.concat(255),
+      material:{ambient:0.55,diffuse:0.7,shininess:26,specularColor:[90,120,150]}}),
+    // parks — tree points
+    new deck.ScatterplotLayer({id:"plan-trees",data:PLAN.trees,getPosition:d=>d.p,getFillColor:[70,192,122,235],
+      radiusUnits:"meters",getRadius:6,radiusMinPixels:1.5})
+  ];
+}
+function drawPlanCard(){
+  let el=document.getElementById("plancard");
+  if(!showPlan||!PLAN){ if(el) el.hidden=true; return; }
+  if(!el){ el=document.createElement("div"); el.id="plancard";
+    el.style.cssText="position:absolute;right:14px;bottom:16px;z-index:6;background:rgba(11,15,20,.92);border:1px solid #223;"
+      +"border-radius:12px;padding:12px 14px;max-width:250px;font:13px/1.4 system-ui,sans-serif;color:#e6edf3;box-shadow:0 12px 30px rgba(0,0,0,.5)";
+    (document.querySelector(".map-wrap")||document.body).appendChild(el); }
+  el.hidden=false;
+  const Z=PLAN.zones, C=PLAN.counts, S=PLAN.stats;
+  const rows=Object.keys(Z).map(k=>`<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+      <span style="width:12px;height:12px;border-radius:3px;flex:0 0 auto;background:rgb(${Z[k].col.join(',')})"></span>
+      <span style="flex:1">${esc(Z[k].name)}</span><b>${C[k]||0}</b></div>`).join('');
+  el.innerHTML=`<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8b949e;margin-bottom:2px">Land-use plan · greenfield</div>`
+    +`<div style="font-size:12px;color:#8b949e;margin-bottom:6px"><b style="color:#39d3e0">${S.developable}</b> developable cells (≤2% built) zoned &amp; massed · of ${S.vacant} vacant / ${S.aoiCells} in AOI</div>`+rows
+    +`<div style="font-size:11px;color:#6b7684;margin-top:7px">Vacancy from real footprints · zoning &amp; massing illustrative</div>`;
+}
 function pmcol(v){ return v<30?[38,166,91]:v<60?[241,196,15]:v<90?[230,126,34]:v<120?[231,76,60]:v<250?[142,68,173]:[125,60,45]; }  // CPCB AQI bands
 function sensorsLayer(){                                        // raw air.sensor_reading points → PM2.5-coloured dots
   if(!showSensors || !(DATA.sensors||[]).length) return null;
@@ -545,7 +606,11 @@ function facilitiesLayer(){                                     // critical faci
 }
 function render(){
   if(!deckgl) return;
-  deckgl.setProps({layers:[basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer()].filter(Boolean)});
+  const layers = (showPlan && PLAN)
+    ? [basemapLayer(), ...planLayers(), highlightLayer()]      // greenfield plan view (footprints + zoning + massing)
+    : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer()];
+  deckgl.setProps({layers:layers.filter(Boolean)});
+  drawPlanCard();
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
@@ -729,6 +794,19 @@ function fitView(bbox){
   $("ovfac").onclick=async()=>{ showFacilities=!showFacilities; $("ovfac").classList.toggle("on",showFacilities); if(showFacilities){ setBusy("Loading facilities…"); await ensureOverlay("facilities"); setBusy(null); } render(); };
   $("ovsites").hidden=false; $("ovsites").classList.toggle("on",showSites);   // AI-City candidate sites (Plan interaction)
   $("ovsites").onclick=async()=>{ showSites=!showSites; $("ovsites").classList.toggle("on",showSites); if(showSites) await ensureOverlay("sites"); drawSites(); render(); };
+  $("ovplan").hidden=false; $("ovplan").classList.toggle("on",showPlan);   // greenfield land-use plan (3D)
+  $("ovplan").onclick=async()=>{
+    showPlan=!showPlan; $("ovplan").classList.toggle("on",showPlan);
+    if(showPlan){
+      setBusy("Computing land-use plan…"); await ensurePlan(); setBusy(null);
+      if(!PLAN){ showPlan=false; $("ovplan").classList.remove("on"); setBusy("no buildings to plan here"); setTimeout(()=>setBusy(null),1600); return; }
+      const cs=PLAN.dev.map(d=>d.center), cx=cs.reduce((s,p)=>s+p[0],0)/cs.length, cy=cs.reduce((s,p)=>s+p[1],0)/cs.length;
+      mode3d=true; $("tilt").style.color="var(--accent)"; $("tilt").style.borderColor="var(--accent)";
+      view={...view, longitude:cx, latitude:cy, zoom:14.7, pitch:55, transitionDuration:800};
+      deckgl.setProps({initialViewState:view});
+    }
+    render();
+  };
   ensureOverlay("sites").then(()=>{ drawSites(); render(); });                 // load + draw the ranked sites on first paint
   // Overlays (roads / drainage / facilities) are OFF on load — the base map shows first; each loads lazily only when the user toggles it on.
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };

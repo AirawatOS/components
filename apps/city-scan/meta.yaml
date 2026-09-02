@@ -5,14 +5,14 @@
 # reading only through the host bridge (/bridge/query) over its declared schemas.
 component_id: ds:airawat:app/city-scan
 kind: app
-version: 0.2.0   # 0.2.0: "AI-City sites" overlay — ranked site-suitability candidates (geo.facility) + floating ranking card
+version: 0.3.0   # 0.3.0: "Land-use plan (3D)" overlay — greenfield vacancy (real footprints) → contiguous developable parcel → zoning + massing (bundles h3-js + plan-core.js); 0.2.0: AI-City sites overlay
 provider: ds:airawat:developer
 display_name: City Scan
 entrypoint: index.html
 # Declares the governed viz.layer CATALOG — which, per the host bridge, also authorises reading any map layer
 # the catalog exposes. So new indicator layers (hydrology, population, buildings…) appear with just a descriptor
 # + data — no edit here. space.aoi/geo.landcover/city.coverage are the fixed frame/basemap/trust reads.
-required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature, air.sensor_reading]
+required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature, air.sensor_reading, geo.building]
 sandboxed: true
 # DECLARED APP EGRESS (broker-for-apps): the viewer may reach ONLY these external hosts, and only through the
 # host's /bridge/fetch (the CSP still blocks direct calls). Used for the OpenStreetMap tile basemap (© OSM).
