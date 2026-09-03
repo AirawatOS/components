@@ -5,20 +5,13 @@
   html,body{margin:0;height:100%;background:#070a16;overflow:hidden;font-family:ui-sans-serif,system-ui,sans-serif;color:#eef1ff}
   #c{position:absolute;inset:0}
   .cesium-widget-credits,.cesium-viewer-bottom{display:none!important}
-  .cap{position:absolute;top:16px;left:20px;z-index:5;pointer-events:none;max-width:62vw}
+  #c,#c .cesium-widget,#c .cesium-widget canvas{width:100%!important;height:100%!important;display:block}
+  .cap{position:absolute;top:16px;left:20px;z-index:5;pointer-events:none;max-width:60vw}
   .cap .k{font:11px ui-monospace,Menlo,monospace;letter-spacing:.2em;text-transform:uppercase;color:#e8b84b}
   .cap h1{margin:5px 0 0;font-family:ui-serif,Georgia,serif;font-size:25px;font-weight:600;
     background:linear-gradient(180deg,#fbe6b4,#e8b84b 60%,#b58a34);-webkit-background-clip:text;background-clip:text;color:transparent}
   .cap .s{margin-top:4px;font-size:13px;color:#aeb6dd}.cap .s b{color:#39d3e0}
-  .leg{position:absolute;left:20px;bottom:18px;z-index:5;background:#0e1130d0;border:1px solid #2a2a5a;border-radius:11px;padding:11px 13px;backdrop-filter:blur(6px);max-width:250px}
-  .leg .t{font:11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:7px}
-  .leg .row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:2px 0}
-  .leg .sw{width:12px;height:12px;border-radius:3px;flex:0 0 auto}.leg .n{margin-left:auto;color:#9aa0cc;font-variant-numeric:tabular-nums}
   #status{position:absolute;top:16px;right:18px;z-index:5;background:#0e1130cc;border:1px solid #e8b84b3a;border-radius:9px;padding:8px 12px;font:12px ui-monospace,monospace;color:#cfd6f5}
-  .foot{position:absolute;right:14px;bottom:10px;z-index:5;font:10.5px ui-monospace,Menlo,monospace;color:#6b7290}
-  .err{position:absolute;inset:0;display:none;place-items:center;z-index:9;background:#070a16;color:#e6a}
-  /* make the Cesium widget fill the container (fixes the tiny top-left canvas) */
-  #c,#c .cesium-widget,#c .cesium-widget canvas{width:100%!important;height:100%!important;display:block}
   #iongear{position:absolute;top:54px;right:18px;z-index:6;background:#0e1130cc;border:1px solid #e8b84b3a;border-radius:9px;padding:7px 11px;font-size:12.5px;color:#cfd6f5;cursor:pointer;backdrop-filter:blur(6px)}
   #ionpanel{position:absolute;top:92px;right:18px;z-index:7;width:270px;background:#0e1130f2;border:1px solid #2a2a5a;border-radius:11px;padding:12px 13px;backdrop-filter:blur(6px);font-size:12.5px}
   #ionpanel .t{font:11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:6px}
@@ -27,9 +20,16 @@
   #ionpanel button{flex:1;background:#e8b84b1e;border:1px solid #e8b84b66;color:#f4e6c0;border-radius:7px;padding:7px;font-size:12px;cursor:pointer}
   #ionpanel #ionclear{background:#0e1130;border-color:#2a2a5a;color:#9aa0cc}
   #ionpanel .hint{margin-top:8px;color:#7b83b0;font-size:11px;line-height:1.4}
+  /* camera controls (bottom-right) */
+  #ctl{position:absolute;right:18px;bottom:18px;z-index:6;display:flex;gap:7px}
+  #ctl button{width:38px;height:38px;border-radius:10px;background:#0e1130cc;border:1px solid #2a2a5a;color:#dfe6ff;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);display:grid;place-items:center}
+  #ctl button:hover{border-color:#e8b84b88}
+  #ctl button.on{border-color:#39d3e0;color:#39d3e0}
+  .foot{position:absolute;left:20px;bottom:16px;z-index:5;font:10.5px ui-monospace,Menlo,monospace;color:#6b7290;max-width:52vw}
+  .err{position:absolute;inset:0;display:none;place-items:center;z-index:9;background:#070a16;color:#e6a;padding:24px;text-align:center}
 </style></head><body>
 <div id="c"></div>
-<div class="cap"><div class="k">Indicative Land-use Plan · Sector 15, Vrindavan Yojana</div>
+<div class="cap"><div class="k">Indicative Masterplan · Sector 15, Vrindavan Yojana</div>
   <h1>Lucknow 3D — AI City</h1>
   <div class="s"><b id="hd">loading the twin…</b></div></div>
 <div id="status">starting…</div>
@@ -40,10 +40,14 @@
   <div class="row"><button id="ionsave">Save + reload</button><button id="ionclear">Clear</button></div>
   <div class="hint">A public client token from cesium.com/ion → unlocks photoreal terrain + real-city 3D buildings. Stored in this browser only.</div>
 </div>
-<div class="leg"><div class="t">Land use</div><div id="legrows"></div></div>
-<div class="foot">Real footprints + governed plan · photoreal basemap when a Cesium ion token is configured · zoning/massing illustrative</div>
+<div id="ctl">
+  <button id="cOrbit" title="Play / pause auto-orbit">⏸</button>
+  <button id="cIn" title="Zoom in">+</button>
+  <button id="cOut" title="Zoom out">−</button>
+  <button id="cReset" title="Reset view">⌖</button>
+</div>
+<div class="foot">Real footprints (Google Open Buildings) · designed AI district is illustrative · photoreal basemap when an ion token is set</div>
 <div class="err" id="err"></div>
-<!-- self-hosted under the app sandbox: Cesium (needs the 3d CSP profile: workers + wasm), h3-js, the shared planner -->
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>
 <script src="./vendor/h3-js.umd.js"></script>
@@ -51,144 +55,138 @@
 <script>
 const $=id=>document.getElementById(id);
 let APPID="lucknow-3d";
-async function bridge(path,body){
-  const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  return r.json();
-}
-async function q(schema){
-  try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000});
-       return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
-}
+async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}); return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
 function ringOf(f){let c=(f.geometry||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0])&&Array.isArray(c[0][0]))c=c[0];return c;}
 function centroid(r){let x=0,y=0;for(const p of r){x+=p[0];y+=p[1];}return[x/r.length,y/r.length];}
 const rgba=(a,al)=>Cesium.Color.fromBytes(a[0],a[1],a[2],Math.round((al==null?1:al)*255));
 const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="Lucknow 3D — "+m; $("status").textContent="error"; };
-// ion token control (⚙) — the token is a PUBLIC client key; kept in localStorage + used to enable photoreal
-(function(){ const g=$("iongear"), p=$("ionpanel"), inp=$("iontok"); if(!g) return;
+// ion token control (⚙) — the token is a PUBLIC client key; kept in localStorage
+(function(){ const g=$("iongear"),p=$("ionpanel"),inp=$("iontok"); if(!g)return;
   inp.value=localStorage.getItem("cesium_ion_token")||""; g.style.borderColor=inp.value?"#39d3e0":"";
   g.onclick=()=>{ p.hidden=!p.hidden; if(!p.hidden) inp.focus(); };
   $("ionsave").onclick=()=>{ const v=(inp.value||"").trim(); v?localStorage.setItem("cesium_ion_token",v):localStorage.removeItem("cesium_ion_token"); location.reload(); };
   $("ionclear").onclick=()=>{ localStorage.removeItem("cesium_ion_token"); location.reload(); };
 })();
+const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
 
 (async()=>{
  try{
-  if(typeof Cesium==="undefined") return fail("Cesium failed to load (needs the 3d CSP profile: worker-src + wasm-unsafe-eval).");
+  if(typeof Cesium==="undefined") return fail("Cesium failed to load (needs the 3d CSP profile).");
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"lucknow-3d"}));
   APPID=cfg.app_id||"lucknow-3d";
-  const TOKEN=(localStorage.getItem("cesium_ion_token")||"").trim();   // PUBLIC client key — pasted by the user (⚙)
+  const TOKEN=(localStorage.getItem("cesium_ion_token")||"").trim();
   const hasToken=!!TOKEN; if(hasToken) Cesium.Ion.defaultAccessToken=TOKEN;
 
-  const viewer=new Cesium.Viewer("c",{
-    baseLayer: hasToken ? undefined : false, baseLayerPicker:false, geocoder:false, timeline:false, animation:false,
-    homeButton:false, sceneModePicker:false, navigationHelpButton:false, fullscreenButton:false, infoBox:false,
-    selectionIndicator:false, terrain: hasToken?Cesium.Terrain.fromWorldTerrain():undefined });
+  const viewer=new Cesium.Viewer("c",{baseLayer:hasToken?undefined:false,baseLayerPicker:false,geocoder:false,
+    timeline:false,animation:false,homeButton:false,sceneModePicker:false,navigationHelpButton:false,
+    fullscreenButton:false,infoBox:false,selectionIndicator:false,terrain:hasToken?Cesium.Terrain.fromWorldTerrain():undefined});
   window.viewer=viewer; const scene=viewer.scene;
-  // FIX the tiny-top-left canvas: force a resize once the container is laid out (Cesium sizes to the container
-  // at init, which can be 0×0 inside the freshly-mounted app iframe) + on every window resize.
   const _rz=()=>{ try{ viewer.resize(); scene.requestRender(); }catch(e){} };
   window.addEventListener("resize",_rz); requestAnimationFrame(_rz); setTimeout(_rz,250); setTimeout(_rz,900);
-  // sky + ground so the city sits in a WORLD, not in space (no starfield). Procedural atmosphere works tokenless.
-  scene.globe.baseColor=Cesium.Color.fromCssColorString("#141a12");
-  if(scene.skyAtmosphere){ scene.skyAtmosphere.show=true; scene.skyAtmosphere.brightnessShift=0.15; scene.skyAtmosphere.saturationShift=0.08; }
-  scene.skyBox.show=false; scene.backgroundColor=Cesium.Color.fromCssColorString("#0a1522");
+  // world, not space
+  scene.globe.baseColor=Cesium.Color.fromCssColorString("#20281c");
+  if(scene.skyAtmosphere){ scene.skyAtmosphere.show=true; scene.skyAtmosphere.brightnessShift=0.2; scene.skyAtmosphere.saturationShift=0.1; }
+  scene.skyBox.show=false; scene.backgroundColor=Cesium.Color.fromCssColorString("#0c1a2a");
   scene.fog.enabled=true; scene.fog.density=0.00006; scene.globe.enableLighting=true;
-  viewer.clock.currentTime=Cesium.JulianDate.fromIso8601("2026-03-21T11:20:00Z");   // warm late-afternoon Lucknow light
+  scene.screenSpaceCameraController.minimumZoomDistance=120;
+  viewer.clock.currentTime=Cesium.JulianDate.fromIso8601("2026-03-21T11:20:00Z");
   if(hasToken){ try{ const osm=await Cesium.createOsmBuildingsAsync();
-    // 3D-Tiles feature styling (the Sandcastle technique): recolour the REAL city by building height
     osm.style=new Cesium.Cesium3DTileStyle({color:{conditions:[
       ['${feature["cesium#estimatedHeight"]} >= 80','color("#e8b84b")'],
       ['${feature["cesium#estimatedHeight"]} >= 40','color("#39c6d6")'],
       ['${feature["cesium#estimatedHeight"]} >= 18','color("#2b7f9e")'],
       ['true','color("#41527a")']]}});
     scene.primitives.add(osm); }catch(e){ console.warn(e); } }
-  $("status").textContent = hasToken?"photoreal (ion)":"tokenless preview";
+  $("status").textContent=hasToken?"photoreal (ion)":"tokenless preview";
 
-  // ---- real data via the host bridge (as the signed-in user) ----
+  // ---- data ----
   const aois=await q("space.aoi"); const aoi=aois[0]||{};
   const rows=await q("geo.building");
   if(!rows.length){ $("hd").textContent="no building footprints in this workspace yet"; return; }
-  const feats=rows.filter(o=>o&&o.geometry).map(o=>({type:"Feature",geometry:o.geometry,
-    properties:{area:o.area_m2||0, h:(typeof o.height_m==="number"&&o.height_m>0)?o.height_m:9}}));
-  const FC={type:"FeatureCollection",features:feats};
-  const bb=aoi.bbox; const aoiRing=Array.isArray(bb)&&bb.length===4
-    ? [[bb[0],bb[1]],[bb[2],bb[1]],[bb[2],bb[3]],[bb[0],bb[3]],[bb[0],bb[1]]] : null;
-  const PLAN=LandUsePlan.computePlan(FC,{aoi:aoiRing}); const ZONES=PLAN.zones, S=PLAN.stats;
-  $("hd").innerHTML=`<b>${S.developable}</b> developable cells zoned &amp; massed (of ${S.vacant} vacant / ${S.aoiCells} in AOI)`;
-  $("legrows").innerHTML=Object.entries(ZONES).map(([k,z])=>
-    `<div class="row"><span class="sw" style="background:rgb(${z.col.join(',')})"></span>${z.name}<span class="n">${PLAN.counts[k]||0}</span></div>`).join('');
+  const hOf=o=>{ const hm=o.height_m; return (typeof hm==="number"&&hm>0)?hm:Math.max(6,Math.min(46,Math.sqrt(o.area_m2||60)*0.85)); };
+  const feats=rows.filter(o=>o&&o.geometry).map(o=>({type:"Feature",geometry:o.geometry,properties:{area:o.area_m2||0,h:hOf(o)}}));
+  const bb=aoi.bbox, aoiRing=Array.isArray(bb)&&bb.length===4?[[bb[0],bb[1]],[bb[2],bb[1]],[bb[2],bb[3]],[bb[0],bb[3]],[bb[0],bb[1]]]:null;
+  const PLAN=LandUsePlan.computePlan({type:"FeatureCollection",features:feats},{aoi:aoiRing});
 
-  // parcel centre (robust — guard against empty/NaN)
-  let cx, cy;
-  { const cc=PLAN.dev.map(d=>d.center).filter(p=>p&&isFinite(p[0])&&isFinite(p[1]));
-    cx=cc.reduce((s,p)=>s+p[0],0)/cc.length; cy=cc.reduce((s,p)=>s+p[1],0)/cc.length;
-    if(!isFinite(cx)||!isFinite(cy)){ cx=aoiRing?(aoiRing[0][0]+aoiRing[2][0])/2:80.9559; cy=aoiRing?(aoiRing[0][1]+aoiRing[2][1])/2:26.759; } }
-
-  // NOTE: Cesium's geometry WORKERS (off-thread tessellation) are blocked by the app sandbox CSP, so polygons
-  // are built SYNCHRONOUSLY on the main thread (asynchronous:false) and batched as GeometryInstances into one
-  // Primitive per style. Verified to render under the 3d CSP profile; no worker attack surface either.
-  const VF=Cesium.PerInstanceColorAppearance.VERTEX_FORMAT;
-  function inst(ring,h,col,al){ const flat=[]; for(const p of ring) flat.push(p[0],p[1]);
-    return new Cesium.GeometryInstance({
-      geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
-        extrudedHeight:h, height:0, vertexFormat:VF}),
-      attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al))}}); }
-  function addPrim(instances,translucent){ if(!instances.length) return;
-    scene.primitives.add(new Cesium.Primitive({geometryInstances:instances, asynchronous:false,
-      appearance:new Cesium.PerInstanceColorAppearance({closed:!translucent, translucent:!!translucent})})); }
-
-  // ================= SCENE: landscape + full existing city + a DESIGNED, dense AI district =================
-  const rnd=(s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;})(7);
+  // ---- render helpers (SYNCHRONOUS primitives — sandbox blocks geometry workers) ----
+  const VF=Cesium.PerInstanceColorAppearance.VERTEX_FORMAT, rnd=seed(11);
   const rectR=(px,py,hw,hh)=>[[px-hw,py-hh],[px+hw,py-hh],[px+hw,py+hh],[px-hw,py+hh],[px-hw,py-hh]];
   const RMP=(st,t)=>{t=Math.max(0,Math.min(1,t));const n=st.length-1,x=t*n,i=Math.min(n-1,x|0),f=x-i,a=st[i],b=st[i+1];return[a[0]+(b[0]-a[0])*f|0,a[1]+(b[1]-a[1])*f|0,a[2]+(b[2]-a[2])*f|0];};
-  const HR=[[44,54,96],[38,104,146],[57,190,208],[150,214,232],[236,190,86]], hcol=h=>RMP(HR,h/160);
+  const HR=[[60,72,120],[52,120,160],[70,196,214],[168,224,238],[236,196,96]], hcol=h=>RMP(HR,h/150);
   const inHex=(p,poly)=>{let x=p[0],y=p[1],ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))ins=!ins;}return ins;};
+  const inAny=(p,polys)=>{for(const c of polys) if(inHex(p,c.poly)) return c; return null;};
+  const einst=(ring,h,col,al)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),extrudedHeight:h,height:0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
   const finst=(ring,col,al,h)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),height:h||0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
-  const addFlat=(insts,tl)=>{if(insts.length)scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:true,translucent:!!tl})}));};
+  const batch=(insts,flat,tl)=>{ if(insts.length) scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:!!flat,closed:!tl,translucent:!!tl})})); };
 
-  // GROUND — a land plane over the AOI so the city isn't floating (tokenless; photoreal has real terrain)
-  const AX=(aoiRing||[[cx-0.02,cy-0.02],[cx+0.02,cy+0.02]]).map(p=>p[0]), AY=(aoiRing||[[cx-0.02,cy-0.02],[cx+0.02,cy+0.02]]).map(p=>p[1]);
-  const B=[Math.min(...AX),Math.min(...AY),Math.max(...AX),Math.max(...AY)], MG=0.008;
-  if(!hasToken){
-    addFlat([finst([[B[0]-MG,B[1]-MG],[B[2]+MG,B[1]-MG],[B[2]+MG,B[3]+MG],[B[0]-MG,B[3]+MG],[B[0]-MG,B[1]-MG]],[26,32,24],1,0)]);
-    // EXISTING CITY — every real footprint, height-coloured (the surrounding city context)
-    addPrim(feats.map(f=>inst(ringOf(f), Math.max(6,f.properties.h), hcol(f.properties.h), 1)), false);
-  }
-
-  // DESIGNED AI DISTRICT — a dense procedural masterplan over the developable (greenfield) cells
-  const cells=PLAN.dev, dcx=cells.reduce((s,c)=>s+c.center[0],0)/cells.length, dcy=cells.reduce((s,c)=>s+c.center[1],0)/cells.length;
-  const dR=Math.max(...cells.map(c=>Math.hypot(c.center[0]-dcx,c.center[1]-dcy)))+0.001;
+  const cells=PLAN.dev;
+  const dcx=cells.reduce((s,c)=>s+c.center[0],0)/cells.length, dcy=cells.reduce((s,c)=>s+c.center[1],0)/cells.length;
+  const dR=Math.max(...cells.map(c=>Math.hypot(c.center[0]-dcx,c.center[1]-dcy)))+0.0011;
   const DB=[Math.min(...cells.flatMap(c=>c.poly.map(p=>p[0]))),Math.min(...cells.flatMap(c=>c.poly.map(p=>p[1]))),Math.max(...cells.flatMap(c=>c.poly.map(p=>p[0]))),Math.max(...cells.flatMap(c=>c.poly.map(p=>p[1])))];
-  const PROF={ai:[95,240,[96,208,230]],innov:[46,120,[228,120,165]],comm:[30,84,[232,186,92]],resi:[13,34,[216,206,182]],civic:[18,54,[242,206,120]]};
-  const STEP=0.00055;                                   // ~60 m blocks → a dense street grid
-  const bld=[], trees=[], parks=[];
-  for(let la=DB[1]; la<=DB[3]; la+=STEP) for(let ln=DB[0]; ln<=DB[2]; ln+=STEP){
-    const cell=cells.find(c=>inHex([ln,la],c.poly)); if(!cell) continue;
-    if(cell.zone==="green"){ parks.push(rectR(ln,la,STEP*0.46,STEP*0.46)); for(let k=0;k<8;k++) trees.push([ln+(rnd()-0.5)*STEP*0.85, la+(rnd()-0.5)*STEP*0.85]); continue; }
-    const d=Math.hypot(ln-dcx,la-dcy)/dR, P=PROF[cell.zone]||PROF.resi;
-    const nb=cell.zone==="ai"?(rnd()>.5?2:1):(rnd()>.4?2:3);
-    for(let k=0;k<nb;k++){
-      const bw=STEP*(0.16+rnd()*0.16), bh=STEP*(0.16+rnd()*0.16), ox=(rnd()-0.5)*STEP*0.42, oy=(rnd()-0.5)*STEP*0.42;
-      const H=(P[0]+(P[1]-P[0])*(1-0.62*d))*(0.72+rnd()*0.56);
-      bld.push({p:rectR(ln+ox,la+oy,bw,bh), h:H, c:P[2]});
-      if(cell.zone==="ai" && H>150) bld.push({p:rectR(ln+ox,la+oy,bw*1.7,bh*1.7), h:H*0.2, c:P[2]});   // podium
-    }
-    if(rnd()>.55) trees.push([ln+STEP*0.5, la+STEP*0.5]);          // street trees
-  }
-  bld.push({p:rectR(dcx,dcy,STEP*0.26,STEP*0.26), h:280, c:[150,232,250]});   // signature landmark tower
-  addFlat(parks.map(p=>finst(p,[38,94,50],0.95,0.4)));                        // park greens
-  addPrim(bld.map(b=>inst(b.p,b.h,b.c,1)), false);                           // the district skyline
-  const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());
-  for(const t of trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t[0],t[1],3), color:rgba([64,180,110],0.95), pixelSize:5});
-  $("hd").innerHTML=`<b>${bld.length}</b>-building AI district over the greenfield`+(hasToken?" · photoreal":` · ${feats.length.toLocaleString("en-IN")} real buildings around it`);
 
-  // frame + slow orbit around the parcel centre
-  const centre=Cesium.Cartesian3.fromDegrees(cx,cy,0);
-  let spin=true, ang=0; const PITCH=Cesium.Math.toRadians(-30), RANGE=2600;   // pull back → district IN its city
-  viewer.camera.lookAt(centre, new Cesium.HeadingPitchRange(Cesium.Math.toRadians(18), PITCH, RANGE));
-  viewer.clock.onTick.addEventListener(()=>{ if(!spin) return; ang+=0.0016;
-    viewer.camera.lookAt(centre, new Cesium.HeadingPitchRange(Cesium.Math.toRadians(18)+ang, PITCH, RANGE)); });
-  scene.canvas.addEventListener("pointerdown",()=>{ spin=false; viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY); });
+  // GROUND + surrounding real city (only tokenless — photoreal has real terrain + OSM buildings)
+  if(!hasToken){
+    const AX=(aoiRing||[[dcx-0.02,0],[dcx+0.02,0]]).map(p=>p[0]), AY=(aoiRing||[[0,dcy-0.02],[0,dcy+0.02]]).map(p=>p[1]);
+    const G=[Math.min(...AX),Math.min(...AY),Math.max(...AX),Math.max(...AY)], M=0.01;
+    batch([finst([[G[0]-M,G[1]-M],[G[2]+M,G[1]-M],[G[2]+M,G[3]+M],[G[0]-M,G[3]+M],[G[0]-M,G[1]-M]],[34,42,32],1,0)],true);
+    batch(feats.map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1)),false);
+  }
+
+  // ============ DESIGNED AI DISTRICT — mixed-use blocks on a street grid ============
+  const STEP=0.00100;                                    // ~110 m blocks (roads between them)
+  const TYPES={tower:[120,235,[96,206,230]],office:[45,95,[232,190,96]],lab:[55,120,[228,124,168]],resi:[13,40,[214,206,184]],civic:[22,58,[242,208,124]]};
+  const pick=d=>{const r=rnd(); if(d<0.34) return r<.42?"tower":r<.70?"office":r<.88?"lab":"civic"; if(d<0.66) return r<.16?"tower":r<.48?"office":r<.72?"lab":"resi"; return r<.60?"resi":r<.80?"office":r<.92?"civic":"lab";};
+  const bld=[], trees=[], parks=[], panels=[], util=[]; let solar=false;
+  const road=new Cesium.PolylineCollection(); scene.primitives.add(road);
+  const addRoadLine=(axis,coord)=>{ let seg=[]; const a0=axis==="v"?DB[1]:DB[0], a1=axis==="v"?DB[3]:DB[2];
+    for(let t=a0; t<=a1; t+=STEP/6){ const p=axis==="v"?[coord,t]:[t,coord]; if(inAny(p,cells)) seg.push(Cesium.Cartesian3.fromDegrees(p[0],p[1],2)); else { if(seg.length>1) road.add({positions:seg,width:3.0,material:Cesium.Material.fromType("Color",{color:rgba([120,132,150],0.55)})}); seg=[]; } }
+    if(seg.length>1) road.add({positions:seg,width:3.0,material:Cesium.Material.fromType("Color",{color:rgba([120,132,150],0.55)})}); };
+  for(let ln=DB[0]; ln<=DB[2]; ln+=STEP) addRoadLine("v",ln);
+  for(let la=DB[1]; la<=DB[3]; la+=STEP) addRoadLine("h",la);
+
+  for(let la=DB[1]+STEP*0.5; la<=DB[3]; la+=STEP) for(let ln=DB[0]+STEP*0.5; ln<=DB[2]; ln+=STEP){
+    if(!inAny([ln,la],cells)) continue;
+    const d=Math.hypot(ln-dcx,la-dcy)/dR;
+    // a solar utility field in one far block; a park pocket chance rising outward
+    if(!solar && d>0.72){ solar=true; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++) panels.push(rectR(ln+a*STEP*0.16,la+b*STEP*0.16,STEP*0.06,STEP*0.06)); util.push([ln+STEP*0.34,la]); continue; }
+    if(rnd() < 0.12+d*0.20){ parks.push(rectR(ln,la,STEP*0.34,STEP*0.34)); for(let k=0;k<5;k++) trees.push([ln+(rnd()-0.5)*STEP*0.6,la+(rnd()-0.5)*STEP*0.6]); continue; }
+    const nb=2+(rnd()<0.45?1:0);                          // 2–3 buildings, set back so streets read
+    for(let k=0;k<nb;k++){
+      const t=pick(d), T=TYPES[t], fw=STEP*(0.12+rnd()*0.09), fh=STEP*(0.12+rnd()*0.09);
+      const ox=(rnd()-0.5)*STEP*0.5, oy=(rnd()-0.5)*STEP*0.5;
+      const H=(T[0]+(T[1]-T[0])*(1-0.55*d))*(0.78+rnd()*0.5);
+      bld.push({p:rectR(ln+ox,la+oy,fw,fh),h:H,c:T[2]});
+      if(t==="tower"&&H>150) bld.push({p:rectR(ln+ox,la+oy,fw*1.7,fh*1.7),h:H*0.16,c:T[2]});
+    }
+    if(rnd()>0.55) trees.push([ln+STEP*0.5,la]);           // street trees
+  }
+  bld.push({p:rectR(dcx,dcy,STEP*0.2,STEP*0.2),h:285,c:[150,232,250]});   // signature landmark
+  util.forEach(u=>bld.push({p:rectR(u[0],u[1],STEP*0.09,STEP*0.09),h:16,c:[150,160,175]}));  // utility structures
+
+  batch(parks.map(p=>finst(p,[40,96,52],0.95,0.4)),true);
+  batch(panels.map(p=>finst(p,[40,66,104],0.95,3)),true);   // solar field
+  batch(bld.map(b=>einst(b.p,b.h,b.c,1)),false);
+  const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  for(const t of trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t[0],t[1],3),color:rgba([70,186,116],0.95),pixelSize:5});
+  $("hd").innerHTML=`<b>${bld.length}</b> buildings · mixed-use AI district with streets, parks &amp; utilities`+(hasToken?" · photoreal":` · in ${feats.length.toLocaleString("en-IN")} real buildings`);
+
+  // ============ CAMERA + CONTROLS ============
+  const centre=Cesium.Cartesian3.fromDegrees(dcx,dcy,0);
+  const PITCH=Cesium.Math.toRadians(-28); let spin=true, heading=22, RANGE=2400;
+  const frame=()=>viewer.camera.lookAt(centre,new Cesium.HeadingPitchRange(Cesium.Math.toRadians(heading),PITCH,RANGE));
+  frame();
+  viewer.clock.onTick.addEventListener(()=>{ if(spin){ heading=(heading+0.08)%360; frame(); } });
+  const setOrbit=on=>{ spin=on; $("cOrbit").textContent=on?"⏸":"▶"; $("cOrbit").classList.toggle("on",on); if(on) frame(); };
+  $("cOrbit").onclick=()=>setOrbit(!spin);
+  $("cIn").onclick=()=>{ RANGE=Math.max(250,RANGE*0.8); frame(); };
+  $("cOut").onclick=()=>{ RANGE=Math.min(9000,RANGE*1.25); frame(); };
+  $("cReset").onclick=()=>{ RANGE=2400; heading=22; setOrbit(true); };
+  // wheel: zoom during auto-orbit (adjust RANGE); when paused, let Cesium zoom natively toward the centre
+  scene.canvas.addEventListener("wheel",e=>{ if(spin){ RANGE=Math.max(250,Math.min(9000,RANGE*(e.deltaY>0?1.12:0.9))); frame(); e.preventDefault(); } },{passive:false});
+  // drag: pause auto-orbit but KEEP the look-at frame so native drag orbits + zooms around the district
+  scene.canvas.addEventListener("pointerdown",e=>{ if(e.button===0 && spin) setOrbit(false); });
+  $("cOrbit").classList.add("on");
  }catch(e){ fail(e.message); console.error(e); }
 })();
 </script></body></html>
