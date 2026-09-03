@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><title>City Plan Console — Lucknow AI City</title>
+<!doctype html><html><head><meta charset="utf-8"><title>City Plan Console</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root{--bg:#0a0e1a;--pan:#111832;--pan2:#0e1430;--edge:#243056;--ink:#eef2ff;--dim:#9aa4cc;--gold:#e8b84b;--cy:#39d3e0;--good:#2ecc71;--warn:#e0863a;--bad:#e05a6b}
@@ -21,8 +21,8 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
   .card{background:var(--pan);border:1px solid var(--edge);border-radius:13px;padding:13px 15px}
   .card h3{margin:0 0 9px;font:11px ui-monospace,Menlo,monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:7px}
-  .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;border-top:1px solid #1a2banned}
-  .kv{border-top:1px solid #1a2340} .kv:first-of-type{border-top:none}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;border-top:1px solid #1a2340}
+  .kv:first-of-type{border-top:none}
   .kv span{color:var(--dim)} .kv b{font-variant-numeric:tabular-nums;font-weight:650}
   .kv b.cy{color:var(--cy)} .kv b.go{color:var(--gold)} .kv b.gd{color:var(--good)} .kv b.bd{color:var(--bad)} .kv b.wn{color:var(--warn)}
   aside{border-left:1px solid var(--edge);background:var(--pan2);overflow:auto;padding:16px 16px 40px}
@@ -41,8 +41,8 @@
 </style></head><body>
 <div id="app">
   <header>
-    <div><div class="k">Masterplan Model · Indicative</div>
-      <h1>City Plan Console — Lucknow AI City</h1>
+    <div><div class="k" id="eyebrow">Masterplan Model · Indicative</div>
+      <h1>City Plan Console</h1>
       <div class="sub" id="sub">loading the plan…</div></div>
     <div class="verdict">
       <div><div class="lab">DSCR</div><div class="big" id="vDscr">—</div></div>
@@ -69,7 +69,7 @@
 <script src="./masterplan-core.js"></script>
 <script>
 const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let APPID="city-plan-console";
+let APPID="city-plan-console", TENANT=null, PLACE="";
 async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}); return r.json(); }
 async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
 function ringOf(f){let c=(f.geometry||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0])&&Array.isArray(c[0][0]))c=c[0];return c;}
@@ -124,8 +124,8 @@ function buildSliders(){
 $("reset")&&($("reset").onclick=()=>{ ov={}; buildSliders(); draw(); });
 $("sign").onclick=async()=>{
   const r=MasterplanModel.compute(ZONES, ov);
-  const id="ds:lucknow:rec/masterplan-scenario/"+Date.now().toString(36);
-  const obj={id, schema:"governance.recommendation", tenant:"lucknow", title:"AI-City masterplan scenario",
+  const id="ds:"+(TENANT||"app")+":rec/masterplan-scenario/"+Date.now().toString(36);
+  const obj={id, schema:"governance.recommendation", title:(PLACE?PLACE+" ":"")+"masterplan scenario",
     recommendation: (r.finance.verdict==="bankable"?"Adopt":"Do not adopt (viability gap)")+
       ` — ${r.capacity.population} residents + ${r.capacity.jobs} jobs, ${r.power.peak_MW} MW peak, capex ${cr(r.capex_cr.total)}, DSCR ${r.finance.dscr}.`,
     method:"model", confidence:0.6,
@@ -139,8 +139,10 @@ $("sign").onclick=async()=>{
 
 (async()=>{
   try{
-    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-plan-console"})); APPID=cfg.app_id||APPID;
+    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-plan-console"})); APPID=cfg.app_id||APPID; TENANT=cfg.tenant||null;
     const aois=await q("space.aoi"); const aoi=aois[0]||{};
+    PLACE=aoi.name||aoi.title||"";                                   // the workspace names the plan — nothing hardcoded
+    if(PLACE) $("eyebrow").textContent="Masterplan Model · "+PLACE;
     const rows=await q("geo.building");
     if(!rows.length){ $("load").textContent="No building footprints in this workspace — run City Setup first."; return; }
     const feats=rows.filter(o=>o&&o.geometry).map(o=>({type:"Feature",geometry:o.geometry,properties:{area:o.area_m2||0}}));

@@ -1,7 +1,7 @@
-/* plan-core.js — renderer-agnostic greenfield land-use plan for Lucknow AI City.
+/* plan-core.js — renderer-agnostic greenfield land-use plan for ANY city workspace.
    Pure logic: real building footprints -> per-cell vacancy -> largest contiguous
    developable cluster -> land-use zoning -> planned massing + trees.
-   Consumed by BOTH the deck.gl City-Scan view and the Cesium app.
+   Renderer- and city-agnostic: the AOI + footprints come from the workspace.
    Requires global `h3` (h3-js v4). No external I/O. */
 (function (root) {
   const AOI = [[80.9424,26.7434],[80.9755,26.7434],[80.9755,26.7725],[80.9424,26.7725],[80.9424,26.7434]];
@@ -88,5 +88,4 @@
 
   const api = { computePlan, ZONES, AOI };
   root.LandUsePlan = api;      // generic name (City Scan, any city)
-  root.LucknowPlan = api;      // back-compat alias for the standalone prototypes
 })(typeof window!=="undefined" ? window : this);

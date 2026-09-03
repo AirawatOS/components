@@ -1,5 +1,6 @@
-# CITY PLAN CONSOLE (kind=app) — the masterplan DECISION instrument for an AI-City greenfield. Reads the land-use
-# plan (geo.building → plan-core zoning) and runs the LINKED model (masterplan-core.js): land-use → capacity →
+# CITY PLAN CONSOLE (kind=app) — a city-agnostic masterplan DECISION instrument for a greenfield / city-expansion
+# plan (any AOI + footprints in the workspace; a data-centre/AI load is one optional scenario input). Reads the
+# land-use plan (geo.building → plan-core zoning) and runs the LINKED model (masterplan-core.js): land-use → capacity →
 # water/power/sewage/mobility demand → infrastructure → capex → revenue → financing (DSCR/IRR/payback) → net-zero.
 # Scenario sliders ripple the whole chain; "Sign this scenario" writes a governed governance.recommendation (ADR-0029
 # spine — a planner admits it into a Decision). The fiscal layer EVOLVES the ERP finance + project modules: a signed

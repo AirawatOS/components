@@ -1,4 +1,6 @@
-/* masterplan-core.js — the LINKED masterplan model for an AI-City greenfield.
+/* masterplan-core.js — the LINKED masterplan model for a greenfield / city-expansion plan.
+   City-agnostic: works for any AOI's developable land. A data-centre / AI load is one optional scenario
+   input (dc_mw) — keep it for an AI-City, set it to 0 for a conventional township.
    Pure, deterministic. Takes the developable land-use (area by zone, from plan-core) + a scenario of
    assumptions, and computes the whole interdependent chain:
      land-use -> capacity -> {water, power, sewage, mobility} demand -> infrastructure sizing
@@ -13,14 +15,14 @@
     far_ai:      {v:3.5,  u:"FAR",         src:"UPAVP IT-park norms (indicative)"},
     far_innov:   {v:3.0,  u:"FAR",         src:"indicative"},
     far_comm:    {v:3.5,  u:"FAR",         src:"indicative"},
-    far_resi:    {v:2.5,  u:"FAR",         src:"UP TCP mixed-use (indicative)"},
+    far_resi:    {v:2.5,  u:"FAR",         src:"TCP mixed-use norm (indicative)"},
     far_civic:   {v:1.8,  u:"FAR",         src:"indicative"},
     efficiency:  {v:0.80, u:"carpet/GFA",  src:"typical net-to-gross"},
     // capacity
     resi_area_pp:{v:30,   u:"m² carpet/person", src:"NBC 2016 / affordable-housing norm"},
     office_area_job:{v:12, u:"m²/job",     src:"typical commercial density"},
     lab_area_job:{v:22,   u:"m²/job",      src:"R&D density (indicative)"},
-    dc_mw:       {v:20,   u:"MW IT load",  src:"RFP: 20 MW GPU/data-centre"},
+    dc_mw:       {v:20,   u:"MW IT load",  src:"indicative AI/data-centre IT load"},
     dc_jobs_mw:  {v:25,   u:"jobs/MW",     src:"data-centre O&M + ecosystem (indicative)"},
     dc_pue:      {v:1.30, u:"PUE",         src:"modern hyperscale target"},
     dc_wue:      {v:1.2,  u:"L/kWh",       src:"water-cooled DC (indicative)"},
@@ -36,7 +38,7 @@
     // solar
     solar_roof_frac:{v:0.55, u:"usable roof frac", src:"after setbacks/MEP"},
     solar_wp_m2: {v:0.15, u:"kWp/m²",      src:"rooftop PV density"},
-    solar_yield: {v:1500, u:"kWh/kWp/yr",  src:"Lucknow GHI (NIWE/NREL)"},
+    solar_yield: {v:1500, u:"kWh/kWp/yr",  src:"site GHI (NIWE/NREL, N-India default)"},
     green_ppa_frac:{v:0.60,u:"green-power PPA frac", src:"open-access RE procurement"},
     // mobility
     trips_pp_day:{v:2.8,  u:"trips/person/day", src:"typical urban Indian"},
