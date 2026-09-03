@@ -41,6 +41,8 @@
       <h1>Welfare Console</h1>
       <div class="sub">Who is worst-served, across which basic need, by how much — and what to do about it.</div></div>
     <div class="sp">
+      <label style="font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px">Budget ₹cr
+        <input id="budget" type="number" min="0" step="10" placeholder="none" style="width:76px;padding:6px;border-radius:8px;border:1px solid var(--edge);background:var(--pan);color:var(--ink)"></label>
       <button class="btn ghost" id="recompute">↻ Recompute</button>
     </div>
   </header>
@@ -112,8 +114,10 @@ function decCard(d){ return `<div class="card"><div class="row"><h3 style="font-
 async function loadDecisions(){ DECS=(await q("governance.decision")).filter(d=>String(d.id).includes("welfare")); $("decs").innerHTML=DECS.length?DECS.map(decCard).join(""):`<div class="empty">No decisions admitted yet.</div>`;
   DECS.forEach(d=>{ if(d.task) ADMITTED[d.task]={outcome:d.outcome}; }); }
 $("recompute").onclick=async()=>{
-  $("msg").textContent="recomputing (gap engine → prioritisation engine)…";
-  try{ await bridge("/bridge/welfare-gap-scan",{}); await bridge("/bridge/welfare-prioritise",{}); $("msg").textContent="✓ recomputed."; await loadAll(); }
+  $("msg").textContent="recomputing (gap → deprivation → prioritise)…";
+  const b=parseFloat($("budget").value); const pri = isNaN(b) ? {} : {fiscal_budget_cr:b};
+  try{ await bridge("/bridge/welfare-gap-scan",{}); await bridge("/bridge/welfare-deprivation-scan",{}); await bridge("/bridge/welfare-prioritise",pri);
+    $("msg").textContent="✓ recomputed"+(isNaN(b)?" (equity-weighted)":" within ₹"+b+" cr — deferrals shown on the cards"); await loadAll(); }
   catch(e){ $("msg").textContent="recompute unavailable ("+e.message+") — showing stored results."; }
 };
 async function loadAll(){
