@@ -5,7 +5,7 @@
 # ~500m and dominated by non-residential light, so it is a MODELLED proxy, superseded by real income/consumption.
 component_id: ds:airawat:driver/nightlight-viirs
 kind: driver
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Nightlight (VIIRS DNB / GEE)
 entrypoint: run.py
