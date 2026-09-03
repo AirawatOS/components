@@ -19,7 +19,7 @@ admits one into a Decision. The engine decides nothing.
 import time as _t
 
 CID = "ds:airawatdeveloper:engine/welfare-prioritisation-engine"
-CVER = "0.1.2"
+CVER = "0.1.3"
 def _now(): return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
 def _slug(s): return "".join(c if c.isalnum() else "-" for c in str(s)).strip("-").lower()[:48] or "x"
 
@@ -27,13 +27,17 @@ def h_prioritise(ctx):
     tenant = ctx["tenant"]; now = _now(); body = ctx.get("body") or {}
     top_k = int(body.get("top_k", 10))
     budget_cr = body.get("fiscal_budget_cr")                 # optional fiscal ceiling
-    unit_cost = body.get("unit_cost_cr_per_person") or {}    # {capability: ₹cr per person helped}
 
     estimates = ctx["kfind"]("stat.estimate") or []
     floors = {f.get("capability"): f for f in (ctx["kfind"]("welfare.floor") or [])}
     caps = {c.get("id"): c for c in (ctx["kfind"]("welfare.capability") or [])}
     gaps = ctx["kfind"]("welfare.gap") or []
     dep_by = {d.get("subject"): d.get("index", 0.0) for d in (ctx["kfind"]("welfare.deprivation") or [])}
+    # GOVERNED cost model per capability (fiscal ₹cr/person + env draw/person) → the budget bites from data,
+    # not hand-config. Body values still override (what-if scenarios).
+    cost_models = {c.get("capability"): c for c in (ctx["kfind"]("welfare.cost_model") or [])}
+    unit_cost = {cap: cm["fiscal_cr_per_person"] for cap, cm in cost_models.items() if cm.get("fiscal_cr_per_person") is not None}
+    unit_cost.update(body.get("unit_cost_cr_per_person") or {})
 
     # per capability, over the below-floor population: mean shortfall → depth; mean deprivation → equity weight
     sf = {}; dep = {}
@@ -84,7 +88,12 @@ def h_prioritise(ctx):
             h = (rr - cd) if (rr is not None and cd is not None) else None
         if h is not None:
             head[b.get("resource")] = {"headroom": h, "unit": b.get("unit"), "id": b.get("id")}
-    env_draw = body.get("env_draw_per_person") or {}            # {capability: {resource, amount}}
+    env_draw = {}                                               # from the governed cost model; body overrides below
+    for cap, cm in cost_models.items():
+        ed = cm.get("env_draws") or []
+        if ed and ed[0].get("resource"):
+            env_draw[cap] = {"resource": ed[0].get("resource"), "amount": ed[0].get("amount_per_person")}
+    env_draw.update(body.get("env_draw_per_person") or {})      # {capability: {resource, amount}}
     for o in opps:
         ed = env_draw.get(o["cap"]) or {}
         o["env_resource"] = ed.get("resource")
@@ -161,7 +170,7 @@ def _selftest():
     store = {}
     ctx = {"tenant": "x", "body": {}, "kwrite": lambda i, o: store.__setitem__(i, o),
            "kfind": lambda s: {"stat.estimate": ests, "welfare.floor": floors, "welfare.capability": caps, "welfare.gap": gaps,
-                               "welfare.deprivation": [{"subject": "ds:x:civic/household/h3", "index": 0.6}], "env.resource_budget": []}.get(s, [])}
+                               "welfare.deprivation": [{"subject": "ds:x:civic/household/h3", "index": 0.6}], "env.resource_budget": [], "welfare.cost_model": []}.get(s, [])}
     res, err = h_prioritise(ctx)
     assert err is None and res["provisional_excluded"] == 1 and res["recommendations"] == 2, res
     # density: 0.19*68000=12920 confidently below; water: 0.1*68000=6800. density should rank #1.
