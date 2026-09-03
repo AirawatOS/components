@@ -245,16 +245,17 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
 
   // ============ GUIDED FLY-THROUGH ============
   $("cTour").onclick=()=>{ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-    const W=[
-      {x:dcx-0.006, y:dcy-0.011, h:2000, hd:22, p:-33, d:3.0},   // establishing — district in its city
-      {x:dcx-0.003, y:dcy-0.006, h:760,  hd:38, p:-20, d:4.0},   // swoop toward the AI core
-      {x:dcx-0.0012,y:dcy-0.0026,h:210,  hd:58, p:-6,  d:4.5},   // low street-level pass
-      {x:dcx+0.0016,y:dcy-0.0016,h:540,  hd:96, p:-26, d:4.5},   // rise over the landmark
-      {x:dcx-0.009, y:dcy-0.013, h:2400, hd:14, p:-34, d:4.5},   // pull back
-    ]; let i=0; (function step(){ if(i>=W.length){ setOrbit(true); return; } const w=W[i++];
-      viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(w.x,w.y,w.h),
-        orientation:{heading:Cesium.Math.toRadians(w.hd),pitch:Cesium.Math.toRadians(w.p),roll:0},
-        duration:w.d, complete:step}); })(); };
+    // frame the AI DISTRICT itself at every shot (flyToBoundingSphere always looks AT the sphere centre)
+    const radM=Math.max(180, Math.hypot(DB[2]-DB[0],DB[3]-DB[1])*111000*0.55);
+    const bs=new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(dcx,dcy,70), radM);
+    const S=[
+      {h:22, p:-34, r:radM*4.2,  d:3.0},   // establishing — the AI city in its context
+      {h:70, p:-24, r:radM*2.1,  d:4.0},   // swoop toward the core
+      {h:140,p:-10, r:radM*1.1,  d:4.5},   // low, close pass across the district
+      {h:250,p:-30, r:radM*1.9,  d:4.5},   // other side, rising over the towers
+      {h:18, p:-36, r:radM*4.4,  d:4.5},   // pull back
+    ]; let i=0; (function step(){ if(i>=S.length){ setOrbit(true); return; } const s=S[i++];
+      viewer.camera.flyToBoundingSphere(bs,{offset:new Cesium.HeadingPitchRange(Cesium.Math.toRadians(s.h),Cesium.Math.toRadians(s.p),s.r),duration:s.d,complete:step}); })(); };
 
   // ============ ANIMATED TRAFFIC + DRONES ============
   const long=roadPaths.filter(s=>s.length>=2).sort((a,b)=>b.length-a.length).slice(0,150);
