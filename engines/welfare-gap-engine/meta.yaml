@@ -1,0 +1,15 @@
+# WELFARE GAP ENGINE (ADR-0069 slice 2 · ADR-0070) — the calculator that turns the welfare spine into an answer.
+# Reads households + what each is delivered (welfare.service_level) + the dignity floors (welfare.floor); writes a
+# per-household welfare.gap (floor - level, weighted), then rolls each ward up into a stat.estimate that carries its
+# HONEST error bars: value + credible interval (Wilson) + coverage (measured/total households). Below the
+# publishability gate (min coverage, max interval width) the estimate is marked publishable:false — provisional,
+# never a headline. v1 = analytic (Wilson + coverage blend); v2 = Monte-Carlo with per-source correlation.
+component_id: ds:airawatdeveloper:engine/welfare-gap-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Welfare Gap Engine
+entrypoint: run.py
+required_schemas: [civic.household, welfare.service_level, welfare.floor, welfare.deprivation, welfare.gap, stat.estimate]
+reads:  [civic.household, welfare.service_level, welfare.floor, welfare.deprivation]
+writes: [welfare.gap, stat.estimate]
