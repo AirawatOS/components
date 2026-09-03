@@ -1,0 +1,155 @@
+<!doctype html><html><head><meta charset="utf-8"><title>City Plan Console — Lucknow AI City</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0a0e1a;--pan:#111832;--pan2:#0e1430;--edge:#243056;--ink:#eef2ff;--dim:#9aa4cc;--gold:#e8b84b;--cy:#39d3e0;--good:#2ecc71;--warn:#e0863a;--bad:#e05a6b}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+  #app{position:absolute;inset:0;display:grid;grid-template-columns:1fr 320px;grid-template-rows:auto 1fr;overflow:hidden}
+  header{grid-column:1/3;padding:14px 22px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  header .k{font:11px ui-monospace,Menlo,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
+  header h1{margin:2px 0 0;font-family:ui-serif,Georgia,serif;font-size:22px;font-weight:600;
+    background:linear-gradient(180deg,#fbe6b4,#e8b84b 60%,#b58a34);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header .sub{font-size:12.5px;color:var(--dim)}
+  .verdict{margin-left:auto;display:flex;align-items:center;gap:16px;background:var(--pan);border:1px solid var(--edge);border-radius:12px;padding:8px 16px}
+  .verdict .big{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+  .verdict .lab{font:10.5px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+  .pill{padding:4px 11px;border-radius:999px;font-size:12px;font-weight:700}
+  .pill.good{background:#12351f;color:var(--good);border:1px solid #1f5c33}
+  .pill.bad{background:#3a1720;color:var(--bad);border:1px solid #6a2430}
+  main{overflow:auto;padding:18px 22px}
+  .flow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;font:11px ui-monospace,monospace;color:var(--dim)}
+  .flow b{color:var(--cy)} .flow .ar{color:var(--edge)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+  .card{background:var(--pan);border:1px solid var(--edge);border-radius:13px;padding:13px 15px}
+  .card h3{margin:0 0 9px;font:11px ui-monospace,Menlo,monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:7px}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;border-top:1px solid #1a2banned}
+  .kv{border-top:1px solid #1a2340} .kv:first-of-type{border-top:none}
+  .kv span{color:var(--dim)} .kv b{font-variant-numeric:tabular-nums;font-weight:650}
+  .kv b.cy{color:var(--cy)} .kv b.go{color:var(--gold)} .kv b.gd{color:var(--good)} .kv b.bd{color:var(--bad)} .kv b.wn{color:var(--warn)}
+  aside{border-left:1px solid var(--edge);background:var(--pan2);overflow:auto;padding:16px 16px 40px}
+  aside h2{font:11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+  .sl{margin-bottom:15px}
+  .sl label{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
+  .sl label b{color:var(--cy);font-variant-numeric:tabular-nums}
+  .sl input[type=range]{width:100%;accent-color:var(--gold);cursor:pointer}
+  .btn{width:100%;box-sizing:border-box;margin-top:8px;padding:11px;border-radius:10px;border:1px solid var(--gold);
+    background:linear-gradient(180deg,#e8b84b22,#e8b84b10);color:#f6e7bf;font-size:13px;font-weight:650;cursor:pointer}
+  .btn.ghost{border-color:var(--edge);background:var(--pan);color:var(--dim);font-weight:500}
+  #signmsg{font-size:11.5px;color:var(--dim);margin-top:8px;line-height:1.5}
+  details{margin-top:14px;font-size:12px;color:var(--dim)} summary{cursor:pointer;color:var(--gold)}
+  details .src{padding:5px 0;border-top:1px solid #1a2340;display:flex;justify-content:space-between;gap:12px}
+  .load{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9;color:var(--dim)}
+</style></head><body>
+<div id="app">
+  <header>
+    <div><div class="k">Masterplan Model · Indicative</div>
+      <h1>City Plan Console — Lucknow AI City</h1>
+      <div class="sub" id="sub">loading the plan…</div></div>
+    <div class="verdict">
+      <div><div class="lab">DSCR</div><div class="big" id="vDscr">—</div></div>
+      <div><div class="lab">Payback</div><div class="big" id="vPay" style="font-size:20px">—</div></div>
+      <div id="vPill" class="pill">—</div>
+    </div>
+  </header>
+  <main>
+    <div class="flow" id="flow"></div>
+    <div class="grid" id="grid"></div>
+  </main>
+  <aside>
+    <h2>Scenario</h2>
+    <div id="sliders"></div>
+    <button class="btn" id="sign">✓ Sign this scenario</button>
+    <button class="btn ghost" id="reset">Reset to base case</button>
+    <div id="signmsg"></div>
+    <details><summary>Assumptions &amp; sources</summary><div id="srcs"></div></details>
+  </aside>
+</div>
+<div class="load" id="load">initialising the masterplan model…</div>
+<script src="./vendor/h3-js.umd.js"></script>
+<script src="./plan-core.js"></script>
+<script src="./masterplan-core.js"></script>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let APPID="city-plan-console";
+async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}); return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
+function ringOf(f){let c=(f.geometry||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0])&&Array.isArray(c[0][0]))c=c[0];return c;}
+function centroid(r){let x=0,y=0;for(const p of r){x+=p[0];y+=p[1];}return[x/r.length,y/r.length];}
+const cr=n=> n>=1000 ? "₹"+(n/1000).toFixed(2)+"k cr" : "₹"+Math.round(n)+" cr";
+const num=n=> n>=1e5 ? (n/1e5).toFixed(1)+" L" : n.toLocaleString("en-IN");
+
+// scenario sliders (subset of the model's assumptions that drive the chain hardest)
+const SLIDERS=[
+  {k:"far_resi", label:"Residential FAR", min:1.5, max:5, step:0.1, fmt:v=>v.toFixed(1)},
+  {k:"dc_mw", label:"Data-centre load", min:0, max:100, step:5, fmt:v=>v+" MW"},
+  {k:"solar_roof_frac", label:"Rooftop solar", min:0, max:1, step:0.05, fmt:v=>Math.round(v*100)+"%"},
+  {k:"green_ppa_frac", label:"Green-power PPA", min:0, max:1, step:0.05, fmt:v=>Math.round(v*100)+"%"},
+  {k:"transit_share", label:"Public+active transport", min:0.2, max:0.85, step:0.05, fmt:v=>Math.round(v*100)+"%"},
+  {k:"rv_dc_cr_mwyr", label:"DC revenue", min:3, max:20, step:1, fmt:v=>"₹"+v+" cr/MW·yr"},
+  {k:"debt_frac", label:"Debt gearing", min:0.3, max:0.9, step:0.05, fmt:v=>Math.round(v*100)+"%"},
+  {k:"loan_rate", label:"Loan interest", min:0.06, max:0.12, step:0.005, fmt:v=>(v*100).toFixed(1)+"%"},
+];
+let ZONES=null, base={}, ov={};
+
+function draw(){
+  const r=MasterplanModel.compute(ZONES, ov);
+  const f=r.finance;
+  $("vDscr").textContent=f.dscr!=null?f.dscr.toFixed(2):"—"; $("vDscr").style.color=f.dscr>=1.25?"var(--good)":f.dscr>=1?"var(--warn)":"var(--bad)";
+  $("vPay").textContent=f.payback_yrs!=null?f.payback_yrs+" yr":"—";
+  const bank=f.verdict==="bankable"; $("vPill").textContent=bank?"BANKABLE":"VIABILITY GAP"; $("vPill").className="pill "+(bank?"good":"bad");
+  $("sub").innerHTML=`<b style="color:var(--cy)">${r.land.ha} ha</b> greenfield · ${num(r.land.gfa_m2)} m² GFA · ${num(r.capacity.population)} residents + ${num(r.capacity.jobs)} jobs`;
+  $("flow").innerHTML=["land-use","<b>capacity</b>","water · power · sewage","mobility","capex","revenue","<b>DSCR / IRR</b>","net-zero"].join(' <span class="ar">→</span> ');
+  const kv=(l,v,cls)=>`<div class="kv"><span>${l}</span><b class="${cls||''}">${v}</b></div>`;
+  const cards=[
+    ["👥 Capacity",[kv("Residents",num(r.capacity.population),"cy"),kv("Jobs",num(r.capacity.jobs),"cy"),kv("Daytime population",num(r.capacity.dayPop)),kv("AI / data-centre",r.capacity.dc_mw+" MW","go")]],
+    ["🚇 Mobility",[kv("Trips / day",num(r.mobility.trips_day)),kv("Public + active",num(r.mobility.transit_trips),"gd"),kv("Private vehicle",num(r.mobility.car_trips),"wn"),kv("Transit mode share",r.mobility.transit_share_pct+"%")]],
+    ["💧 Water & sewage",[kv("Water demand",r.water.demand_MLD+" MLD","cy"),kv("of which data-centre",r.water.dc_MLD+" MLD"),kv("Sewage → STP",r.water.sewage_MLD+" MLD"),kv("Recycled / reused",r.water.recycled_MLD+" MLD","gd"),kv("Net fresh water",r.water.net_freshwater_MLD+" MLD")]],
+    ["⚡ Power",[kv("Peak load",r.power.peak_MW+" MW","cy"),kv("Data-centre (PUE)",r.power.dc_MW+" MW","go"),kv("Annual energy",num(r.power.annual_GWh)+" GWh"),kv("On-site solar",num(r.power.solar_GWh)+" GWh","gd"),kv("Renewable share",r.power.renewable_pct+"%",r.power.renewable_pct>=90?"gd":"wn")]],
+    ["🌱 Net-zero",[kv("Operational CO₂",num(r.carbon.operational_tpa)+" t/yr",r.carbon.net_zero_gap_pct<=10?"gd":"wn"),kv("Net-zero gap",r.carbon.net_zero_gap_pct+"%",r.carbon.net_zero_gap_pct<=10?"gd":"bd"),kv("Embodied CO₂ (build)",num(r.carbon.embodied_t)+" t")]],
+    ["🏗 Cost to build",[kv("Buildings",cr(r.capex_cr.buildings)),kv("Data-centre",cr(r.capex_cr.datacentre)),kv("Trunk infra",cr(r.capex_cr.infra)),kv("Land",cr(r.capex_cr.land)),kv("Total capex",cr(r.capex_cr.total),"go")]],
+    ["💰 Revenue / yr",[kv("Land lease (levelised)",cr(r.revenue_cr.lease_annualised)),kv("Rates + charges",cr(r.revenue_cr.recurring)),kv("Data-centre",cr(r.revenue_cr.datacentre),"go"),kv("Total revenue",cr(r.revenue_cr.total),"cy")]],
+    ["🏦 Fiscal sustainability",[kv("Debt",cr(f.debt_cr)),kv("Annual debt service",cr(f.debt_service_cr),"wn"),kv("Net operating income",cr(f.noi_cr)),kv("DSCR",f.dscr!=null?f.dscr.toFixed(2):"—",f.dscr>=1.25?"gd":"bd"),kv("Project IRR",f.irr_pct!=null?f.irr_pct+"%":"—"),kv("Simple payback",f.payback_yrs!=null?f.payback_yrs+" yr":"—")]],
+  ];
+  $("grid").innerHTML=cards.map(([t,rows])=>`<div class="card"><h3>${t}</h3>${rows.join("")}</div>`).join("");
+}
+
+function buildSliders(){
+  $("sliders").innerHTML=SLIDERS.map(s=>{ const v=ov[s.k]!=null?ov[s.k]:MasterplanModel.ASSUMPTIONS[s.k].v;
+    return `<div class="sl"><label>${s.label}<b id="v_${s.k}">${s.fmt(v)}</b></label>
+      <input type="range" id="s_${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${v}"></div>`; }).join("");
+  SLIDERS.forEach(s=>{ const el=$("s_"+s.k); el.oninput=()=>{ ov[s.k]=parseFloat(el.value); $("v_"+s.k).textContent=s.fmt(ov[s.k]); draw(); }; });
+  $("srcs").innerHTML=Object.entries(MasterplanModel.ASSUMPTIONS).map(([k,a])=>
+    `<div class="src"><span>${k.replace(/_/g," ")}: <b style="color:var(--ink)">${a.v} ${esc(a.u)}</b></span><span>${esc(a.src)}</span></div>`).join("");
+}
+
+$("reset")&&($("reset").onclick=()=>{ ov={}; buildSliders(); draw(); });
+$("sign").onclick=async()=>{
+  const r=MasterplanModel.compute(ZONES, ov);
+  const id="ds:lucknow:rec/masterplan-scenario/"+Date.now().toString(36);
+  const obj={id, schema:"governance.recommendation", tenant:"lucknow", title:"AI-City masterplan scenario",
+    recommendation: (r.finance.verdict==="bankable"?"Adopt":"Do not adopt (viability gap)")+
+      ` — ${r.capacity.population} residents + ${r.capacity.jobs} jobs, ${r.power.peak_MW} MW peak, capex ${cr(r.capex_cr.total)}, DSCR ${r.finance.dscr}.`,
+    method:"model", confidence:0.6,
+    citation:{source:"City Plan Console masterplan-core", datasets:["geo.building","plan-core zoning"], model:"linked capacity→utilities→finance→net-zero"},
+    payload:r, scenario:ov };
+  $("signmsg").textContent="signing…";
+  try{ const res=await bridge("/bridge/save",{app_id:APPID,schema:"governance.recommendation",id,object:obj});
+    $("signmsg").innerHTML = res && !res.error ? "✓ Signed a governed <b>governance.recommendation</b> — a planner can now admit it into a Decision (ADR-0029)." : ("could not sign: "+esc((res&&res.error)||"")+" — the model still computes; signing needs the governance.recommendation write scope.");
+  }catch(e){ $("signmsg").textContent="sign failed: "+e.message; }
+};
+
+(async()=>{
+  try{
+    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-plan-console"})); APPID=cfg.app_id||APPID;
+    const aois=await q("space.aoi"); const aoi=aois[0]||{};
+    const rows=await q("geo.building");
+    if(!rows.length){ $("load").textContent="No building footprints in this workspace — run City Setup first."; return; }
+    const feats=rows.filter(o=>o&&o.geometry).map(o=>({type:"Feature",geometry:o.geometry,properties:{area:o.area_m2||0}}));
+    const bb=aoi.bbox, aoiRing=Array.isArray(bb)&&bb.length===4?[[bb[0],bb[1]],[bb[2],bb[1]],[bb[2],bb[3]],[bb[0],bb[3]],[bb[0],bb[1]]]:null;
+    const PLAN=LandUsePlan.computePlan({type:"FeatureCollection",features:feats},{aoi:aoiRing});
+    // developable land area by zone (m²) from the plan's cells
+    ZONES={ai:0,innov:0,comm:0,resi:0,civic:0,green:0};
+    for(const d of PLAN.dev){ const a=h3.cellArea(d.c,"m2"); if(ZONES[d.zone]!=null) ZONES[d.zone]+=a; }
+    $("load").remove(); buildSliders(); draw();
+  }catch(e){ $("load").textContent="error: "+e.message; }
+})();
+</script></body></html>

@@ -1,0 +1,17 @@
+# CITY PLAN CONSOLE (kind=app) — the masterplan DECISION instrument for an AI-City greenfield. Reads the land-use
+# plan (geo.building → plan-core zoning) and runs the LINKED model (masterplan-core.js): land-use → capacity →
+# water/power/sewage/mobility demand → infrastructure → capex → revenue → financing (DSCR/IRR/payback) → net-zero.
+# Scenario sliders ripple the whole chain; "Sign this scenario" writes a governed governance.recommendation (ADR-0029
+# spine — a planner admits it into a Decision). The fiscal layer EVOLVES the ERP finance + project modules: a signed
+# scenario becomes a project business-case + capex budget that the ERP executes and tracks Plan-vs-Actual.
+component_id: ds:airawatdeveloper:app/city-plan-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Plan Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [space.aoi, geo.building, viz.layer, governance.recommendation]
+writes: [governance.recommendation]
+roles: [platform.tenant-admin]
