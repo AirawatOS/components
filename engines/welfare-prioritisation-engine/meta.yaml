@@ -6,10 +6,10 @@
 # (unpublishable) estimate. AI recommends; the authority decides.
 component_id: ds:airawatdeveloper:engine/welfare-prioritisation-engine
 kind: engine
-version: 0.1.1
+version: 0.1.2
 provider: ds:airawat:developer
 display_name: Welfare Prioritisation Engine
 entrypoint: run.py
-required_schemas: [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, governance.recommendation]
-reads:  [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation]
+required_schemas: [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, env.resource_budget, governance.recommendation]
+reads:  [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, env.resource_budget]
 writes: [governance.recommendation]

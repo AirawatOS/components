@@ -19,7 +19,7 @@ admits one into a Decision. The engine decides nothing.
 import time as _t
 
 CID = "ds:airawatdeveloper:engine/welfare-prioritisation-engine"
-CVER = "0.1.1"
+CVER = "0.1.2"
 def _now(): return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
 def _slug(s): return "".join(c if c.isalnum() else "-" for c in str(s)).strip("-").lower()[:48] or "x"
 
@@ -75,14 +75,37 @@ def h_prioritise(ctx):
 
     opps.sort(key=lambda o: -o["score"])
 
-    # optional greedy budget: most people helped per rupee, until the ceiling is spent
-    if budget_cr is not None:
-        spend = 0.0
-        for o in sorted(opps, key=lambda o: -(o["persons_conf_below"] / o["cost_cr"] if o["cost_cr"] else float("inf"))):
-            if o["cost_cr"] and spend + o["cost_cr"] > budget_cr:
-                o["selected"] = False; o["deferred_reason"] = "budget"
+    # environmental carrying-capacity headroom per resource (regen - draw); an intervention may not overdraw it
+    head = {}
+    for b in (ctx["kfind"]("env.resource_budget") or []):
+        h = b.get("headroom")
+        if h is None:
+            rr, cd = b.get("regen_rate"), b.get("current_draw")
+            h = (rr - cd) if (rr is not None and cd is not None) else None
+        if h is not None:
+            head[b.get("resource")] = {"headroom": h, "unit": b.get("unit"), "id": b.get("id")}
+    env_draw = body.get("env_draw_per_person") or {}            # {capability: {resource, amount}}
+    for o in opps:
+        ed = env_draw.get(o["cap"]) or {}
+        o["env_resource"] = ed.get("resource")
+        o["env_draw"] = round((ed.get("amount") or 0) * o["persons_conf_below"], 2)
+
+    # DUAL greedy budget: fund the highest-priority (worst-off-first) opportunities until EITHER the fiscal
+    # ceiling OR the environmental headroom for the resource it draws on is exhausted. No budget → all selected.
+    if budget_cr is not None or head:
+        spend = 0.0; used = {r: 0.0 for r in head}
+        for o in opps:                                         # already sorted by prioritarian score
+            reason = None
+            if budget_cr is not None and o["cost_cr"] and spend + o["cost_cr"] > budget_cr:
+                reason = "budget-fiscal"
+            r = o.get("env_resource")
+            if reason is None and r in head and o["env_draw"] and used[r] + o["env_draw"] > head[r]["headroom"]:
+                reason = f"budget-env:{r}"
+            if reason:
+                o["selected"] = False; o["deferred_reason"] = reason
             else:
-                o["selected"] = True; spend += o["cost_cr"]
+                o["selected"] = True; spend += (o["cost_cr"] or 0)
+                if r in head: used[r] += o["env_draw"]
     else:
         for o in opps:
             o["selected"] = True
@@ -93,7 +116,7 @@ def h_prioritise(ctx):
         cap_label = (caps.get(o["cap"]) or {}).get("label", o["cap"])
         unit = (caps.get(o["cap"]) or {}).get("service_unit", "")
         rid = f"ds:{tenant}:governance/recommendation/welfare-{_slug(o['cap'].split('/')[-1])}-{_slug(o['ward'].split('/')[-1])}"
-        pick = "PRIORITISE" if o["selected"] else "DEFER (budget)"
+        pick = "PRIORITISE" if o["selected"] else f"DEFER ({o.get('deferred_reason', 'budget')})"
         rationale = (f"At least {o['persons_conf_below']:,} people (90% CI; point estimate "
                      f"{o['persons_below_point']:,}) are below the {cap_label} floor in this area, at coverage "
                      f"{o['coverage']}. Mean shortfall depth {o['depth']}; mean deprivation of the affected "
@@ -138,7 +161,7 @@ def _selftest():
     store = {}
     ctx = {"tenant": "x", "body": {}, "kwrite": lambda i, o: store.__setitem__(i, o),
            "kfind": lambda s: {"stat.estimate": ests, "welfare.floor": floors, "welfare.capability": caps, "welfare.gap": gaps,
-                               "welfare.deprivation": [{"subject": "ds:x:civic/household/h3", "index": 0.6}]}.get(s, [])}
+                               "welfare.deprivation": [{"subject": "ds:x:civic/household/h3", "index": 0.6}], "env.resource_budget": []}.get(s, [])}
     res, err = h_prioritise(ctx)
     assert err is None and res["provisional_excluded"] == 1 and res["recommendations"] == 2, res
     # density: 0.19*68000=12920 confidently below; water: 0.1*68000=6800. density should rank #1.
