@@ -20,6 +20,14 @@ GATE_DEFAULT = {"min_coverage": 0.30, "max_interval_width": 0.30, "ci_level": 0.
 def _now(): return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
 def _clamp(x, lo=0.0, hi=1.0): return max(lo, min(hi, x))
 
+# per-record reliability by measurement method (used when a record has no explicit `confidence`).
+# Drives the effective-sample-size deflation: a wall of low-reliability estimates cannot buy a tight interval.
+METHOD_REL = {"metered": 0.95, "measured": 0.90, "surveyed": 0.80, "declared": 0.60,
+              "modelled": 0.50, "interpolated": 0.50, "estimated": 0.40, "imputed": 0.25, "derived": 0.60}
+def _reliability(L):
+    r = L.get("confidence")
+    return r if r is not None else METHOD_REL.get(L.get("method") or "", 0.40)
+
 # ---- pure statistics (ADR-0070 v1) ---------------------------------------
 def wilson(k, n, z=Z90):
     """Wilson score interval for k successes in n Bernoulli trials — the SAMPLING uncertainty."""
@@ -118,16 +126,20 @@ def h_gap_scan(ctx):
                 "prov": {"method": "floor-minus-level", "derived_from": [floor.get("id"), L.get("id")],
                          "produced_by": {"component": {"id": CID, "version": CVER}}, "observed_at": now}})
             gaps_written += 1
-            a = acc.setdefault((ward, cap), {"n_obs": 0, "k_below": 0, "methods": {}})
+            rel = _reliability(L)
+            a = acc.setdefault((ward, cap), {"n_obs": 0, "k_below": 0, "w_below": 0.0, "w_total": 0.0, "conf_sum": 0.0, "methods": {}})
             a["n_obs"] += 1; a["k_below"] += 1 if below else 0
+            a["w_total"] += weight; a["w_below"] += weight if below else 0.0; a["conf_sum"] += rel
             m = (L.get("method") or "unknown"); a["methods"][m] = a["methods"].get(m, 0) + 1
 
     # ward × capability rollups → stat.estimate with honest error bars
     estimates = 0; published = 0
     for (ward, cap), a in acc.items():
         n = a["n_obs"]; k = a["k_below"]; N = max(n, ward_hh.get(ward, n))
-        p = k / n if n else 0.0
-        w_lo, w_hi = wilson(k, n)
+        value = (a["w_below"] / a["w_total"]) if a["w_total"] else 0.0   # PERSON-weighted fraction below floor
+        rel = (a["conf_sum"] / n) if n else 0.0
+        n_eff = max(1.0, n * rel)                                        # deflate for data quality (v1 correlation proxy)
+        w_lo, w_hi = wilson(value * n_eff, n_eff)                        # interval on the effective sample
         coverage = n / N if N else 0.0
         ci_lo, ci_hi = coverage_blend(w_lo, w_hi, coverage)
         method_mix = {m: round(c / n, 3) for m, c in a["methods"].items()} if n else {}
@@ -137,12 +149,15 @@ def h_gap_scan(ctx):
             "schema": "stat.estimate", "id": eid, "tenant": tenant,
             "subject": ward, "subject_kind": "ward", "observed_at": now,
             "metric": "welfare.gap.below_floor_fraction", "capability": cap,
-            "value": round(p, 4), "unit": "fraction",
+            "value": round(value, 4), "unit": "fraction_of_persons",
             "ci_low": round(ci_lo, 4), "ci_high": round(ci_hi, 4), "ci_level": g["ci_level"],
             "coverage": round(coverage, 4), "n_observed": n, "n_target": N,
             "method_mix": method_mix, "model_version": "gap-v1-analytic", "publishable": pub,
             "method": "analytic", "derived_from": [f"welfare.gap@ward:{ward}:cap:{cap}"],
-            "prov": {"method": "wilson+coverage-blend", "gate": g,
+            "prov": {"method": "person-weighted; wilson(n_eff)+coverage-blend", "gate": g,
+                     "note": "v1 analytic; n_eff = n x mean_reliability (correlation proxy); v2 = Monte-Carlo",
+                     "n_effective": round(n_eff, 1), "mean_reliability": round(rel, 3),
+                     "persons_below": round(a["w_below"], 1), "persons_total": round(a["w_total"], 1),
                      "derived_from": [f"welfare.gap@ward:{ward}:cap:{cap}"],
                      "produced_by": {"component": {"id": CID, "version": CVER}}, "observed_at": now}})
         estimates += 1; published += 1 if pub else 0
