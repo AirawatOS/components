@@ -1,0 +1,116 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Cost Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0a0e1a;--pan:#111832;--pan2:#0e1430;--edge:#243056;--ink:#eef2ff;--dim:#9aa4cc;--gold:#e8b84b;--cy:#39d3e0;--good:#2ecc71;--warn:#e0863a;--bad:#e05a6b}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+  #app{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+  header{padding:14px 22px;border-bottom:1px solid var(--edge)}
+  header .k{font:11px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
+  header h1{margin:2px 0 0;font-family:ui-serif,Georgia,serif;font-size:21px;font-weight:600;background:linear-gradient(180deg,#fbe6b4,#e8b84b 60%,#b58a34);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header .sub{font-size:12.5px;color:var(--dim)}
+  main{flex:1;overflow:auto;padding:18px 22px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+  section h2{font:11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+  .card{background:var(--pan);border:1px solid var(--edge);border-radius:13px;padding:14px 16px;margin-bottom:12px}
+  .card h3{margin:0 0 10px;font-size:15px}
+  .grp{font:10.5px ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:10px 0 6px}
+  .fld{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:3px 0;font-size:13px}
+  .fld span{color:var(--dim)}
+  .fld input,.fld select{background:var(--pan2);border:1px solid var(--edge);color:var(--ink);border-radius:7px;padding:6px 8px;font-size:13px;width:130px;text-align:right;font-variant-numeric:tabular-nums}
+  .fld select{text-align:left}
+  .head{font-size:11px;color:var(--warn);margin-top:6px}
+  .btn{margin-top:10px;padding:8px 14px;border-radius:9px;border:1px solid var(--gold);background:linear-gradient(180deg,#e8b84b22,#e8b84b10);color:#f6e7bf;font-size:12.5px;font-weight:650;cursor:pointer}
+  .saved{color:var(--good);font-size:12px;margin-left:10px}
+  .load{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9;color:var(--dim)}
+  #msg{font-size:12px;color:var(--dim);padding:0 22px 10px}
+  .note{font-size:11px;color:var(--dim);margin-top:4px}
+</style></head><body>
+<div id="app">
+  <header>
+    <div class="k" id="eyebrow">Objective Function · Config</div>
+    <h1>Cost Console</h1>
+    <div class="sub">Edit the floors, per-person costs and environmental budgets the prioritisation engine reads. This is where "indicative" becomes real.</div>
+  </header>
+  <div id="msg"></div>
+  <main>
+    <section><h2>Capabilities · floor &amp; cost per person</h2><div id="caps"></div></section>
+    <section><h2>Environmental budgets · carrying capacity</h2><div id="budgets"></div></section>
+  </main>
+</div>
+<div class="load" id="load">loading the cost model…</div>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let APPID="cost-console", TENANT=null, ME=null;
+const slug=id=>String(id).split("/").pop();
+async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); if(!r.ok) throw new Error(p+" "+r.status); return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:2000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
+function num(v){ const n=document.createElement("input"); n.type="number"; n.step="any"; n.value=(v==null?"":v); return n; }
+function txt(v){ const n=document.createElement("input"); n.type="text"; n.value=(v==null?"":v); n.style.width="180px"; n.style.textAlign="left"; return n; }
+function sel(opts,v){ const s=document.createElement("select"); opts.forEach(o=>{const op=document.createElement("option");op.value=o;op.textContent=o;if(o===v)op.selected=true;s.appendChild(op);}); return s; }
+function fld(label,input){ const d=document.createElement("div"); d.className="fld"; const s=document.createElement("span"); s.textContent=label; d.appendChild(s); d.appendChild(input); return d; }
+
+let CAPS=[], FLOORS={}, COSTS={}, BUDGETS=[];
+async function save(path,schema,id,obj,btn){
+  obj.schema=schema; obj.id=id; obj.tenant=TENANT;
+  btn.nextSibling && btn.nextSibling.remove && 0;
+  try{ const r=await bridge("/bridge/save",{app_id:APPID,schema,id,object:obj});
+    const s=document.createElement("span"); s.className="saved"; s.textContent = (r&&!r.error)?"✓ saved":("save failed: "+((r&&r.error)||"")); btn.after(s); setTimeout(()=>s.remove(),3500);
+  }catch(e){ const s=document.createElement("span"); s.className="saved"; s.style.color="var(--bad)"; s.textContent="✗ "+e.message; btn.after(s); }
+}
+
+function capCard(cap){
+  const cid=cap.id, f=FLOORS[cid]||{}, c=COSTS[cid]||{}, unit=cap.service_unit||"", dir=cap.floor_direction||"higher_is_better";
+  const card=document.createElement("div"); card.className="card";
+  const h=document.createElement("h3"); h.textContent=cap.label||slug(cid); card.appendChild(h);
+  card.insertAdjacentHTML("beforeend",`<div class="grp">Dignity floor</div>`);
+  const thr=num(f.threshold), fu=txt(f.unit||unit), bound=sel(["min","max"], f.bound||(dir==="lower_is_better"?"max":"min")), lf=sel(["statutory","slb","recommended","contractual"], f.legal_force||"recommended");
+  card.appendChild(fld("threshold ("+esc(unit)+")",thr)); card.appendChild(fld("unit",fu)); card.appendChild(fld("bound (min=floor, max=ceiling)",bound)); card.appendChild(fld("legal force",lf));
+  card.insertAdjacentHTML("beforeend",`<div class="grp">Cost to raise one person</div>`);
+  const fis=num(c.fiscal_cr_per_person); const ed=(c.env_draws&&c.env_draws[0])||{};
+  const res=sel(["","aquifer","airshed","land","carbon","energy","waste"], ed.resource||""), amt=num(ed.amount_per_person), eu=txt(ed.unit||""), basis=txt(c.basis||"");
+  card.appendChild(fld("fiscal ₹cr / person",fis)); card.appendChild(fld("env resource",res)); card.appendChild(fld("draw / person",amt)); card.appendChild(fld("draw unit",eu)); card.appendChild(fld("basis",basis));
+  const btn=document.createElement("button"); btn.className="btn"; btn.textContent="Save floor + cost"; card.appendChild(btn);
+  btn.onclick=async()=>{
+    const floorObj=Object.assign({},f,{capability:cid, threshold:parseFloat(thr.value), unit:fu.value, bound:bound.value, legal_force:lf.value});
+    await save("/bridge/save","welfare.floor", f.id||("ds:"+TENANT+":welfare/floor/"+slug(cid)), floorObj, btn);
+    const draws = res.value ? [{resource:res.value, amount_per_person:parseFloat(amt.value), unit:eu.value}] : [];
+    const costObj=Object.assign({},c,{capability:cid, fiscal_cr_per_person:parseFloat(fis.value), env_draws:draws, basis:basis.value, method:"declared", confidence:c.confidence!=null?c.confidence:0.5});
+    await save("/bridge/save","welfare.cost_model", c.id||("ds:"+TENANT+":welfare/cost_model/"+slug(cid)), costObj, btn);
+  };
+  return card;
+}
+function budgetCard(b){
+  const card=document.createElement("div"); card.className="card";
+  const h=document.createElement("h3"); h.textContent=(b.resource||"resource")+" — "+(b.subject||"city"); card.appendChild(h);
+  const cap=num(b.capacity), un=txt(b.unit||""), rg=num(b.regen_rate), dr=num(b.current_draw);
+  const head=document.createElement("div"); head.className="head";
+  const recompute=()=>{ const h=(parseFloat(rg.value)||0)-(parseFloat(dr.value)||0); head.textContent="sustainable headroom = regen − draw = "+h.toFixed(2)+" "+(un.value||""); };
+  [rg,dr,un].forEach(i=>i.oninput=recompute);
+  card.appendChild(fld("capacity",cap)); card.appendChild(fld("unit",un)); card.appendChild(fld("regen / yr",rg)); card.appendChild(fld("current draw",dr)); card.appendChild(head); recompute();
+  const btn=document.createElement("button"); btn.className="btn"; btn.textContent="Save budget"; card.appendChild(btn);
+  btn.onclick=async()=>{
+    const obj=Object.assign({},b,{capacity:parseFloat(cap.value), unit:un.value, regen_rate:parseFloat(rg.value), current_draw:parseFloat(dr.value),
+      headroom:(parseFloat(rg.value)||0)-(parseFloat(dr.value)||0), method:"declared", observed_at:new Date().toISOString(),
+      prov:{method:"edited via Cost Console", edited_by:ME||"user"}});
+    await save("/bridge/save","env.resource_budget", b.id, obj, btn);
+  };
+  return card;
+}
+
+(async()=>{
+  try{
+    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({})); APPID=cfg.app_id||APPID; TENANT=cfg.tenant||null;
+    if(TENANT) $("eyebrow").textContent="Objective Function · "+TENANT;
+    CAPS=await q("welfare.capability");
+    (await q("welfare.floor")).forEach(f=>FLOORS[f.capability]=f);
+    (await q("welfare.cost_model")).forEach(c=>COSTS[c.capability]=c);
+    BUDGETS=await q("env.resource_budget");
+    $("caps").innerHTML=""; CAPS.forEach(c=>$("caps").appendChild(capCard(c)));
+    if(!CAPS.length) $("caps").innerHTML='<div class="note">No capabilities yet — govern welfare.capability + a floor first.</div>';
+    $("budgets").innerHTML=""; BUDGETS.forEach(b=>$("budgets").appendChild(budgetCard(b)));
+    if(!BUDGETS.length) $("budgets").innerHTML='<div class="note">No environmental budgets yet. Seed an env.resource_budget (aquifer / land / carbon).</div>';
+    $("msg").textContent="Edit the numbers and Save — the prioritisation engine reads these on the next Recompute in the Welfare Console.";
+    $("load").remove();
+  }catch(e){ $("load").textContent="error: "+e.message; }
+})();
+</script></body></html>

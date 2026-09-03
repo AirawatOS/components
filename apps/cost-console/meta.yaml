@@ -1,0 +1,16 @@
+# COST CONSOLE (kind=app) — the editable numbers behind the objective function. A planner edits, per capability,
+# the dignity FLOOR (threshold/unit/direction) and the COST model (₹cr/person + environmental draw/person), plus
+# the environmental resource BUDGETS (capacity/regen/draw → headroom). These are what the prioritisation-engine
+# reads to decide what's affordable and sustainable — so this app is where "indicative" becomes "real". Writes
+# only the config schemas (welfare.floor, welfare.cost_model, env.resource_budget), attributed to the editor.
+component_id: ds:airawatdeveloper:app/cost-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Cost Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [welfare.capability, welfare.floor, welfare.cost_model, env.resource_budget]
+writes: [welfare.floor, welfare.cost_model, env.resource_budget]
+roles: [platform.tenant-admin]
