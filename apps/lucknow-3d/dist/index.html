@@ -86,7 +86,12 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   const TOKEN=(localStorage.getItem("cesium_ion_token")||"").trim();
   const hasToken=!!TOKEN; if(hasToken) Cesium.Ion.defaultAccessToken=TOKEN;
 
-  const viewer=new Cesium.Viewer("c",{baseLayer:hasToken?undefined:false,baseLayerPicker:false,geocoder:false,
+  // Esri World Imagery via direct tile URLs — satellite, keyless, NO JSONP (Bing's default uses a JSONP
+  // <script> which script-src blocks). Just image tiles from server.arcgisonline.com (declared egress).
+  const esri=hasToken? new Cesium.ImageryLayer(new Cesium.UrlTemplateImageryProvider({
+    url:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    maximumLevel:19, credit:"Esri, Maxar, Earthstar Geographics"})) : false;
+  const viewer=new Cesium.Viewer("c",{baseLayer:esri,baseLayerPicker:false,geocoder:false,
     timeline:false,animation:false,homeButton:false,sceneModePicker:false,navigationHelpButton:false,
     fullscreenButton:false,infoBox:false,selectionIndicator:false,terrain:hasToken?Cesium.Terrain.fromWorldTerrain():undefined});
   window.viewer=viewer; const scene=viewer.scene;
