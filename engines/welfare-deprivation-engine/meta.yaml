@@ -1,0 +1,15 @@
+# WELFARE DEPRIVATION ENGINE (ADR-0069 slice 2) — makes the EQUITY WEIGHT real. Combines a household's economic
+# standing (nightlight radiance per capita in its cell — a prosperity proxy) with its service shortfalls (from
+# welfare.gap) into a multidimensional deprivation index 0..1 (MPI-style: mean intensity across the dimensions on
+# which the unit is deprived). Writes welfare.deprivation, which the prioritisation-engine uses to serve the
+# worst-off first. Degrades gracefully: with no nightlight it scores on service dimensions alone. The economic
+# dimension is a MODELLED proxy (low confidence) until real income/consumption replaces it.
+component_id: ds:airawatdeveloper:engine/welfare-deprivation-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Welfare Deprivation Engine
+entrypoint: run.py
+required_schemas: [civic.household, welfare.gap, welfare.floor, econ.nightlight, demographics.population, welfare.deprivation]
+reads:  [civic.household, welfare.gap, welfare.floor, econ.nightlight, demographics.population]
+writes: [welfare.deprivation]

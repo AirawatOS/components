@@ -1,0 +1,28 @@
+# NIGHTLIGHT (VIIRS DNB / GEE) — pulls average night-time-lights radiance per H3 cell over the AOI and writes
+# econ.nightlight (nW/cm2/sr). A remote-sensing proxy for economic/energy intensity; the deprivation-engine divides
+# by population for a prosperity-per-capita signal (equity weight). Runs in the shared earth-observation runtime
+# (GEE); needs the GEE service-account key in Vault — fails loudly with no synthetic fallback if absent. VIIRS is
+# ~500m and dominated by non-residential light, so it is a MODELLED proxy, superseded by real income/consumption.
+component_id: ds:airawatdeveloper:driver/nightlight-viirs
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Nightlight (VIIRS DNB / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads:  [space.aoi, econ.nightlight]
+writes: [econ.nightlight]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/nightlight-viirs" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/nightlight-viirs" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/nightlight-viirs" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, PERIOD]
+sources:
+  - { ref: "ds:airawat:ref/source/viirs-dnb", host: earthengine.googleapis.com, provides: [econ.nightlight] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: econ.nightlight }
+  - { verb: write, scope: econ.nightlight }
