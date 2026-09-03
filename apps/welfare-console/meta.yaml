@@ -1,0 +1,17 @@
+# WELFARE CONSOLE (kind=app) — the human face of the objective function (ADR-0069/0070). Shows, for each basic
+# capability, HOW MANY PEOPLE are below the dignity floor and WHERE — with honest error bars and a coverage badge
+# (provisional estimates are greyed, never headlined). Lists the ranked governance.recommendations the
+# prioritisation-engine produced, and lets an authority ADMIT one into a governance.decision (ADR-0029 spine: the
+# AI recommends, the human decides). A "Recompute" button re-runs the gap + prioritisation engines. Reads the
+# spine; writes only the decision.
+component_id: ds:airawatdeveloper:app/welfare-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Welfare Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [stat.estimate, welfare.capability, welfare.floor, welfare.gap, governance.recommendation, governance.decision]
+writes: [governance.decision]
+roles: [platform.tenant-admin]

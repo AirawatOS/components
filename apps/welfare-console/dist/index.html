@@ -1,0 +1,133 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Welfare Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0a0e1a;--pan:#111832;--pan2:#0e1430;--edge:#243056;--ink:#eef2ff;--dim:#9aa4cc;--gold:#e8b84b;--cy:#39d3e0;--good:#2ecc71;--warn:#e0863a;--bad:#e05a6b}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+  #app{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+  header{padding:14px 22px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  header .k{font:11px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
+  header h1{margin:2px 0 0;font-family:ui-serif,Georgia,serif;font-size:21px;font-weight:600;background:linear-gradient(180deg,#fbe6b4,#e8b84b 60%,#b58a34);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header .sub{font-size:12.5px;color:var(--dim)}
+  header .sp{margin-left:auto;display:flex;gap:8px}
+  .btn{padding:8px 14px;border-radius:9px;border:1px solid var(--gold);background:linear-gradient(180deg,#e8b84b22,#e8b84b10);color:#f6e7bf;font-size:12.5px;font-weight:650;cursor:pointer}
+  .btn.ghost{border-color:var(--edge);background:var(--pan);color:var(--dim);font-weight:500}
+  main{flex:1;overflow:auto;padding:18px 22px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+  section h2{font:11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+  .card{background:var(--pan);border:1px solid var(--edge);border-radius:13px;padding:14px 16px;margin-bottom:12px}
+  .card.prov{opacity:.62;border-style:dashed}
+  .card h3{margin:0 0 4px;font-size:15px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .big{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+  .pill{padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .pill.good{background:#12351f;color:var(--good);border:1px solid #1f5c33}
+  .pill.grey{background:#20263f;color:var(--dim);border:1px solid var(--edge)}
+  .bar{position:relative;height:12px;border-radius:6px;background:#0c1226;border:1px solid var(--edge);margin:10px 0 6px;overflow:hidden}
+  .ci{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,#39d3e033,#39d3e055);border-left:1px solid var(--cy);border-right:1px solid var(--cy)}
+  .pt{position:absolute;top:-3px;width:2px;height:18px;background:var(--gold)}
+  .meta{font-size:11.5px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;margin-top:4px}
+  .meta b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .rec .score{font:11px ui-monospace,monospace;color:var(--gold)}
+  .rec p{font-size:12.5px;color:var(--dim);line-height:1.5;margin:6px 0}
+  .rec .act{display:flex;gap:8px;margin-top:8px;align-items:center}
+  .done{color:var(--good);font-size:12px;font-weight:600}
+  .empty{color:var(--dim);font-size:13px;padding:20px;text-align:center;border:1px dashed var(--edge);border-radius:12px}
+  .load{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9;color:var(--dim)}
+  #msg{font-size:12px;color:var(--dim);padding:0 22px 10px}
+</style></head><body>
+<div id="app">
+  <header>
+    <div><div class="k" id="eyebrow">Objective Function · Indicative</div>
+      <h1>Welfare Console</h1>
+      <div class="sub">Who is worst-served, across which basic need, by how much — and what to do about it.</div></div>
+    <div class="sp">
+      <button class="btn ghost" id="recompute">↻ Recompute</button>
+    </div>
+  </header>
+  <div id="msg"></div>
+  <main>
+    <section><h2>Capabilities · people below the floor</h2><div id="ests"></div></section>
+    <section><h2>Recommendations · what to prioritise</h2><div id="recs"></div>
+      <h2 style="margin-top:22px">Decisions · admitted</h2><div id="decs"></div></section>
+  </main>
+</div>
+<div class="load" id="load">loading the welfare picture…</div>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let APPID="welfare-console", TENANT=null, ME=null;
+const pct=x=>x==null?"—":(x*100).toFixed(0)+"%", num=n=>n==null?"—":Math.round(n).toLocaleString("en-IN");
+async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); if(!r.ok) throw new Error(p+" "+r.status); return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:5000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
+
+function estCard(e,capLabel,floor){
+  const prov=!e.publishable, lo=e.ci_low||0, hi=e.ci_high||0, v=e.value||0;
+  const pv=e.prov||{};
+  return `<div class="card ${prov?'prov':''}">
+    <div class="row"><h3>${esc(capLabel)}</h3><span class="pill ${prov?'grey':'good'}">${prov?'provisional':'published'}</span></div>
+    <div class="row"><div class="big">${pct(v)}</div><div class="meta" style="text-align:right">of people below the floor<br><b>${num(pv.persons_below)}</b> of <b>${num(pv.persons_total)}</b></div></div>
+    <div class="bar"><div class="ci" style="left:${lo*100}%;width:${Math.max(0.5,(hi-lo)*100)}%"></div><div class="pt" style="left:${v*100}%"></div></div>
+    <div class="meta"><span>90% CI <b>${pct(lo)}–${pct(hi)}</b></span><span>coverage <b>${pct(e.coverage)}</b></span><span>n <b>${num(e.n_observed)}</b>/<b>${num(e.n_target)}</b></span><span>floor <b>${floor?esc(floor.threshold+' '+(floor.unit||'')):'—'}</b></span></div>
+    ${prov?`<div class="meta" style="color:var(--warn)">Not published — coverage/interval below the gate. Shown for context only.</div>`:''}
+  </div>`;
+}
+function recCard(r,admitted){
+  const done=admitted[r.id];
+  return `<div class="card rec">
+    <div class="row"><h3>${esc(r.title||'Recommendation')}</h3><span class="score">score ${num(r.score)}</span></div>
+    <div style="font-size:13px;color:var(--cy);font-weight:600">${esc(r.summary||'')}</div>
+    <p>${esc(r.rationale||'')}</p>
+    <div class="meta"><span>confidence <b>${(r.confidence!=null?r.confidence:'—')}</b></span><span>method <b>${esc(r.method||'')}</b></span><span>evidence <b>${(r.evidence||[]).length}</b> facts</span></div>
+    <div class="act">${done?`<span class="done">✓ admitted into a decision (${esc(done.outcome)})</span>`
+      :`<button class="btn" data-admit="${esc(r.id)}">✓ Admit as decision</button>
+        <button class="btn ghost" data-reject="${esc(r.id)}">Reject</button>`}</div>
+  </div>`;
+}
+let RECS=[], ADMITTED={};
+async function admit(recId, outcome){
+  const r=RECS.find(x=>x.id===recId); if(!r) return;
+  const id="ds:"+(TENANT||"app")+":governance/decision/welfare-"+Date.now().toString(36);
+  const obj={id, schema:"governance.decision", tenant:TENANT,
+    task:recId, outcome, selected: outcome==="approved"?recId:undefined,
+    authority: ME||"user", subjects:[r.title], considered:[recId],
+    evidence_manifest:(r.evidence||[]), rationale:(outcome==="approved"?"Admitted":"Rejected")+" welfare recommendation: "+(r.summary||r.title),
+    decided_at:new Date().toISOString()};
+  $("msg").textContent="recording decision…";
+  try{ const res=await bridge("/bridge/save",{app_id:APPID,schema:"governance.decision",id,object:obj});
+    if(res&&!res.error){ ADMITTED[recId]={outcome}; $("msg").textContent="✓ Decision recorded on the spine (ADR-0029)."; render(); await loadDecisions(); }
+    else $("msg").textContent="could not record: "+esc((res&&res.error)||"");
+  }catch(e){ $("msg").textContent="decision failed: "+e.message; }
+}
+let EST=[], CAPS={}, FLOORS={}, DECS=[];
+function render(){
+  const rows=EST.filter(e=>e.metric==="welfare.gap.below_floor_fraction").sort((a,b)=>((b.prov||{}).persons_below||0)-((a.prov||{}).persons_below||0));
+  $("ests").innerHTML = rows.length? rows.map(e=>estCard(e,(CAPS[e.capability]||{}).label||e.capability,FLOORS[e.capability])).join("")
+    : `<div class="empty">No welfare estimates yet. Press <b>↻ Recompute</b> to run the gap engine over the seeded data.</div>`;
+  RECS.sort((a,b)=>(b.score||0)-(a.score||0));
+  $("recs").innerHTML = RECS.length? RECS.map(r=>recCard(r,ADMITTED)).join("")
+    : `<div class="empty">No recommendations yet. Recompute to rank the gaps.</div>`;
+  document.querySelectorAll("[data-admit]").forEach(b=>b.onclick=()=>admit(b.dataset.admit,"approved"));
+  document.querySelectorAll("[data-reject]").forEach(b=>b.onclick=()=>admit(b.dataset.reject,"rejected"));
+}
+function decCard(d){ return `<div class="card"><div class="row"><h3 style="font-size:13px">${esc((d.subjects||[])[0]||d.task||'decision')}</h3><span class="pill ${d.outcome==='approved'?'good':'grey'}">${esc(d.outcome)}</span></div><div class="meta"><span>by <b>${esc((d.authority||'').split('/').pop())}</b></span><span>${esc((d.decided_at||'').slice(0,16).replace('T',' '))}</span></div></div>`; }
+async function loadDecisions(){ DECS=(await q("governance.decision")).filter(d=>String(d.id).includes("welfare")); $("decs").innerHTML=DECS.length?DECS.map(decCard).join(""):`<div class="empty">No decisions admitted yet.</div>`;
+  DECS.forEach(d=>{ if(d.task) ADMITTED[d.task]={outcome:d.outcome}; }); }
+$("recompute").onclick=async()=>{
+  $("msg").textContent="recomputing (gap engine → prioritisation engine)…";
+  try{ await bridge("/bridge/welfare-gap-scan",{}); await bridge("/bridge/welfare-prioritise",{}); $("msg").textContent="✓ recomputed."; await loadAll(); }
+  catch(e){ $("msg").textContent="recompute unavailable ("+e.message+") — showing stored results."; }
+};
+async function loadAll(){
+  EST=await q("stat.estimate");
+  (await q("welfare.capability")).forEach(c=>CAPS[c.id]=c);
+  (await q("welfare.floor")).forEach(f=>FLOORS[f.capability]=f);
+  RECS=(await q("governance.recommendation")).filter(r=>String(r.id).includes("welfare")||String(r.produced_by||"").includes("welfare"));
+  await loadDecisions(); render();
+}
+(async()=>{
+  try{
+    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({})); APPID=cfg.app_id||APPID; TENANT=cfg.tenant||null;
+    if(TENANT) $("eyebrow").textContent="Objective Function · "+TENANT;
+    await loadAll(); $("load").remove();
+  }catch(e){ $("load").textContent="error: "+e.message; }
+})();
+</script></body></html>
