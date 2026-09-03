@@ -1,0 +1,15 @@
+# WELFARE PRIORITISATION ENGINE (ADR-0069 slice 2 · ADR-0046 hourglass · ADR-0029 spine). Turns the gap picture
+# into "what to do about it": ranks the publishable welfare gaps by how many people are CONFIDENTLY below the
+# floor (the lower credible bound, not the optimistic point) × how deep the shortfall is × the equity weight, fits
+# an optional fiscal budget (greedy, most people helped per rupee), and emits a governance.recommendation per top
+# opportunity — a PROPOSED option a human authority admits into a Decision. It never recommends off a provisional
+# (unpublishable) estimate. AI recommends; the authority decides.
+component_id: ds:airawatdeveloper:engine/welfare-prioritisation-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Welfare Prioritisation Engine
+entrypoint: run.py
+required_schemas: [stat.estimate, welfare.gap, welfare.floor, welfare.capability, governance.recommendation]
+reads:  [stat.estimate, welfare.gap, welfare.floor, welfare.capability]
+writes: [governance.recommendation]
