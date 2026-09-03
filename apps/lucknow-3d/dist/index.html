@@ -17,12 +17,29 @@
   #status{position:absolute;top:16px;right:18px;z-index:5;background:#0e1130cc;border:1px solid #e8b84b3a;border-radius:9px;padding:8px 12px;font:12px ui-monospace,monospace;color:#cfd6f5}
   .foot{position:absolute;right:14px;bottom:10px;z-index:5;font:10.5px ui-monospace,Menlo,monospace;color:#6b7290}
   .err{position:absolute;inset:0;display:none;place-items:center;z-index:9;background:#070a16;color:#e6a}
+  /* make the Cesium widget fill the container (fixes the tiny top-left canvas) */
+  #c,#c .cesium-widget,#c .cesium-widget canvas{width:100%!important;height:100%!important;display:block}
+  #iongear{position:absolute;top:54px;right:18px;z-index:6;background:#0e1130cc;border:1px solid #e8b84b3a;border-radius:9px;padding:7px 11px;font-size:12.5px;color:#cfd6f5;cursor:pointer;backdrop-filter:blur(6px)}
+  #ionpanel{position:absolute;top:92px;right:18px;z-index:7;width:270px;background:#0e1130f2;border:1px solid #2a2a5a;border-radius:11px;padding:12px 13px;backdrop-filter:blur(6px);font-size:12.5px}
+  #ionpanel .t{font:11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:6px}
+  #ionpanel input{width:100%;box-sizing:border-box;background:#070a16;border:1px solid #2a2a5a;border-radius:7px;color:#eef1ff;padding:7px 8px;font-size:12px}
+  #ionpanel .row{display:flex;gap:6px;margin-top:8px}
+  #ionpanel button{flex:1;background:#e8b84b1e;border:1px solid #e8b84b66;color:#f4e6c0;border-radius:7px;padding:7px;font-size:12px;cursor:pointer}
+  #ionpanel #ionclear{background:#0e1130;border-color:#2a2a5a;color:#9aa0cc}
+  #ionpanel .hint{margin-top:8px;color:#7b83b0;font-size:11px;line-height:1.4}
 </style></head><body>
 <div id="c"></div>
 <div class="cap"><div class="k">Indicative Land-use Plan · Sector 15, Vrindavan Yojana</div>
   <h1>Lucknow 3D — AI City</h1>
   <div class="s"><b id="hd">loading the twin…</b></div></div>
 <div id="status">starting…</div>
+<button id="iongear" title="Cesium ion token → photoreal">⚙ ion</button>
+<div id="ionpanel" hidden>
+  <div class="t">Cesium ion token</div>
+  <input id="iontok" type="text" placeholder="paste ion access token" autocomplete="off" spellcheck="false">
+  <div class="row"><button id="ionsave">Save + reload</button><button id="ionclear">Clear</button></div>
+  <div class="hint">A public client token from cesium.com/ion → unlocks photoreal terrain + real-city 3D buildings. Stored in this browser only.</div>
+</div>
 <div class="leg"><div class="t">Land use</div><div id="legrows"></div></div>
 <div class="foot">Real footprints + governed plan · photoreal basemap when a Cesium ion token is configured · zoning/massing illustrative</div>
 <div class="err" id="err"></div>
@@ -46,13 +63,20 @@ function ringOf(f){let c=(f.geometry||{}).coordinates;while(Array.isArray(c)&&c.
 function centroid(r){let x=0,y=0;for(const p of r){x+=p[0];y+=p[1];}return[x/r.length,y/r.length];}
 const rgba=(a,al)=>Cesium.Color.fromBytes(a[0],a[1],a[2],Math.round((al==null?1:al)*255));
 const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="Lucknow 3D — "+m; $("status").textContent="error"; };
+// ion token control (⚙) — the token is a PUBLIC client key; kept in localStorage + used to enable photoreal
+(function(){ const g=$("iongear"), p=$("ionpanel"), inp=$("iontok"); if(!g) return;
+  inp.value=localStorage.getItem("cesium_ion_token")||""; g.style.borderColor=inp.value?"#39d3e0":"";
+  g.onclick=()=>{ p.hidden=!p.hidden; if(!p.hidden) inp.focus(); };
+  $("ionsave").onclick=()=>{ const v=(inp.value||"").trim(); v?localStorage.setItem("cesium_ion_token",v):localStorage.removeItem("cesium_ion_token"); location.reload(); };
+  $("ionclear").onclick=()=>{ localStorage.removeItem("cesium_ion_token"); location.reload(); };
+})();
 
 (async()=>{
  try{
   if(typeof Cesium==="undefined") return fail("Cesium failed to load (needs the 3d CSP profile: worker-src + wasm-unsafe-eval).");
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"lucknow-3d"}));
   APPID=cfg.app_id||"lucknow-3d";
-  const TOKEN=cfg.cesium_ion_token||"";                 // set at install (component config) — enables photoreal
+  const TOKEN=(localStorage.getItem("cesium_ion_token")||"").trim();   // PUBLIC client key — pasted by the user (⚙)
   const hasToken=!!TOKEN; if(hasToken) Cesium.Ion.defaultAccessToken=TOKEN;
 
   const viewer=new Cesium.Viewer("c",{
@@ -60,6 +84,10 @@ const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="Lucknow
     homeButton:false, sceneModePicker:false, navigationHelpButton:false, fullscreenButton:false, infoBox:false,
     selectionIndicator:false, terrain: hasToken?Cesium.Terrain.fromWorldTerrain():undefined });
   window.viewer=viewer; const scene=viewer.scene;
+  // FIX the tiny-top-left canvas: force a resize once the container is laid out (Cesium sizes to the container
+  // at init, which can be 0×0 inside the freshly-mounted app iframe) + on every window resize.
+  const _rz=()=>{ try{ viewer.resize(); scene.requestRender(); }catch(e){} };
+  window.addEventListener("resize",_rz); requestAnimationFrame(_rz); setTimeout(_rz,250); setTimeout(_rz,900);
   scene.globe.baseColor=Cesium.Color.fromCssColorString("#0b1020");
   scene.skyAtmosphere && (scene.skyAtmosphere.show=hasToken);
   scene.fog.enabled=false; scene.globe.enableLighting=hasToken;

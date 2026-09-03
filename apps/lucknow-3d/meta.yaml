@@ -5,7 +5,7 @@
 # ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
 component_id: ds:airawatdeveloper:app/lucknow-3d
 kind: app
-version: 0.1.0
+version: 0.1.1   # 0.1.1: CESIUM_ION_TOKEN modeled as a secret (settable in Components) + ion tile-proxy for photoreal
 provider: ds:airawat:developer
 display_name: Lucknow 3D
 entrypoint: index.html
@@ -18,11 +18,12 @@ csp_profile: 3d
 required_schemas: [space.aoi, geo.building, viz.layer]
 writes: []
 roles: [platform.tenant-admin]
-# INSTALL-TIME CONFIG (component setup, ADR-0027): a Cesium ion access token (a CLIENT token, safe in-browser by
-# design → config, not a secret). Unlocks photoreal terrain + OSM Buildings + imagery. Empty ⇒ tokenless preview.
-config: [CESIUM_ION_TOKEN]
-# DECLARED EGRESS (broker-for-apps): with a token, Cesium's terrain/3d-tiles/imagery are proxied through the host's
-# /bridge/fetch to these hosts only (the CSP still blocks direct calls). Wired in the photoreal slice.
+# INSTALL-TIME SECRET (component setup, ADR-0027): a Cesium ion access token. Kept SERVER-SIDE in Vault (set via the
+# Components app → Set/Rotate) and injected by the host's ion tile-proxy — it never reaches the browser, so the app
+# holds no credential. Empty ⇒ tokenless preview (our own geometry only). Unlocks photoreal terrain + OSM Buildings.
+secrets: [CESIUM_ION_TOKEN]
+# DECLARED EGRESS (broker-for-apps): Cesium's terrain/3d-tiles/imagery/ion-endpoint calls are proxied through the
+# host's /bridge/tile to these hosts ONLY (the CSP still blocks direct calls); the host injects the ion token.
 egress:
   - { host: assets.ion.cesium.com, rate_per_min: 600 }
   - { host: api.cesium.com, rate_per_min: 120 }
