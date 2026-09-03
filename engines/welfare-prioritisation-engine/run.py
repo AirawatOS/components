@@ -19,7 +19,7 @@ admits one into a Decision. The engine decides nothing.
 import time as _t
 
 CID = "ds:airawatdeveloper:engine/welfare-prioritisation-engine"
-CVER = "0.1.0"
+CVER = "0.1.1"
 def _now(): return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
 def _slug(s): return "".join(c if c.isalnum() else "-" for c in str(s)).strip("-").lower()[:48] or "x"
 
@@ -33,14 +33,18 @@ def h_prioritise(ctx):
     floors = {f.get("capability"): f for f in (ctx["kfind"]("welfare.floor") or [])}
     caps = {c.get("id"): c for c in (ctx["kfind"]("welfare.capability") or [])}
     gaps = ctx["kfind"]("welfare.gap") or []
+    dep_by = {d.get("subject"): d.get("index", 0.0) for d in (ctx["kfind"]("welfare.deprivation") or [])}
 
-    # mean shortfall (below-floor only) per capability → depth
-    sf = {}
+    # per capability, over the below-floor population: mean shortfall → depth; mean deprivation → equity weight
+    sf = {}; dep = {}
     for gp in gaps:
         s = gp.get("shortfall")
         if s and s > 0:
-            sf.setdefault(gp.get("capability"), []).append(s)
+            c = gp.get("capability")
+            sf.setdefault(c, []).append(s)
+            dep.setdefault(c, []).append(dep_by.get(gp.get("subject"), 0.0))
     mean_sf = {c: (sum(v) / len(v)) for c, v in sf.items()}
+    mean_dep = {c: (sum(v) / len(v)) for c, v in dep.items()}   # 0..1 mean deprivation of the below-floor people
 
     opps = []
     considered = provisional = 0
@@ -57,7 +61,8 @@ def h_prioritise(ctx):
         persons_conf_below = ci_low * persons_total          # at-least-this-many below floor (90% CI)
         thr = (floors.get(cap) or {}).get("threshold")
         depth = (mean_sf.get(cap, 0.0) / thr) if thr else 0.0
-        score = persons_conf_below * (1.0 + depth)
+        equity = mean_dep.get(cap, 0.0)                        # prioritarian: how deprived the below-floor people are (0..1)
+        score = persons_conf_below * (1.0 + depth) * (1.0 + equity)
         cost = (unit_cost.get(cap, 0) or 0) * persons_conf_below
         conf = round((e.get("coverage") or 0) * (pv.get("mean_reliability") or 0), 3)
         opps.append({"cap": cap, "ward": ward, "estimate_id": e.get("id"),
@@ -65,8 +70,8 @@ def h_prioritise(ctx):
                      "persons_below_point": round((e.get("value") or 0) * persons_total),
                      "persons_conf_below": round(persons_conf_below),
                      "ci_low": ci_low, "ci_high": e.get("ci_high"), "coverage": e.get("coverage"),
-                     "depth": round(depth, 3), "score": round(score, 1), "cost_cr": round(cost, 2),
-                     "confidence": conf})
+                     "depth": round(depth, 3), "equity": round(equity, 3), "score": round(score, 1),
+                     "cost_cr": round(cost, 2), "confidence": conf})
 
     opps.sort(key=lambda o: -o["score"])
 
@@ -91,8 +96,9 @@ def h_prioritise(ctx):
         pick = "PRIORITISE" if o["selected"] else "DEFER (budget)"
         rationale = (f"At least {o['persons_conf_below']:,} people (90% CI; point estimate "
                      f"{o['persons_below_point']:,}) are below the {cap_label} floor in this area, at coverage "
-                     f"{o['coverage']}. Mean shortfall depth {o['depth']}. Ranked #{rank} by "
-                     f"confident-persons-below × depth. Provisional estimates were excluded (ADR-0070).")
+                     f"{o['coverage']}. Mean shortfall depth {o['depth']}; mean deprivation of the affected "
+                     f"{o['equity']} (0-1). Ranked #{rank} by confident-persons-below × depth × equity "
+                     f"(prioritarian — the worse-off count more). Provisional estimates were excluded (ADR-0070).")
         ctx["kwrite"](rid, {
             "schema": "governance.recommendation", "id": rid, "tenant": tenant,
             "title": f"Raise {cap_label} — {o['ward'].split('/')[-1]}",
@@ -131,7 +137,8 @@ def _selftest():
     gaps = [{"capability": "welfare.capability/density", "shortfall": 50}, {"capability": "welfare.capability/water", "shortfall": 60}]
     store = {}
     ctx = {"tenant": "x", "body": {}, "kwrite": lambda i, o: store.__setitem__(i, o),
-           "kfind": lambda s: {"stat.estimate": ests, "welfare.floor": floors, "welfare.capability": caps, "welfare.gap": gaps}.get(s, [])}
+           "kfind": lambda s: {"stat.estimate": ests, "welfare.floor": floors, "welfare.capability": caps, "welfare.gap": gaps,
+                               "welfare.deprivation": [{"subject": "ds:x:civic/household/h3", "index": 0.6}]}.get(s, [])}
     res, err = h_prioritise(ctx)
     assert err is None and res["provisional_excluded"] == 1 and res["recommendations"] == 2, res
     # density: 0.19*68000=12920 confidently below; water: 0.1*68000=6800. density should rank #1.

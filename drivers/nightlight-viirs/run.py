@@ -44,7 +44,7 @@ def init_ee():
     return ee
 
 def get_aoi():
-    rows = call("/v1/read", {"scope": "space.aoi", "limit": 50}).get("results", [])
+    rows = call("/v1/query", {"scope": "space.aoi", "limit": 50}).get("results", [])
     objs = [r.get("object", r) for r in rows]
     if AOI_ID:
         objs = [o for o in objs if o.get("id") == AOI_ID]

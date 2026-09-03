@@ -3,7 +3,7 @@
 # by population for a prosperity-per-capita signal (equity weight). Runs in the shared earth-observation runtime
 # (GEE); needs the GEE service-account key in Vault — fails loudly with no synthetic fallback if absent. VIIRS is
 # ~500m and dominated by non-residential light, so it is a MODELLED proxy, superseded by real income/consumption.
-component_id: ds:airawatdeveloper:driver/nightlight-viirs
+component_id: ds:airawat:driver/nightlight-viirs
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer

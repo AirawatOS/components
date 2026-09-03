@@ -13,7 +13,7 @@ Monte-Carlo simulation carrying a shared per-(method,source) bias term for corre
 import math, time as _t
 
 CID = "ds:airawatdeveloper:engine/welfare-gap-engine"
-CVER = "0.1.1"
+CVER = "0.1.2"
 Z90 = 1.6449                                              # z for a 90% interval
 GATE_DEFAULT = {"min_coverage": 0.30, "max_interval_width": 0.30, "ci_level": 0.90}
 
@@ -133,9 +133,9 @@ def h_gap_scan(ctx):
                     continue                                  # applied/other → unknown
             else:
                 continue                                      # genuinely not observed
-            # prioritarian weight: deprivation index if we have it, else household size (persons), else 1
-            d = depriv.get(hh.get("id"))
-            weight = (d.get("index") if d else None) or hh.get("size") or 1
+            # PERSON weight — the estimate headline is a clean "% of people below the floor". Deprivation drives
+            # the prioritisation RANKING (worst-off first), not this fraction, so the two stay interpretable.
+            weight = hh.get("size") or 1
             gid = f"ds:{tenant}:welfare/gap/{cap.split('/')[-1]}-{hh['id'].rsplit('/', 1)[-1]}"
             ctx["kwrite"](gid, {
                 "schema": "welfare.gap", "id": gid, "tenant": tenant,

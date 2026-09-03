@@ -6,7 +6,7 @@
 # never a headline. v1 = analytic (Wilson + coverage blend); v2 = Monte-Carlo with per-source correlation.
 component_id: ds:airawatdeveloper:engine/welfare-gap-engine
 kind: engine
-version: 0.1.1
+version: 0.1.2
 provider: ds:airawat:developer
 display_name: Welfare Gap Engine
 entrypoint: run.py
