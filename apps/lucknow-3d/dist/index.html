@@ -88,11 +88,20 @@ const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="Lucknow
   // at init, which can be 0×0 inside the freshly-mounted app iframe) + on every window resize.
   const _rz=()=>{ try{ viewer.resize(); scene.requestRender(); }catch(e){} };
   window.addEventListener("resize",_rz); requestAnimationFrame(_rz); setTimeout(_rz,250); setTimeout(_rz,900);
-  scene.globe.baseColor=Cesium.Color.fromCssColorString("#0b1020");
-  scene.skyAtmosphere && (scene.skyAtmosphere.show=hasToken);
-  scene.fog.enabled=false; scene.globe.enableLighting=hasToken;
-  if(!hasToken){ scene.skyBox.show=false; scene.backgroundColor=Cesium.Color.fromCssColorString("#070a16"); }
-  if(hasToken){ try{ scene.primitives.add(await Cesium.createOsmBuildingsAsync()); }catch(e){ console.warn(e); } }
+  // sky + ground so the city sits in a WORLD, not in space (no starfield). Procedural atmosphere works tokenless.
+  scene.globe.baseColor=Cesium.Color.fromCssColorString("#141a12");
+  if(scene.skyAtmosphere){ scene.skyAtmosphere.show=true; scene.skyAtmosphere.brightnessShift=0.15; scene.skyAtmosphere.saturationShift=0.08; }
+  scene.skyBox.show=false; scene.backgroundColor=Cesium.Color.fromCssColorString("#0a1522");
+  scene.fog.enabled=true; scene.fog.density=0.00006; scene.globe.enableLighting=true;
+  viewer.clock.currentTime=Cesium.JulianDate.fromIso8601("2026-03-21T11:20:00Z");   // warm late-afternoon Lucknow light
+  if(hasToken){ try{ const osm=await Cesium.createOsmBuildingsAsync();
+    // 3D-Tiles feature styling (the Sandcastle technique): recolour the REAL city by building height
+    osm.style=new Cesium.Cesium3DTileStyle({color:{conditions:[
+      ['${feature["cesium#estimatedHeight"]} >= 80','color("#e8b84b")'],
+      ['${feature["cesium#estimatedHeight"]} >= 40','color("#39c6d6")'],
+      ['${feature["cesium#estimatedHeight"]} >= 18','color("#2b7f9e")'],
+      ['true','color("#41527a")']]}});
+    scene.primitives.add(osm); }catch(e){ console.warn(e); } }
   $("status").textContent = hasToken?"photoreal (ion)":"tokenless preview";
 
   // ---- real data via the host bridge (as the signed-in user) ----
@@ -128,18 +137,54 @@ const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="Lucknow
     scene.primitives.add(new Cesium.Primitive({geometryInstances:instances, asynchronous:false,
       appearance:new Cesium.PerInstanceColorAppearance({closed:!translucent, translucent:!!translucent})})); }
 
-  // existing footprints as grey context (only tokenless), capped near the parcel
-  if(!hasToken){ const ctx=[]; for(const f of feats){ const r=ringOf(f), c=centroid(r);
-      if(Math.hypot(c[0]-cx,c[1]-cy)>0.014) continue; ctx.push(inst(r, f.properties.h, [78,94,128], 1));
-      if(ctx.length>=1800) break; } addPrim(ctx,false); }
-  addPrim(PLAN.dev.map(d=>inst(d.poly, 3, ZONES[d.zone].col, 0.34)), true);   // zoned land-use plates (translucent)
-  addPrim(PLAN.mass.map(m=>inst(m.poly, m.h, m.col, 1)), false);              // planned massing
-  const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());      // parks — trees
-  for(const t of PLAN.trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t.p[0],t.p[1],2), color:rgba([70,192,122],0.95), pixelSize:6});
+  // ================= SCENE: landscape + full existing city + a DESIGNED, dense AI district =================
+  const rnd=(s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;})(7);
+  const rectR=(px,py,hw,hh)=>[[px-hw,py-hh],[px+hw,py-hh],[px+hw,py+hh],[px-hw,py+hh],[px-hw,py-hh]];
+  const RMP=(st,t)=>{t=Math.max(0,Math.min(1,t));const n=st.length-1,x=t*n,i=Math.min(n-1,x|0),f=x-i,a=st[i],b=st[i+1];return[a[0]+(b[0]-a[0])*f|0,a[1]+(b[1]-a[1])*f|0,a[2]+(b[2]-a[2])*f|0];};
+  const HR=[[44,54,96],[38,104,146],[57,190,208],[150,214,232],[236,190,86]], hcol=h=>RMP(HR,h/160);
+  const inHex=(p,poly)=>{let x=p[0],y=p[1],ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))ins=!ins;}return ins;};
+  const finst=(ring,col,al,h)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),height:h||0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
+  const addFlat=(insts,tl)=>{if(insts.length)scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:true,translucent:!!tl})}));};
+
+  // GROUND — a land plane over the AOI so the city isn't floating (tokenless; photoreal has real terrain)
+  const AX=(aoiRing||[[cx-0.02,cy-0.02],[cx+0.02,cy+0.02]]).map(p=>p[0]), AY=(aoiRing||[[cx-0.02,cy-0.02],[cx+0.02,cy+0.02]]).map(p=>p[1]);
+  const B=[Math.min(...AX),Math.min(...AY),Math.max(...AX),Math.max(...AY)], MG=0.008;
+  if(!hasToken){
+    addFlat([finst([[B[0]-MG,B[1]-MG],[B[2]+MG,B[1]-MG],[B[2]+MG,B[3]+MG],[B[0]-MG,B[3]+MG],[B[0]-MG,B[1]-MG]],[26,32,24],1,0)]);
+    // EXISTING CITY — every real footprint, height-coloured (the surrounding city context)
+    addPrim(feats.map(f=>inst(ringOf(f), Math.max(6,f.properties.h), hcol(f.properties.h), 1)), false);
+  }
+
+  // DESIGNED AI DISTRICT — a dense procedural masterplan over the developable (greenfield) cells
+  const cells=PLAN.dev, dcx=cells.reduce((s,c)=>s+c.center[0],0)/cells.length, dcy=cells.reduce((s,c)=>s+c.center[1],0)/cells.length;
+  const dR=Math.max(...cells.map(c=>Math.hypot(c.center[0]-dcx,c.center[1]-dcy)))+0.001;
+  const DB=[Math.min(...cells.flatMap(c=>c.poly.map(p=>p[0]))),Math.min(...cells.flatMap(c=>c.poly.map(p=>p[1]))),Math.max(...cells.flatMap(c=>c.poly.map(p=>p[0]))),Math.max(...cells.flatMap(c=>c.poly.map(p=>p[1])))];
+  const PROF={ai:[95,240,[96,208,230]],innov:[46,120,[228,120,165]],comm:[30,84,[232,186,92]],resi:[13,34,[216,206,182]],civic:[18,54,[242,206,120]]};
+  const STEP=0.00055;                                   // ~60 m blocks → a dense street grid
+  const bld=[], trees=[], parks=[];
+  for(let la=DB[1]; la<=DB[3]; la+=STEP) for(let ln=DB[0]; ln<=DB[2]; ln+=STEP){
+    const cell=cells.find(c=>inHex([ln,la],c.poly)); if(!cell) continue;
+    if(cell.zone==="green"){ parks.push(rectR(ln,la,STEP*0.46,STEP*0.46)); for(let k=0;k<8;k++) trees.push([ln+(rnd()-0.5)*STEP*0.85, la+(rnd()-0.5)*STEP*0.85]); continue; }
+    const d=Math.hypot(ln-dcx,la-dcy)/dR, P=PROF[cell.zone]||PROF.resi;
+    const nb=cell.zone==="ai"?(rnd()>.5?2:1):(rnd()>.4?2:3);
+    for(let k=0;k<nb;k++){
+      const bw=STEP*(0.16+rnd()*0.16), bh=STEP*(0.16+rnd()*0.16), ox=(rnd()-0.5)*STEP*0.42, oy=(rnd()-0.5)*STEP*0.42;
+      const H=(P[0]+(P[1]-P[0])*(1-0.62*d))*(0.72+rnd()*0.56);
+      bld.push({p:rectR(ln+ox,la+oy,bw,bh), h:H, c:P[2]});
+      if(cell.zone==="ai" && H>150) bld.push({p:rectR(ln+ox,la+oy,bw*1.7,bh*1.7), h:H*0.2, c:P[2]});   // podium
+    }
+    if(rnd()>.55) trees.push([ln+STEP*0.5, la+STEP*0.5]);          // street trees
+  }
+  bld.push({p:rectR(dcx,dcy,STEP*0.26,STEP*0.26), h:280, c:[150,232,250]});   // signature landmark tower
+  addFlat(parks.map(p=>finst(p,[38,94,50],0.95,0.4)));                        // park greens
+  addPrim(bld.map(b=>inst(b.p,b.h,b.c,1)), false);                           // the district skyline
+  const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  for(const t of trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t[0],t[1],3), color:rgba([64,180,110],0.95), pixelSize:5});
+  $("hd").innerHTML=`<b>${bld.length}</b>-building AI district over the greenfield`+(hasToken?" · photoreal":` · ${feats.length.toLocaleString("en-IN")} real buildings around it`);
 
   // frame + slow orbit around the parcel centre
   const centre=Cesium.Cartesian3.fromDegrees(cx,cy,0);
-  let spin=true, ang=0; const PITCH=Cesium.Math.toRadians(-30), RANGE=1050;
+  let spin=true, ang=0; const PITCH=Cesium.Math.toRadians(-30), RANGE=2600;   // pull back → district IN its city
   viewer.camera.lookAt(centre, new Cesium.HeadingPitchRange(Cesium.Math.toRadians(18), PITCH, RANGE));
   viewer.clock.onTick.addEventListener(()=>{ if(!spin) return; ang+=0.0016;
     viewer.camera.lookAt(centre, new Cesium.HeadingPitchRange(Cesium.Math.toRadians(18)+ang, PITCH, RANGE)); });
