@@ -52,6 +52,7 @@
   <button id="cIn" title="Zoom in">+</button>
   <button id="cOut" title="Zoom out">−</button>
   <button id="cReset" title="Reset view">⌖</button>
+  <button id="cTour" title="Guided fly-through">🎬</button>
 </div>
 <div class="foot">Real footprints (Google Open Buildings) · designed AI district is illustrative · photoreal basemap when an ion token is set</div>
 <div class="err" id="err"></div>
@@ -184,6 +185,12 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
 
   batch(parks.map(p=>finst(p,[40,96,52],0.95,0.4)),true);
   batch(panels.map(p=>finst(p,[40,66,104],0.95,3)),true);   // solar field
+  // WATER — a stylised lake / waterfront beside the district (trees line the shore)
+  const ell=(cx,cy,rx,ry)=>{const q=[];for(let i=0;i<=44;i++){const a=i/44*6.2832;q.push([cx+Math.cos(a)*rx,cy+Math.sin(a)*ry]);}return q;};
+  const lkx=dcx-dR*1.02, lky=dcy-dR*0.12;
+  batch([finst(ell(lkx,lky,0.0022,0.0015),[46,124,178],0.5,0.35)],true,true);   // shore sheen
+  batch([finst(ell(lkx,lky,0.0016,0.0010),[20,74,132],0.92,0.6)],true,true);    // water
+  for(let k=0;k<18;k++){ const a=rnd()*6.2832; trees.push([lkx+Math.cos(a)*0.0019, lky+Math.sin(a)*0.0013]); }
   batch(bld.map(b=>einst(b.p,b.h,b.c,1,{kind:"planned",type:b.t,h:Math.round(b.h)})),false,false,Cesium.ShadowMode.ENABLED);
   const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());
   for(const t of trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t[0],t[1],3),color:rgba([70,186,116],0.95),pixelSize:5});
@@ -236,12 +243,25 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     scene.requestRender();
   };
 
+  // ============ GUIDED FLY-THROUGH ============
+  $("cTour").onclick=()=>{ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    const W=[
+      {x:dcx-0.006, y:dcy-0.011, h:2000, hd:22, p:-33, d:3.0},   // establishing — district in its city
+      {x:dcx-0.003, y:dcy-0.006, h:760,  hd:38, p:-20, d:4.0},   // swoop toward the AI core
+      {x:dcx-0.0012,y:dcy-0.0026,h:210,  hd:58, p:-6,  d:4.5},   // low street-level pass
+      {x:dcx+0.0016,y:dcy-0.0016,h:540,  hd:96, p:-26, d:4.5},   // rise over the landmark
+      {x:dcx-0.009, y:dcy-0.013, h:2400, hd:14, p:-34, d:4.5},   // pull back
+    ]; let i=0; (function step(){ if(i>=W.length){ setOrbit(true); return; } const w=W[i++];
+      viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(w.x,w.y,w.h),
+        orientation:{heading:Cesium.Math.toRadians(w.hd),pitch:Cesium.Math.toRadians(w.p),roll:0},
+        duration:w.d, complete:step}); })(); };
+
   // ============ ANIMATED TRAFFIC + DRONES ============
-  const long=roadPaths.filter(s=>s.length>=3).sort((a,b)=>b.length-a.length).slice(0,60);
+  const long=roadPaths.filter(s=>s.length>=2).sort((a,b)=>b.length-a.length).slice(0,150);
   const cars=[], carColl=scene.primitives.add(new Cesium.PointPrimitiveCollection());
-  long.forEach((path,i)=>{ const n=1+(i%2); for(let k=0;k<n;k++){
-    const pt=carColl.add({position:path[0],color:rgba((i+k)%2?[252,232,150]:[236,244,255],0.95),pixelSize:4.2});
-    cars.push({path,pt,t:rnd(),spd:0.05+rnd()*0.09,dir:rnd()>.5?1:-1}); } });
+  long.forEach((path,i)=>{ const n=2+(rnd()<0.6?1:0); for(let k=0;k<n;k++){
+    const pt=carColl.add({position:path[0],color:rgba((i+k)%2?[255,242,180]:[188,224,255],1),pixelSize:6});
+    cars.push({path,pt,t:rnd(),spd:0.05+rnd()*0.11,dir:rnd()>.5?1:-1}); } });
   const drones=[], dColl=scene.primitives.add(new Cesium.PointPrimitiveCollection());
   for(let i=0;i<10;i++) drones.push({pt:dColl.add({position:centre,color:rgba([100,224,244],0.95),pixelSize:6}),
     cx:dcx+(rnd()-0.5)*0.005, cy:dcy+(rnd()-0.5)*0.005, r:0.0006+rnd()*0.0012, a:rnd()*6.283, z:80+rnd()*110, spd:0.010+rnd()*0.02});
