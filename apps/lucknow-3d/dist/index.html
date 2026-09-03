@@ -48,6 +48,7 @@
 </div>
 <div id="ctl">
   <button id="cOrbit" title="Play / pause auto-orbit">⏸</button>
+  <button id="cLight" title="Day / dusk">☀</button>
   <button id="cIn" title="Zoom in">+</button>
   <button id="cOut" title="Zoom out">−</button>
   <button id="cReset" title="Reset view">⌖</button>
@@ -149,10 +150,11 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   const TYPES={tower:[120,235,[96,206,230]],office:[45,95,[232,190,96]],lab:[55,120,[228,124,168]],resi:[13,40,[214,206,184]],civic:[22,58,[242,208,124]]};
   const pick=d=>{const r=rnd(); if(d<0.34) return r<.42?"tower":r<.70?"office":r<.88?"lab":"civic"; if(d<0.66) return r<.16?"tower":r<.48?"office":r<.72?"lab":"resi"; return r<.60?"resi":r<.80?"office":r<.92?"civic":"lab";};
   const bld=[], trees=[], parks=[], panels=[], util=[]; let solar=false;
-  const road=new Cesium.PolylineCollection(); scene.primitives.add(road);
+  const road=new Cesium.PolylineCollection(); scene.primitives.add(road); const roadPaths=[];
+  const flush=seg=>{ if(seg.length>1){ road.add({positions:seg,width:3.0,material:Cesium.Material.fromType("Color",{color:rgba([120,132,150],0.55)})}); roadPaths.push(seg.slice()); } };
   const addRoadLine=(axis,coord)=>{ let seg=[]; const a0=axis==="v"?DB[1]:DB[0], a1=axis==="v"?DB[3]:DB[2];
-    for(let t=a0; t<=a1; t+=STEP/6){ const p=axis==="v"?[coord,t]:[t,coord]; if(inAny(p,cells)) seg.push(Cesium.Cartesian3.fromDegrees(p[0],p[1],2)); else { if(seg.length>1) road.add({positions:seg,width:3.0,material:Cesium.Material.fromType("Color",{color:rgba([120,132,150],0.55)})}); seg=[]; } }
-    if(seg.length>1) road.add({positions:seg,width:3.0,material:Cesium.Material.fromType("Color",{color:rgba([120,132,150],0.55)})}); };
+    for(let t=a0; t<=a1; t+=STEP/6){ const p=axis==="v"?[coord,t]:[t,coord]; if(inAny(p,cells)) seg.push(Cesium.Cartesian3.fromDegrees(p[0],p[1],2)); else { flush(seg); seg=[]; } }
+    flush(seg); };
   for(let ln=DB[0]; ln<=DB[2]; ln+=STEP) addRoadLine("v",ln);
   for(let la=DB[1]; la<=DB[3]; la+=STEP) addRoadLine("h",la);
 
@@ -217,6 +219,34 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     }
     card.style.display="none";
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  // ============ DAY / DUSK toggle ============
+  let dusk=false;
+  $("cLight").onclick=()=>{ dusk=!dusk;
+    viewer.clock.currentTime=Cesium.JulianDate.fromIso8601(dusk?"2026-03-21T12:55:00Z":"2026-03-21T11:20:00Z"); // ~18:25 vs 16:50 IST
+    $("cLight").textContent=dusk?"🌙":"☀";
+    scene.backgroundColor=Cesium.Color.fromCssColorString(dusk?"#120c1e":"#0c1a2a");
+    if(scene.skyAtmosphere) scene.skyAtmosphere.brightnessShift=dusk?0.05:0.2;
+    try{ scene.postProcessStages.bloom.uniforms.brightness=dusk?-0.15:-0.35; }catch(e){}
+    scene.requestRender();
+  };
+
+  // ============ ANIMATED TRAFFIC + DRONES ============
+  const long=roadPaths.filter(s=>s.length>=3).sort((a,b)=>b.length-a.length).slice(0,60);
+  const cars=[], carColl=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  long.forEach((path,i)=>{ const n=1+(i%2); for(let k=0;k<n;k++){
+    const pt=carColl.add({position:path[0],color:rgba((i+k)%2?[252,232,150]:[236,244,255],0.95),pixelSize:4.2});
+    cars.push({path,pt,t:rnd(),spd:0.05+rnd()*0.09,dir:rnd()>.5?1:-1}); } });
+  const drones=[], dColl=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  for(let i=0;i<10;i++) drones.push({pt:dColl.add({position:centre,color:rgba([100,224,244],0.95),pixelSize:6}),
+    cx:dcx+(rnd()-0.5)*0.005, cy:dcy+(rnd()-0.5)*0.005, r:0.0006+rnd()*0.0012, a:rnd()*6.283, z:80+rnd()*110, spd:0.010+rnd()*0.02});
+  const pos=(path,t)=>{ const f=Math.max(0,Math.min(0.999,t))*(path.length-1), i=f|0, u=f-i; return Cesium.Cartesian3.lerp(path[i],path[i+1]||path[i],u,new Cesium.Cartesian3()); };
+  let _t=performance.now();
+  (function animate(now){ const dt=Math.min(0.05,(now-_t)/1000); _t=now;
+    for(const c of cars){ c.t+=c.dir*c.spd*dt; if(c.t>=1){c.t=1;c.dir=-1;} else if(c.t<=0){c.t=0;c.dir=1;} c.pt.position=pos(c.path,c.t); }
+    for(const d of drones){ d.a+=d.spd; const ln=d.cx+Math.cos(d.a)*d.r, la=d.cy+Math.sin(d.a)*d.r; d.pt.position=Cesium.Cartesian3.fromDegrees(ln,la,d.z+Math.sin(d.a*3)*10); d.pt.pixelSize=5+2*(0.5+0.5*Math.sin(d.a*4)); }
+    scene.requestRender(); requestAnimationFrame(animate);
+  })(_t);
  }catch(e){ fail(e.message); console.error(e); }
 })();
 </script></body></html>
