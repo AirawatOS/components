@@ -6,10 +6,10 @@
 # never a headline. v1 = analytic (Wilson + coverage blend); v2 = Monte-Carlo with per-source correlation.
 component_id: ds:airawatdeveloper:engine/welfare-gap-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Welfare Gap Engine
 entrypoint: run.py
-required_schemas: [civic.household, welfare.service_level, welfare.floor, welfare.deprivation, welfare.gap, stat.estimate]
-reads:  [civic.household, welfare.service_level, welfare.floor, welfare.deprivation]
+required_schemas: [civic.household, welfare.service_level, welfare.floor, welfare.deprivation, infra.service_connection, welfare.gap, stat.estimate]
+reads:  [civic.household, welfare.service_level, welfare.floor, welfare.deprivation, infra.service_connection]
 writes: [welfare.gap, stat.estimate]

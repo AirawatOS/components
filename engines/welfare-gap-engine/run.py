@@ -13,7 +13,7 @@ Monte-Carlo simulation carrying a shared per-(method,source) bias term for corre
 import math, time as _t
 
 CID = "ds:airawatdeveloper:engine/welfare-gap-engine"
-CVER = "0.1.0"
+CVER = "0.1.1"
 Z90 = 1.6449                                              # z for a 90% interval
 GATE_DEFAULT = {"min_coverage": 0.30, "max_interval_width": 0.30, "ci_level": 0.90}
 
@@ -95,42 +95,63 @@ def h_gap_scan(ctx):
     lvl = {}
     for L in levels:
         lvl[(L.get("subject"), L.get("capability"))] = L
-    hh_by_id = {h.get("id"): h for h in households}
+    # the CONNECTION register — a recorded no/illegal connection is ZERO service (worst-off), NOT missing data.
+    conn = {}
+    for c in (ctx["kfind"]("infra.service_connection") or []):
+        conn[(c.get("serves"), c.get("capability"))] = c
+    INACTIVE = {"none", "illegal", "disconnected", "abandoned"}
 
     # ward × capability accumulators
-    acc = {}   # (ward, cap) -> {"n_obs":, "k_below":, "methods":{}, "shortfalls":[]}
+    acc = {}
     ward_hh = {}  # ward -> total household count (the coverage denominator)
     gaps_written = 0
     for hh in households:
         ward = _ward_of(hh); ward_hh[ward] = ward_hh.get(ward, 0) + 1
         for cap, floors in floors_by_cap.items():
             floor = _pick_floor(floors, hh)
-            L = lvl.get((hh.get("id"), cap))
-            if not floor or not L:
-                continue                                  # no floor or no measurement → not observed for this cap
-            below, shortfall = _below(L.get("value"), floor)
-            if below is None:
+            if not floor:
                 continue
+            bound = floor.get("bound") or "min"
+            L = lvl.get((hh.get("id"), cap))
+            c = conn.get((hh.get("id"), cap))
+            # decide the observation: a numeric measured level WINS; else the connection register gives ACCESS
+            # (only for min-floors, i.e. more-service-is-better). No level AND no connection record = unobserved.
+            if L is not None:
+                below, shortfall = _below(L.get("value"), floor)
+                if below is None:
+                    continue
+                level_value = L.get("value"); src_id = L.get("id"); rel = _reliability(L); meth = L.get("method") or "unknown"
+            elif c is not None and bound == "min":
+                st = c.get("status")
+                if st in INACTIVE:                            # register SAYS no service → worst-off, fully below floor
+                    below = True; shortfall = floor.get("threshold") or 0; level_value = 0
+                    src_id = c.get("id"); rel = 0.9; meth = "no-connection"
+                elif st == "active":                          # has access; level unknown → meets the access floor
+                    below = False; shortfall = 0.0; level_value = None
+                    src_id = c.get("id"); rel = 0.7; meth = "connected"
+                else:
+                    continue                                  # applied/other → unknown
+            else:
+                continue                                      # genuinely not observed
             # prioritarian weight: deprivation index if we have it, else household size (persons), else 1
             d = depriv.get(hh.get("id"))
             weight = (d.get("index") if d else None) or hh.get("size") or 1
-            gid = f"ds:{tenant}:welfare/gap/{cap.split('.')[-1]}-{hh['id'].rsplit('/', 1)[-1]}"
+            gid = f"ds:{tenant}:welfare/gap/{cap.split('/')[-1]}-{hh['id'].rsplit('/', 1)[-1]}"
             ctx["kwrite"](gid, {
                 "schema": "welfare.gap", "id": gid, "tenant": tenant,
                 "subject": hh["id"], "subject_kind": "household", "observed_at": now,
                 "capability": cap, "floor_ref": floor.get("id"),
-                "floor_value": floor.get("threshold"), "level_value": L.get("value"),
+                "floor_value": floor.get("threshold"), "level_value": level_value,
                 "shortfall": shortfall, "weight": weight, "weighted": shortfall * weight,
-                "method": "derived", "confidence": L.get("confidence"),
-                "derived_from": [floor.get("id"), L.get("id")],
-                "prov": {"method": "floor-minus-level", "derived_from": [floor.get("id"), L.get("id")],
+                "method": "derived", "confidence": rel,
+                "derived_from": [floor.get("id"), src_id],
+                "prov": {"method": meth, "derived_from": [floor.get("id"), src_id],
                          "produced_by": {"component": {"id": CID, "version": CVER}}, "observed_at": now}})
             gaps_written += 1
-            rel = _reliability(L)
             a = acc.setdefault((ward, cap), {"n_obs": 0, "k_below": 0, "w_below": 0.0, "w_total": 0.0, "conf_sum": 0.0, "methods": {}})
             a["n_obs"] += 1; a["k_below"] += 1 if below else 0
             a["w_total"] += weight; a["w_below"] += weight if below else 0.0; a["conf_sum"] += rel
-            m = (L.get("method") or "unknown"); a["methods"][m] = a["methods"].get(m, 0) + 1
+            a["methods"][meth] = a["methods"].get(meth, 0) + 1
 
     # ward × capability rollups → stat.estimate with honest error bars
     estimates = 0; published = 0
@@ -144,7 +165,7 @@ def h_gap_scan(ctx):
         ci_lo, ci_hi = coverage_blend(w_lo, w_hi, coverage)
         method_mix = {m: round(c / n, 3) for m, c in a["methods"].items()} if n else {}
         pub = gate(coverage, ci_lo, ci_hi, g)
-        eid = f"ds:{tenant}:stat/estimate/welfare-gap-{cap.split('.')[-1]}-{ward}"
+        eid = f"ds:{tenant}:stat/estimate/welfare-gap-{cap.split('/')[-1]}-{ward}"
         ctx["kwrite"](eid, {
             "schema": "stat.estimate", "id": eid, "tenant": tenant,
             "subject": ward, "subject_kind": "ward", "observed_at": now,
@@ -180,17 +201,24 @@ def _selftest():
     lv = [{"id": "ds:x:welfare/service_level/l0", "subject": "ds:x:civic/household/h0", "capability": "welfare.capability/water", "value": 51, "method": "modelled", "confidence": 0.5},
           {"id": "ds:x:welfare/service_level/l1", "subject": "ds:x:civic/household/h1", "capability": "welfare.capability/water", "value": 90, "method": "modelled", "confidence": 0.5},
           {"id": "ds:x:welfare/service_level/l2", "subject": "ds:x:civic/household/h2", "capability": "welfare.capability/water", "value": 150, "method": "metered", "confidence": 0.95}]
+    # connection register: h3 has NO water connection (status none) → must count as below floor (worst-off),
+    # NOT be skipped as unobserved. h4 has neither a level nor a connection → genuinely unobserved (skipped).
+    conns = [{"id": "ds:x:infra/service_connection/c3", "serves": "ds:x:civic/household/h3",
+              "capability": "welfare.capability/water", "status": "none"}]
     store = {}
-    def kfind(s): return {"civic.household": hh, "welfare.service_level": lv, "welfare.floor": floors, "welfare.deprivation": []}.get(s, [])
+    def kfind(s): return {"civic.household": hh, "welfare.service_level": lv, "welfare.floor": floors,
+                          "welfare.deprivation": [], "infra.service_connection": conns}.get(s, [])
     ctx = {"tenant": "x", "body": {}, "kfind": kfind, "kwrite": lambda oid, o: store.__setitem__(oid, o)}
     res, err = h_gap_scan(ctx)
-    assert err is None and res["gaps"] == 3 and res["estimates"] == 1, res
+    # 4 observed (h0,h1,h2 by level + h3 by no-connection); h4 unobserved. 3 below (h0,h1 low + h3 no-conn).
+    assert err is None and res["gaps"] == 4 and res["estimates"] == 1, res
+    g3 = store["ds:x:welfare/gap/water-h3"]
+    assert g3["level_value"] == 0 and g3["shortfall"] == 135 and g3["prov"]["method"] == "no-connection", g3
     est = [o for o in store.values() if o["schema"] == "stat.estimate"][0]
-    # 2 of 3 measured are below floor; coverage 3/5 = 0.6; below-fraction 0.667; provisional (interval wide)
-    assert est["value"] == round(2 / 3, 4) and est["coverage"] == 0.6, est
-    assert est["n_observed"] == 3 and est["n_target"] == 5
+    # person-weighted below-fraction = 3/4 = 0.75 (equal sizes); coverage 4/5 = 0.8
+    assert est["value"] == 0.75 and est["coverage"] == 0.8, est
+    assert est["n_observed"] == 4 and est["n_target"] == 5
     assert est["ci_low"] < est["value"] < est["ci_high"], est
-    assert est["publishable"] is False, "coverage 0.6 but interval too wide at n=3 → provisional"
     print("selftest OK:", {k: res[k] for k in ("households", "gaps", "estimates", "publishable", "provisional")})
     print("  sample estimate:", {k: est[k] for k in ("value", "ci_low", "ci_high", "coverage", "n_observed", "n_target", "publishable", "method_mix")})
 
