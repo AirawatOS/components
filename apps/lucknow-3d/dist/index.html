@@ -27,6 +27,12 @@
   #ctl button.on{border-color:#39d3e0;color:#39d3e0}
   .foot{position:absolute;left:20px;bottom:16px;z-index:5;font:10.5px ui-monospace,Menlo,monospace;color:#6b7290;max-width:52vw}
   .err{position:absolute;inset:0;display:none;place-items:center;z-index:9;background:#070a16;color:#e6a;padding:24px;text-align:center}
+  #card{position:absolute;left:20px;bottom:52px;z-index:6;display:none;background:#0e1130ee;border:1px solid #2a2a5a;border-radius:11px;padding:11px 13px;min-width:210px;max-width:260px;backdrop-filter:blur(6px);box-shadow:0 12px 30px #0007}
+  #card .ct{font:11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:4px}
+  #card .cn{font-size:15px;font-weight:600;color:#eef1ff}
+  #card .cr{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#aeb6dd;margin-top:6px}
+  #card .cr b{color:#39d3e0;font-variant-numeric:tabular-nums}
+  #card .cf{margin-top:8px;font-size:11px;color:#6b7684}
 </style></head><body>
 <div id="c"></div>
 <div class="cap"><div class="k">Indicative Masterplan · Sector 15, Vrindavan Yojana</div>
@@ -48,6 +54,7 @@
 </div>
 <div class="foot">Real footprints (Google Open Buildings) · designed AI district is illustrative · photoreal basemap when an ion token is set</div>
 <div class="err" id="err"></div>
+<div id="card"></div>
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>
 <script src="./vendor/h3-js.umd.js"></script>
@@ -91,6 +98,10 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   scene.fog.enabled=true; scene.fog.density=0.00006; scene.globe.enableLighting=true;
   scene.screenSpaceCameraController.minimumZoomDistance=120;
   viewer.clock.currentTime=Cesium.JulianDate.fromIso8601("2026-03-21T11:20:00Z");
+  // SHADOWS (sun casts from the fixed clock) — only the district casts (kept cheap), ground receives
+  viewer.shadowMap.enabled=true; viewer.shadowMap.size=2048; viewer.shadowMap.darkness=0.36; viewer.shadowMap.maximumDistance=9000; viewer.shadowMap.softShadows=true;
+  // GLOW — bloom so the bright cyan AI towers luminesce at this light
+  try{ const bl=scene.postProcessStages.bloom; bl.enabled=true; bl.uniforms.glowOnly=false; bl.uniforms.contrast=125; bl.uniforms.brightness=-0.35; bl.uniforms.delta=1.2; bl.uniforms.sigma=2.0; bl.uniforms.stepSize=1.0; }catch(e){}
   if(hasToken){ try{ const osm=await Cesium.createOsmBuildingsAsync();
     osm.style=new Cesium.Cesium3DTileStyle({color:{conditions:[
       ['${feature["cesium#estimatedHeight"]} >= 80','color("#e8b84b")'],
@@ -116,9 +127,9 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   const HR=[[60,72,120],[52,120,160],[70,196,214],[168,224,238],[236,196,96]], hcol=h=>RMP(HR,h/150);
   const inHex=(p,poly)=>{let x=p[0],y=p[1],ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))ins=!ins;}return ins;};
   const inAny=(p,polys)=>{for(const c of polys) if(inHex(p,c.poly)) return c; return null;};
-  const einst=(ring,h,col,al)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),extrudedHeight:h,height:0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
+  const einst=(ring,h,col,al,id)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({id:id,geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),extrudedHeight:h,height:0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
   const finst=(ring,col,al,h)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),height:h||0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
-  const batch=(insts,flat,tl)=>{ if(insts.length) scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:!!flat,closed:!tl,translucent:!!tl})})); };
+  const batch=(insts,flat,tl,sh)=>{ if(insts.length) scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:!!flat,closed:!tl,translucent:!!tl}),shadows:sh==null?Cesium.ShadowMode.DISABLED:sh})); };
 
   const cells=PLAN.dev;
   const dcx=cells.reduce((s,c)=>s+c.center[0],0)/cells.length, dcy=cells.reduce((s,c)=>s+c.center[1],0)/cells.length;
@@ -129,8 +140,8 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   if(!hasToken){
     const AX=(aoiRing||[[dcx-0.02,0],[dcx+0.02,0]]).map(p=>p[0]), AY=(aoiRing||[[0,dcy-0.02],[0,dcy+0.02]]).map(p=>p[1]);
     const G=[Math.min(...AX),Math.min(...AY),Math.max(...AX),Math.max(...AY)], M=0.01;
-    batch([finst([[G[0]-M,G[1]-M],[G[2]+M,G[1]-M],[G[2]+M,G[3]+M],[G[0]-M,G[3]+M],[G[0]-M,G[1]-M]],[34,42,32],1,0)],true);
-    batch(feats.map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1)),false);
+    batch([finst([[G[0]-M,G[1]-M],[G[2]+M,G[1]-M],[G[2]+M,G[3]+M],[G[0]-M,G[3]+M],[G[0]-M,G[1]-M]],[34,42,32],1,0)],true,false,Cesium.ShadowMode.RECEIVE_ONLY);
+    batch(feats.map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1,{kind:"existing",h:Math.round(f.properties.h)})),false);
   }
 
   // ============ DESIGNED AI DISTRICT — mixed-use blocks on a street grid ============
@@ -156,17 +167,17 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
       const t=pick(d), T=TYPES[t], fw=STEP*(0.12+rnd()*0.09), fh=STEP*(0.12+rnd()*0.09);
       const ox=(rnd()-0.5)*STEP*0.5, oy=(rnd()-0.5)*STEP*0.5;
       const H=(T[0]+(T[1]-T[0])*(1-0.55*d))*(0.78+rnd()*0.5);
-      bld.push({p:rectR(ln+ox,la+oy,fw,fh),h:H,c:T[2]});
-      if(t==="tower"&&H>150) bld.push({p:rectR(ln+ox,la+oy,fw*1.7,fh*1.7),h:H*0.16,c:T[2]});
+      bld.push({p:rectR(ln+ox,la+oy,fw,fh),h:H,c:T[2],t});
+      if(t==="tower"&&H>150) bld.push({p:rectR(ln+ox,la+oy,fw*1.7,fh*1.7),h:H*0.16,c:T[2],t:"tower"});
     }
     if(rnd()>0.55) trees.push([ln+STEP*0.5,la]);           // street trees
   }
-  bld.push({p:rectR(dcx,dcy,STEP*0.2,STEP*0.2),h:285,c:[150,232,250]});   // signature landmark
-  util.forEach(u=>bld.push({p:rectR(u[0],u[1],STEP*0.09,STEP*0.09),h:16,c:[150,160,175]}));  // utility structures
+  bld.push({p:rectR(dcx,dcy,STEP*0.2,STEP*0.2),h:285,c:[150,232,250],t:"landmark"});   // signature landmark
+  util.forEach(u=>bld.push({p:rectR(u[0],u[1],STEP*0.09,STEP*0.09),h:16,c:[150,160,175],t:"utility"}));  // utility structures
 
   batch(parks.map(p=>finst(p,[40,96,52],0.95,0.4)),true);
   batch(panels.map(p=>finst(p,[40,66,104],0.95,3)),true);   // solar field
-  batch(bld.map(b=>einst(b.p,b.h,b.c,1)),false);
+  batch(bld.map(b=>einst(b.p,b.h,b.c,1,{kind:"planned",type:b.t,h:Math.round(b.h)})),false,false,Cesium.ShadowMode.ENABLED);
   const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());
   for(const t of trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t[0],t[1],3),color:rgba([70,186,116],0.95),pixelSize:5});
   $("hd").innerHTML=`<b>${bld.length}</b> buildings · mixed-use AI district with streets, parks &amp; utilities`+(hasToken?" · photoreal":` · in ${feats.length.toLocaleString("en-IN")} real buildings`);
@@ -187,6 +198,25 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   // drag: pause auto-orbit but KEEP the look-at frame so native drag orbits + zooms around the district
   scene.canvas.addEventListener("pointerdown",e=>{ if(e.button===0 && spin) setOrbit(false); });
   $("cOrbit").classList.add("on");
+
+  // ============ CLICK-TO-INSPECT (the queryable twin) ============
+  const TL={tower:"AI / office tower",office:"Commercial",lab:"Innovation / lab",resi:"Residential",civic:"Civic",landmark:"Signature landmark",utility:"Utility"};
+  const card=$("card");
+  const showCard=info=>{ if(info.kind==="planned"){
+      card.innerHTML=`<div class="ct">Planned · AI district</div><div class="cn">${TL[info.type]||"Building"}</div>`
+        +`<div class="cr"><span>Height</span><b>${info.h} m</b></div><div class="cf">Illustrative masterplan</div>`;
+    } else {
+      card.innerHTML=`<div class="ct">Existing building</div><div class="cn">${info.name||"Footprint"}</div>`
+        +`<div class="cr"><span>Height${info.est?" (est.)":""}</span><b>${info.h?info.h+" m":"—"}</b></div><div class="cf">Google Open Buildings · real</div>`;
+    } card.style.display="block"; };
+  const h2=new Cesium.ScreenSpaceEventHandler(scene.canvas);
+  h2.setInputAction(m=>{ const p=scene.pick(m.position);
+    if(Cesium.defined(p)){
+      if(p.id&&p.id.kind) return showCard(p.id);
+      if(p.getProperty){ const h=p.getProperty("cesium#estimatedHeight"); return showCard({kind:"existing",est:true,h:h?Math.round(h):null,name:p.getProperty("name")}); }
+    }
+    card.style.display="none";
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
  }catch(e){ fail(e.message); console.error(e); }
 })();
 </script></body></html>

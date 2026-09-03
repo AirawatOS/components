@@ -25,8 +25,8 @@ secrets: [CESIUM_ION_TOKEN]
 # DECLARED EGRESS (broker-for-apps): Cesium's terrain/3d-tiles/imagery/ion-endpoint calls are proxied through the
 # host's /bridge/tile to these hosts ONLY (the CSP still blocks direct calls); the host injects the ion token.
 egress:
-  - { host: assets.ion.cesium.com, rate_per_min: 600 }
-  - { host: api.cesium.com, rate_per_min: 120 }
-  - { host: tile.googleapis.com, rate_per_min: 600 }
+  - { host: "*.cesium.com", rate_per_min: 1200 }        # ion API + terrain/3d-tiles assets (api./assets.ion.)
+  - { host: "*.virtualearth.net", rate_per_min: 1200 }  # Bing aerial imagery — the default ion basemap (the "map")
+  - { host: tile.googleapis.com, rate_per_min: 600 }     # Google Photorealistic 3D Tiles (optional)
 sources:
   - { ref: "ds:airawat:ref/source/cesium-ion", host: assets.ion.cesium.com, provides: [viz.basemap, viz.terrain] }
