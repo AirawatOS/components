@@ -64,7 +64,7 @@
 const APP_ID="court-console";   // short id — /bridge/query + /bridge/save key CERTIFIED by the last path segment
 let SESS={}, TENANT="", CACHE={}, TAB="file";
 const TABS=[["file","File a case"],["scrutiny","Scrutiny"],["registration","Registration"],
-            ["hearings","Cause list & hearings"],["process","Process & service"],["fees","Fees & payments"],["disposal","Disposal"],["cases","All cases"]];
+            ["hearings","Cause list & hearings"],["process","Process & service"],["fees","Fees & payments"],["bail","Bail"],["disposal","Disposal"],["cases","All cases"]];
 
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -90,9 +90,9 @@ async function inbox(role,title,caseRef,tab){
 }
 
 async function refresh(){
-  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments]=await Promise.all(
-    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service","justice.payment"].map(query));
-  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments};
+  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails]=await Promise.all(
+    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service","justice.payment","justice.bail"].map(query));
+  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails};
 }
 // helpers over the cache
 const byCase=(arr,cid)=>arr.filter(x=>x.case_ref===cid);
@@ -109,9 +109,9 @@ function counts(){return {
 };}
 
 // Slice 3: each role sees only the tabs it owns (+ "All cases"); an admin sees everything.
-const ROLE_TABS={"justice.advocate":["file","process","fees","cases"],"justice.litigant":["file","process","fees","cases"],
+const ROLE_TABS={"justice.advocate":["file","process","fees","bail","cases"],"justice.litigant":["file","process","fees","bail","cases"],
   "justice.scrutiny-officer":["scrutiny","cases"],"justice.registrar":["registration","cases"],
-  "justice.bench-clerk":["hearings","process","cases"],"justice.judge":["disposal","hearings","cases"],
+  "justice.bench-clerk":["hearings","process","cases"],"justice.judge":["disposal","hearings","bail","cases"],
   "justice.process-server":["process","cases"]};
 const ADMIN_ROLES=["platform.tenant-admin","platform.steward","admin"];
 function allowedTabs(){
@@ -138,6 +138,7 @@ function render(){
   if(TAB==="hearings")return renderHearings(v);
   if(TAB==="process")return renderProcess(v);
   if(TAB==="fees")return renderFees(v);
+  if(TAB==="bail")return renderBail(v);
   if(TAB==="disposal")return renderList(v,"Disposal","Heard cases awaiting judgment / final order.",
      CACHE.cases.filter(c=>c.status==="registered"&&heldAny(c.id)),disposeActions);
   if(TAB==="cases")return renderCases(v);
@@ -438,6 +439,68 @@ async function markPaid(pid,cid){
     toast("Marked paid","ok");await refresh();render();renderNav();
   }catch(e){toast(e.message,"bad");}
 }
+
+/* ---------- BAIL (slice 5b): application → grant → bond → effective ---------- */
+const bailsOf=cid=>byCase(CACHE.bails,cid).sort((a,b)=>(a.observed_at||"").localeCompare(b.observed_at||""));
+function renderBail(v){
+  const rows=CACHE.cases.filter(c=>c.status==="registered"||c.status==="pending");
+  const isJudge=(SESS.roles||[]).includes("justice.judge"), isAdmin=(SESS.roles||[]).some(r=>ADMIN_ROLES.includes(r));
+  const canDecide=isJudge||isAdmin, canApply=(SESS.roles||[]).some(r=>["justice.advocate","justice.litigant"].includes(r))||isAdmin;
+  v.innerHTML=`<h2>Bail</h2><p class="sub">Apply for bail; the judge grants (with conditions) or rejects; the accused furnishes bond to make it effective.</p>`+
+   (rows.length?rows.map(c=>{const m=caseRowMeta(c);const bs=bailsOf(c.id);
+     return `<div class="card"><div class="row" style="justify-content:space-between">
+       <div><b>${esc(m.title)}</b> <span class="mono">${esc(c.case_number)}</span></div>
+       ${canApply?`<button class="btn sm" onclick="openBail('${c.id}')">＋ Apply for bail</button>`:''}</div>`+
+       (bs.length?`<table style="margin-top:10px"><thead><tr><th>Applicant</th><th>Type</th><th>Status</th><th></th></tr></thead><tbody>`+
+         bs.map(b=>{const st=b.status;
+           return `<tr><td>${esc(b.applicant||"—")}</td><td>${esc(b.bail_type||"regular")}</td>
+           <td><span class="pill ${['granted','bond-furnished','effective'].includes(st)?'s-disposed':st==='rejected'||st==='cancelled'?'s-returned':'s-filed'}">${esc(st)}</span>${b.amount?` <span class="mono">₹${esc(b.amount)}</span>`:''}</td>
+           <td class="row" style="justify-content:flex-end">${
+             (st==='applied-for'&&canDecide)?`<button class="btn go sm" onclick="openGrant('${b.id}','${c.id}')">Grant</button><button class="btn bad sm" onclick="decideBail('${b.id}','${c.id}','rejected')">Reject</button>`:
+             (st==='granted'&&canApply)?`<button class="btn sm" onclick="openBond('${b.id}','${c.id}')">Furnish bond</button>`:
+             (st==='bond-furnished'&&canDecide)?`<button class="btn go sm" onclick="setBail('${b.id}','${c.id}','effective')">Mark effective</button>`:''
+           }</td></tr>`;}).join("")+`</tbody></table>`:`<p class="sub" style="margin:8px 0 0">No bail applications.</p>`)+`</div>`;
+   }).join(""):`<div class="empty">No registered cases yet.</div>`);
+}
+function openBail(cid){const c=CACHE.cases.find(x=>x.id===cid);
+  $("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Apply for bail</h2><p class="sub">${esc(c.case_number||"")}</p>
+    <label>Applicant (accused) *</label><input id="b_appl" placeholder="Name of the accused">
+    <label style="margin-top:10px">Type</label><select id="b_type"><option value="regular">Regular</option><option value="interim">Interim</option><option value="anticipatory">Anticipatory</option></select>
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="applyBail('${cid}')">Submit application</button></div>`;
+  showModal();
+}
+async function applyBail(cid){
+  const appl=$("b_appl").value.trim(); if(!appl)return toast("Applicant required","bad");
+  try{const ts=Date.now().toString(36);
+    await save({schema:"justice.bail",id:nid("bail","bl-"+ts),case_ref:cid,applicant:appl,bail_type:$("b_type").value,
+      status:"applied-for",applied_at:nowISO(),observed_at:nowISO()});
+    await inbox("justice.judge","Bail application to decide — "+(CACHE.cases.find(x=>x.id===cid)||{}).case_number,cid,"bail");
+    toast("Bail applied — sent to judge","ok");closeModal();await refresh();render();renderNav();
+  }catch(e){toast(e.message,"bad");}
+}
+function openGrant(bid,cid){$("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Grant bail</h2>
+    <label>Conditions</label><textarea id="g_cond" placeholder="e.g. surrender passport; report weekly"></textarea>
+    <label style="margin-top:10px">Bond amount (₹)</label><input id="g_amt" type="number" placeholder="e.g. 25000">
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="grantBail('${bid}','${cid}')">Grant</button></div>`;showModal();}
+async function grantBail(bid,cid){try{const b=CACHE.bails.find(x=>x.id===bid);
+    await save({...b,status:"granted",conditions:$("g_cond").value.trim(),amount:parseFloat($("g_amt").value)||null,
+      decided_by:SESS.sub||"",decided_at:nowISO(),observed_at:nowISO()});
+    await inbox("justice.advocate","Bail granted — furnish bond",cid,"bail");
+    toast("Bail granted","ok");closeModal();await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+async function decideBail(bid,cid,outcome){try{const b=CACHE.bails.find(x=>x.id===bid);
+    await save({...b,status:outcome,decided_by:SESS.sub||"",decided_at:nowISO(),observed_at:nowISO()});
+    toast("Bail "+outcome,"");await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+function openBond(bid,cid){$("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Furnish bond</h2>
+    <label>Surety *</label><input id="bo_sur" placeholder="Name of the surety">
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="furnishBond('${bid}','${cid}')">Furnish</button></div>`;showModal();}
+async function furnishBond(bid,cid){const sur=$("bo_sur").value.trim(); if(!sur)return toast("Surety required","bad");
+  try{const b=CACHE.bails.find(x=>x.id===bid);
+    await save({...b,status:"bond-furnished",surety:sur,observed_at:nowISO()});
+    await inbox("justice.judge","Bond furnished — confirm effective",cid,"bail");
+    toast("Bond furnished","ok");closeModal();await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+async function setBail(bid,cid,st){try{const b=CACHE.bails.find(x=>x.id===bid);
+    await save({...b,status:st,observed_at:nowISO()});
+    toast("Bail "+st,"ok");await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
 
 /* ---------- ALL CASES + timeline ---------- */
 function renderCases(v){
