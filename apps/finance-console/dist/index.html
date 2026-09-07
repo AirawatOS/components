@@ -59,6 +59,7 @@
 <div id="toast"></div>
 
 <script src="/shared/i18n.js"></script>
+<script src="/shared/aos.js"></script>
 <script>
 AI18n.add({
   en:{"fin.title":"Finance","fin.accounts":"Accounts","fin.budgets":"Budgets","fin.journal":"Journal",
@@ -68,8 +69,8 @@ AI18n.add({
       "fin.reports":"रिपोर्ट","fin.payroll":"वेतन","fin.h.accounts":"खातों का चार्ट","fin.h.budgets":"बजट",
       "fin.h.journal":"जर्नल","fin.h.reports":"वित्तीय विवरण","fin.h.payroll":"वेतन → परियोजनाएँ"}
 });
-const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const api=AOS.post;                       // shared App Runtime (/shared/aos.js)
+const esc=AOS.esc;
 const APP='finance-console';
 const NORMAL={asset:'debit',expense:'debit',liability:'credit',equity:'credit',revenue:'credit'};
 // Standard chart-of-accounts SUB-TYPES per account type (the "usual" set; editable per install later).
@@ -89,15 +90,15 @@ const VTYPES={
   sales   :{label:'Sales',    dir:'revenue',     drLabel:'Receivable / Bank (debit)',   crLabel:'Revenue (credit)',               party:'Customer',       crHint:'revenue'},
   purchase:{label:'Purchase', dir:'expenditure', drLabel:'Expense / Asset (debit)',     crLabel:'Payable / Bank (credit)',        party:'Supplier',       crHint:'liability'}};
 let TENANT='', TAB='accounts', ACC=[], BUD=[], TXN=[], UNITS=[];
-const money=n=>AI18n.n(Number(n||0));   // locale-aware digit grouping (Indian grouping under en-IN/hi-IN)
+const money=n=>AOS.n(Number(n||0));       // locale-aware digit grouping via the runtime
 const acctName=id=>{const a=ACC.find(x=>x.id===id);return a?(a.code+' '+a.name):(id||'—');};
 const val=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
-function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',3000);}
-async function query(schema){ try{ const r=await api('/bridge/query',{app_id:APP,schema}); return (r.results||[]).map(x=>x.object||x);}catch(e){return [];} }
-async function save(o){ const r=await api('/bridge/save',{app_id:APP,id:o.id,object:o}); return r; }
+const toast=AOS.toast;
+const query=s=>AOS.query(s);              // app_id injected by the runtime
+const save=o=>AOS.save(o);
 
 async function boot(){
-  try{const se=await fetch('/session').then(r=>r.json()); TENANT=se.tenant||(se.sub||'').replace(/^user:\/\//,'').split('/')[0]; AI18n.init({locale: se.locale||'en'});}catch(e){ AI18n.init({locale:'en'}); }
+  await AOS.boot(); TENANT=AOS.tenant||((AOS.session_&&AOS.session_.sub)||'').replace(/^user:\/\//,'').split('/')[0];   // shared boot: session+config+i18n
   await reload();
   document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
   render();
@@ -330,116 +331,7 @@ function rReports(){
 function ferr(m){ const e=document.getElementById('ferr'); if(e)e.textContent=m; }
 function closeM(){ document.getElementById('modal').classList.remove('open'); }
 
-/* ===== Reusable AI Assistant drawer — the SHARED pattern baked into every Airawat app =====
-   Grounds the model on cfg.context() (this app's governed data), shows chips + a chat box, and — when the
-   model proposes one — renders a CONFIRM button that runs cfg.run(name,params) through the app's OWN governed
-   bridge. The AI never acts on its own (ADR-0029). Copy this block verbatim into each app; only the cfg differs. */
-function _toWav(buf){
-  const sr=buf.sampleRate, len=buf.length, nch=buf.numberOfChannels;
-  const mono=new Float32Array(len);
-  for(let c=0;c<nch;c++){const ch=buf.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=ch[i]/nch;}
-  const ab=new ArrayBuffer(44+len*2), dv=new DataView(ab);
-  const ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
-  ws(0,"RIFF");dv.setUint32(4,36+len*2,true);ws(8,"WAVE");ws(12,"fmt ");dv.setUint32(16,16,true);
-  dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,sr,true);dv.setUint32(28,sr*2,true);
-  dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,"data");dv.setUint32(40,len*2,true);
-  let o=44;for(let i=0;i<len;i++){let s=Math.max(-1,Math.min(1,mono[i]));dv.setInt16(o,s<0?s*0x8000:s*0x7FFF,true);o+=2;}
-  return new Blob([ab],{type:"audio/wav"});
-}
-/* Record in-frame → 16kHz mono WAV → chunk-upload to filestore (beats the 1MB proxy cap) → transcribe by
-   file_id → insert into `target`. Unbounded length. Dependency-free; opts.status(msg) surfaces errors. */
-async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{};
-  const note=m=>{try{opts.status&&opts.status(m);}catch(e){}};
-  let rec=null,chunks=[],on=false,tick=null,secs=0;
-  btn.onclick=async(e)=>{ e&&e.preventDefault();
-    if(on){ rec&&rec.stop(); return; }
-    if(!navigator.mediaDevices||!window.MediaRecorder){ note("Voice input isn’t supported in this browser"); return; }
-    let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(err){ note("Microphone permission was denied"); return; }
-    chunks=[]; rec=new MediaRecorder(stream); on=true; btn.classList.add("rec"); secs=0; btn.textContent="⏺ 0s";
-    tick=setInterval(()=>{secs++;btn.textContent="⏺ "+secs+"s";},1000);
-    rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size)chunks.push(ev.data); };
-    rec.onstop=async()=>{ on=false; clearInterval(tick); stream.getTracks().forEach(t=>t.stop()); btn.classList.remove("rec"); btn.textContent="…";
-      let wav;
-      try{ const ab=await new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"}).arrayBuffer();
-        const AC=window.AudioContext||window.webkitAudioContext; let audio=await new AC().decodeAudioData(ab);
-        try{ const off=new OfflineAudioContext(1,Math.max(1,Math.ceil(audio.duration*16000)),16000); const s=off.createBufferSource(); s.buffer=audio; s.connect(off.destination); s.start(); audio=await off.startRendering(); }catch(e){}
-        wav=_toWav(audio);
-      }catch(err){ btn.textContent="🎤"; note("Could not process the recording"); return; }
-      let fid=null;
-      try{ const up="v"+Date.now().toString(36)+Math.random().toString(36).slice(2,8), CH=700*1024, N=Math.max(1,Math.ceil(wav.size/CH));
-        for(let i=0;i<N;i++){ btn.textContent="⇧ "+Math.round(i/N*100)+"%"; const part=wav.slice(i*CH,(i+1)*CH), last=(i===N-1);
-          const r=await fetch("/bridge/upload-chunk?up="+up+"&seq="+i+(last?"&fin=1":""),{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:part}).then(x=>x.json());
-          if(r.error){ btn.textContent="🎤"; note(r.error); return; } if(last)fid=r.file_id; }
-      }catch(err){ btn.textContent="🎤"; note("Upload failed"); return; }
-      btn.textContent="…";
-      let j={}; try{ j=await fetch("/bridge/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({file_id:fid,mime:"audio/wav",language:opts.language||""})}).then(x=>x.json()); }catch(err){ j={error:String(err)}; }
-      btn.textContent="🎤";
-      if(j.error){ note(j.error); return; }
-      const txt=(j.text||"").trim(); if(!txt){ note("No speech detected — try again"); return; }
-      const cur=target.value||""; target.value=cur?(cur.replace(/\s*$/,"")+" "+txt):txt; target.dispatchEvent(new Event("input")); target.focus();
-    };
-    rec.start();
-  };
-}
-function AIAssist(cfg){
-  const S=document.createElement('style');S.textContent=`
-  #aiFab{position:fixed;right:18px;bottom:18px;z-index:60;background:linear-gradient(135deg,#6d5efc,#9b5efc);color:#fff;border:0;border-radius:999px;padding:11px 16px;font:600 13.5px system-ui;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4)}
-  #aiDrawer{position:fixed;top:0;right:0;height:100%;width:392px;max-width:93vw;background:#0f151d;border-left:1px solid #222b36;z-index:61;display:none;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.45)}
-  #aiDrawer.open{display:flex}
-  #aiDrawer header{padding:13px 16px;border-bottom:1px solid #222b36;display:flex;align-items:center;gap:8px}
-  #aiDrawer header b{font-size:14px}#aiDrawer header .x{margin-left:auto;cursor:pointer;color:#8b949e;font-size:18px}
-  #aiLog{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
-  .aiMsg{font-size:13.5px;line-height:1.5}.aiMsg.u{color:#9fd0ff;align-self:flex-end;max-width:85%}
-  .aiMsg.a{color:#e6edf3;background:#141a22;border:1px solid #222b36;border-radius:10px;padding:9px 11px;max-width:92%}
-  .aiChips{display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 8px}
-  .aiChip{font-size:12px;border:1px solid #2a3542;border-radius:999px;padding:5px 10px;color:#a9b6c4;cursor:pointer;background:#121821}
-  .aiAct{margin-top:8px}.aiAct button{background:#1f9d55;border:0;color:#fff;border-radius:8px;padding:8px 12px;font:600 13px system-ui;cursor:pointer}
-  #aiForm{display:flex;gap:8px;padding:12px 16px;border-top:1px solid #222b36;align-items:flex-end}
-  #aiMic{background:#1b232e;border:1px solid #222b36;color:#e6edf3;border-radius:9px;padding:0 11px;height:37px;cursor:pointer;font-size:15px;white-space:nowrap}
-  #aiMic.rec{background:#3a1d1d;border-color:#6a2b2b;color:#f0a0a0}
-  #aiIn{flex:1;background:#0d1117;border:1px solid #222b36;color:#e6edf3;border-radius:9px;padding:9px 11px;font:13.5px system-ui;resize:none;max-height:120px}
-  #aiSend{background:#6d5efc;border:0;color:#fff;border-radius:9px;padding:0 14px;height:37px;cursor:pointer;font:600 13px system-ui}
-  .aiSpin{display:inline-block;width:12px;height:12px;border:2px solid #333d49;border-top-color:#9b5efc;border-radius:50%;animation:aisp .7s linear infinite;vertical-align:-2px}
-  @keyframes aisp{to{transform:rotate(360deg)}}`;
-  document.head.appendChild(S);
-  const fab=document.createElement('button');fab.id='aiFab';fab.textContent='✨ Assistant';document.body.appendChild(fab);
-  const d=document.createElement('div');d.id='aiDrawer';
-  d.innerHTML=`<header><b>✨ ${cfg.title||'Assistant'}</b><span class="x">✕</span></header>
-    <div id="aiLog"></div>
-    <div class="aiChips">${(cfg.chips||[]).map(c=>`<span class="aiChip">${String(c).replace(/</g,'&lt;')}</span>`).join('')}</div>
-    <div id="aiForm"><button id="aiMic" title="Dictate (speak in any language)">🎤</button><textarea id="aiIn" rows="1" placeholder="Ask, or 🎤 speak…"></textarea><button id="aiSend">Send</button></div>`;
-  document.body.appendChild(d);
-  const log=d.querySelector('#aiLog'), inp=d.querySelector('#aiIn'), hist=[];
-  const e2=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-  const add=(role,html)=>{const e=document.createElement('div');e.className='aiMsg '+(role==='user'?'u':'a');e.innerHTML=html;log.appendChild(e);log.scrollTop=log.scrollHeight;return e;};
-  fab.onclick=()=>{d.classList.add('open');inp.focus();if(!log.children.length)add('a','Hi — ask me anything about your '+(cfg.title||'data').toLowerCase()+', by typing or 🎤 voice. I read what you’re currently looking at.');};
-  d.querySelector('.x').onclick=()=>d.classList.remove('open');
-  d.querySelectorAll('.aiChip').forEach(c=>c.onclick=()=>{inp.value=c.textContent;go();});
-  d.querySelector('#aiSend').onclick=go; inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();go();}};
-  attachMic(d.querySelector('#aiMic'), inp, {language:cfg.language||'', status:m=>add('a','🎤 '+e2(m))});
-  async function go(){
-    const q=inp.value.trim(); if(!q)return; inp.value='';
-    add('user',e2(q)); hist.push({role:'user',content:q});
-    const wait=add('a','<span class="aiSpin"></span>');
-    let ctx=''; try{ctx=typeof cfg.context==='function'?cfg.context():'';}catch(e){}
-    let r={}; try{ r=await fetch('/bridge/ai-assist',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({app_id:cfg.app,task:'assist',prompt:q,system:cfg.system,context:ctx,actions:cfg.actions||[],history:hist.slice(0,-1)})}).then(x=>x.json()); }
-    catch(e){ r={error:String(e)}; }
-    let txt=(r.content||r.error||'(no reply)'), action=null;
-    const m=txt.match(/<<ACTION>>([\s\S]*?)<<ACTION>>/);
-    if(m){ txt=txt.replace(m[0],'').trim(); try{action=JSON.parse(m[1]);}catch(e){} }
-    wait.innerHTML=e2(txt||'(done)').replace(/\n/g,'<br>'); hist.push({role:'assistant',content:txt});
-    if(action && (cfg.actions||[]).some(a=>a.name===action.name)){
-      const wrap=document.createElement('div');wrap.className='aiAct';
-      const b=document.createElement('button');b.textContent='▶ '+(action.label||action.name);
-      b.onclick=async()=>{b.disabled=true;const o=b.textContent;b.textContent='…';
-        try{const res=await cfg.run(action.name,action.params||{});add('a','✓ '+e2(typeof res==='string'?res:((res&&res.message)||'Done.')));}
-        catch(e){b.disabled=false;b.textContent=o;add('a','⚠ '+e2((e&&e.message)||String(e)));return;}
-        wrap.remove();};
-      wrap.appendChild(b); wait.appendChild(wrap);
-    }
-  }
-}
+/* AI assistant drawer + 🎤 mic now come from the shared App Runtime — see AOS.assistant / AOS.mic. */
 /* ---- Finance Console assistant config (grounded on accounts/budgets/journal + computed statements) ---- */
 function aiFinanceContext(){
   const bal=acctBal();
@@ -468,7 +360,7 @@ async function aiFinanceRun(name,p){
   if(p.credit_code){const id=byCode(p.credit_code); if(id)set('v_cr',id);}
   return 'Opened a pre-filled voucher — review the lines and click Post to record it.';
 }
-function mountAI(){ AIAssist({ app:APP, title:'Finance assistant',
+function mountAI(){ AOS.assistant({ app:APP, title:'Finance assistant',
   system:'You are the finance assistant inside the Finance Console. You see the chart of accounts (with live balances), budgets (allocated/committed/spent/util%), recent journal entries, and computed Trial Balance / P&L totals. Explain balances, budget utilisation, surplus/deficit and anomalies clearly. All amounts are INR. When the user asks to record a payment/receipt/expense, propose the draft_voucher action with the right accounts (by code) and amount.',
   chips:['Explain my P&L','Which budgets are over-utilised?','Summarise recent journal entries','Is my trial balance balanced?'],
   context:aiFinanceContext,
