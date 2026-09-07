@@ -106,22 +106,31 @@ function _toWav(buf){
    Mic is delegated by the app-host shell (iframe allow="microphone"). Degrades gracefully if voice is
    unconfigured/unsupported. Same helper is reused wherever a narrative field wants voice. ===== */
 async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{};
-  let rec=null,chunks=[],on=false;
+  const MAX_S=20; let rec=null,chunks=[],on=false,tick=null,capTimer=null,left=0;
+  const label=t=>{btn.textContent=t;};
   btn.onclick=async(e)=>{ e&&e.preventDefault();
     if(on){ rec&&rec.stop(); return; }
     if(!navigator.mediaDevices||!window.MediaRecorder){ toast("Voice input isn’t supported in this browser","bad"); return; }
     let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
     catch(err){ toast("Microphone permission was denied","bad"); return; }
-    chunks=[]; rec=new MediaRecorder(stream); on=true; btn.textContent="⏺"; btn.classList.add("bad");
+    chunks=[]; rec=new MediaRecorder(stream); on=true; btn.classList.add("bad");
+    left=MAX_S; label("⏺ "+left+"s"); tick=setInterval(()=>{left--;label("⏺ "+Math.max(0,left)+"s");},1000);
+    capTimer=setTimeout(()=>{ if(on)rec.stop(); }, MAX_S*1000);   // auto-stop: keep each clip a small upload (≈0.9MB)
     rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size)chunks.push(ev.data); };
-    rec.onstop=async()=>{ on=false; stream.getTracks().forEach(t=>t.stop()); btn.textContent="…"; btn.classList.remove("bad");
+    rec.onstop=async()=>{ on=false; clearInterval(tick); clearTimeout(capTimer); stream.getTracks().forEach(t=>t.stop()); btn.textContent="…"; btn.classList.remove("bad");
       // Browsers record webm/opus; Bodhan wants WAV — decode + re-encode to 16-bit mono WAV in-browser.
       const webm=new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"});
       let wav;
       try{
         const ab=await webm.arrayBuffer();
         const AC=window.AudioContext||window.webkitAudioContext;
-        const audio=await new AC().decodeAudioData(ab);
+        let audio=await new AC().decodeAudioData(ab);
+        // resample to 16 kHz mono — speech-optimal + keeps the upload small (mic native is ~48 kHz → 3× bigger)
+        try{
+          const off=new OfflineAudioContext(1, Math.max(1,Math.ceil(audio.duration*16000)), 16000);
+          const s=off.createBufferSource(); s.buffer=audio; s.connect(off.destination); s.start();
+          audio=await off.startRendering();
+        }catch(e){}
         wav=_toWav(audio);
       }catch(err){ btn.textContent="🎤"; toast("Could not process the recording","bad"); return; }
       const b64=await new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(",")[1]||""); r.readAsDataURL(wav); });
