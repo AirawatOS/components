@@ -108,7 +108,19 @@ function counts(){return {
   disposal:CACHE.cases.filter(c=>c.status==="registered"&&heldAny(c.id)).length,
 };}
 
-function renderNav(){const c=counts();$("nav").innerHTML=TABS.map(([k,label])=>{
+// Slice 3: each role sees only the tabs it owns (+ "All cases"); an admin sees everything.
+const ROLE_TABS={"justice.advocate":["file","cases"],"justice.litigant":["file","cases"],
+  "justice.scrutiny-officer":["scrutiny","cases"],"justice.registrar":["registration","cases"],
+  "justice.bench-clerk":["hearings","cases"],"justice.judge":["disposal","hearings","cases"]};
+const ADMIN_ROLES=["platform.tenant-admin","platform.steward","admin"];
+function allowedTabs(){
+  const R=SESS.roles||[];
+  if(R.some(r=>ADMIN_ROLES.includes(r))) return TABS.map(t=>t[0]);   // admin: all
+  const s=new Set(); R.forEach(r=>(ROLE_TABS[r]||[]).forEach(t=>s.add(t)));
+  return s.size? [...s] : TABS.map(t=>t[0]);                          // fallback: all (dev)
+}
+function renderNav(){const c=counts();const allow=allowedTabs();
+  $("nav").innerHTML=TABS.filter(([k])=>allow.includes(k)).map(([k,label])=>{
   const n=c[k];const badge=n?`<span class="b">${n}</span>`:"";
   return `<button class="${k===TAB?'on':''}" onclick="go('${k}')">${esc(label)}${badge}</button>`;}).join("");}
 function go(t){TAB=t;renderNav();render();}
