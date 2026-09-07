@@ -1,0 +1,17 @@
+# A SOLUTION (kind=solution) — Court case management, filing → scrutiny → registration → hearing →
+# disposal. Self-contained (ADR-0075): its member graph names every component it needs. It REUSES the
+# signed ds:airawat:pack/justice data model (10 schemas) + the generic case spine (platform.case/task/
+# inbox_item), and adds the Court Console app + the justice.hearing schema + court roles (governed
+# separately). The FULFILMENT declaration below is the case_lifecycle workflow the console enacts.
+component_id: ds:airawatdeveloper:solution/justice-case-management
+kind: solution
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Court Case Management
+icon: "⚖️"
+entrypoint: run.py
+summary: "Run a court's case lifecycle: file, scrutinise, register, hear and dispose — on governed justice.* facts."
+members: [ds:airawatdeveloper:app/court-console]
+reads: [justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.court, justice.case_party, platform.case, platform.task]
+writes: [justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.court, justice.case_party, platform.case, platform.task]
+roles: [justice.advocate, justice.litigant, justice.registrar, justice.scrutiny-officer, justice.bench-clerk, justice.judge]

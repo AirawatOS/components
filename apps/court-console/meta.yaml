@@ -1,0 +1,19 @@
+# An APP (kind=app) — the Court Console: the single work surface for a court's case lifecycle
+# (file → scrutiny → registration → hearing → disposal). Reads governed justice.* + platform.* via
+# /bridge/query; writes them via /bridge/save (delegated: component://court-console obo the signed-in
+# court officer). Every transition is an attributed, governed write — no direct DB, no bespoke backend.
+component_id: ds:airawatdeveloper:app/court-console
+kind: app
+version: 0.1.1   # publish→live via filestore+overlay (no image bake)
+provider: ds:airawat:developer
+display_name: Court Console
+icon: "⚖️"
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+# READS — the case file as the court holds it
+required_schemas: [justice.court, justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.case_party, platform.case, platform.task]
+# WRITES — the lifecycle transitions (authority scope; the solution install grants these per tenant)
+writes: [justice.court, justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.case_party, platform.case, platform.task]
+# audience: court staff (tenant admin holds the umbrella role in slice 1; role separation is slice 2)
+roles: [platform.tenant-admin, justice.registrar, justice.bench-clerk, justice.judge]
