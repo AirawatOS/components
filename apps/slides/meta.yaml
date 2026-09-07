@@ -1,0 +1,16 @@
+# Slides — the Airawat Workspace presentation app (kind=app). PART OF THE BASE OS PRODUCTIVITY SUITE.
+# Personal + AI-native: each user has their own decks, stored as governed doc.deck facts (ordered slides;
+# bitemporal → version history). Slide rail + per-slide editor + Present mode; the inline ✨AI drafts a whole
+# deck from a topic via the shared /bridge/ai-assist (Kimi K3). `personal: true` = self-service + owner-scoped.
+component_id: ds:airawat:app/slides
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Slides
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+personal: true
+required_schemas: [doc.deck]
+writes: [doc.deck]
+roles: []
