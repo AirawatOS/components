@@ -1,15 +1,19 @@
-# Chat app (kind=app, INT-0002). Converse with the installed AI Experts. Every answer is GROUNDED — built
-# from the Expert's own recommendations, the governance rules in force, and cited knowledge — and shows its
-# sources; the Expert proposes and informs, it never decides. Uses /bridge/expert-chat + /bridge/market.
+# Chat — the Airawat Workspace messenger (kind=app). PART OF THE BASE OS PRODUCTIVITY SUITE.
+# UNIFIED conversation: a channel's members are principals — user:// (a person), agent:// (an AI assistant/
+# expert) or participant:// (someone in another tenant). Messaging a channel that has an agent member gets an
+# automatic AI reply (routed server-side via the model gateway, Kimi K3) — so chatting with a person, with the
+# AI, or a group of both is the SAME app + schema. Membership-scoped: you only see channels you belong to.
+#
+# Writes go through the dedicated /bridge/chat-* bridges (membership-enforced + AI routing), NOT /bridge/save —
+# so this app is NOT `personal` (channels are shared among members). Available to every signed-in user (roles []).
 component_id: ds:airawat:app/chat
 kind: app
-version: 0.1.1
+version: 0.1.0
 provider: ds:airawat:developer
 display_name: Chat
 entrypoint: index.html
 bundle: dist
 sandboxed: true
-required_schemas: []
-system: false         # OPT-IN: Chat is the way to talk to installed AI Experts, so a tenant installs it from
-                      # the storefront when it adds an Expert — NOT force-installed on every new tenant.
-roles: []             # available to everyone in the tenant (once installed)
+required_schemas: [chat.channel, chat.message]
+writes: [chat.channel, chat.message]
+roles: []
