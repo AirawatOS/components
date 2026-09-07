@@ -40,8 +40,10 @@ def files_of(d):
             files[os.path.relpath(p, d)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
     return files
 
-TOKEN = login("airawat", "steward")
 m = read_meta(APPDIR); cid = m["component_id"]
+# certify/publish AS THE STEWARD OF THE COMPONENT'S NAMESPACE (ds:<ns>:…): airawatdeveloper→devrick, else airawat→steward
+_ns = cid.split(":")[1] if cid.startswith("ds:") else "airawat"
+TOKEN = login("airawatdeveloper", "devrick") if _ns == "airawatdeveloper" else login("airawat", "steward")
 meta_yaml = open(os.path.join(APPDIR, "meta.yaml")).read(); files = files_of(APPDIR)
 cert, err = _post(f"{NET}/v1/certify", {"subject_id": cid, "subject_kind": "component",
                   "meta_yaml": meta_yaml, "files": files}, TOKEN)

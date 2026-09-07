@@ -1,0 +1,13 @@
+# MAIL ENGINE (kind=engine) — the server-side LOGIC for Workspace Mail. The host dispatches
+# /bridge/{mail-list,mail-send,mail-get} to this engine's HANDLERS (run.py). Membership-scoped: a mail.message
+# is visible to its sender + recipients. Writes attributed component://mail-engine obo the signed-in user
+# (ADR-0052) — this engine holds the grants. AI compose is client-side (the app calls /bridge/ai-assist), so
+# the engine needs no model access. Editable + versioned in Studio like any component.
+component_id: ds:airawatdeveloper:engine/mail-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Mail Engine
+entrypoint: run.py
+required_schemas: [mail.message]
+writes: [mail.message]

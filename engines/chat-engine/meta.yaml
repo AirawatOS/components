@@ -1,0 +1,13 @@
+# CHAT ENGINE (kind=engine) — the server-side LOGIC for Workspace Chat. The host dispatches
+# /bridge/{chat-channels,chat-create,chat-messages,chat-send} to this engine's HANDLERS (run.py), so chat
+# domain logic lives in a certified, Studio-editable component instead of app_host. Membership-scoped;
+# chat-send routes the AI-member reply via ctx.ai_complete (model gateway, Kimi K3). Writes chat.channel/
+# chat.message attributed component://chat-engine obo the signed-in user (ADR-0052) — this engine holds the grants.
+component_id: ds:airawatdeveloper:engine/chat-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Chat Engine
+entrypoint: run.py
+required_schemas: [chat.channel, chat.message]
+writes: [chat.channel, chat.message]
