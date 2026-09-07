@@ -54,7 +54,7 @@
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const uname=p=>(p||'').replace(/^user:\/\/[^/]+\//,'').replace(/^participant:\/\//,'');
+const uname=p=>{p=p||'';const m=p.match(/^user:\/\/([^/]+)\/(.+)$/);if(m)return m[1]===TENANT?m[2]:m[2]+'@'+m[1];return p.replace(/^participant:\/\//,'');};
 let ME='',TENANT='',FOLDER='inbox',MSGS=[],CUR=null;
 async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());}
 // attachments: stored on the fact as delimited strings (schema items:string); filestore-backed via /bridge/file*
@@ -109,10 +109,12 @@ function renderRead(){const m=CUR;$('read').innerHTML=`
 function quoted(m){return '\n\n———\nOn '+new Date(m.observed_at).toLocaleString()+', '+uname(m.sender)+' wrote:\n'+(m.body||'').split('\n').map(l=>'> '+l).join('\n');}
 function reply(all){const m=CUR;const others=(m.recipients||[]).filter(r=>r!==ME&&r!==m.sender);
   compose({to:[m.sender],cc:all?others:[],subject:(/^re:/i.test(m.subject||'')?'':'Re: ')+(m.subject||''),body:quoted(m),thread_ref:m.thread_ref||m.id,replyCtx:m});}
-function toPrincipal(v){v=(v||'').trim();return v?(v.includes('://')?v:('user://'+TENANT+'/'+v)):'';}
+function toPrincipal(v){v=(v||'').trim();if(!v)return '';if(v.includes('://'))return v;
+  if(v.includes('@')){const p=v.split('@');return 'user://'+p[1]+'/'+p[0];}   // name@tenant → cross-tenant (federated) recipient
+  return 'user://'+TENANT+'/'+v;}
 function compose(pf){pf=pf||{};
   const TOA=(pf.to||[]).map(toPrincipal).filter(Boolean), CCA=(pf.cc||[]).map(toPrincipal).filter(Boolean), BCCA=(pf.bcc||[]).map(toPrincipal).filter(Boolean);
-  const rrow=(lbl,id,extra)=>`<div class="row" id="${id}Row" ${extra||''}><span class="lbl">${lbl}</span><div class="rcpt" id="${id}R"><span class="chips"></span><input placeholder="search people…" autocomplete="off"><div class="sug"></div></div>${lbl==='To'?'<span class="ccbcc" id="ccbccToggle">Cc/Bcc</span>':''}</div>`;
+  const rrow=(lbl,id,extra)=>`<div class="row" id="${id}Row" ${extra||''}><span class="lbl">${lbl}</span><div class="rcpt" id="${id}R"><span class="chips"></span><input placeholder="search people… or name@tenant" autocomplete="off"><div class="sug"></div></div>${lbl==='To'?'<span class="ccbcc" id="ccbccToggle">Cc/Bcc</span>':''}</div>`;
   const m=modal(`<h3>${pf.replyCtx?'Reply':pf.subject&&/^fwd/i.test(pf.subject)?'Forward':'New message'}</h3>
     ${rrow('To','to')}
     ${rrow('Cc','cc','style="display:none"')}
