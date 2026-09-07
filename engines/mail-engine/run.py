@@ -21,9 +21,10 @@ def send(ctx):
     if not recips:
         return None, "at least one recipient required"
     mid = "ds:%s:mail/message/%d-%s" % (tn, int(_t.time() * 1000), _os.urandom(3).hex())
+    atts = [a for a in (b.get("attachments") or []) if isinstance(a, str)]   # "file_idnametypesize"
     obj = {"schema": "mail.message", "id": mid, "sender": me, "recipients": recips,
            "subject": (b.get("subject") or "(no subject)").strip(), "body": b.get("body") or "",
-           "thread_ref": b.get("thread_ref"), "read_by": [me], "observed_at": _now(), "tenant": tn}
+           "thread_ref": b.get("thread_ref"), "attachments": atts, "read_by": [me], "observed_at": _now(), "tenant": tn}
     ctx["kwrite"](mid, obj)
     return {"message": obj}, None
 

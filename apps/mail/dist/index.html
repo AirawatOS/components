@@ -29,6 +29,8 @@
   .row{display:flex;gap:8px;align-items:center} .row .lbl{width:64px;color:var(--dim);font-size:13px}
   .aiBtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:0;border-radius:8px;padding:7px 12px;font:600 13px/1 inherit;cursor:pointer}
   .sub{color:var(--dim);font-size:12px} .spin{display:inline-block;width:12px;height:12px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px} @keyframes sp{to{transform:rotate(360deg)}}
+  .atts{display:flex;flex-wrap:wrap;gap:6px} .chip{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:4px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center} .chip .x{cursor:pointer;color:var(--dim)} .chip .x:hover{color:var(--err)}
+  .attlist{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px} .att{display:inline-flex;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 11px;color:var(--txt);text-decoration:none;font-size:13px} .att:hover{border-color:var(--accent2)} .att .sz{color:var(--dim);font-size:11px}
 </style>
 <div class="hbar">
   <span class="brand"><span class="logo">✉️</span>Mail</span>
@@ -49,6 +51,15 @@ const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
 const uname=p=>(p||'').replace(/^user:\/\/[^/]+\//,'').replace(/^participant:\/\//,'');
 let ME='',TENANT='',FOLDER='inbox',MSGS=[],CUR=null;
 async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());}
+// attachments: stored on the fact as delimited strings (schema items:string); filestore-backed via /bridge/file*
+const encAtt=a=>btoa(unescape(encodeURIComponent(JSON.stringify({file_id:a.file_id,filename:a.filename,content_type:a.content_type||'',size:a.size||0}))));
+const decAtt=s=>{try{return JSON.parse(decodeURIComponent(escape(atob(s))));}catch(e){return {file_id:String(s),filename:'file',content_type:'',size:0};}};
+const fileUrl=a=>'/bridge/file?id='+encodeURIComponent(a.file_id)+'&name='+encodeURIComponent(a.filename)+'&type='+encodeURIComponent(a.content_type||'');
+const fmtSize=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB';
+async function uploadFile(file){
+  const q='?name='+encodeURIComponent(file.name)+'&type='+encodeURIComponent(file.type||'application/octet-stream');
+  return fetch('/bridge/file-upload'+q,{method:'POST',headers:{'X-Upload-Type':file.type||'application/octet-stream'},body:file}).then(r=>r.json());
+}
 function fmtWhen(s){if(!s)return'';const d=new Date(s);if(isNaN(d))return'';const now=new Date();
   if(now.toDateString()===d.toDateString())return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   return d.toLocaleDateString([],{month:'short',day:'numeric'});}
@@ -80,6 +91,7 @@ function renderRead(){const m=CUR;$('read').innerHTML=`
   <div class="rh"><h2>${esc(m.subject||'(no subject)')}</h2>
     <div class="meta"><b>${esc(uname(m.sender))}</b> → ${esc((m.recipients||[]).map(uname).join(', '))} · ${esc(new Date(m.observed_at).toLocaleString())}</div></div>
   <div class="rb">${esc(m.body||'')}</div>
+  ${(m.attachments&&m.attachments.length)?'<div class="attlist">'+m.attachments.map(s=>{const a=decAtt(s);return '<a class="att" href="'+fileUrl(a)+'" target="_blank" rel="noopener">📎 '+esc(a.filename)+' <span class="sz">'+esc(fmtSize(a.size))+'</span></a>';}).join('')+'</div>':''}
   <div class="racts"><button class="btn primary" id="reply">↩ Reply</button><button class="btn" id="replyall">↩ Reply all</button><button class="btn" id="fwd">➟ Forward</button></div>`;
   $('reply').onclick=()=>reply(false);$('replyall').onclick=()=>reply(true);
   $('fwd').onclick=()=>compose({subject:'Fwd: '+(m.subject||''),body:quoted(m)});
@@ -92,9 +104,17 @@ function compose(pf){pf=pf||{};
     <div class="row"><span class="lbl">To</span><input class="in" id="to" placeholder="usernames, comma-separated" value="${esc((pf.to||[]).join(', '))}"></div>
     <div class="row"><span class="lbl">Subject</span><input class="in" id="subj" value="${esc(pf.subject||'')}"></div>
     <textarea class="in" id="bodyx" placeholder="Write your message…">${esc(pf.body||'')}</textarea>
+    <div class="row"><button class="btn" id="attach">📎 Attach</button><input type="file" id="fileinp" multiple style="display:none"><span class="atts" id="atts"></span></div>
     <div class="row"><button class="aiBtn" id="ai">✨ ${pf.replyCtx?'Draft reply':'Draft with AI'}</button><span class="sub" id="s"></span><span style="flex:1"></span>
       <button class="btn" id="x">Cancel</button><button class="btn primary" id="send">Send</button></div>`);
   m.q('#x').onclick=m.close;
+  const PEND=[];
+  function renderAtts(){m.q('#atts').innerHTML=PEND.map((a,i)=>`<span class="chip">📎 ${esc(a.filename)} <span class="x" data-i="${i}">✕</span></span>`).join('');
+    m.q('#atts').querySelectorAll('[data-i]').forEach(el=>el.onclick=()=>{PEND.splice(+el.dataset.i,1);renderAtts();});}
+  m.q('#attach').onclick=()=>m.q('#fileinp').click();
+  m.q('#fileinp').onchange=async e=>{const s=m.q('#s');for(const f of e.target.files){s.innerHTML='<span class="spin"></span> uploading '+esc(f.name)+'…';
+      try{const r=await uploadFile(f);if(r.file_id)PEND.push({file_id:r.file_id,filename:r.filename,content_type:r.content_type,size:r.size});}catch(err){}}
+    s.textContent='';renderAtts();e.target.value='';};
   m.q('#ai').onclick=async()=>{m.q('#s').innerHTML='<span class="spin"></span> drafting…';
     const instr=prompt('What should the '+(pf.replyCtx?'reply':'message')+' say? (a short instruction)','');if(instr===null){m.q('#s').textContent='';return;}
     const ctx=pf.replyCtx?('You are replying to this message:\nFrom: '+uname(pf.replyCtx.sender)+'\nSubject: '+pf.replyCtx.subject+'\n\n'+(pf.replyCtx.body||'')):'';
@@ -103,7 +123,7 @@ function compose(pf){pf=pf||{};
   m.q('#send').onclick=async()=>{const to=(m.q('#to').value||'').split(/[,\s]+/).map(s=>s.trim()).filter(Boolean);
     if(!to.length){m.q('#to').focus();return;}
     m.q('#send').disabled=true;
-    const r=await api('/bridge/mail-send',{to,subject:m.q('#subj').value,body:m.q('#bodyx').value,thread_ref:pf.thread_ref});
+    const r=await api('/bridge/mail-send',{to,subject:m.q('#subj').value,body:m.q('#bodyx').value,thread_ref:pf.thread_ref,attachments:PEND.map(encAtt)});
     m.close();if(FOLDER==='sent')load();};
 }
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
