@@ -4,7 +4,7 @@
 # court officer). Every transition is an attributed, governed write — no direct DB, no bespoke backend.
 component_id: ds:airawatdeveloper:app/court-console
 kind: app
-version: 0.1.4   # slice 3: per-action role gating (write_roles) + role-aware nav
+version: 0.1.5   # slice 4: process (summons/notice/warrant) service flow
 provider: ds:airawat:developer
 display_name: Court Console
 icon: "⚖️"
@@ -12,11 +12,11 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 # READS — the case file as the court holds it
-required_schemas: [justice.court, justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.case_party, platform.case, platform.task, platform.inbox_item]
+required_schemas: [justice.court, justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.case_party, platform.case, platform.task, platform.inbox_item, justice.process_order, justice.process_service]
 # WRITES — the lifecycle transitions (authority scope; the solution install grants these per tenant)
-writes: [justice.court, justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.case_party, platform.case, platform.task, platform.inbox_item]
+writes: [justice.court, justice.case, justice.filing, justice.scrutiny_result, justice.hearing, justice.appearance, justice.disposal, justice.case_party, platform.case, platform.task, platform.inbox_item, justice.process_order, justice.process_service]
 # audience: court staff (tenant admin holds the umbrella role in slice 1; role separation is slice 2)
-roles: [platform.tenant-admin, justice.advocate, justice.litigant, justice.scrutiny-officer, justice.registrar, justice.bench-clerk, justice.judge]
+roles: [platform.tenant-admin, justice.advocate, justice.litigant, justice.scrutiny-officer, justice.registrar, justice.bench-clerk, justice.judge, justice.process-server]
 # PER-ACTION role gate (slice 3): only these roles may write each action-fact. Schemas not listed here
 # (justice.case, justice.court, platform.*) are the shared case spine, writable by any court role at its stage.
 write_roles:
@@ -26,3 +26,5 @@ write_roles:
   - {schema: justice.hearing, roles: justice.bench-clerk}
   - {schema: justice.appearance, roles: justice.bench-clerk|justice.judge}
   - {schema: justice.disposal, roles: justice.judge}
+  - {schema: justice.process_order, roles: justice.advocate|justice.litigant|justice.bench-clerk}
+  - {schema: justice.process_service, roles: justice.process-server|justice.bench-clerk}
