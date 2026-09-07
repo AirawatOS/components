@@ -77,6 +77,30 @@ dr, derr = _post(f"{NET}/v1/schema-requests/decide",
                  {"schema_id": "justice.hearing", "version": "0.1.0", "decision": "approve"}, token=STOKEN)
 print("  approve:", ("OK " + dr["published_schema"]) if dr else ("ERR " + str(derr)))
 
+# slice 5 — court fee / payment (no reuse fit: finance.transaction is a double-entry GL posting)
+PAYMENT = {
+    "type": "object", "x-kind": "event", "additionalProperties": False, "title": "justice.payment",
+    "description": "A payment made to the court in a case — court fee, process fee, copying fee or penalty; "
+                   "amount + purpose + a status lifecycle (initiated → successful → refunded).",
+    "required": ["schema", "id", "case_ref", "amount", "purpose", "status", "observed_at"],
+    "properties": {
+        "schema": {"const": "justice.payment"}, "id": {"type": "string", "pattern": ID_PAT},
+        "case_ref": S(), "amount": {"type": "number"}, "currency": Sn(),
+        "purpose": {"enum": ["court-fee", "process-fee", "copying-fee", "penalty", "misc"]},
+        "payer": Sn(), "mode": {"type": ["string", "null"], "enum": ["online", "counter", "challan", None]},
+        "status": {"enum": ["initiated", "successful", "refunded"]},
+        "txn_ref": Sn(), "treasury_ref": Sn(), "paid_at": Sn(), "observed_at": S(), "tenant": Sn(),
+    },
+}
+print("== schema: justice.payment@0.1.0 ==")
+pr, perr = _post(f"{NET}/v1/schema-requests",
+                 {"schema_id": "justice.payment", "version": "0.1.0", "definition": PAYMENT,
+                  "x_kind": "event", "justification": "Justice slice 5 — court fee / payment."}, token=DTOKEN)
+print("  propose:", (pr or {}).get("status", "ok") if not perr or "exists" in perr.lower() else perr)
+dr, derr = _post(f"{NET}/v1/schema-requests/decide",
+                 {"schema_id": "justice.payment", "version": "0.1.0", "decision": "approve"}, token=STOKEN)
+print("  approve:", ("OK " + dr["published_schema"]) if dr else ("ERR " + str(derr)))
+
 print("== roles ==")
 for role, label in [("justice.judge", "Judge"),
                     ("justice.bench-clerk", "Bench Clerk"),

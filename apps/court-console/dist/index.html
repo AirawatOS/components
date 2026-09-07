@@ -64,7 +64,7 @@
 const APP_ID="court-console";   // short id — /bridge/query + /bridge/save key CERTIFIED by the last path segment
 let SESS={}, TENANT="", CACHE={}, TAB="file";
 const TABS=[["file","File a case"],["scrutiny","Scrutiny"],["registration","Registration"],
-            ["hearings","Cause list & hearings"],["process","Process & service"],["disposal","Disposal"],["cases","All cases"]];
+            ["hearings","Cause list & hearings"],["process","Process & service"],["fees","Fees & payments"],["disposal","Disposal"],["cases","All cases"]];
 
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -90,9 +90,9 @@ async function inbox(role,title,caseRef,tab){
 }
 
 async function refresh(){
-  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices]=await Promise.all(
-    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service"].map(query));
-  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices};
+  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments]=await Promise.all(
+    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service","justice.payment"].map(query));
+  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments};
 }
 // helpers over the cache
 const byCase=(arr,cid)=>arr.filter(x=>x.case_ref===cid);
@@ -109,7 +109,7 @@ function counts(){return {
 };}
 
 // Slice 3: each role sees only the tabs it owns (+ "All cases"); an admin sees everything.
-const ROLE_TABS={"justice.advocate":["file","process","cases"],"justice.litigant":["file","process","cases"],
+const ROLE_TABS={"justice.advocate":["file","process","fees","cases"],"justice.litigant":["file","process","fees","cases"],
   "justice.scrutiny-officer":["scrutiny","cases"],"justice.registrar":["registration","cases"],
   "justice.bench-clerk":["hearings","process","cases"],"justice.judge":["disposal","hearings","cases"],
   "justice.process-server":["process","cases"]};
@@ -137,6 +137,7 @@ function render(){
      CACHE.cases.filter(c=>c.status==="filed"&&accepted(c.id)),registerActions);
   if(TAB==="hearings")return renderHearings(v);
   if(TAB==="process")return renderProcess(v);
+  if(TAB==="fees")return renderFees(v);
   if(TAB==="disposal")return renderList(v,"Disposal","Heard cases awaiting judgment / final order.",
      CACHE.cases.filter(c=>c.status==="registered"&&heldAny(c.id)),disposeActions);
   if(TAB==="cases")return renderCases(v);
@@ -396,6 +397,45 @@ async function recordService(oid,cid,outcome){
       outcome,served_at:nowISO(),observed_at:nowISO(),proof:outcome==="served"?"acknowledged":""});
     if(outcome!=="served") await inbox("justice.bench-clerk","Process returned "+outcome+" — re-issue?",cid,"process");
     toast("Service recorded: "+outcome,outcome==="served"?"ok":"");await refresh();render();renderNav();
+  }catch(e){toast(e.message,"bad");}
+}
+
+/* ---------- FEES & PAYMENTS (slice 5): court fee via justice.payment ---------- */
+const paymentsOf=cid=>byCase(CACHE.payments,cid).sort((a,b)=>(a.observed_at||"").localeCompare(b.observed_at||""));
+function renderFees(v){
+  const rows=CACHE.cases.slice().sort((a,b)=>(b.filed_on||"").localeCompare(a.filed_on||""));
+  v.innerHTML=`<h2>Fees &amp; payments</h2><p class="sub">Court fee, process fee and other payments recorded against a case (a governed payment record — not a payment gateway).</p>`+
+   (rows.length?rows.map(c=>{const m=caseRowMeta(c);const ps=paymentsOf(c.id);
+     return `<div class="card"><div class="row" style="justify-content:space-between">
+       <div><b>${esc(m.title)}</b> <span class="mono">${esc(c.case_number||m.filing.filing_number||"")}</span></div>
+       <button class="btn sm" onclick="openFee('${c.id}')">＋ Record fee</button></div>`+
+       (ps.length?`<table style="margin-top:10px"><thead><tr><th>Purpose</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>`+
+         ps.map(p=>`<tr><td>${esc(p.purpose)}</td><td class="mono">₹ ${esc(p.amount)}</td>
+           <td><span class="pill ${p.status==='successful'?'s-disposed':p.status==='refunded'?'s-returned':'s-filed'}">${esc(p.status)}</span></td>
+           <td class="row" style="justify-content:flex-end">${p.status==='initiated'?`<button class="btn go sm" onclick="markPaid('${p.id}','${c.id}')">Mark paid</button>`:''}</td></tr>`).join("")+
+         `</tbody></table>`:`<p class="sub" style="margin:8px 0 0">No payments recorded.</p>`)+`</div>`;
+   }).join(""):`<div class="empty">No cases yet.</div>`);
+}
+function openFee(cid){const c=CACHE.cases.find(x=>x.id===cid);
+  $("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Record fee</h2><p class="sub">${esc(c.case_number||"")}</p>
+    <label>Purpose *</label><select id="fe_purpose"><option value="court-fee">Court fee</option><option value="process-fee">Process fee</option><option value="copying-fee">Copying fee</option><option value="penalty">Penalty</option></select>
+    <label style="margin-top:10px">Amount (₹) *</label><input id="fe_amt" type="number" placeholder="e.g. 500">
+    <label style="margin-top:10px">Mode</label><select id="fe_mode"><option value="online">Online</option><option value="counter">Counter</option><option value="challan">Challan</option></select>
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="recordFee('${cid}')">Record (initiated)</button></div>`;
+  showModal();
+}
+async function recordFee(cid){
+  const amt=parseFloat($("fe_amt").value); if(!(amt>0))return toast("Enter an amount","bad");
+  try{const ts=Date.now().toString(36);
+    await save({schema:"justice.payment",id:nid("payment","pay-"+ts),case_ref:cid,amount:amt,currency:"INR",
+      purpose:$("fe_purpose").value,mode:$("fe_mode").value,status:"initiated",payer:SESS.sub||"",observed_at:nowISO()});
+    toast("Fee recorded (initiated)","ok");closeModal();await refresh();render();renderNav();
+  }catch(e){toast(e.message,"bad");}
+}
+async function markPaid(pid,cid){
+  try{const p=CACHE.payments.find(x=>x.id===pid);
+    await save({...p,status:"successful",paid_at:nowISO(),txn_ref:"TXN-"+Date.now().toString(36).toUpperCase()});
+    toast("Marked paid","ok");await refresh();render();renderNav();
   }catch(e){toast(e.message,"bad");}
 }
 
