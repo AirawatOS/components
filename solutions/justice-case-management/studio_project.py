@@ -14,7 +14,7 @@ reused=[("justice.case","0.2.0"),("justice.filing","0.2.0"),("justice.scrutiny_r
         ("justice.evidence","0.2.0"),("justice.process_order","0.2.0"),("justice.process_service","0.2.0"),
         ("justice.disposal","0.2.0")]
 members=[sch(n,v,"new") for n,v in new]+[sch(n,v,"existing") for n,v in reused]
-members.append({"ref":"ds:airawatdeveloper:app/court-console","kind":"app","layer":"domain","title":"Court Console",
+members.append({"ref":"ds:airawatdeveloper:app/court-console","kind":"app","layer":"interaction","title":"Court Console",
     "origin":"new","status":"published",
     "reads":["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.appearance","justice.disposal","justice.process_order","justice.process_service","justice.payment","justice.bail","justice.adr_referral","justice.certified_copy","platform.case","platform.task"],
     "writes":["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.appearance","justice.disposal","justice.process_order","justice.process_service","justice.payment","justice.bail","justice.adr_referral","justice.certified_copy","platform.case","platform.task","platform.inbox_item"]})
