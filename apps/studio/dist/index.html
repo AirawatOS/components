@@ -177,6 +177,7 @@ function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';co
     ['Publish',()=>publishComp(ref)],
     ['✨ Generate code (AI)',()=>{openFile(ref, m.kind==='app'?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}],
   ];
+  if(isApp)build.push(['🌐 Languages (i18n)',()=>i18nPanel(ref)]);   // AI-draft + review translations for the app's labels
   const items = existing
     ? [['⚙ Configure  (install · keys · schedule)',()=>configureComponent(ref)],
        ['Open meta.yaml (read-only)',()=>openFile(ref,'meta.yaml')]]
@@ -515,6 +516,92 @@ async function myRequests(){
     : '<div class="sub">No change requests yet. Use “Request a schema”.</div>';
 }
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return {q:s=>w.querySelector(s),close:()=>w.remove()};}
+
+// ---------- i18n LANGUAGES PANEL (Studio i18n S2) ----------
+// AI-draft the app's UI labels into other languages, review/edit, and insert them back into the app source as an
+// AI18n.add({...}) catalog. English is the source of truth; drafts are flagged until edited (ADR-0029). The
+// translate engine is /bridge/i18n-translate (glossary-primed from the governed domain vocabulary).
+const I18N_LANGS=[['hi','Hindi'],['mr','Marathi'],['ta','Tamil'],['bn','Bengali'],['te','Telugu'],['kn','Kannada'],['gu','Gujarati'],['pa','Punjabi'],['ml','Malayalam'],['ur','Urdu'],['or','Odia'],['as','Assamese']];
+function _scanArgs(src,openParen){ // string-aware: index of the ')' that closes the '(' at openParen
+  let depth=0,q=null,esc=false;
+  for(let i=openParen;i<src.length;i++){const c=src[i];
+    if(q){ if(esc)esc=false; else if(c==='\\')esc=true; else if(c===q)q=null; continue; }
+    if(c==='"'||c==="'"||c==='`'){q=c;continue;}
+    if(c==='(')depth++; else if(c===')'){depth--; if(depth===0)return i;}}
+  return -1;}
+function _extractCatalog(src){ // the app's existing AI18n.add({...}) argument → {en:{…},…} or null
+  const k=src.indexOf('AI18n.add('); if(k<0)return null;
+  const op=src.indexOf('(',k), cp=_scanArgs(src,op); if(cp<0)return null;
+  try{ return Function('return ('+src.slice(op+1,cp)+')')(); }catch(e){ return null; }}
+function _replaceCatalog(src,obj){ // splice the merged catalog back into the app source
+  const blk=JSON.stringify(obj,null,2), k=src.indexOf('AI18n.add(');
+  if(k>=0){ const op=src.indexOf('(',k), cp=_scanArgs(src,op);
+    if(cp<0)return {ok:false,error:'could not locate the AI18n.add(...) block'};
+    return {ok:true,src:src.slice(0,op+1)+blk+src.slice(cp)}; }
+  const tag='<script src="/shared/i18n.js"></'+'script>', t=src.indexOf(tag);
+  if(t>=0){ const ins=t+tag.length; return {ok:true,src:src.slice(0,ins)+'\n<script>AI18n.add('+blk+');</'+'script>'+src.slice(ins)}; }
+  return {ok:false,error:'app is not wired for i18n (no /shared/i18n.js) — copy the block in instead'};}
+async function i18nPanel(ref){
+  let fs=FILES[ref]; if(!fs){const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};}
+  const path='dist/index.html', src=fs[path]||'';
+  const wired=src.indexOf('/shared/i18n.js')>=0;
+  const existing=_extractCatalog(src)||{}; const enCat=existing.en||{};
+  const known=Object.keys(existing).filter(l=>l!=='en');
+  if(!document.getElementById('i18nCSS')){const st=document.createElement('style');st.id='i18nCSS';
+    st.textContent='.i18ntab{width:100%;border-collapse:collapse;font-size:12.5px}.i18ntab th{position:sticky;top:0;background:#0d1117;text-align:left;padding:5px 6px;color:#8b949e;border-bottom:1px solid #21262d}.i18ntab td{padding:3px 6px;border-bottom:1px solid #161b22;vertical-align:top}.i18ntab input{width:100%;background:#0d1117;border:1px solid #21262d;color:#e6edf3;border-radius:6px;padding:5px 7px;font:inherit}.i18ntab input.draft{border-color:#7a5c12;background:#171203}.i18nk{font-family:ui-monospace,Menlo,monospace;color:#6f7b88;white-space:nowrap}';
+    document.head.appendChild(st);}
+  const m=modal(`<h3>🌐 Languages — ${esc(ref.split('/').pop())}</h3>
+    <div class="sub">AI drafts the labels; you review &amp; edit, then insert them into the app. English is the source. Amber = machine draft (edit to accept). AI proposes, you decide.</div>
+    ${wired?'':'<div class="sub" style="color:#e6c34a;margin-top:6px">⚠ This app doesn’t load <code>/shared/i18n.js</code> yet — you can still draft &amp; copy, but wiring the helper in is manual for now.</div>'}
+    <label style="display:block;margin-top:10px;font-size:12px;color:#8b949e">English strings — <b>{key: text}</b> ${Object.keys(enCat).length?'(loaded from the app)':'(paste the labels you want translated)'}</label>
+    <textarea id="en" spellcheck="false" style="width:100%;height:110px;background:#0d1117;border:1px solid #21262d;color:#e6edf3;border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(JSON.stringify(enCat,null,2))}</textarea>
+    <label style="display:block;margin-top:8px;font-size:12px;color:#8b949e">Languages to draft</label>
+    <div id="langs" style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:4px">${I18N_LANGS.map(([c,n])=>`<label style="font-size:13px"><input type="checkbox" value="${c}" ${known.includes(c)?'checked':''}> ${n}</label>`).join('')}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><button class="btn pri" id="gen">✨ Generate drafts</button><span class="sub" id="st"></span></div>
+    <div id="grid" style="margin-top:10px;max-height:320px;overflow:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+      <button class="btn" id="copy" disabled>Copy AI18n.add block</button>
+      <button class="btn" id="dl" disabled>Download JSON</button>
+      <button class="btn pri" id="ins" disabled title="${wired?'':'wire /shared/i18n.js first'}">Insert into app</button>
+      <button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close;
+  let R=null;   // {en:{…}, targets:{lang:{key:text}}}
+  m.q('#gen').onclick=async()=>{
+    let enObj; try{enObj=JSON.parse(m.q('#en').value||'{}');}catch(e){m.q('#st').textContent='English JSON is invalid.';return;}
+    const keys=Object.keys(enObj); if(!keys.length){m.q('#st').textContent='Add some English strings first.';return;}
+    const targets=[...m.q('#langs').querySelectorAll('input:checked')].map(i=>i.value);
+    if(!targets.length){m.q('#st').textContent='Pick at least one language.';return;}
+    m.q('#gen').disabled=true; m.q('#st').textContent='Drafting '+targets.length+' language(s) with AI…';
+    let r={}; try{r=await post('/bridge/i18n-translate',{source:'en',targets,catalog:enObj});}catch(e){r={error:String(e)};}
+    m.q('#gen').disabled=false;
+    if(r.error||!r.translations){m.q('#st').textContent='Failed: '+(r.error||'no result');return;}
+    R={en:enObj,targets:r.translations};
+    const cov=Object.keys(r.translations).map(l=>l+' '+((r.coverage&&r.coverage[l]&&r.coverage[l].translated)||0)+'/'+keys.length).join(' · ');
+    m.q('#st').textContent='Drafted — '+cov+(r.glossary_terms?(' · glossary '+r.glossary_terms):'');
+    grid();
+    m.q('#copy').disabled=false; m.q('#dl').disabled=false; m.q('#ins').disabled=!wired;
+  };
+  function grid(){
+    const langs=Object.keys(R.targets), keys=Object.keys(R.en);
+    const head='<tr><th>Key</th><th>English</th>'+langs.map(l=>'<th>'+esc(l)+'</th>').join('')+'</tr>';
+    const rows=keys.map(k=>'<tr><td class="i18nk">'+esc(k)+'</td><td>'+esc(R.en[k])+'</td>'+langs.map(l=>{
+        const v=(R.targets[l]||{})[k]||'';
+        return '<td><input class="draft" data-l="'+l+'" data-k="'+esc(k)+'" value="'+esc(v)+'"></td>';}).join('')+'</tr>').join('');
+    m.q('#grid').innerHTML='<table class="i18ntab">'+head+rows+'</table>';
+    m.q('#grid').querySelectorAll('input[data-l]').forEach(inp=>inp.oninput=()=>{R.targets[inp.dataset.l][inp.dataset.k]=inp.value;inp.classList.remove('draft');});
+  }
+  const merged=()=>{const o={en:R.en};Object.keys(R.targets).forEach(l=>o[l]=R.targets[l]);return o;};
+  m.q('#copy').onclick=()=>{navigator.clipboard.writeText('AI18n.add('+JSON.stringify(merged(),null,2)+');');m.q('#st').textContent='Copied AI18n.add(…) to the clipboard.';};
+  m.q('#dl').onclick=()=>{const b=new Blob([JSON.stringify(merged(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=ref.split('/').pop()+'.messages.json';a.click();};
+  m.q('#ins').onclick=async()=>{
+    const res=_replaceCatalog(fs[path],merged());
+    if(!res.ok){m.q('#st').textContent=res.error;return;}
+    await post('/bridge/component-save',{component:ref,path,content:res.src});
+    FILES[ref][path]=res.src;
+    const t=(TABS||[]).find(t=>t.ref===ref&&t.path===path); if(t){t.content=res.src;if(ACTIVE&&ACTIVE.ref===ref&&ACTIVE.path===path){renderEdit();}}
+    m.q('#st').textContent='✓ Inserted into '+path+' — Preview to check, then Publish. (Bump the app version to ship.)';
+  };
+}
 // ---------- PLAIN-LANGUAGE GUIDE (Slice 5): for developers new to layered, spec-driven composition ----------
 function guide(){
   const L=(n,d)=>`<div style="margin:5px 0"><b>${n}</b> — <span class="sub">${d}</span></div>`;
