@@ -64,7 +64,7 @@
 const APP_ID="court-console";   // short id — /bridge/query + /bridge/save key CERTIFIED by the last path segment
 let SESS={}, TENANT="", CACHE={}, TAB="file";
 const TABS=[["file","File a case"],["scrutiny","Scrutiny"],["registration","Registration"],
-            ["hearings","Cause list & hearings"],["process","Process & service"],["fees","Fees & payments"],["bail","Bail"],["disposal","Disposal"],["cases","All cases"]];
+            ["hearings","Cause list & hearings"],["process","Process & service"],["fees","Fees & payments"],["bail","Bail"],["adr","ADR / Mediation"],["certcopy","Certified copies"],["disposal","Disposal"],["cases","All cases"]];
 
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -90,9 +90,9 @@ async function inbox(role,title,caseRef,tab){
 }
 
 async function refresh(){
-  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails]=await Promise.all(
-    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service","justice.payment","justice.bail"].map(query));
-  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails};
+  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails,adrs,ccopies]=await Promise.all(
+    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service","justice.payment","justice.bail","justice.adr_referral","justice.certified_copy"].map(query));
+  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails,adrs,ccopies};
 }
 // helpers over the cache
 const byCase=(arr,cid)=>arr.filter(x=>x.case_ref===cid);
@@ -109,10 +109,10 @@ function counts(){return {
 };}
 
 // Slice 3: each role sees only the tabs it owns (+ "All cases"); an admin sees everything.
-const ROLE_TABS={"justice.advocate":["file","process","fees","bail","cases"],"justice.litigant":["file","process","fees","bail","cases"],
-  "justice.scrutiny-officer":["scrutiny","cases"],"justice.registrar":["registration","cases"],
-  "justice.bench-clerk":["hearings","process","cases"],"justice.judge":["disposal","hearings","bail","cases"],
-  "justice.process-server":["process","cases"]};
+const ROLE_TABS={"justice.advocate":["file","process","fees","bail","certcopy","cases"],"justice.litigant":["file","process","fees","bail","certcopy","cases"],
+  "justice.scrutiny-officer":["scrutiny","cases"],"justice.registrar":["registration","certcopy","cases"],
+  "justice.bench-clerk":["hearings","process","cases"],"justice.judge":["disposal","hearings","bail","adr","cases"],
+  "justice.process-server":["process","cases"],"justice.mediator":["adr","cases"]};
 const ADMIN_ROLES=["platform.tenant-admin","platform.steward","admin"];
 function allowedTabs(){
   const R=SESS.roles||[];
@@ -139,6 +139,8 @@ function render(){
   if(TAB==="process")return renderProcess(v);
   if(TAB==="fees")return renderFees(v);
   if(TAB==="bail")return renderBail(v);
+  if(TAB==="adr")return renderADR(v);
+  if(TAB==="certcopy")return renderCC(v);
   if(TAB==="disposal")return renderList(v,"Disposal","Heard cases awaiting judgment / final order.",
      CACHE.cases.filter(c=>c.status==="registered"&&heldAny(c.id)),disposeActions);
   if(TAB==="cases")return renderCases(v);
@@ -501,6 +503,72 @@ async function furnishBond(bid,cid){const sur=$("bo_sur").value.trim(); if(!sur)
 async function setBail(bid,cid,st){try{const b=CACHE.bails.find(x=>x.id===bid);
     await save({...b,status:st,observed_at:nowISO()});
     toast("Bail "+st,"ok");await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+
+/* ---------- ADR / MEDIATION (slice 5c) ---------- */
+const adrOf=cid=>byCase(CACHE.adrs,cid).sort((a,b)=>(a.observed_at||"").localeCompare(b.observed_at||""));
+function renderADR(v){
+  const rows=CACHE.cases.filter(c=>c.status==="registered"||c.status==="pending");
+  const isJudge=(SESS.roles||[]).includes("justice.judge")||(SESS.roles||[]).some(r=>ADMIN_ROLES.includes(r));
+  const isMed=(SESS.roles||[]).includes("justice.mediator")||(SESS.roles||[]).some(r=>ADMIN_ROLES.includes(r));
+  v.innerHTML=`<h2>ADR / Mediation</h2><p class="sub">Refer a case to alternate dispute resolution; the neutral records the outcome.</p>`+
+   (rows.length?rows.map(c=>{const m=caseRowMeta(c);const rs=adrOf(c.id);
+     return `<div class="card"><div class="row" style="justify-content:space-between">
+       <div><b>${esc(m.title)}</b> <span class="mono">${esc(c.case_number)}</span></div>
+       ${isJudge?`<button class="btn sm" onclick="openADR('${c.id}')">＋ Refer to ADR</button>`:''}</div>`+
+       (rs.length?`<table style="margin-top:10px"><thead><tr><th>Type</th><th>Neutral</th><th>Status</th><th></th></tr></thead><tbody>`+
+         rs.map(r=>`<tr><td>${esc(r.adr_type)}</td><td>${esc(r.neutral||"—")}</td>
+           <td><span class="pill ${r.status==='settled'?'s-disposed':(r.status==='failed'||r.status==='returned')?'s-returned':'s-filed'}">${esc(r.status)}</span></td>
+           <td class="row" style="justify-content:flex-end">${(isMed&&(r.status==='referred'||r.status==='in-progress'))?
+             `<button class="btn go sm" onclick="recordADR('${r.id}','${c.id}','settled')">Settled</button><button class="btn bad sm" onclick="recordADR('${r.id}','${c.id}','failed')">Failed</button>`:''}</td></tr>`).join("")+
+         `</tbody></table>`:`<p class="sub" style="margin:8px 0 0">Not referred.</p>`)+`</div>`;
+   }).join(""):`<div class="empty">No registered cases yet.</div>`);
+}
+function openADR(cid){$("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Refer to ADR</h2>
+    <label>Type *</label><select id="a_type"><option value="mediation">Mediation</option><option value="conciliation">Conciliation</option><option value="arbitration">Arbitration</option><option value="lok-adalat">Lok Adalat</option></select>
+    <label style="margin-top:10px">Neutral (mediator/arbitrator)</label><input id="a_neutral" placeholder="Name">
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="referADR('${cid}')">Refer</button></div>`;showModal();}
+async function referADR(cid){try{const ts=Date.now().toString(36);
+    await save({schema:"justice.adr_referral",id:nid("adr_referral","adr-"+ts),case_ref:cid,adr_type:$("a_type").value,
+      neutral:$("a_neutral").value.trim(),status:"referred",referred_by:SESS.sub||"",referred_at:nowISO(),observed_at:nowISO()});
+    await inbox("justice.mediator","ADR referral to conduct — "+(CACHE.cases.find(x=>x.id===cid)||{}).case_number,cid,"adr");
+    toast("Referred to ADR","ok");closeModal();await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+async function recordADR(rid,cid,outcome){try{const r=CACHE.adrs.find(x=>x.id===rid);
+    await save({...r,status:outcome,outcome:outcome==="settled"?"Settled in ADR":"Returned to court",observed_at:nowISO()});
+    await inbox("justice.judge","ADR "+outcome+" — "+(CACHE.cases.find(x=>x.id===cid)||{}).case_number,cid,"adr");
+    toast("ADR "+outcome,"ok");await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+
+/* ---------- CERTIFIED COPIES (slice 5c) ---------- */
+const ccOf=cid=>byCase(CACHE.ccopies,cid).sort((a,b)=>(a.observed_at||"").localeCompare(b.observed_at||""));
+function renderCC(v){
+  const rows=CACHE.cases.slice().sort((a,b)=>(b.filed_on||"").localeCompare(a.filed_on||""));
+  const isReg=(SESS.roles||[]).includes("justice.registrar")||(SESS.roles||[]).some(r=>ADMIN_ROLES.includes(r));
+  const canReq=(SESS.roles||[]).some(r=>["justice.advocate","justice.litigant"].includes(r))||(SESS.roles||[]).some(r=>ADMIN_ROLES.includes(r));
+  v.innerHTML=`<h2>Certified copies</h2><p class="sub">Request certified copies of court records; the registry prepares and issues them.</p>`+
+   (rows.length?rows.map(c=>{const m=caseRowMeta(c);const cs=ccOf(c.id);
+     return `<div class="card"><div class="row" style="justify-content:space-between">
+       <div><b>${esc(m.title)}</b> <span class="mono">${esc(c.case_number||m.filing.filing_number||"")}</span></div>
+       ${canReq?`<button class="btn sm" onclick="openCC('${c.id}')">＋ Request copy</button>`:''}</div>`+
+       (cs.length?`<table style="margin-top:10px"><thead><tr><th>Document</th><th>Copies</th><th>Status</th><th></th></tr></thead><tbody>`+
+         cs.map(x=>`<tr><td>${esc(x.document_ref||"record")}</td><td>${esc(x.copies||1)}</td>
+           <td><span class="pill ${x.status==='issued'?'s-disposed':x.status==='rejected'?'s-returned':'s-filed'}">${esc(x.status)}</span></td>
+           <td class="row" style="justify-content:flex-end">${(isReg&&x.status==='requested')?
+             `<button class="btn go sm" onclick="issueCC('${x.id}','${c.id}','issued')">Issue</button><button class="btn bad sm" onclick="issueCC('${x.id}','${c.id}','rejected')">Reject</button>`:''}</td></tr>`).join("")+
+         `</tbody></table>`:`<p class="sub" style="margin:8px 0 0">No requests.</p>`)+`</div>`;
+   }).join(""):`<div class="empty">No cases yet.</div>`);
+}
+function openCC(cid){$("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Request certified copy</h2>
+    <label>Document *</label><input id="c_doc" placeholder="e.g. judgment, order dated…">
+    <label style="margin-top:10px">Copies</label><input id="c_n" type="number" value="1">
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="requestCC('${cid}')">Request</button></div>`;showModal();}
+async function requestCC(cid){const doc=$("c_doc").value.trim(); if(!doc)return toast("Document required","bad");
+  try{const ts=Date.now().toString(36);
+    await save({schema:"justice.certified_copy",id:nid("certified_copy","cc-"+ts),case_ref:cid,requested_by:SESS.sub||"",
+      document_ref:doc,copies:parseInt($("c_n").value)||1,status:"requested",observed_at:nowISO()});
+    await inbox("justice.registrar","Certified copy requested — "+(CACHE.cases.find(x=>x.id===cid)||{}).case_number,cid,"certcopy");
+    toast("Copy requested","ok");closeModal();await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
+async function issueCC(xid,cid,outcome){try{const x=CACHE.ccopies.find(y=>y.id===xid);
+    await save({...x,status:outcome,issued_by:SESS.sub||"",issued_at:nowISO(),observed_at:nowISO()});
+    toast("Copy "+outcome,outcome==="issued"?"ok":"");await refresh();render();renderNav();}catch(e){toast(e.message,"bad");}}
 
 /* ---------- ALL CASES + timeline ---------- */
 function renderCases(v){

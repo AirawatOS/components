@@ -124,11 +124,35 @@ dr, derr = _post(f"{NET}/v1/schema-requests/decide",
                  {"schema_id": "justice.bail", "version": "0.1.0", "decision": "approve"}, token=STOKEN)
 print("  approve:", ("OK " + dr["published_schema"]) if dr else ("ERR " + str(derr)))
 
+# slice 5c — ADR/mediation + certified copies
+ADR = {"type":"object","x-kind":"event","additionalProperties":False,"title":"justice.adr_referral",
+    "description":"Referral of a case to ADR (mediation/arbitration/conciliation/Lok Adalat) and the neutral's outcome.",
+    "required":["schema","id","case_ref","adr_type","status","observed_at"],
+    "properties":{"schema":{"const":"justice.adr_referral"},"id":{"type":"string","pattern":ID_PAT},
+        "case_ref":S(),"adr_type":{"enum":["mediation","arbitration","conciliation","lok-adalat"]},
+        "neutral":Sn(),"status":{"enum":["referred","in-progress","settled","failed","returned"]},
+        "outcome":Sn(),"referred_by":Sn(),"referred_at":Sn(),"observed_at":S(),"tenant":Sn()}}
+CC = {"type":"object","x-kind":"event","additionalProperties":False,"title":"justice.certified_copy",
+    "description":"A certified-copy request and the issued copy: requested → prepared → issued (or rejected).",
+    "required":["schema","id","case_ref","requested_by","status","observed_at"],
+    "properties":{"schema":{"const":"justice.certified_copy"},"id":{"type":"string","pattern":ID_PAT},
+        "case_ref":S(),"requested_by":S(),"document_ref":Sn(),"copies":{"type":["integer","null"]},
+        "status":{"enum":["requested","prepared","issued","rejected"]},"fee_ref":Sn(),"issued_by":Sn(),
+        "issued_at":Sn(),"observed_at":S(),"tenant":Sn()}}
+for sid, defn in [("justice.adr_referral", ADR), ("justice.certified_copy", CC)]:
+    print(f"== schema: {sid}@0.1.0 ==")
+    pr, perr = _post(f"{NET}/v1/schema-requests", {"schema_id": sid, "version": "0.1.0", "definition": defn,
+                     "x_kind": "event", "justification": "Justice slice 5c — " + sid}, token=DTOKEN)
+    print("  propose:", (pr or {}).get("status", "ok") if not perr or "exists" in perr.lower() else perr)
+    dr, derr = _post(f"{NET}/v1/schema-requests/decide", {"schema_id": sid, "version": "0.1.0", "decision": "approve"}, token=STOKEN)
+    print("  approve:", ("OK " + dr["published_schema"]) if dr else ("ERR " + str(derr)))
+
 print("== roles ==")
 for role, label in [("justice.judge", "Judge"),
                     ("justice.bench-clerk", "Bench Clerk"),
                     ("justice.scrutiny-officer", "Scrutiny Officer"),
-                    ("justice.process-server", "Process Server")]:
+                    ("justice.process-server", "Process Server"),
+                    ("justice.mediator", "Mediator")]:
     r, err = _post(f"{NET}/v1/roles", {"role": role, "label": label,
                    "definition": ""}, token=STOKEN)
     print(f"  {role}:", ("OK " + r["published"]["id"]) if r else ("ERR " + str(err)))
