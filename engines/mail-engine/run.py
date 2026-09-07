@@ -1,32 +1,43 @@
 #!/usr/bin/env python3
 """Mail Engine — server logic for Workspace Mail (internal/federated). The host invokes HANDLERS[verb](ctx):
     ctx["tenant"], ctx["sub"], ctx["body"], ctx["kwrite"], ctx["kfind"], ctx["kget"]
-Membership-scoped: a mail.message is visible to its sender + recipients. Each handler returns (result, None) or
-(None, "error"). Edit in Studio → Publish → upgrade. (ADR: chat/mail logic is a certified engine, not a host bridge.)
+Membership-scoped: a mail.message is visible to its sender + recipients (To∪CC∪BCC). BCC is API-redacted — a
+reader who is neither the sender nor a bcc recipient never sees the bcc list. Each handler returns (result, None)
+or (None, "error"). Edit in Studio → Publish → upgrade. (ADR: chat/mail logic is a certified engine.)
 """
 import time as _t, os as _os
 
 def _now():
     return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())
 
+def _norm(tn, lst):
+    out = []
+    for t in (lst or []):
+        t = (t or "").strip()
+        if t:
+            out.append(t if "://" in t else "user://%s/%s" % (tn, t))
+    return out
+
+def _redact_bcc(m, me):
+    # BCC is blind: only the sender and a bcc recipient ever see the bcc list.
+    if me == m.get("sender") or me in (m.get("bcc") or []):
+        return m
+    r = dict(m); r["bcc"] = []; return r
+
 def send(ctx):
     me, tn, b = ctx["sub"], ctx["tenant"], ctx["body"]
-    recips = []
-    for t in (b.get("to") or []):
-        t = (t or "").strip()
-        if not t:
-            continue
-        recips.append(t if "://" in t else "user://%s/%s" % (tn, t))
-    recips = sorted(set(recips))
+    to, cc, bcc = _norm(tn, b.get("to")), _norm(tn, b.get("cc")), _norm(tn, b.get("bcc"))
+    recips = sorted(set(to + cc + bcc))                  # everyone who receives (powers inbox membership)
     if not recips:
         return None, "at least one recipient required"
     mid = "ds:%s:mail/message/%d-%s" % (tn, int(_t.time() * 1000), _os.urandom(3).hex())
-    atts = [a for a in (b.get("attachments") or []) if isinstance(a, str)]   # "file_idnametypesize"
+    atts = [a for a in (b.get("attachments") or []) if isinstance(a, str)]
     obj = {"schema": "mail.message", "id": mid, "sender": me, "recipients": recips,
+           "cc": sorted(set(cc)), "bcc": sorted(set(bcc)),
            "subject": (b.get("subject") or "(no subject)").strip(), "body": b.get("body") or "",
            "thread_ref": b.get("thread_ref"), "attachments": atts, "read_by": [me], "observed_at": _now(), "tenant": tn}
     ctx["kwrite"](mid, obj)
-    return {"message": obj}, None
+    return {"message": _redact_bcc(obj, me)}, None
 
 def listing(ctx):
     me = ctx["sub"]; folder = (ctx["body"].get("folder") or "inbox").lower()
@@ -37,7 +48,7 @@ def listing(ctx):
         mine = [m for m in msgs if me in (m.get("recipients") or [])]
     mine.sort(key=lambda m: m.get("observed_at") or "", reverse=True)
     unread = sum(1 for m in msgs if me in (m.get("recipients") or []) and me not in (m.get("read_by") or []))
-    return {"messages": mine, "me": me, "unread": unread}, None
+    return {"messages": [_redact_bcc(m, me) for m in mine], "me": me, "unread": unread}, None
 
 def get(ctx):
     me = ctx["sub"]; mid = ctx["body"].get("id")
@@ -51,6 +62,6 @@ def get(ctx):
         m["read_by"] = rb + [me]
         try: ctx["kwrite"](m["id"], m)
         except Exception: pass
-    return {"message": m}, None
+    return {"message": _redact_bcc(m, me)}, None
 
 HANDLERS = {"mail-list": listing, "mail-send": send, "mail-get": get}

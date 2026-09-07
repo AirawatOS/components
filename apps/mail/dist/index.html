@@ -31,6 +31,12 @@
   .sub{color:var(--dim);font-size:12px} .spin{display:inline-block;width:12px;height:12px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px} @keyframes sp{to{transform:rotate(360deg)}}
   .atts{display:flex;flex-wrap:wrap;gap:6px} .chip{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:4px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center} .chip .x{cursor:pointer;color:var(--dim)} .chip .x:hover{color:var(--err)}
   .attlist{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px} .att{display:inline-flex;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 11px;color:var(--txt);text-decoration:none;font-size:13px} .att:hover{border-color:var(--accent2)} .att .sz{color:var(--dim);font-size:11px}
+  .rcpt{flex:1;display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 7px;position:relative;min-width:0}
+  .rcpt input{flex:1;min-width:120px;background:transparent;border:0;color:var(--txt);font:inherit;outline:none;padding:3px}
+  .rcpt .chip{background:#1b2430;border-color:#2b3a55} .chips{display:contents}
+  .sug{position:absolute;left:0;right:0;top:100%;margin-top:3px;background:var(--panel);border:1px solid var(--line);border-radius:8px;z-index:5;max-height:200px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .sug div{padding:7px 10px;cursor:pointer;font-size:13px} .sug div:hover{background:var(--accent2);color:#fff}
+  .ccbcc{font-size:12px;color:var(--accent2);cursor:pointer;white-space:nowrap} .ccbcc:hover{text-decoration:underline}
 </style>
 <div class="hbar">
   <span class="brand"><span class="logo">✉️</span>Mail</span>
@@ -89,7 +95,11 @@ async function openMsg(id){const r=await api('/bridge/mail-get',{id});if(!r.mess
   const u=MSGS.filter(x=>FOLDER==='inbox'&&!(x.read_by||[]).includes(ME)).length;const b=$('unread');b.style.display=u?'':'none';b.textContent=u;}
 function renderRead(){const m=CUR;$('read').innerHTML=`
   <div class="rh"><h2>${esc(m.subject||'(no subject)')}</h2>
-    <div class="meta"><b>${esc(uname(m.sender))}</b> → ${esc((m.recipients||[]).map(uname).join(', '))} · ${esc(new Date(m.observed_at).toLocaleString())}</div></div>
+    <div class="meta">${(()=>{const cc=m.cc||[],bcc=m.bcc||[],to=(m.recipients||[]).filter(r=>!cc.includes(r)&&!bcc.includes(r));
+      return '<b>'+esc(uname(m.sender))+'</b> → '+esc(to.map(uname).join(', ')||'—')
+        +(cc.length?' · Cc: '+esc(cc.map(uname).join(', ')):'')
+        +(bcc.length?' · <span style="color:var(--warn)">Bcc: '+esc(bcc.map(uname).join(', '))+'</span>':'')
+        +' · '+esc(new Date(m.observed_at).toLocaleString());})()}</div></div>
   <div class="rb">${esc(m.body||'')}</div>
   ${(m.attachments&&m.attachments.length)?'<div class="attlist">'+m.attachments.map(s=>{const a=decAtt(s);return '<a class="att" href="'+fileUrl(a)+'" target="_blank" rel="noopener">📎 '+esc(a.filename)+' <span class="sz">'+esc(fmtSize(a.size))+'</span></a>';}).join('')+'</div>':''}
   <div class="racts"><button class="btn primary" id="reply">↩ Reply</button><button class="btn" id="replyall">↩ Reply all</button><button class="btn" id="fwd">➟ Forward</button></div>`;
@@ -97,17 +107,41 @@ function renderRead(){const m=CUR;$('read').innerHTML=`
   $('fwd').onclick=()=>compose({subject:'Fwd: '+(m.subject||''),body:quoted(m)});
 }
 function quoted(m){return '\n\n———\nOn '+new Date(m.observed_at).toLocaleString()+', '+uname(m.sender)+' wrote:\n'+(m.body||'').split('\n').map(l=>'> '+l).join('\n');}
-function reply(all){const m=CUR;const to=[m.sender].concat(all?(m.recipients||[]).filter(r=>r!==ME&&r!==m.sender):[]);
-  compose({to:to.map(uname),subject:(/^re:/i.test(m.subject||'')?'':'Re: ')+(m.subject||''),body:quoted(m),thread_ref:m.thread_ref||m.id,replyCtx:m});}
+function reply(all){const m=CUR;const others=(m.recipients||[]).filter(r=>r!==ME&&r!==m.sender);
+  compose({to:[m.sender],cc:all?others:[],subject:(/^re:/i.test(m.subject||'')?'':'Re: ')+(m.subject||''),body:quoted(m),thread_ref:m.thread_ref||m.id,replyCtx:m});}
+function toPrincipal(v){v=(v||'').trim();return v?(v.includes('://')?v:('user://'+TENANT+'/'+v)):'';}
 function compose(pf){pf=pf||{};
+  const TOA=(pf.to||[]).map(toPrincipal).filter(Boolean), CCA=(pf.cc||[]).map(toPrincipal).filter(Boolean), BCCA=(pf.bcc||[]).map(toPrincipal).filter(Boolean);
+  const rrow=(lbl,id,extra)=>`<div class="row" id="${id}Row" ${extra||''}><span class="lbl">${lbl}</span><div class="rcpt" id="${id}R"><span class="chips"></span><input placeholder="search people…" autocomplete="off"><div class="sug"></div></div>${lbl==='To'?'<span class="ccbcc" id="ccbccToggle">Cc/Bcc</span>':''}</div>`;
   const m=modal(`<h3>${pf.replyCtx?'Reply':pf.subject&&/^fwd/i.test(pf.subject)?'Forward':'New message'}</h3>
-    <div class="row"><span class="lbl">To</span><input class="in" id="to" placeholder="usernames, comma-separated" value="${esc((pf.to||[]).join(', '))}"></div>
+    ${rrow('To','to')}
+    ${rrow('Cc','cc','style="display:none"')}
+    ${rrow('Bcc','bcc','style="display:none"')}
     <div class="row"><span class="lbl">Subject</span><input class="in" id="subj" value="${esc(pf.subject||'')}"></div>
     <textarea class="in" id="bodyx" placeholder="Write your message…">${esc(pf.body||'')}</textarea>
     <div class="row"><button class="btn" id="attach">📎 Attach</button><input type="file" id="fileinp" multiple style="display:none"><span class="atts" id="atts"></span></div>
     <div class="row"><button class="aiBtn" id="ai">✨ ${pf.replyCtx?'Draft reply':'Draft with AI'}</button><span class="sub" id="s"></span><span style="flex:1"></span>
       <button class="btn" id="x">Cancel</button><button class="btn primary" id="send">Send</button></div>`);
   m.q('#x').onclick=m.close;
+  // recipient fields with tenant address-book autocomplete
+  function recipField(arr, root){
+    const inp=root.querySelector('input'), chips=root.querySelector('.chips'), sug=root.querySelector('.sug');
+    function draw(){chips.innerHTML=arr.map((r,i)=>`<span class="chip">${esc(uname(r))} <span class="x" data-i="${i}">✕</span></span>`).join('');
+      chips.querySelectorAll('[data-i]').forEach(el=>el.onclick=()=>{arr.splice(+el.dataset.i,1);draw();});}
+    function add(v){const p=toPrincipal(v);if(p&&!arr.includes(p))arr.push(p);inp.value='';sug.innerHTML='';draw();}
+    let t=null;
+    inp.oninput=()=>{clearTimeout(t);const q=inp.value.trim();if(!q){sug.innerHTML='';return;}
+      t=setTimeout(async()=>{let r={};try{r=await api('/bridge/user-search',{q});}catch(e){}
+        const us=(r.users||[]).filter(u=>!arr.includes(u.sub));
+        sug.innerHTML=us.map(u=>`<div data-sub="${esc(u.sub)}">${esc(u.username)}${(u.roles&&u.roles.length)?' <span class="sub">· '+esc(u.roles.join(', '))+'</span>':''}</div>`).join('');
+        sug.querySelectorAll('[data-sub]').forEach(el=>el.onmousedown=e=>{e.preventDefault();add(el.dataset.sub);});},180);};
+    inp.onkeydown=e=>{if((e.key==='Enter'||e.key===',')&&inp.value.trim()){e.preventDefault();add(inp.value);}else if(e.key==='Backspace'&&!inp.value&&arr.length){arr.pop();draw();}};
+    inp.onblur=()=>setTimeout(()=>{sug.innerHTML='';},180);
+    draw();
+  }
+  recipField(TOA,m.q('#toR')); recipField(CCA,m.q('#ccR')); recipField(BCCA,m.q('#bccR'));
+  m.q('#ccbccToggle').onclick=()=>{m.q('#ccRow').style.display='';m.q('#bccRow').style.display='';m.q('#ccbccToggle').style.display='none';};
+  if(CCA.length)m.q('#ccRow').style.display=''; if(BCCA.length)m.q('#bccRow').style.display='';
   const PEND=[];
   function renderAtts(){m.q('#atts').innerHTML=PEND.map((a,i)=>`<span class="chip">📎 ${esc(a.filename)} <span class="x" data-i="${i}">✕</span></span>`).join('');
     m.q('#atts').querySelectorAll('[data-i]').forEach(el=>el.onclick=()=>{PEND.splice(+el.dataset.i,1);renderAtts();});}
@@ -120,10 +154,10 @@ function compose(pf){pf=pf||{};
     const ctx=pf.replyCtx?('You are replying to this message:\nFrom: '+uname(pf.replyCtx.sender)+'\nSubject: '+pf.replyCtx.subject+'\n\n'+(pf.replyCtx.body||'')):'';
     let r={};try{r=await api('/bridge/ai-assist',{app_id:'mail',task:'draft',prompt:instr+'\n\nWrite a clear, professional email body only (no subject line, no salutations placeholders like [Name]).',context:ctx,format:'plain'});}catch(e){}
     if(r.content){const cur=m.q('#bodyx').value;m.q('#bodyx').value=r.content+(cur?'\n'+cur:'');m.q('#s').textContent='';}else m.q('#s').textContent='⚠ '+(r.error||'no response');};
-  m.q('#send').onclick=async()=>{const to=(m.q('#to').value||'').split(/[,\s]+/).map(s=>s.trim()).filter(Boolean);
-    if(!to.length){m.q('#to').focus();return;}
+  m.q('#send').onclick=async()=>{
+    if(!TOA.length&&!CCA.length&&!BCCA.length){m.q('#toR').querySelector('input').focus();return;}
     m.q('#send').disabled=true;
-    const r=await api('/bridge/mail-send',{to,subject:m.q('#subj').value,body:m.q('#bodyx').value,thread_ref:pf.thread_ref,attachments:PEND.map(encAtt)});
+    const r=await api('/bridge/mail-send',{to:TOA,cc:CCA,bcc:BCCA,subject:m.q('#subj').value,body:m.q('#bodyx').value,thread_ref:pf.thread_ref,attachments:PEND.map(encAtt)});
     m.close();if(FOLDER==='sent')load();};
 }
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}

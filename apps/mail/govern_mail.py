@@ -22,16 +22,18 @@ MESSAGE = {
     "required": ["schema", "id", "sender", "recipients", "subject", "observed_at"],
     "properties": {
         "schema": {"const": "mail.message"}, "id": {"type": "string", "pattern": ID_PAT},
-        "sender": {"type": "string"}, "recipients": {"type": "array", "items": {"type": "string"}},
+        "sender": {"type": "string"}, "recipients": {"type": "array", "items": {"type": "string"}},   # ALL who receive (To∪CC∪BCC) — powers inbox membership
+        "cc": {"type": ["array", "null"], "items": {"type": "string"}},                                # carbon copy (visible)
+        "bcc": {"type": ["array", "null"], "items": {"type": "string"}},                               # blind copy — API-redacted from non-bcc readers
         "subject": {"type": "string"}, "body": Sn(), "thread_ref": Sn(),
         "read_by": {"type": ["array", "null"], "items": {"type": "string"}},
         "attachments": {"type": ["array", "null"], "items": {"type": "string"}},
         "observed_at": {"type": "string"}, "tenant": Sn(),
     },
 }
-print("== schema: mail.message@0.1.0 ==")
-pr, perr = _post(f"{NET}/v1/schema-requests", {"schema_id": "mail.message", "version": "0.1.0", "definition": MESSAGE,
+print("== schema: mail.message@0.2.0 ==")
+pr, perr = _post(f"{NET}/v1/schema-requests", {"schema_id": "mail.message", "version": "0.2.0", "definition": MESSAGE,
                  "x_kind": "event", "justification": "Workspace Mail — internal/federated message."}, token=DTOKEN)
 print("  propose:", (pr or {}).get("status", "ok") if (not perr or "exists" in perr.lower()) else perr)
-dr, derr = _post(f"{NET}/v1/schema-requests/decide", {"schema_id": "mail.message", "version": "0.1.0", "decision": "approve"}, token=STOKEN)
+dr, derr = _post(f"{NET}/v1/schema-requests/decide", {"schema_id": "mail.message", "version": "0.2.0", "decision": "approve"}, token=STOKEN)
 print("  approve:", ("OK " + dr["published_schema"]) if dr else ("ERR " + str(derr)))
