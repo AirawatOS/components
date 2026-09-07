@@ -542,19 +542,27 @@ function _replaceCatalog(src,obj){ // splice the merged catalog back into the ap
   if(t>=0){ const ins=t+tag.length; return {ok:true,src:src.slice(0,ins)+'\n<script>AI18n.add('+blk+');</'+'script>'+src.slice(ins)}; }
   return {ok:false,error:'app is not wired for i18n (no /shared/i18n.js) — copy the block in instead'};}
 async function i18nPanel(ref){
-  let fs=FILES[ref]; if(!fs){const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};}
-  const path='dist/index.html', src=fs[path]||'';
+  const short=ref.split('/').pop(), path='dist/index.html';
+  // Source of truth for reading: the project's editable copy (component-read) → lets us INSERT back. If that's
+  // empty (e.g. a first-party app whose source isn't in THIS project), fall back to the DEPLOYED bundle so we can
+  // still read the labels and Copy/Download drafts (Insert stays off — we don't own that source).
+  let src='', editable=false;
+  try{ let fs=FILES[ref]; if(!fs){const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=(r&&r.files)||{};}
+       if(fs[path]){ src=fs[path]; editable=true; } }catch(e){}
+  if(!src){ try{ src=await fetch('/apps/'+short+'/',{headers:{'Sec-Fetch-Dest':'empty'}}).then(r=>r.ok?r.text():''); }catch(e){} }
   const wired=src.indexOf('/shared/i18n.js')>=0;
   const existing=_extractCatalog(src)||{}; const enCat=existing.en||{};
   const known=Object.keys(existing).filter(l=>l!=='en');
+  const hasEn=Object.keys(enCat).length>0;
   if(!document.getElementById('i18nCSS')){const st=document.createElement('style');st.id='i18nCSS';
     st.textContent='.i18ntab{width:100%;border-collapse:collapse;font-size:12.5px}.i18ntab th{position:sticky;top:0;background:#0d1117;text-align:left;padding:5px 6px;color:#8b949e;border-bottom:1px solid #21262d}.i18ntab td{padding:3px 6px;border-bottom:1px solid #161b22;vertical-align:top}.i18ntab input{width:100%;background:#0d1117;border:1px solid #21262d;color:#e6edf3;border-radius:6px;padding:5px 7px;font:inherit}.i18ntab input.draft{border-color:#7a5c12;background:#171203}.i18nk{font-family:ui-monospace,Menlo,monospace;color:#6f7b88;white-space:nowrap}';
     document.head.appendChild(st);}
   const m=modal(`<h3>🌐 Languages — ${esc(ref.split('/').pop())}</h3>
     <div class="sub">AI drafts the labels; you review &amp; edit, then insert them into the app. English is the source. Amber = machine draft (edit to accept). AI proposes, you decide.</div>
     ${wired?'':'<div class="sub" style="color:#e6c34a;margin-top:6px">⚠ This app doesn’t load <code>/shared/i18n.js</code> yet — you can still draft &amp; copy, but wiring the helper in is manual for now.</div>'}
-    <label style="display:block;margin-top:10px;font-size:12px;color:#8b949e">English strings — <b>{key: text}</b> ${Object.keys(enCat).length?'(loaded from the app)':'(paste the labels you want translated)'}</label>
-    <textarea id="en" spellcheck="false" style="width:100%;height:110px;background:#0d1117;border:1px solid #21262d;color:#e6edf3;border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(JSON.stringify(enCat,null,2))}</textarea>
+    <label style="display:block;margin-top:10px;font-size:12px;color:#8b949e">English strings — <b>{key: text}</b> ${hasEn?'(loaded from the app — edit if needed)':(editable?'(this app has no labels yet — paste the ones to translate)':'(couldn’t read this app’s source here — paste its labels below, or open it in your own project to edit in place)')}</label>
+    <textarea id="en" spellcheck="false" placeholder='{&#10;  "app.save": "Save",&#10;  "app.title": "Finance"&#10;}' style="width:100%;height:120px;background:#0d1117;border:1px solid #21262d;color:#e6edf3;border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px">${hasEn?esc(JSON.stringify(enCat,null,2)):''}</textarea>
+    ${hasEn?'':'<div class="sub" style="margin-top:4px">Put one <code>"key": "English text"</code> pair per line between the braces — these are the labels the app shows. AI will draft each in the languages you pick; you review, then Copy/Insert.</div>'}
     <label style="display:block;margin-top:8px;font-size:12px;color:#8b949e">Languages to draft</label>
     <div id="langs" style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:4px">${I18N_LANGS.map(([c,n])=>`<label style="font-size:13px"><input type="checkbox" value="${c}" ${known.includes(c)?'checked':''}> ${n}</label>`).join('')}</div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><button class="btn pri" id="gen">✨ Generate drafts</button><span class="sub" id="st"></span></div>
@@ -562,7 +570,7 @@ async function i18nPanel(ref){
     <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
       <button class="btn" id="copy" disabled>Copy AI18n.add block</button>
       <button class="btn" id="dl" disabled>Download JSON</button>
-      <button class="btn pri" id="ins" disabled title="${wired?'':'wire /shared/i18n.js first'}">Insert into app</button>
+      <button class="btn pri" id="ins" disabled title="${(wired&&editable)?'write the catalog back into this app’s source':(!editable?'source not editable here — open the app in your own project to insert':'wire /shared/i18n.js into the app first')}">Insert into app</button>
       <button class="btn" id="x">Close</button></div>`);
   m.q('#x').onclick=m.close;
   let R=null;   // {en:{…}, targets:{lang:{key:text}}}
@@ -579,7 +587,7 @@ async function i18nPanel(ref){
     const cov=Object.keys(r.translations).map(l=>l+' '+((r.coverage&&r.coverage[l]&&r.coverage[l].translated)||0)+'/'+keys.length).join(' · ');
     m.q('#st').textContent='Drafted — '+cov+(r.glossary_terms?(' · glossary '+r.glossary_terms):'');
     grid();
-    m.q('#copy').disabled=false; m.q('#dl').disabled=false; m.q('#ins').disabled=!wired;
+    m.q('#copy').disabled=false; m.q('#dl').disabled=false; m.q('#ins').disabled=!(wired&&editable);
   };
   function grid(){
     const langs=Object.keys(R.targets), keys=Object.keys(R.en);
@@ -594,10 +602,10 @@ async function i18nPanel(ref){
   m.q('#copy').onclick=()=>{navigator.clipboard.writeText('AI18n.add('+JSON.stringify(merged(),null,2)+');');m.q('#st').textContent='Copied AI18n.add(…) to the clipboard.';};
   m.q('#dl').onclick=()=>{const b=new Blob([JSON.stringify(merged(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=ref.split('/').pop()+'.messages.json';a.click();};
   m.q('#ins').onclick=async()=>{
-    const res=_replaceCatalog(fs[path],merged());
+    const res=_replaceCatalog(src,merged());
     if(!res.ok){m.q('#st').textContent=res.error;return;}
     await post('/bridge/component-save',{component:ref,path,content:res.src});
-    FILES[ref][path]=res.src;
+    FILES[ref]=FILES[ref]||{}; FILES[ref][path]=res.src; src=res.src;
     const t=(TABS||[]).find(t=>t.ref===ref&&t.path===path); if(t){t.content=res.src;if(ACTIVE&&ACTIVE.ref===ref&&ACTIVE.path===path){renderEdit();}}
     m.q('#st').textContent='✓ Inserted into '+path+' — Preview to check, then Publish. (Bump the app version to ship.)';
   };
