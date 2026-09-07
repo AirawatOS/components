@@ -1,0 +1,211 @@
+<!doctype html><meta charset="utf-8"><title>Sheets</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141a;--line:#21262d;--txt:#e6edf3;--dim:#8b949e;--accent:#7c5cff;--accent2:#2f81f7;--good:#3fb950;--warn:#d29922;--err:#f85149;--grid:#1c232c;--hdr:#141a21;--sel:#2f5fd0}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+  .hbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
+  .brand{font-weight:700;display:flex;align-items:center;gap:7px} .brand .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--good),var(--accent2));display:grid;place-items:center;font-size:13px}
+  .titlein{flex:1;background:transparent;border:0;color:var(--txt);font:600 15px/1.4 inherit;padding:6px 8px;border-radius:8px} .titlein:hover,.titlein:focus{background:var(--bg);outline:none}
+  .status{font-size:12px;color:var(--dim);min-width:90px;text-align:right} .status.saving{color:var(--warn)} .status.saved{color:var(--good)}
+  .body{flex:1;display:flex;min-height:0}
+  .side{width:230px;background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;flex:0 0 auto}
+  .side .top{padding:9px 10px;display:flex;gap:6px;border-bottom:1px solid var(--line)} .side .top b{flex:1;align-self:center}
+  .list{flex:1;overflow:auto;padding:6px} .item{padding:8px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .item:hover{background:#1b222c} .item.on{background:#1b2430;border-color:#2b3a55} .item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .m{font-size:11px;color:var(--dim)}
+  .center{flex:1;display:flex;flex-direction:column;min-width:0}
+  .fbar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .cellref{font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--dim);min-width:42px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:6px}
+  .fx{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:7px 10px;font:13px/1 ui-monospace,Menlo,monospace}
+  .aiBtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:0;border-radius:8px;height:30px;padding:0 12px;font:600 13px/1 inherit;cursor:pointer}
+  .gridwrap{flex:1;overflow:auto;background:var(--bg)}
+  table{border-collapse:collapse;table-layout:fixed} td,th{border:1px solid var(--grid);height:26px;min-width:92px;max-width:92px;padding:0 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  th{background:var(--hdr);color:var(--dim);font-weight:600;text-align:center;position:sticky;top:0;z-index:2}
+  td.rownum,th.corner{background:var(--hdr);color:var(--dim);text-align:center;min-width:40px;max-width:40px;position:sticky;left:0;z-index:1}
+  th.corner{z-index:3;left:0}
+  td{cursor:cell} td.num{text-align:right} td.sel{outline:2px solid var(--sel);outline-offset:-2px;background:#12233f}
+  td input{width:100%;height:100%;border:0;background:#0b1830;color:#fff;font:13px/1 inherit;padding:0 5px;outline:none}
+  .welcome{flex:1;display:grid;place-items:center;color:var(--dim);text-align:center;padding:30px}
+  .btn{background:#21262d;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer} .btn.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  .ic{cursor:pointer;color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--bg)} .ic:hover{color:var(--txt)}
+  .modal{position:fixed;inset:0;background:rgba(4,7,12,.6);display:flex;align-items:center;justify-content:center;z-index:60}
+  .sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:460px;max-width:92vw}
+  .in{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;margin-top:6px} textarea.in{resize:vertical;min-height:70px}
+  .sub{color:var(--dim);font-size:12px} .spin{display:inline-block;width:12px;height:12px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+<div class="hbar">
+  <span class="brand"><span class="logo">📊</span>Sheets</span>
+  <input class="titlein" id="title" placeholder="Untitled spreadsheet" autocomplete="off">
+  <span class="status" id="status"></span>
+  <span class="ic" id="delBtn" title="Move to trash">🗑</span>
+</div>
+<div class="body">
+  <div class="side">
+    <div class="top"><b>Spreadsheets</b><button class="btn primary" id="newBtn" title="New">＋</button></div>
+    <div class="list" id="list"></div>
+  </div>
+  <div class="center">
+    <div class="fbar">
+      <span class="cellref" id="cellref">A1</span>
+      <input class="fx" id="fx" placeholder="Value or =SUM(A1:A5)">
+      <button class="aiBtn" id="aiBtn">✨ AI</button>
+    </div>
+    <div class="gridwrap" id="gridwrap"><div class="welcome" id="welcome">Create a spreadsheet with ＋</div></div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const NC=12, NR=50, COLS=Array.from({length:NC},(_,i)=>String.fromCharCode(65+i));
+let ME='',TENANT='',SHEETS=[],CUR=null,cells={},sel='A1',editing=false,savet=null;
+async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
+
+// ---- formula engine ----
+const colNum=c=>{let n=0;for(const ch of c)n=n*26+(ch.charCodeAt(0)-64);return n;};
+const numCol=n=>{let s='';while(n>0){s=String.fromCharCode(65+(n-1)%26)+s;n=Math.floor((n-1)/26);}return s;};
+function expandRange(a,b){const ma=a.match(/^([A-Z]+)(\d+)$/),mb=b.match(/^([A-Z]+)(\d+)$/);if(!ma||!mb)return[];
+  let c1=colNum(ma[1]),c2=colNum(mb[1]),r1=+ma[2],r2=+mb[2];if(c1>c2)[c1,c2]=[c2,c1];if(r1>r2)[r1,r2]=[r2,r1];
+  const o=[];for(let r=r1;r<=r2;r++)for(let c=c1;c<=c2;c++)o.push(numCol(c)+r);return o;}
+function rawOf(ref){const v=cells[ref];return v==null?'':String(v);}
+function compute(ref,seen){seen=seen||new Set();if(seen.has(ref))return'#CIRC';const raw=rawOf(ref).trim();
+  if(raw==='')return'';if(raw[0]!=='=')return raw;seen.add(ref);
+  try{return evalF(raw.slice(1),seen);}catch(e){return'#ERR';}finally{seen.delete(ref);}}
+function numOf(ref,seen){const v=compute(ref,seen);const n=parseFloat(v);return isNaN(n)?0:n;}
+function argNums(args,seen){const out=[];args.split(',').forEach(t=>{t=t.trim();if(!t)return;
+  const rg=t.match(/^([A-Z]+\d+):([A-Z]+\d+)$/);
+  if(rg)expandRange(rg[1],rg[2]).forEach(r=>out.push(numOf(r,seen)));
+  else if(/^[A-Z]+\d+$/.test(t))out.push(numOf(t,seen));
+  else{const n=parseFloat(t);if(!isNaN(n))out.push(n);}});return out;}
+function evalF(expr,seen){
+  expr=expr.replace(/\b(SUM|AVERAGE|AVG|MIN|MAX|COUNT|PRODUCT)\s*\(([^()]*)\)/gi,(m,fn,args)=>{
+    const v=argNums(args,seen);fn=fn.toUpperCase();let r=0;
+    if(fn==='SUM')r=v.reduce((a,b)=>a+b,0);
+    else if(fn==='AVERAGE'||fn==='AVG')r=v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
+    else if(fn==='MIN')r=v.length?Math.min.apply(null,v):0;
+    else if(fn==='MAX')r=v.length?Math.max.apply(null,v):0;
+    else if(fn==='COUNT')r=v.length;
+    else if(fn==='PRODUCT')r=v.reduce((a,b)=>a*b,1);
+    return '('+r+')';});
+  expr=expr.replace(/\b([A-Z]+\d+)\b/g,(m)=>'('+numOf(m,seen)+')');
+  if(!/^[-+*/%(). 0-9eE]*$/.test(expr))return'#ERR';
+  const val=calc(expr);                                   // CSP-safe evaluator — the app sandbox forbids eval/Function
+  if(isNaN(val)||!isFinite(val))return'#ERR';
+  return Math.round(val*1e10)/1e10;}
+// tiny arithmetic evaluator (shunting-yard → RPN): + - * / % , parens, unary minus. No eval (CSP-safe).
+function calc(s){const toks=s.match(/(\d+\.?\d*(?:[eE][-+]?\d+)?)|[-+*/%()]/g);if(!toks)return NaN;
+  const out=[],ops=[],prec={'+':1,'-':1,'*':2,'/':2,'%':2,'u':4};let prev=null;
+  for(const t of toks){
+    if(/^[\d.]/.test(t)){out.push(parseFloat(t));prev='num';}
+    else if(t==='('){ops.push(t);prev='(';}
+    else if(t===')'){while(ops.length&&ops[ops.length-1]!=='(')out.push(ops.pop());ops.pop();prev='num';}
+    else{let op=t;
+      if((op==='-'||op==='+')&&(prev===null||prev==='('||prev==='op')){if(op==='+'){prev='op';continue;}op='u';}
+      while(ops.length&&ops[ops.length-1]!=='('&&prec[ops[ops.length-1]]>=prec[op])out.push(ops.pop());
+      ops.push(op);prev='op';}}
+  while(ops.length)out.push(ops.pop());
+  const st=[];for(const x of out){if(typeof x==='number')st.push(x);
+    else if(x==='u')st.push(-(st.pop()||0));
+    else{const b=st.pop(),a=st.pop();st.push(x==='+'?a+b:x==='-'?a-b:x==='*'?a*b:x==='%'?a%b:a/b);}}
+  return st.length?st[st.length-1]:NaN;}
+const isNumeric=v=>v!==''&&v!=null&&!isNaN(parseFloat(v))&&isFinite(v);
+
+// ---- data ----
+async function boot(){
+  try{const s=await fetch('/session').then(r=>r.json());ME=s.sub||'';TENANT=s.tenant||'';}catch(e){}
+  await load(); $('newBtn').onclick=newSheet; $('delBtn').onclick=trash;
+  $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();}};
+  $('fx').onchange=()=>{setCell(sel,$('fx').value);}; $('fx').onkeydown=e=>{if(e.key==='Enter'){setCell(sel,$('fx').value);move(1,0);}};
+  $('aiBtn').onclick=aiFill;
+  if(SHEETS.length)open(SHEETS[0].id); else newSheet();
+}
+async function load(){const r=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet'});
+  SHEETS=(r.results||[]).map(x=>x.object||x).filter(s=>!s.archived);
+  SHEETS.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));renderList();}
+function renderList(){const L=$('list');
+  if(!SHEETS.length){L.innerHTML='<div class="sub" style="padding:16px;text-align:center">No spreadsheets yet.</div>';return;}
+  L.innerHTML=SHEETS.map(s=>`<div class="item ${CUR&&s.id===CUR.id?'on':''}" data-id="${esc(s.id)}"><div class="t">${esc(s.title||'Untitled')}</div><div class="m">${Object.keys(s.cells||{}).length} cells</div></div>`).join('');
+  L.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>open(el.dataset.id));}
+function newSheet(){const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const now=new Date().toISOString();CUR={schema:'doc.sheet',id,title:'',owner:ME,cells:{},rows:NR,cols:NC,created_at:now,updated_at:now};
+  SHEETS.unshift(CUR);cells={};sel='A1';paint();renderList();setTimeout(()=>$('title').focus(),30);}
+function open(id){const s=SHEETS.find(x=>x.id===id);if(!s)return;CUR=s;cells=Object.assign({},s.cells||{});sel='A1';paint();renderList();}
+function paint(){$('title').value=CUR.title||'';renderGrid();setStatus(CUR._saved?'saved':'');}
+function setStatus(s){const el=$('status');el.className='status'+(s==='saving'?' saving':s==='saved'?' saved':'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved ✓':'';el.style.color='';}
+function schedule(){setStatus('saving');clearTimeout(savet);savet=setTimeout(save,900);}
+async function save(){if(!CUR)return;CUR.cells=cells;CUR.title=$('title').value;CUR.updated_at=new Date().toISOString();
+  const obj=Object.assign({},CUR);delete obj._saved;const r=await api('/bridge/save',{app_id:'sheets',object:obj});
+  if(r.saved){CUR._saved=true;setStatus('saved');}else{setStatus('');$('status').textContent='⚠ '+(r.error||'save failed');$('status').style.color='var(--err)';}}
+async function trash(){if(!CUR)return;if(!confirm('Trash "'+(CUR.title||'Untitled')+'"?'))return;
+  CUR.archived=true;await api('/bridge/save',{app_id:'sheets',object:Object.assign({},CUR,{cells,archived:true})});
+  SHEETS=SHEETS.filter(s=>s.id!==CUR.id);CUR=null;if(SHEETS.length)open(SHEETS[0].id);else newSheet();}
+
+// ---- grid ----
+function renderGrid(){
+  let h='<table><tr><th class="corner"></th>'+COLS.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+  for(let r=1;r<=NR;r++){h+=`<tr><td class="rownum">${r}</td>`;
+    for(const c of COLS){const ref=c+r;const disp=compute(ref);const num=isNumeric(disp);
+      h+=`<td data-ref="${ref}" class="${ref===sel?'sel':''} ${num?'num':''}">${esc(disp)}</td>`;}
+    h+='</tr>';}
+  h+='</table>';
+  const g=$('gridwrap');g.innerHTML=h;
+  g.querySelectorAll('td[data-ref]').forEach(td=>{
+    td.onclick=()=>select(td.dataset.ref);
+    td.ondblclick=()=>edit(td.dataset.ref);});
+  g.tabIndex=0; g.onkeydown=gridKey;
+}
+function select(ref){sel=ref;editing=false;$('cellref').textContent=ref;$('fx').value=rawOf(ref);
+  $('gridwrap').querySelectorAll('td.sel').forEach(t=>t.classList.remove('sel'));
+  const td=cell(ref);if(td){td.classList.add('sel');td.scrollIntoView({block:'nearest',inline:'nearest'});}}
+function cell(ref){return $('gridwrap').querySelector('td[data-ref="'+ref+'"]');}
+function edit(ref,initial){select(ref);editing=true;const td=cell(ref);if(!td)return;
+  td.innerHTML='<input>';const inp=td.querySelector('input');inp.value=initial!=null?initial:rawOf(ref);inp.focus();
+  if(initial!=null)inp.setSelectionRange(inp.value.length,inp.value.length);else inp.select();
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commit(ref,inp.value);move(1,0);}
+    else if(e.key==='Tab'){e.preventDefault();commit(ref,inp.value);move(0,1);}
+    else if(e.key==='Escape'){editing=false;renderGrid();select(ref);}};
+  inp.onblur=()=>{if(editing)commit(ref,inp.value);};
+}
+function commit(ref,val){editing=false;setCell(ref,val,true);}
+function setCell(ref,val,fromGrid){val=(val==null?'':String(val));
+  if(val==='')delete cells[ref];else cells[ref]=val;
+  schedule();renderGrid();select(ref);renderList();}
+function move(dr,dc){const m=sel.match(/^([A-Z]+)(\d+)$/);let c=colNum(m[1])+dc,r=+m[2]+dr;
+  if(c<1)c=1;if(c>NC)c=NC;if(r<1)r=1;if(r>NR)r=NR;select(numCol(c)+r);}
+function gridKey(e){
+  if(editing)return;
+  if(e.key==='ArrowDown'){e.preventDefault();move(1,0);}
+  else if(e.key==='ArrowUp'){e.preventDefault();move(-1,0);}
+  else if(e.key==='ArrowRight'||e.key==='Tab'){e.preventDefault();move(0,1);}
+  else if(e.key==='ArrowLeft'){e.preventDefault();move(0,-1);}
+  else if(e.key==='Enter'){e.preventDefault();edit(sel);}
+  else if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();setCell(sel,'');}
+  else if(e.key.length===1&&!e.metaKey&&!e.ctrlKey){edit(sel,e.key);}
+}
+// ---- AI: describe a table → CSV → fill from the selected cell ----
+function aiFill(){
+  const m=modal(`<h3>✨ Generate a table with AI</h3>
+    <div class="sub">Describe the data — the AI returns rows that fill in from the selected cell (${esc(sel)}).</div>
+    <textarea class="in" id="p" placeholder="e.g. A monthly budget for a small ward office: category, planned, actual for 6 months"></textarea>
+    <div style="text-align:right;margin-top:10px"><span class="sub" id="s"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="go">Generate</button></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#go').onclick=async()=>{const p=(m.q('#p').value||'').trim();if(!p)return;
+    m.q('#s').innerHTML='<span class="spin"></span> thinking…';
+    const prompt=p+'\n\nRespond with ONLY CSV — comma-separated rows, one row per line, no code fences, no commentary, include a header row.';
+    let r={};try{r=await api('/bridge/ai-assist',{app_id:'sheets',task:'draft',prompt,format:'plain'});}catch(e){}
+    const csv=(r.content||'').trim();if(!csv){m.q('#s').textContent='⚠ no response';return;}
+    fillCSV(csv,sel);m.close();};
+}
+function fillCSV(csv,anchor){const m=anchor.match(/^([A-Z]+)(\d+)$/);const c0=colNum(m[1]),r0=+m[2];
+  csv.split(/\r?\n/).forEach((line,ri)=>{if(!line.trim())return;
+    parseCSVLine(line).forEach((val,ci)=>{const ref=numCol(c0+ci)+(r0+ri);if(c0+ci<=NC&&r0+ri<=NR&&val!=='')cells[ref]=val;});});
+  schedule();renderGrid();select(anchor);renderList();}
+function parseCSVLine(line){const out=[];let cur='',q=false;
+  for(let i=0;i<line.length;i++){const ch=line[i];
+    if(q){if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
+    else{if(ch==='"')q=true;else if(ch===','){out.push(cur.trim());cur='';}else cur+=ch;}}
+  out.push(cur.trim());return out;}
+function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
+boot();
+</script>

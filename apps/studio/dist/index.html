@@ -37,7 +37,8 @@
   .bottom pre{margin:0;padding:8px 12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
   /* tree */
   .node{padding:2px 6px 2px 0;cursor:pointer;white-space:nowrap;user-select:none;display:flex;align-items:center;gap:4px}
-  .node:hover{background:#1b222c} .tw{display:inline-block;width:12px;color:var(--dim);text-align:center}
+  .node:hover{background:#1b222c} .tw{display:inline-block;width:12px;color:var(--dim);text-align:center;flex:0 0 auto}
+  .ig{display:inline-block;width:16px;text-align:center;flex:0 0 auto} .nm{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis}
   .k{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:auto}
   .st{width:7px;height:7px;border-radius:50%;display:inline-block;margin-left:6px}
   .st-draft{background:#6e7681}.st-scaffolded{background:#8b949e}.st-tested{background:#58a6ff}.st-certified{background:#d29922}.st-published{background:#3fb950}
@@ -95,7 +96,10 @@ const LAYER_HINT={interaction:'apps people use',governance:'decisions & workflow
 const KIND_LAYER={app:'interaction',solution:'interaction',engine:'intelligence',skill:'intelligence',agent:'intelligence',expert:'intelligence',driver:'domain',pipeline:'platform',workflow:'governance',subscription:'governance',decision:'governance'};
 const LAYER_KINDS={interaction:['app'],intelligence:['engine','skill','agent'],domain:['driver'],platform:['pipeline'],governance:[],network:[]};
 function schemaLayer(n){const d=(n||'').split('.')[0];return ({network:'network',ref:'network',platform:'platform',governance:'governance',viz:'interaction',studio:'platform'})[d]||'domain';}
-function layerOf(m){if(m.layer)return m.layer;if(m.kind==='schema'||m.kind==='interface')return m.kind==='interface'?'network':schemaLayer(m.ref);return KIND_LAYER[m.kind]||'domain';}
+// A real component's layer is DEFINED by its kind (ADR-0055): an app is always Interaction, a driver always
+// Domain, etc. Trust KIND_LAYER over any stale stored m.layer (older projects mis-stamped app members 'domain').
+// Only schemas/interfaces genuinely vary — there, honour an explicit m.layer, else derive from the dotted prefix.
+function layerOf(m){if(m.kind==='interface')return 'network';if(m.kind==='schema')return m.layer||schemaLayer(m.ref);return KIND_LAYER[m.kind]||m.layer||'domain';}
 // pull reads/writes from a member (set at scaffold) or lazily from its meta.yaml — the wiring the graph draws.
 function metaList(meta,key){if(!meta)return[];let m=meta.match(new RegExp('^'+key+':\\s*\\[([^\\]]*)\\]','m'));if(m)return m[1].split(',').map(s=>s.trim().replace(/['"]/g,'')).filter(Boolean);
   m=meta.match(new RegExp('^'+key+':\\s*\\n((?:[ \\t]*-[ \\t]*.+\\n?)+)','m'));if(m)return m[1].split('\n').map(l=>l.replace(/^[ \t]*-[ \t]*/,'').trim().replace(/['"]/g,'')).filter(Boolean);return[];}
@@ -138,17 +142,17 @@ function tree(){
     html+=`<div class="node lyr" data-lfolder="${ly}" style="padding-left:6px" title="right-click to add to this layer"><span class="tw">${open?'▾':'▸'}</span><b>${esc(LAYER_NAME[ly])}</b> <span class="sub">· ${esc(LAYER_HINT[ly])} (${mem.length})</span></div>`;
     if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 26px">— empty —</div>`;
       mem.forEach((m)=>{const key='c:'+m.ref; const co=OPENK[key]; const spec=(m.kind==='schema'||m.kind==='interface');
-        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px"><span class="tw">${spec?'':(co?'▾':'▸')}</span>${spec?'📐':'📦'} ${esc(nameOf(m))} <span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
+        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${spec?'view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${spec?'📐':'📦'}</span><span class="nm">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
         if(co&&!spec){ const fs=FILES[m.ref];
           if(!fs) html+=`<div class="sub" style="padding-left:44px">loading…</div>`;
-          else Object.keys(fs).forEach(fp=>{ html+=`<div class="node" data-file="${esc(m.ref)}::${esc(fp)}" style="padding-left:40px"><span class="tw"></span>📄 ${esc(fp)}</div>`;});
+          else Object.keys(fs).forEach(fp=>{ html+=`<div class="node" data-file="${esc(m.ref)}::${esc(fp)}" style="padding-left:40px"><span class="tw"></span><span class="ig">📄</span><span class="nm">${esc(fp)}</span></div>`;});
         }});
     }
   });
   L.innerHTML=html;
   L.querySelectorAll('[data-lfolder]').forEach(el=>{el.onclick=()=>{const k='ly:'+el.dataset.lfolder;OPENK[k]=(OPENK[k]===false)?true:false;tree();};
     el.oncontextmenu=e=>{e.preventDefault();ctxLayer(el.dataset.lfolder,e);};});
-  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&(m.kind==='schema'||m.kind==='interface')){return;}OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
+  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&(m.kind==='schema'||m.kind==='interface')){openSpec(m);return;}OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
     el.oncontextmenu=e=>{e.preventDefault();ctxComp(el.dataset.comp,e);};});
   L.querySelectorAll('[data-file]').forEach(el=>{el.onclick=()=>{const [ref,fp]=el.dataset.file.split('::');openFile(ref,fp);};});
 }
@@ -188,6 +192,25 @@ async function openFile(ref,path){
   let t=TABS.find(t=>t.ref===ref&&t.path===path);
   if(!t){t={ref,path,content:fs[path],dirty:false};TABS.push(t);}
   ACTIVE=t; renderTabs(); renderEdit();
+}
+// Click a spec (noun/verb) in the tree → show its GOVERNED CONTRACT read-only in the main pane. A spec isn't
+// edited here (it's a network-signed contract); to change it, file a schema change-request ("Request schema").
+async function openSpec(m){
+  VIEW='spec'; ACTIVE=null; renderTabs();
+  const isIf=(m.kind==='interface');
+  const sid=m.title||((m.ref||'').split('/').pop()||'').split('@')[0];
+  const ver=(m.ref&&m.ref.indexOf('@')>=0)?m.ref.split('@')[1]:'';
+  const E=$('edit'); E.innerHTML='<div class="welcome">resolving '+esc(sid)+' …</div>';
+  let r={}; try{r=await post(isIf?'/bridge/interface-resolve':'/bridge/schema-resolve',isIf?{interface_id:sid}:{schema_id:sid});}catch(e){}
+  const def=r.definition||r||{}; const reused=(m.origin==='existing');
+  E.innerHTML=`<div class="edtoolbar"><b>${isIf?'⚡':'📐'} ${esc(sid)}</b> <span class="sub">v${esc(r.version||ver||'')} · ${isIf?'VERB · interface':'NOUN · data schema'}${reused?' · reused':''} · read-only governed contract</span><span style="margin-left:auto"></span><button class="btn sm" id="specReq">Request change</button> <button class="btn sm" id="specClose">📄 Files</button></div>
+    <div style="flex:1;overflow:auto;padding:10px 14px;background:var(--bg)">
+      <div class="sub">${esc(def.description||r.description||'The shared contract this component speaks. Components never guess each other — they speak specs. To change it, file a schema change-request.')}</div>
+      <div class="sub" style="margin:10px 0 3px">definition</div>
+      <pre style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font:12px/1.55 ui-monospace,Menlo,monospace;white-space:pre">${esc(JSON.stringify(def,null,2))}</pre>
+    </div>`;
+  $('specClose').onclick=()=>{VIEW='files';renderEdit();};
+  $('specReq').onclick=()=>requestSchema({schema_id:sid,version:ver||'0.2.0',x_kind:def['x-kind']||'record',definition:def});
 }
 function renderTabs(){$('tabs').innerHTML=TABS.map((t,i)=>`<div class="tab ${t===ACTIVE?'on':''}" data-ti="${i}"><span>${t.dirty?'<span class="dot">●</span>':''}${esc(t.path.split('/').pop())} <span class="sub">${esc(nameOf({ref:t.ref}))}</span></span><span class="x" data-tx="${i}">✕</span></div>`).join('');
   $('tabs').querySelectorAll('[data-ti]').forEach(el=>el.onclick=e=>{if(e.target.dataset.tx!==undefined)return;ACTIVE=TABS[+el.dataset.ti];renderTabs();renderEdit();});
@@ -318,7 +341,7 @@ function aiCard(a){const t=a.type;const head=t==='add_component'?'♻️ Reuse '
   const el=document.createElement('div');el.className='card act';el.innerHTML=`<b>${head}</b><div class="sub">${esc(a.reason||'')}</div><div class="row" style="text-align:right;margin-top:5px"><button class="btn sm good" id="ok">Confirm</button></div>`;
   el.querySelector('#ok').onclick=async()=>{const b=el.querySelector('#ok');b.disabled=true;b.textContent='…';
     try{ if(t==='add_component'){SEL.members=SEL.members||[];SEL.members.push({ref:a.ref,kind:a.kind,title:a.title,origin:'existing',status:'published',layer:KIND_LAYER[a.kind]||'domain'});await save(SEL);}
-      else if(t==='request_schema'){b.textContent='review…';requestSchema({schema_id:a.schema_id,version:a.version||'0.1.0',x_kind:a.x_kind||a.kind,reason:a.reason});b.disabled=false;b.textContent='reopen';return;}
+      else if(t==='request_schema'){b.textContent='review…';requestSchema({schema_id:a.schema_id,version:a.version||'0.1.0',x_kind:a.x_kind||a.kind,reason:a.reason,attributes:a.attributes,definition:a.definition});b.disabled=false;b.textContent='reopen';return;}
       else if(t==='scaffold'){SEL.members=SEL.members||[];SEL.members.push({ref:a.component,kind:a.kind,title:a.title,origin:'new',status:'draft',layer:KIND_LAYER[a.kind]||'domain',writes:asList(a.writes),reads:asList(a.reads)});await save(SEL);await post('/bridge/component-scaffold',{component:a.component,kind:a.kind,writes:a.writes,egress:a.egress,title:a.title});}
       b.textContent='✓ done';OPENK['ly:'+(KIND_LAYER[a.kind]||'domain')]=true;tree();
       if(t==='add_component')configureComponent(a.ref);   // reuse → lead straight into install + configure
@@ -434,14 +457,36 @@ async function specsBrowser(){
       <pre style="max-height:40vh;overflow:auto;font-size:12px">${esc(JSON.stringify(r.definition||r,null,2))}</pre>`;});
 }
 async function requestSchema(prefill){prefill=prefill||{};
-  // template is HOUSE-RULE COMPLIANT by default (closed + enveloped) so a proposal starts from a passing shape.
-  const tmpl=(sid,xk)=>JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid||"domain.subject","type":"object","x-kind":xk||"record","additionalProperties":false,"required":["schema","id"],"properties":{"schema":{"const":sid||"domain.subject"},"id":{"type":"string","pattern":"^ds:[a-z0-9-]+:\\S+$"}}},null,2);
+  // The template is a COMPLETE, house-rule-compliant ENVELOPE for its x-kind — not a bare {schema,id} stub.
+  // It mirrors network lint_house_rules + the ent()/meas() convention: every fact-like noun carries observed_at
+  // (measure/event REQUIRE it; measure also requires prov+subject), every noun carries a tenant. Any domain
+  // attributes the Solution Expert named are pre-seeded (typed permissively) so the developer only refines types.
+  const tmpl=(sid,xk,attrs)=>{
+    sid=sid||"domain.subject"; xk=xk||"record";
+    const props={"schema":{"const":sid},"id":{"type":"string","pattern":"^ds:[a-z0-9-]+:\\S+$"}};
+    const req=["schema","id"];
+    if(xk==='entity'){ props.name={"type":["string","null"]}; }
+    else if(xk==='measure'){ props.subject={"type":"string"}; props.subject_kind={"type":["string","null"]};
+      props.observed_at={"type":"string","format":"date-time"}; props.value={"type":["number","string","null"]};
+      props.confidence={"type":["number","null"]}; props.prov={"type":"object"}; req.push("subject","observed_at","prov"); }
+    else if(xk==='event'){ props.observed_at={"type":"string","format":"date-time"}; props.recorded_at={"type":["string","null"],"format":"date-time"}; req.push("observed_at"); }
+    else { props.status={"type":["string","null"]}; props.observed_at={"type":["string","null"],"format":"date-time"}; }  // record
+    (Array.isArray(attrs)?attrs:asList(attrs)).forEach(a=>{a=String(a).trim().replace(/[^a-z0-9_]/gi,'_');
+      if(a&&!props[a])props[a]={"type":["string","null"],"title":a.replace(/[_-]/g,' ')};});
+    props.tenant={"type":["string","null"]};
+    return JSON.stringify({"$schema":"https://json-schema.org/draft/2020-12/schema","title":sid,"description":prefill.reason||"","type":"object","x-kind":xk,"additionalProperties":false,"required":req,"properties":props},null,2);
+  };
+  // If a full definition is supplied (from a spec's "Request change", or a future Expert that drafts the body),
+  // show THAT — editable — instead of regenerating a stub. Otherwise seed the complete envelope for the x-kind.
+  const initDef=prefill.definition?JSON.stringify(prefill.definition,null,2):tmpl(prefill.schema_id||'',prefill.x_kind,prefill.attributes);
   const m=modal(`<h3>Request a schema</h3><div class="sub">${prefill.reason?'<b>Proposed by the Solution Expert.</b> ':''}The AI checks the house rules + suggests reuse before you file — so it arrives at the Semantic Administrator already passing the gate.</div>
     <div class="row" style="gap:8px"><div style="flex:2"><label class="sub">schema id</label><input class="in" id="sid" placeholder="geo.osm_feature" value="${esc(prefill.schema_id||'')}"></div><div style="flex:1"><label class="sub">version</label><input class="in" id="ver" value="${esc(prefill.version||'0.1.0')}"></div></div>
-    <label class="sub">definition <span class="sub">· x-kind: ${esc(prefill.x_kind||'record')}</span></label><textarea class="in" id="def" rows="9" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(tmpl(prefill.schema_id||'',prefill.x_kind))}</textarea>
+    <label class="sub">definition <span class="sub">· x-kind: ${esc(prefill.x_kind||'record')} · edit freely, then Advise before filing</span></label><textarea class="in" id="def" rows="12" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(initDef)}</textarea>
     <div id="adv" class="sub" style="margin-top:6px">${prefill.reason?'<span class="sub">'+esc(prefill.reason)+'</span>':''}</div>
     <div style="text-align:right;margin-top:6px"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="advise">🤖 Advise</button> <button class="btn primary" id="file">File request</button></div>`);
-  m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim(),prefill.x_kind);};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
+  // A supplied definition (or one the developer has edited) is never clobbered when the schema id changes.
+  if(prefill.definition)m.q('#def').dataset.t='1';
+  m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim(),prefill.x_kind,prefill.attributes);};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
   const advise=async()=>{let d;try{d=JSON.parse(m.q('#def').value);}catch(e){m.q('#adv').innerHTML='<span style="color:var(--err)">bad JSON</span>';return null;}
     const res=await post('/bridge/schema-advise',{schema_id:m.q('#sid').value.trim(),definition:d});
     const rec=res.recommendation, col=rec==='reuse'?'#f0b429':rec==='fix-and-propose'?'var(--err)':'var(--good)';

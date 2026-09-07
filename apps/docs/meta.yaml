@@ -1,0 +1,20 @@
+# Docs — the Airawat Workspace text editor (kind=app). PART OF THE BASE OS PRODUCTIVITY SUITE.
+# Personal + AI-native: every signed-in user writes/edits their OWN documents, stored as governed
+# `doc.document` facts (bitemporal → free version history). Pasted images/attachments go to the filestore,
+# referenced by file_id. Inline AI (Kimi K3 via the shared /bridge/ai-assist) drafts, rewrites, summarises.
+#
+# `personal: true` is the workspace-runtime flag (app_host): it makes the app SELF-SERVICE (any signed-in
+# tenant user may write — no audience role needed) and OWNER-SCOPED (the host stamps + forces owner==sub on
+# every read and write, so a user only ever sees their own docs). Reused by Sheets/Slides/Mail/Chat.
+component_id: ds:airawat:app/docs
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Docs
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+personal: true
+required_schemas: [doc.document]
+writes: [doc.document]
+roles: []          # personal app → available to every signed-in user (no audience role required)
