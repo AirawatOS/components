@@ -80,7 +80,8 @@ print("  approve:", ("OK " + dr["published_schema"]) if dr else ("ERR " + str(de
 print("== roles ==")
 for role, label in [("justice.judge", "Judge"),
                     ("justice.bench-clerk", "Bench Clerk"),
-                    ("justice.scrutiny-officer", "Scrutiny Officer")]:
+                    ("justice.scrutiny-officer", "Scrutiny Officer"),
+                    ("justice.process-server", "Process Server")]:
     r, err = _post(f"{NET}/v1/roles", {"role": role, "label": label,
                    "definition": ""}, token=STOKEN)
     print(f"  {role}:", ("OK " + r["published"]["id"]) if r else ("ERR " + str(err)))

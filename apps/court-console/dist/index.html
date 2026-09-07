@@ -64,7 +64,7 @@
 const APP_ID="court-console";   // short id — /bridge/query + /bridge/save key CERTIFIED by the last path segment
 let SESS={}, TENANT="", CACHE={}, TAB="file";
 const TABS=[["file","File a case"],["scrutiny","Scrutiny"],["registration","Registration"],
-            ["hearings","Cause list & hearings"],["disposal","Disposal"],["cases","All cases"]];
+            ["hearings","Cause list & hearings"],["process","Process & service"],["disposal","Disposal"],["cases","All cases"]];
 
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -90,9 +90,9 @@ async function inbox(role,title,caseRef,tab){
 }
 
 async function refresh(){
-  const [cases,filings,scrut,hearings,disp,pcases]=await Promise.all(
-    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case"].map(query));
-  CACHE={cases,filings,scrut,hearings,disp,pcases};
+  const [cases,filings,scrut,hearings,disp,pcases,porders,pservices]=await Promise.all(
+    ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service"].map(query));
+  CACHE={cases,filings,scrut,hearings,disp,pcases,porders,pservices};
 }
 // helpers over the cache
 const byCase=(arr,cid)=>arr.filter(x=>x.case_ref===cid);
@@ -109,9 +109,10 @@ function counts(){return {
 };}
 
 // Slice 3: each role sees only the tabs it owns (+ "All cases"); an admin sees everything.
-const ROLE_TABS={"justice.advocate":["file","cases"],"justice.litigant":["file","cases"],
+const ROLE_TABS={"justice.advocate":["file","process","cases"],"justice.litigant":["file","process","cases"],
   "justice.scrutiny-officer":["scrutiny","cases"],"justice.registrar":["registration","cases"],
-  "justice.bench-clerk":["hearings","cases"],"justice.judge":["disposal","hearings","cases"]};
+  "justice.bench-clerk":["hearings","process","cases"],"justice.judge":["disposal","hearings","cases"],
+  "justice.process-server":["process","cases"]};
 const ADMIN_ROLES=["platform.tenant-admin","platform.steward","admin"];
 function allowedTabs(){
   const R=SESS.roles||[];
@@ -135,6 +136,7 @@ function render(){
   if(TAB==="registration")return renderList(v,"Registration","Scrutiny-cleared cases awaiting a case number.",
      CACHE.cases.filter(c=>c.status==="filed"&&accepted(c.id)),registerActions);
   if(TAB==="hearings")return renderHearings(v);
+  if(TAB==="process")return renderProcess(v);
   if(TAB==="disposal")return renderList(v,"Disposal","Heard cases awaiting judgment / final order.",
      CACHE.cases.filter(c=>c.status==="registered"&&heldAny(c.id)),disposeActions);
   if(TAB==="cases")return renderCases(v);
@@ -337,6 +339,63 @@ async function disposeCase(cid){
     if(pc)await save({...pc,status:"closed",current_step:"disposed",closed_at:nowISO(),outcome:dispId,
       history:(pc.history||[]).concat([{event:"disposed",at:nowISO(),actor:SESS.sub||""}])});
     toast("Case disposed & closed","ok");closeModal();await refresh();render();renderNav();
+  }catch(e){toast(e.message,"bad");}
+}
+
+/* ---------- PROCESS & SERVICE (slice 4): summons / notice / warrant ---------- */
+const ordersOf=cid=>byCase(CACHE.porders,cid).sort((a,b)=>(a.issued_at||"").localeCompare(b.issued_at||""));
+const serviceOf=oid=>CACHE.pservices.filter(s=>s.process_ref===oid).slice(-1)[0];
+function pstatus(o){const sv=serviceOf(o.id); return sv?("service: "+sv.outcome):o.status;}
+function renderProcess(v){
+  const regd=CACHE.cases.filter(c=>c.status==="registered"||c.status==="pending");
+  v.innerHTML=`<h2>Process &amp; service</h2><p class="sub">Issue and serve summons, notices and warrants; record the outcome (and re-issue if unserved).</p>`+
+   (regd.length?regd.map(c=>{const m=caseRowMeta(c);const os=ordersOf(c.id);
+     return `<div class="card"><div class="row" style="justify-content:space-between">
+       <div><b>${esc(m.title)}</b> <span class="mono">${esc(c.case_number)}</span></div>
+       <button class="btn sm" onclick="openProcess('${c.id}')">＋ Request process</button></div>`+
+       (os.length?`<table style="margin-top:10px"><thead><tr><th>Type</th><th>Addressee</th><th>Status</th><th></th></tr></thead><tbody>`+
+         os.map(o=>{const sv=serviceOf(o.id);const done=sv&&sv.outcome==="served";
+           return `<tr><td>${esc(o.process_type)}</td><td>${esc(o.addressee||"—")}</td>
+           <td><span class="pill ${done?'s-disposed':o.status==='issued'?'s-registered':(sv?'s-returned':'s-filed')}">${esc(pstatus(o))}</span></td>
+           <td class="row" style="justify-content:flex-end">${
+             o.status==='ordered'?`<button class="btn go sm" onclick="issueProcess('${o.id}','${c.id}')">Issue</button>`:
+             (o.status==='issued'&&!sv)?`<button class="btn go sm" onclick="recordService('${o.id}','${c.id}','served')">Served</button>
+              <button class="btn bad sm" onclick="recordService('${o.id}','${c.id}','unserved')">Unserved</button>`:
+             (sv&&sv.outcome!=='served')?`<button class="btn sm" onclick="issueProcess('${o.id}','${c.id}',true)">Re-issue</button>`:''
+           }</td></tr>`;}).join("")+`</tbody></table>`:`<p class="sub" style="margin:8px 0 0">No process requested.</p>`)+`</div>`;
+   }).join(""):`<div class="empty">No registered cases yet.</div>`);
+}
+function openProcess(cid){const c=CACHE.cases.find(x=>x.id===cid);
+  $("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>Request process</h2><p class="sub">${esc(c.case_number||"")}</p>
+    <label>Type *</label><select id="p_type"><option value="summons">Summons</option><option value="notice">Notice</option><option value="warrant">Warrant</option><option value="proclamation">Proclamation</option></select>
+    <label style="margin-top:10px">Addressee *</label><input id="p_addr" placeholder="Person/party to be served">
+    <label style="margin-top:10px">Returnable by</label><input type="date" id="p_ret">
+    <div class="row" style="margin-top:16px"><button class="btn go" onclick="requestProcess('${cid}')">Request</button></div>`;
+  showModal();
+}
+async function requestProcess(cid){
+  const addr=$("p_addr").value.trim(); if(!addr)return toast("Addressee required","bad");
+  try{const ts=Date.now().toString(36);const ret=$("p_ret").value;
+    await save({schema:"justice.process_order",id:nid("process_order","po-"+ts),case_ref:cid,process_type:$("p_type").value,
+      addressee:addr,status:"ordered",issued_at:nowISO(),observed_at:nowISO(),
+      returnable_date:ret?new Date(ret+"T00:00:00Z").toISOString().replace(/\.\d+Z$/,"Z"):null});
+    await inbox("justice.bench-clerk","Issue "+$("p_type").value+" for "+(CACHE.cases.find(x=>x.id===cid)||{}).case_number,cid,"process");
+    toast("Process requested — sent to bench clerk","ok");closeModal();await refresh();render();renderNav();
+  }catch(e){toast(e.message,"bad");}
+}
+async function issueProcess(oid,cid,re){
+  try{const o=CACHE.porders.find(x=>x.id===oid);
+    await save({...o,status:"issued",issued_at:nowISO(),observed_at:nowISO()});
+    await inbox("justice.process-server","Serve "+o.process_type+" on "+(o.addressee||"addressee"),cid,"process");
+    toast(re?"Re-issued — sent to process server":"Issued — sent to process server","ok");await refresh();render();renderNav();
+  }catch(e){toast(e.message,"bad");}
+}
+async function recordService(oid,cid,outcome){
+  try{const ts=Date.now().toString(36);
+    await save({schema:"justice.process_service",id:nid("process_service","ps-"+ts),case_ref:cid,process_ref:oid,
+      outcome,served_at:nowISO(),observed_at:nowISO(),proof:outcome==="served"?"acknowledged":""});
+    if(outcome!=="served") await inbox("justice.bench-clerk","Process returned "+outcome+" — re-issue?",cid,"process");
+    toast("Service recorded: "+outcome,outcome==="served"?"ok":"");await refresh();render();renderNav();
   }catch(e){toast(e.message,"bad");}
 }
 
