@@ -81,6 +81,13 @@ async function jpost(p,b){const r=await fetch(p,{method:"POST",headers:{"Content
 async function query(schema){const {j}=await jpost("/bridge/query",{schema,app_id:APP_ID});return (j.results||[]).map(x=>x.object||x);}
 async function save(obj){obj.tenant=obj.tenant||TENANT;const {ok,j}=await jpost("/bridge/save",{object:obj,app_id:APP_ID});
   if(!ok)throw new Error((j&&(j.error||j.detail))||"save failed");return j;}
+// Slice 2 — route the next step into the owning ROLE's universal Inbox (actor=role://…). The shared Inbox app
+// surfaces it to whoever holds that role; opening it deep-links back to this console's relevant tab.
+async function inbox(role,title,caseRef,tab){
+  try{ await save({schema:"platform.inbox_item",id:pid("inbox_item","ib-"+slug("x").split("-").pop()),
+    actor:"role://"+role,kind:"task",title,ref:caseRef,subject_ref:caseRef,status:"unread",
+    source:"court-console",handler:"/apps/court-console/#"+(tab||""),created_at:nowISO()}); }catch(e){}
+}
 
 async function refresh(){
   const [cases,filings,scrut,hearings,disp,pcases]=await Promise.all(
@@ -170,6 +177,7 @@ async function fileCase(){
       history:[{event:"filed",at:nowISO(),actor:SESS.sub||""}]});
     await save({schema:"platform.task",id:pid("task","t-scr-"+ts),case:pcId,verb:"verify",status:"open",
       title:"Scrutinise filing "+filingNo,assignee:"role://justice.scrutiny-officer",workflow_step:"scrutiny",created_at:nowISO()});
+    await inbox("justice.scrutiny-officer","Scrutinise filing "+filingNo+" — "+title,caseId,"scrutiny");
     toast("Filed — "+title+" ("+filingNo+")","ok");
     await refresh();go("scrutiny");
   }catch(e){toast(e.message,"bad");b.disabled=false;b.textContent="⚖ File case";}
@@ -207,6 +215,7 @@ async function scrutinise(cid,outcome){
     if(outcome==="accepted"){
       await save({schema:"platform.task",id:pid("task","t-reg-"+ts),case:(pc&&pc.id)||"",verb:"approve",status:"open",
         title:"Register case (assign number)",assignee:"role://justice.registrar",workflow_step:"registration",created_at:nowISO()});
+      await inbox("justice.registrar","Register case (assign number) — "+cid.split("/").pop(),cid,"registration");
       toast("Scrutiny cleared — sent to registration","ok");
     }else{
       if(f.id)await save({...f,status:"returned"});
@@ -227,6 +236,7 @@ async function registerCase(cid){
     if(pc)await save({...pc,current_step:"hearing",history:(pc.history||[]).concat([{event:"registered",at:nowISO(),actor:SESS.sub||""}])});
     await save({schema:"platform.task",id:pid("task","t-sch-"+ts),case:(pc&&pc.id)||"",verb:"fulfil",status:"open",
       title:"Schedule first hearing",assignee:"role://justice.bench-clerk",workflow_step:"hearing",created_at:nowISO()});
+    await inbox("justice.bench-clerk","Schedule first hearing — "+num,cid,"hearings");
     toast("Registered as "+num,"ok");await refresh();render();renderNav();
   }catch(e){toast(e.message,"bad");}
 }
@@ -276,6 +286,7 @@ async function holdHearing(hid,cid){
     await save({...h,status:"held",outcome:"Matter heard.",observed_at:nowISO()});
     await save({schema:"justice.appearance",id:nid("appearance","ap-"+ts),case_ref:cid,hearing_ref:hid,
       appeared_by:SESS.sub||"",on_behalf_of:"court",appearance_type:"present",observed_at:nowISO(),recorded_at:nowISO()});
+    await inbox("justice.judge","Case heard — pronounce disposal",cid,"disposal");
     toast("Hearing held","ok");await refresh();render();renderNav();
   }catch(e){toast(e.message,"bad");}
 }
@@ -350,6 +361,11 @@ $("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeModal();})
   TENANT=SESS.tenant||"";
   $("who").textContent=SESS.authenticated?("● "+(SESS.sub||"")+" · "+TENANT):"not signed in";
   if(!SESS.authenticated){$("view").innerHTML='<div class="empty">Please sign in as a court officer.</div>';return;}
+  // Slice 2: land each role on the step they own (they can also navigate freely).
+  const R=SESS.roles||[];
+  const home={"justice.advocate":"file","justice.litigant":"file","justice.scrutiny-officer":"scrutiny",
+              "justice.registrar":"registration","justice.bench-clerk":"hearings","justice.judge":"disposal"};
+  for(const r of R){ if(home[r]){ TAB=home[r]; break; } }
   try{await refresh();}catch(e){$("view").innerHTML='<div class="empty">Could not load cases: '+esc(e.message)+'</div>';return;}
   renderNav();render();
 })();
