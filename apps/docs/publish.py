@@ -53,5 +53,9 @@ reads = reads if isinstance(reads, list) else [reads]
 scopes = [{"verb": "write", "scope": s} for s in writes] + [{"verb": "read", "scope": s} for s in reads]
 pub, perr = _post(f"{NET}/v1/store/publish", {"component_id": cid, "kind": m["kind"],
                   "version": m.get("version", "0.1.0"), "provider": m.get("provider", ""), "scopes": scopes}, TOKEN)
-if perr: sys.exit(f"✗ publish {cid}: {perr}")
-print(f"✓ {cid} certified(verified={conf.get('verified')}) + published  scopes={[s['scope'] for s in scopes]}")
+# Re-certifying the SAME version to refresh the admission digest (bundle content changed, version unchanged) is
+# fine — the store record already exists, so an "already published" is expected and not fatal; certify above
+# already updated the evidence digest the app-host verifies against.
+if perr and not any(w in perr.lower() for w in ("already", "exists", "409")):
+    sys.exit(f"✗ publish {cid}: {perr}")
+print(f"✓ {cid} certified(verified={conf.get('verified')}) {'+ published' if not perr else '(digest refreshed; store record kept)'}  scopes={[s['scope'] for s in scopes]}")
