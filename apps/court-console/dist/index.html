@@ -106,7 +106,7 @@ function _toWav(buf){
    Mic is delegated by the app-host shell (iframe allow="microphone"). Degrades gracefully if voice is
    unconfigured/unsupported. Same helper is reused wherever a narrative field wants voice. ===== */
 async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{};
-  const MAX_S=20; let rec=null,chunks=[],on=false,tick=null,capTimer=null,left=0;
+  let rec=null,chunks=[],on=false,tick=null,secs=0;
   const label=t=>{btn.textContent=t;};
   btn.onclick=async(e)=>{ e&&e.preventDefault();
     if(on){ rec&&rec.stop(); return; }
@@ -114,10 +114,9 @@ async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{
     let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
     catch(err){ toast("Microphone permission was denied","bad"); return; }
     chunks=[]; rec=new MediaRecorder(stream); on=true; btn.classList.add("bad");
-    left=MAX_S; label("⏺ "+left+"s"); tick=setInterval(()=>{left--;label("⏺ "+Math.max(0,left)+"s");},1000);
-    capTimer=setTimeout(()=>{ if(on)rec.stop(); }, MAX_S*1000);   // auto-stop: keep each clip a small upload (≈0.9MB)
+    secs=0; label("⏺ 0s"); tick=setInterval(()=>{secs++;label("⏺ "+secs+"s");},1000);   // unbounded — count up
     rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size)chunks.push(ev.data); };
-    rec.onstop=async()=>{ on=false; clearInterval(tick); clearTimeout(capTimer); stream.getTracks().forEach(t=>t.stop()); btn.textContent="…"; btn.classList.remove("bad");
+    rec.onstop=async()=>{ on=false; clearInterval(tick); stream.getTracks().forEach(t=>t.stop()); btn.textContent="…"; btn.classList.remove("bad");
       // Browsers record webm/opus; Bodhan wants WAV — decode + re-encode to 16-bit mono WAV in-browser.
       const webm=new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"});
       let wav;
@@ -133,9 +132,22 @@ async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{
         }catch(e){}
         wav=_toWav(audio);
       }catch(err){ btn.textContent="🎤"; toast("Could not process the recording","bad"); return; }
-      const b64=await new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(",")[1]||""); r.readAsDataURL(wav); });
+      // UNBOUNDED: chunk-upload the WAV to the filestore (each chunk < the front-proxy 1MB cap), then transcribe
+      // by file_id — the server fetches the bytes + calls Bodhan. No length limit on the recording.
+      let fid=null;
+      try{
+        const up="v"+Date.now().toString(36)+Math.random().toString(36).slice(2,8), CH=700*1024, N=Math.max(1,Math.ceil(wav.size/CH));
+        for(let i=0;i<N;i++){ label("⇧ "+Math.round((i/N)*100)+"%");
+          const part=wav.slice(i*CH,(i+1)*CH), last=(i===N-1);
+          const r=await fetch("/bridge/upload-chunk?up="+up+"&seq="+i+(last?"&fin=1":""),
+            {method:"POST",headers:{"Content-Type":"application/octet-stream"},body:part}).then(x=>x.json());
+          if(r.error){ btn.textContent="🎤"; toast(r.error,"bad"); return; }
+          if(last)fid=r.file_id;
+        }
+      }catch(err){ btn.textContent="🎤"; toast("Upload failed","bad"); return; }
+      btn.textContent="…";
       let j={}; try{ j=await (await fetch("/bridge/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({audio:b64,mime:"audio/wav",language:opts.language||""})})).json(); }catch(err){ j={error:String(err)}; }
+        body:JSON.stringify({file_id:fid,mime:"audio/wav",language:opts.language||""})})).json(); }catch(err){ j={error:String(err)}; }
       btn.textContent="🎤";
       if(j.error){ toast(j.error,"bad"); return; }
       const txt=(j.text||"").trim(); if(!txt){ toast("No speech detected — try again","bad"); return; }
