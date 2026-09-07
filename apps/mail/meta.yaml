@@ -1,0 +1,17 @@
+# Mail — the Airawat Workspace mail client (kind=app). PART OF THE BASE OS PRODUCTIVITY SUITE.
+# Internal + federated: a mail.message is addressed to principals (user:// in-tenant; participant:// across
+# tenants, later). MEMBERSHIP-scoped (visible to sender + recipients) — writes go through the dedicated
+# /bridge/mail-{list,send,get} bridges (NOT /bridge/save), so it is NOT `personal`. Inline ✨AI drafts/replies
+# via the shared /bridge/ai-assist (Kimi K3). Available to every signed-in user; auto-installed per tenant.
+component_id: ds:airawat:app/mail
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Mail
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [mail.message]
+writes: [mail.message]
+roles: []
+default_install: true   # part of the base-OS default suite every tenant receives
