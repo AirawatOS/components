@@ -39,7 +39,10 @@
       <div class="hint">The full Bodhan speech-to-text endpoint (HTTPS).</div></div>
     <div class="row"><label>API key</label>
       <input id="key" type="password" autocomplete="off" placeholder="•••••••• (leave blank to keep current)">
-      <div class="hint">Write-only — sent to the server and never shown again.</div></div>
+      <div class="hint">Paste the raw key only — no “Bearer ” prefix (the server adds it). Write-only; never shown again.</div></div>
+    <div class="row"><label>Model</label>
+      <input id="model" autocomplete="off" placeholder="e.g. whisper-1 (the model name Bodhan gave you)">
+      <div class="hint">Required for OpenAI/Whisper-style endpoints (…/audio/transcriptions).</div></div>
 
     <details class="adv"><summary>Advanced — request shape (only if Bodhan's API differs from the defaults)</summary>
       <div class="grid">
@@ -69,7 +72,7 @@
 <script>
 const $=id=>document.getElementById(id);
 const api=(b)=>fetch('/bridge/voice-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
-const ADV=['request_mode','audio_field','lang_field','text_path','auth_header','auth_prefix'];
+const ADV=['model','request_mode','audio_field','lang_field','text_path','auth_header','auth_prefix'];
 function paintStatus(s){const el=$('status');
   if(s.configured){el.className='status on';el.textContent='● Configured — voice dictation is live'+(s.endpoint?(' · '+s.endpoint):'');}
   else if(s.key_set&&!s.endpoint){el.className='status off';el.textContent='◐ Key set, but endpoint missing';}

@@ -89,6 +89,19 @@ async function inbox(role,title,caseRef,tab){
     source:"court-console",handler:"/apps/court-console/#"+(tab||""),created_at:nowISO()}); }catch(e){}
 }
 
+/* Encode a decoded AudioBuffer → 16-bit mono WAV Blob (Bodhan's documented format; browsers record webm). */
+function _toWav(buf){
+  const sr=buf.sampleRate, len=buf.length, nch=buf.numberOfChannels;
+  const mono=new Float32Array(len);
+  for(let c=0;c<nch;c++){const ch=buf.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=ch[i]/nch;}
+  const ab=new ArrayBuffer(44+len*2), dv=new DataView(ab);
+  const ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,"RIFF");dv.setUint32(4,36+len*2,true);ws(8,"WAVE");ws(12,"fmt ");dv.setUint32(16,16,true);
+  dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,sr,true);dv.setUint32(28,sr*2,true);
+  dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,"data");dv.setUint32(40,len*2,true);
+  let o=44;for(let i=0;i<len;i++){let s=Math.max(-1,Math.min(1,mono[i]));dv.setInt16(o,s<0?s*0x8000:s*0x7FFF,true);o+=2;}
+  return new Blob([ab],{type:"audio/wav"});
+}
 /* ===== Reusable 🎤 DICTATE — record in-frame, transcribe via /bridge/transcribe (Bodhan), insert into a field.
    Mic is delegated by the app-host shell (iframe allow="microphone"). Degrades gracefully if voice is
    unconfigured/unsupported. Same helper is reused wherever a narrative field wants voice. ===== */
@@ -102,10 +115,18 @@ async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{
     chunks=[]; rec=new MediaRecorder(stream); on=true; btn.textContent="⏺"; btn.classList.add("bad");
     rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size)chunks.push(ev.data); };
     rec.onstop=async()=>{ on=false; stream.getTracks().forEach(t=>t.stop()); btn.textContent="…"; btn.classList.remove("bad");
-      const blob=new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"});
-      const b64=await new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(",")[1]||""); r.readAsDataURL(blob); });
+      // Browsers record webm/opus; Bodhan wants WAV — decode + re-encode to 16-bit mono WAV in-browser.
+      const webm=new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"});
+      let wav;
+      try{
+        const ab=await webm.arrayBuffer();
+        const AC=window.AudioContext||window.webkitAudioContext;
+        const audio=await new AC().decodeAudioData(ab);
+        wav=_toWav(audio);
+      }catch(err){ btn.textContent="🎤"; toast("Could not process the recording","bad"); return; }
+      const b64=await new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(",")[1]||""); r.readAsDataURL(wav); });
       let j={}; try{ j=await (await fetch("/bridge/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({audio:b64,mime:blob.type,language:opts.language||""})})).json(); }catch(err){ j={error:String(err)}; }
+        body:JSON.stringify({audio:b64,mime:"audio/wav",language:opts.language||""})})).json(); }catch(err){ j={error:String(err)}; }
       btn.textContent="🎤";
       if(j.error){ toast(j.error,"bad"); return; }
       const txt=(j.text||"").trim(); if(!txt){ toast("No speech detected — try again","bad"); return; }
