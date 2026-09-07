@@ -89,6 +89,32 @@ async function inbox(role,title,caseRef,tab){
     source:"court-console",handler:"/apps/court-console/#"+(tab||""),created_at:nowISO()}); }catch(e){}
 }
 
+/* ===== Reusable 🎤 DICTATE — record in-frame, transcribe via /bridge/transcribe (Bodhan), insert into a field.
+   Mic is delegated by the app-host shell (iframe allow="microphone"). Degrades gracefully if voice is
+   unconfigured/unsupported. Same helper is reused wherever a narrative field wants voice. ===== */
+async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{};
+  let rec=null,chunks=[],on=false;
+  btn.onclick=async(e)=>{ e&&e.preventDefault();
+    if(on){ rec&&rec.stop(); return; }
+    if(!navigator.mediaDevices||!window.MediaRecorder){ toast("Voice input isn’t supported in this browser","bad"); return; }
+    let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(err){ toast("Microphone permission was denied","bad"); return; }
+    chunks=[]; rec=new MediaRecorder(stream); on=true; btn.textContent="⏺"; btn.classList.add("bad");
+    rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size)chunks.push(ev.data); };
+    rec.onstop=async()=>{ on=false; stream.getTracks().forEach(t=>t.stop()); btn.textContent="…"; btn.classList.remove("bad");
+      const blob=new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"});
+      const b64=await new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(",")[1]||""); r.readAsDataURL(blob); });
+      let j={}; try{ j=await (await fetch("/bridge/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({audio:b64,mime:blob.type,language:opts.language||""})})).json(); }catch(err){ j={error:String(err)}; }
+      btn.textContent="🎤";
+      if(j.error){ toast(j.error,"bad"); return; }
+      const txt=(j.text||"").trim(); if(!txt){ toast("No speech detected — try again","bad"); return; }
+      const cur=target.value||""; target.value=cur?(cur.replace(/\s*$/,"")+" "+txt):txt; target.dispatchEvent(new Event("input")); target.focus();
+    };
+    rec.start(); toast("Recording… click 🎤 again to stop");
+  };
+}
+
 async function refresh(){
   const [cases,filings,scrut,hearings,disp,pcases,porders,pservices,payments,bails,adrs,ccopies]=await Promise.all(
     ["justice.case","justice.filing","justice.scrutiny_result","justice.hearing","justice.disposal","platform.case","justice.process_order","justice.process_service","justice.payment","justice.bail","justice.adr_referral","justice.certified_copy"].map(query));
@@ -330,14 +356,19 @@ function openDispose(cid){
       <option value="compromise">Compromise</option><option value="transfer">Transfer</option></select>
     <label style="margin-top:10px">Nature</label><select id="d_nature"><option value="contested">Contested</option><option value="uncontested">Uncontested</option><option value="ex-parte">Ex-parte</option><option value="compromise">Compromise</option></select>
     <label style="margin-top:10px">In favour of</label><input id="d_favour" placeholder="Complainant / Respondent">
+    <label style="margin-top:10px;display:flex;align-items:center;gap:8px">Order / Judgment
+      <button type="button" class="btn sm" id="d_mic" title="Dictate the order">🎤 Dictate</button></label>
+    <textarea id="d_order" style="min-height:120px" placeholder="Pronounce the order / judgment… you can type or dictate."></textarea>
     <div class="row" style="margin-top:16px"><button class="btn pri" onclick="disposeCase('${cid}')">Pronounce & close</button></div>`;
   showModal();
+  attachMic($("d_mic"), $("d_order"));
 }
 async function disposeCase(cid){
   try{const c=CACHE.cases.find(x=>x.id===cid);const ts=Date.now().toString(36);
     const dispId=nid("disposal","dp-"+ts);
     await save({schema:"justice.disposal",id:dispId,case_ref:cid,disposal_type:$("d_type").value,
-      nature:$("d_nature").value,in_favour_of:$("d_favour").value.trim()||"—",disposed_at:nowISO(),observed_at:nowISO()});
+      nature:$("d_nature").value,in_favour_of:$("d_favour").value.trim()||"—",
+      order_text:($("d_order")&&$("d_order").value.trim())||null,disposed_at:nowISO(),observed_at:nowISO()});
     await save({...c,stage:"disposed",status:"disposed",disposal_ref:dispId});
     const pc=CACHE.pcases.find(p=>(p.subjects||[]).includes(cid));
     if(pc)await save({...pc,status:"closed",current_step:"disposed",closed_at:nowISO(),outcome:dispId,
@@ -587,7 +618,7 @@ function timeline(cid){
   scrutOf(cid).forEach(s=>ev.push([s.scrutinised_at,"Scrutiny — "+s.outcome,(s.defects||[]).join("; ")||"Cleared"]));
   if(c.case_number)ev.push([null,"Registered","Case number "+c.case_number]);
   hearingsOf(cid).forEach(h=>ev.push([h.scheduled_for,"Hearing — "+h.status,(h.purpose||"")+(h.outcome?" · "+h.outcome:"")]));
-  byCase(CACHE.disp,cid).forEach(d=>ev.push([d.disposed_at,"Disposed — "+d.disposal_type,"In favour of "+(d.in_favour_of||"—")]));
+  byCase(CACHE.disp,cid).forEach(d=>ev.push([d.disposed_at,"Disposed — "+d.disposal_type,"In favour of "+(d.in_favour_of||"—")+(d.order_text?(" · Order: "+d.order_text):"")]));
   ev.sort((a,b)=>String(a[0]||"").localeCompare(String(b[0]||"")));
   $("mpanel").innerHTML=`<span class="x" onclick="closeModal()">×</span><h2>${esc(m.title)}</h2>
     <p class="sub">${esc(c.case_number||m.filing.filing_number||"")} · ${statusPill(c.status)}</p>
