@@ -332,9 +332,56 @@ function toast(m){ let t=document.getElementById('toast'); if(!t){t=document.cre
 
 /* ===== AI ASSISTANT (baked-in) ===== */
 /* ===== Reusable AI Assistant drawer — the SHARED pattern baked into every Airawat app =====
-   Grounds the model on cfg.context() (this app's governed data), shows chips + a chat box, and — when the
-   model proposes one — renders a CONFIRM button that runs cfg.run(name,params) through the app's OWN governed
-   bridge. The AI never acts on its own (ADR-0029). Identical across apps; only the cfg differs. */
+   Grounds the model on cfg.context() (this app's governed data), shows chips + a chat box (with a 🎤 dictate
+   button), and — when the model proposes one — renders a CONFIRM button that runs cfg.run(name,params) through
+   the app's OWN governed bridge. The AI never acts on its own (ADR-0029). Identical across apps; only cfg differs. */
+function _toWav(buf){
+  const sr=buf.sampleRate, len=buf.length, nch=buf.numberOfChannels;
+  const mono=new Float32Array(len);
+  for(let c=0;c<nch;c++){const ch=buf.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=ch[i]/nch;}
+  const ab=new ArrayBuffer(44+len*2), dv=new DataView(ab);
+  const ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,"RIFF");dv.setUint32(4,36+len*2,true);ws(8,"WAVE");ws(12,"fmt ");dv.setUint32(16,16,true);
+  dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,sr,true);dv.setUint32(28,sr*2,true);
+  dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,"data");dv.setUint32(40,len*2,true);
+  let o=44;for(let i=0;i<len;i++){let s=Math.max(-1,Math.min(1,mono[i]));dv.setInt16(o,s<0?s*0x8000:s*0x7FFF,true);o+=2;}
+  return new Blob([ab],{type:"audio/wav"});
+}
+/* Record in-frame → 16kHz mono WAV → chunk-upload to filestore (beats the 1MB proxy cap) → transcribe by
+   file_id → insert into `target`. Unbounded length. Dependency-free; opts.status(msg) surfaces errors. */
+async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{};
+  const note=m=>{try{opts.status&&opts.status(m);}catch(e){}};
+  let rec=null,chunks=[],on=false,tick=null,secs=0;
+  btn.onclick=async(e)=>{ e&&e.preventDefault();
+    if(on){ rec&&rec.stop(); return; }
+    if(!navigator.mediaDevices||!window.MediaRecorder){ note("Voice input isn’t supported in this browser"); return; }
+    let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(err){ note("Microphone permission was denied"); return; }
+    chunks=[]; rec=new MediaRecorder(stream); on=true; btn.classList.add("rec"); secs=0; btn.textContent="⏺ 0s";
+    tick=setInterval(()=>{secs++;btn.textContent="⏺ "+secs+"s";},1000);
+    rec.ondataavailable=ev=>{ if(ev.data&&ev.data.size)chunks.push(ev.data); };
+    rec.onstop=async()=>{ on=false; clearInterval(tick); stream.getTracks().forEach(t=>t.stop()); btn.classList.remove("rec"); btn.textContent="…";
+      let wav;
+      try{ const ab=await new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"}).arrayBuffer();
+        const AC=window.AudioContext||window.webkitAudioContext; let audio=await new AC().decodeAudioData(ab);
+        try{ const off=new OfflineAudioContext(1,Math.max(1,Math.ceil(audio.duration*16000)),16000); const s=off.createBufferSource(); s.buffer=audio; s.connect(off.destination); s.start(); audio=await off.startRendering(); }catch(e){}
+        wav=_toWav(audio);
+      }catch(err){ btn.textContent="🎤"; note("Could not process the recording"); return; }
+      let fid=null;
+      try{ const up="v"+Date.now().toString(36)+Math.random().toString(36).slice(2,8), CH=700*1024, N=Math.max(1,Math.ceil(wav.size/CH));
+        for(let i=0;i<N;i++){ btn.textContent="⇧ "+Math.round(i/N*100)+"%"; const part=wav.slice(i*CH,(i+1)*CH), last=(i===N-1);
+          const r=await fetch("/bridge/upload-chunk?up="+up+"&seq="+i+(last?"&fin=1":""),{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:part}).then(x=>x.json());
+          if(r.error){ btn.textContent="🎤"; note(r.error); return; } if(last)fid=r.file_id; }
+      }catch(err){ btn.textContent="🎤"; note("Upload failed"); return; }
+      btn.textContent="…";
+      let j={}; try{ j=await fetch("/bridge/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({file_id:fid,mime:"audio/wav",language:opts.language||""})}).then(x=>x.json()); }catch(err){ j={error:String(err)}; }
+      btn.textContent="🎤";
+      if(j.error){ note(j.error); return; }
+      const txt=(j.text||"").trim(); if(!txt){ note("No speech detected — try again"); return; }
+      const cur=target.value||""; target.value=cur?(cur.replace(/\s*$/,"")+" "+txt):txt; target.dispatchEvent(new Event("input")); target.focus();
+    };
+    rec.start();
+  };
+}
 function AIAssist(cfg){
   const S=document.createElement('style');S.textContent=`
   #aiFab{position:fixed;right:18px;bottom:18px;z-index:60;background:linear-gradient(135deg,#6d5efc,#9b5efc);color:#fff;border:0;border-radius:999px;padding:11px 16px;font:600 13.5px system-ui;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4)}
@@ -348,9 +395,11 @@ function AIAssist(cfg){
   .aiChips{display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 8px}
   .aiChip{font-size:12px;border:1px solid #2a3542;border-radius:999px;padding:5px 10px;color:#a9b6c4;cursor:pointer;background:#121821}
   .aiAct{margin-top:8px}.aiAct button{background:#1f9d55;border:0;color:#fff;border-radius:8px;padding:8px 12px;font:600 13px system-ui;cursor:pointer}
-  #aiForm{display:flex;gap:8px;padding:12px 16px;border-top:1px solid #222b36}
+  #aiForm{display:flex;gap:8px;padding:12px 16px;border-top:1px solid #222b36;align-items:flex-end}
+  #aiMic{background:#1b232e;border:1px solid #222b36;color:#e6edf3;border-radius:9px;padding:0 11px;height:37px;cursor:pointer;font-size:15px;white-space:nowrap}
+  #aiMic.rec{background:#3a1d1d;border-color:#6a2b2b;color:#f0a0a0}
   #aiIn{flex:1;background:#0d1117;border:1px solid #222b36;color:#e6edf3;border-radius:9px;padding:9px 11px;font:13.5px system-ui;resize:none;max-height:120px}
-  #aiSend{background:#6d5efc;border:0;color:#fff;border-radius:9px;padding:0 14px;cursor:pointer;font:600 13px system-ui}
+  #aiSend{background:#6d5efc;border:0;color:#fff;border-radius:9px;padding:0 14px;height:37px;cursor:pointer;font:600 13px system-ui}
   .aiSpin{display:inline-block;width:12px;height:12px;border:2px solid #333d49;border-top-color:#9b5efc;border-radius:50%;animation:aisp .7s linear infinite;vertical-align:-2px}
   @keyframes aisp{to{transform:rotate(360deg)}}`;
   document.head.appendChild(S);
@@ -359,15 +408,16 @@ function AIAssist(cfg){
   d.innerHTML=`<header><b>✨ ${cfg.title||'Assistant'}</b><span class="x">✕</span></header>
     <div id="aiLog"></div>
     <div class="aiChips">${(cfg.chips||[]).map(c=>`<span class="aiChip">${String(c).replace(/</g,'&lt;')}</span>`).join('')}</div>
-    <div id="aiForm"><textarea id="aiIn" rows="1" placeholder="Ask about your data…"></textarea><button id="aiSend">Send</button></div>`;
+    <div id="aiForm"><button id="aiMic" title="Dictate (speak in any language)">🎤</button><textarea id="aiIn" rows="1" placeholder="Ask, or 🎤 speak…"></textarea><button id="aiSend">Send</button></div>`;
   document.body.appendChild(d);
   const log=d.querySelector('#aiLog'), inp=d.querySelector('#aiIn'), hist=[];
   const e2=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const add=(role,html)=>{const e=document.createElement('div');e.className='aiMsg '+(role==='user'?'u':'a');e.innerHTML=html;log.appendChild(e);log.scrollTop=log.scrollHeight;return e;};
-  fab.onclick=()=>{d.classList.add('open');inp.focus();if(!log.children.length)add('a','Hi — ask me anything about your '+(cfg.title||'data').toLowerCase()+'. I read what you’re currently looking at.');};
+  fab.onclick=()=>{d.classList.add('open');inp.focus();if(!log.children.length)add('a','Hi — ask me anything about your '+(cfg.title||'data').toLowerCase()+', by typing or 🎤 voice. I read what you’re currently looking at.');};
   d.querySelector('.x').onclick=()=>d.classList.remove('open');
   d.querySelectorAll('.aiChip').forEach(c=>c.onclick=()=>{inp.value=c.textContent;go();});
   d.querySelector('#aiSend').onclick=go; inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();go();}};
+  attachMic(d.querySelector('#aiMic'), inp, {language:cfg.language||'', status:m=>add('a','🎤 '+e2(m))});
   async function go(){
     const q=inp.value.trim(); if(!q)return; inp.value='';
     add('user',e2(q)); hist.push({role:'user',content:q});

@@ -23,23 +23,42 @@
   .cred.ok{background:#12331f;color:#3fb950}.cred.err{background:#3a1518;color:#f85149}
   h3{margin:.2em 0}
 </style>
-<header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· Citizen Services</span>
+<header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· <span data-i18n="js.tagline">Citizen Services</span></span>
   <span id="who" class="who"></span></header>
 <main>
   <div id="gate"></div>
   <div id="app" style="display:none">
     <div class="card">
-      <div class="row"><input id="q" placeholder="Search a service — e.g. complaint, water"/><button class="btn" id="go">Search</button></div>
-      <div id="results" class="muted">Type a service and search — you'll see the services offered in <b id="cityname">your city</b>.</div>
+      <div class="row"><input id="q" data-i18n-ph="js.search_ph" placeholder="Search a service — e.g. complaint, water"/><button class="btn" id="go" data-i18n="ui.search">Search</button></div>
+      <div id="results" class="muted" data-i18n-html="js.search_hint">Type a service and search — you'll see the services offered in <b id="cityname">your city</b>.</div>
     </div>
     <div id="detail"></div>
     <div class="card">
-      <div class="row"><b>My requests</b><button class="btn ghost" id="refresh">Refresh</button></div>
+      <div class="row"><b data-i18n="js.my_requests">My requests</b><button class="btn ghost" id="refresh" data-i18n="js.refresh">Refresh</button></div>
       <div id="txns" class="muted" style="margin-top:8px">—</div>
     </div>
   </div>
 </main>
+<script src="/shared/i18n.js"></script>
 <script>
+AI18n.add({
+  en:{"js.tagline":"Citizen Services","js.search_ph":"Search a service — e.g. complaint, water",
+      "js.search_hint":"Type a service and search — you'll see the services offered in <b id=\"cityname\">your city</b>.",
+      "js.my_requests":"My requests","js.refresh":"Refresh","js.signin_title":"Sign in to Jan Seva",
+      "js.signin_desc":"Access the civic services offered where you live.","js.username":"Username",
+      "js.signin":"Sign in","js.enter_username":"Enter your username.","js.signing_in":"Signing in…",
+      "js.no_citizen":"No such citizen — check your username, or create an account.",
+      "js.new_citizen":"New citizen?","js.create_account":"Create an account →","js.consent_submit":"Consent & Submit",
+      "js.describe":"Describe your request"},
+  hi:{"js.tagline":"नागरिक सेवाएँ","js.search_ph":"सेवा खोजें — जैसे शिकायत, पानी",
+      "js.search_hint":"सेवा टाइप करके खोजें — आपको <b id=\"cityname\">आपके शहर</b> में उपलब्ध सेवाएँ दिखेंगी।",
+      "js.my_requests":"मेरे अनुरोध","js.refresh":"ताज़ा करें","js.signin_title":"जन सेवा में साइन इन करें",
+      "js.signin_desc":"जहाँ आप रहते हैं वहाँ की नागरिक सेवाओं तक पहुँचें।","js.username":"उपयोगकर्ता नाम",
+      "js.signin":"साइन इन","js.enter_username":"अपना उपयोगकर्ता नाम दर्ज करें।","js.signing_in":"साइन इन हो रहा है…",
+      "js.no_citizen":"ऐसा कोई नागरिक नहीं — अपना उपयोगकर्ता नाम जाँचें, या खाता बनाएँ।",
+      "js.new_citizen":"नए नागरिक?","js.create_account":"खाता बनाएँ →","js.consent_submit":"सहमति दें और जमा करें",
+      "js.describe":"अपना अनुरोध बताएँ"}
+});
 const api = (p, b) => fetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const APP = 'jan-seva';
@@ -48,6 +67,7 @@ let CATALOG = [], SEL = null, CITIES = [], PROFILE = null, ME = null;
 // ---- boot: who am I? do I have a profile (where I live)? else show Join ----
 async function boot(){
   try{ ME = await (await fetch('/session')).json(); }catch(e){ ME = {}; }
+  AI18n.init({locale: (ME && ME.locale) || 'en'});   // render in the citizen's chosen language (from their profile)
   try{ CITIES = ((await api('/bridge/jurisdictions',{})).jurisdictions||[]).filter(j=>j.kind==='city'); }catch(e){ CITIES=[]; }
   PROFILE = null;
   if(ME && ME.sub){ try{ PROFILE = (await api('/bridge/profile-get',{})).profile; }catch(e){} }
@@ -61,13 +81,13 @@ function renderJoin(){
   document.getElementById('who').textContent='';
   document.getElementById('app').style.display='none';
   document.getElementById('gate').innerHTML = `<div class="card">
-    <h3>Sign in to Jan Seva</h3>
-    <div class="muted">Access the civic services offered where you live.</div>
-    <label>Username</label><input id="li" placeholder="e.g. asha.patil"/>
-    <button class="btn" id="loginBtn" style="margin-top:10px">Sign in</button>
+    <h3>${esc(AI18n.t('js.signin_title'))}</h3>
+    <div class="muted">${esc(AI18n.t('js.signin_desc'))}</div>
+    <label>${esc(AI18n.t('js.username'))}</label><input id="li" placeholder="e.g. asha.patil"/>
+    <button class="btn" id="loginBtn" style="margin-top:10px">${esc(AI18n.t('js.signin'))}</button>
     <div id="loginOut" class="muted" style="margin-top:8px"></div>
     <div style="margin-top:14px;border-top:1px solid #21262d;padding-top:12px;font-size:14px">
-      New citizen? <a onclick="renderJoinForm()" style="color:#58a6ff;cursor:pointer">Create an account →</a>
+      ${esc(AI18n.t('js.new_citizen'))} <a onclick="renderJoinForm()" style="color:#58a6ff;cursor:pointer">${esc(AI18n.t('js.create_account'))}</a>
     </div></div>`;
   const li=document.getElementById('li');
   document.getElementById('loginBtn').onclick = doLogin;
@@ -75,11 +95,11 @@ function renderJoin(){
 }
 async function doLogin(){
   const u=document.getElementById('li').value.trim(), out=document.getElementById('loginOut');
-  if(!u){ out.innerHTML='<span class="err">Enter your username.</span>'; return; }
-  out.textContent='Signing in…';
+  if(!u){ out.innerHTML='<span class="err">'+esc(AI18n.t('js.enter_username'))+'</span>'; return; }
+  out.textContent=AI18n.t('js.signing_in');
   let r={}; try{ r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({realm:'citizens',username:u.toLowerCase()})}).then(x=>x.json()); }catch(e){}
   if(r && r.ok){ notifyShell(); setTimeout(()=>{ try{ top.location='/'; }catch(e){ location.href='/'; } }, 300); }
-  else out.innerHTML='<span class="err">No such citizen — check your username, or create an account.</span>';
+  else out.innerHTML='<span class="err">'+esc(AI18n.t('js.no_citizen'))+'</span>';
 }
 // ---- create an account (self-signup) ----
 function renderJoinForm(){
@@ -182,7 +202,7 @@ async function pick(i){
         ? `<label>${lbl}</label><textarea data-k="${esc(k)}" rows="3"></textarea>`
         : `<label>${lbl}</label><input data-k="${esc(k)}" type="${t}">`;
     }).join('')
-    : `<label>Describe your request</label><textarea id="msg" rows="3" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea>`;
+    : `<label>${AI18n.t('js.describe')}</label><textarea id="msg" rows="3" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea>`;
   // REUSE: required documents pulled from the citizen's wallet (no re-upload); block if a required VC is missing
   const rc = SEL.required_credentials || []; CREDMATCH = {}; let missing = false, credHtml = '';
   if(rc.length){
@@ -199,11 +219,50 @@ async function pick(i){
        <div id="quote" class="muted"></div>
        ${credHtml}
        <div id="form">${form}</div>
-       <button class="btn" id="submit" onclick="fileIt()"${missing?' disabled':''}>Consent &amp; Submit</button>
+       <button class="btn" id="submit" onclick="fileIt()"${missing?' disabled':''}>${AI18n.t('js.consent_submit')}</button>
        ${missing?'<div class="err" style="font-size:13px;margin-top:6px">Get the missing document from its own service first — it will appear in My Documents, then you can reuse it here.</div>':''}
        <div id="out" class="muted" style="margin-top:8px"></div></div>`;
+  _micify(document.getElementById('form'));   // 🎤 speak your complaint — mic on every free-text field
   document.getElementById('detail').scrollIntoView({behavior:'smooth'});
 }
+/* ===== 🎤 Voice intake — speak your complaint in any language; transcribed via the gateway (Bodhan STT).
+   Records in-frame → 16kHz WAV → chunk-upload to filestore → transcribe by file_id → into the field. ===== */
+function _toWav(buf){ const sr=buf.sampleRate,len=buf.length,nch=buf.numberOfChannels,mono=new Float32Array(len);
+  for(let c=0;c<nch;c++){const ch=buf.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=ch[i]/nch;}
+  const ab=new ArrayBuffer(44+len*2),dv=new DataView(ab),ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,"RIFF");dv.setUint32(4,36+len*2,true);ws(8,"WAVE");ws(12,"fmt ");dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);
+  dv.setUint32(24,sr,true);dv.setUint32(28,sr*2,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,"data");dv.setUint32(40,len*2,true);
+  let o=44;for(let i=0;i<len;i++){let s=Math.max(-1,Math.min(1,mono[i]));dv.setInt16(o,s<0?s*0x8000:s*0x7FFF,true);o+=2;} return new Blob([ab],{type:"audio/wav"}); }
+async function attachMic(btn,target,opts){ if(!btn||!target)return; opts=opts||{}; const idle=btn.textContent||"🎤"; const note=m=>{try{opts.status&&opts.status(m);}catch(e){}};
+  let rec=null,chunks=[],on=false,tick=null,secs=0;
+  btn.onclick=async(e)=>{ e&&e.preventDefault(); if(on){rec&&rec.stop();return;}
+    if(!navigator.mediaDevices||!window.MediaRecorder){note("Voice input isn’t supported here");return;}
+    let stream; try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}catch(err){note("Microphone permission denied");return;}
+    chunks=[];rec=new MediaRecorder(stream);on=true;secs=0;btn.textContent="⏺ 0s";tick=setInterval(()=>{secs++;btn.textContent="⏺ "+secs+"s";},1000);
+    rec.ondataavailable=ev=>{if(ev.data&&ev.data.size)chunks.push(ev.data);};
+    rec.onstop=async()=>{on=false;clearInterval(tick);stream.getTracks().forEach(t=>t.stop());btn.textContent="…";
+      let wav; try{const ab=await new Blob(chunks,{type:(chunks[0]&&chunks[0].type)||"audio/webm"}).arrayBuffer();
+        const AC=window.AudioContext||window.webkitAudioContext; let audio=await new AC().decodeAudioData(ab);
+        try{const off=new OfflineAudioContext(1,Math.max(1,Math.ceil(audio.duration*16000)),16000);const s=off.createBufferSource();s.buffer=audio;s.connect(off.destination);s.start();audio=await off.startRendering();}catch(e){}
+        wav=_toWav(audio);}catch(err){btn.textContent=idle;note("Could not process the recording");return;}
+      let fid=null; try{const up="v"+Date.now().toString(36)+Math.random().toString(36).slice(2,8),CH=700*1024,N=Math.max(1,Math.ceil(wav.size/CH));
+        for(let i=0;i<N;i++){btn.textContent="⇧ "+Math.round(i/N*100)+"%";const part=wav.slice(i*CH,(i+1)*CH),last=(i===N-1);
+          const r=await fetch("/bridge/upload-chunk?up="+up+"&seq="+i+(last?"&fin=1":""),{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:part}).then(x=>x.json());
+          if(r.error){btn.textContent=idle;note(r.error);return;} if(last)fid=r.file_id;}
+      }catch(err){btn.textContent=idle;note("Upload failed");return;}
+      btn.textContent="…"; let j={}; try{j=await fetch("/bridge/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({file_id:fid,mime:"audio/wav",language:opts.language||""})}).then(x=>x.json());}catch(err){j={error:String(err)};}
+      btn.textContent=idle; if(j.error){note(j.error);return;} const txt=(j.text||"").trim(); if(!txt){note("No speech detected — try again");return;}
+      const cur=target.value||""; target.value=cur?(cur.replace(/\s*$/,"")+" "+txt):txt; target.dispatchEvent(new Event("input")); target.focus();
+    };
+    rec.start();
+  };
+}
+function _micify(box){ if(!box)return; box.querySelectorAll("textarea").forEach(ta=>{ if(ta._mic)return; ta._mic=1;
+  const b=document.createElement("button"); b.type="button"; b.textContent="🎤 Speak"; b.className="btn ghost"; b.style.cssText="margin:2px 0 8px;padding:4px 10px;font-size:13px";
+  const st=document.createElement("span"); st.style.cssText="font-size:12px;color:#8b949e;margin-left:8px";
+  ta.insertAdjacentElement("afterend", st); ta.insertAdjacentElement("afterend", b);
+  attachMic(b, ta, {status:m=>{st.textContent=m; setTimeout(()=>{if(st.textContent===m)st.textContent="";},4000);}});
+}); }
 async function quote(){
   const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id});
   const q = (r.message||{}).quote;
