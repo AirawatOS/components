@@ -9,3 +9,5 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 required_schemas: [platform.inbox_item]
+
+default_install: true   # part of the base-OS default suite every tenant receives

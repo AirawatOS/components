@@ -15,3 +15,5 @@ personal: true
 required_schemas: [doc.sheet]
 writes: [doc.sheet]
 roles: []
+
+default_install: true   # part of the base-OS default suite every tenant receives

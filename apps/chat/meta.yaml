@@ -17,3 +17,5 @@ sandboxed: true
 required_schemas: [chat.channel, chat.message]
 writes: [chat.channel, chat.message]
 roles: []
+
+default_install: true   # part of the base-OS default suite every tenant receives

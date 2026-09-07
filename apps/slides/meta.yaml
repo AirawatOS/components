@@ -14,3 +14,5 @@ personal: true
 required_schemas: [doc.deck]
 writes: [doc.deck]
 roles: []
+
+default_install: true   # part of the base-OS default suite every tenant receives
