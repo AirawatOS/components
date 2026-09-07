@@ -5,7 +5,7 @@ provider: ds:airawatdeveloper:developer
 title: Voice Settings
 display_name: Voice Settings
 description: Admin screen to configure the Bodhan AI speech-to-text key + endpoint that powers voice dictation.
-entrypoint: dist/index.html
+entrypoint: index.html
 icon: "🎙️"
 roles: [platform.tenant-admin, platform.steward]
 required_schemas: []
