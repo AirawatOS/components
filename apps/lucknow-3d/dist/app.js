@@ -83,6 +83,14 @@ whenReady(async () => {
   let lastNets = "";
   state.subscribe(s => { const key = s.activeNetworks.slice().sort().join(","); if (key !== lastNets) { lastNets = key; netLayer.setActive(s.activeNetworks); } });
 
+  // when a network overlay is on, hide the massing so the ground-level lines/nodes read — but only in the
+  // Physical PLAN view (OPERATE paints buildings by state; Compute/Digital lenses inspect buildings).
+  let lastFade = null;
+  state.subscribe(s => {
+    const fade = s.activeNetworks.length > 0 && s.lens === "physical" && s.lifecycleMode === "plan";
+    if (fade !== lastFade) { lastFade = fade; A.fadeBuildings(fade); }
+  });
+
   // lens on-activate / on-deactivate hooks (emphasis, fibre, camera)
   let curLens = "physical";
   state.subscribe(s => {

@@ -316,6 +316,7 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   const DB=[Math.min(...cells.flatMap(c=>c.poly.map(p=>p[0]))),Math.min(...cells.flatMap(c=>c.poly.map(p=>p[1]))),Math.max(...cells.flatMap(c=>c.poly.map(p=>p[0]))),Math.max(...cells.flatMap(c=>c.poly.map(p=>p[1])))];
 
   // GROUND + surrounding real city (only tokenless — photoreal has real terrain + OSM buildings)
+  let ctxPrim=null;   // surrounding real footprints (tokenless) — faded with the massing when a network overlay is on
   if(!hasToken){
     const AX=(aoiRing||[[dcx-0.02,0],[dcx+0.02,0]]).map(p=>p[0]), AY=(aoiRing||[[0,dcy-0.02],[0,dcy+0.02]]).map(p=>p[1]);
     const G=[Math.min(...AX),Math.min(...AY),Math.max(...AX),Math.max(...AY)], M=0.01;
@@ -323,7 +324,7 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     // surrounding real footprints as CONTEXT — clipped to the AI-City box (+margin) so they sit on the
     // ground plane (geo.building spans all of Lucknow; without this we'd carpet the whole city).
     const inCtx=f=>{const c=centroid(ringOf(f));return c[0]>=G[0]-M&&c[0]<=G[2]+M&&c[1]>=G[1]-M&&c[1]<=G[3]+M;};
-    batch(feats.filter(inCtx).map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1,{kind:"existing",h:Math.round(f.properties.h)})),false);
+    ctxPrim=batch(feats.filter(inCtx).map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1,{kind:"existing",h:Math.round(f.properties.h)})),false);
   }
 
   // ============ DESIGNED AI DISTRICT — mixed-use blocks on a street grid ============
@@ -464,6 +465,7 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     buildings: [...bldRec.values()].map(b=>({id:b.id,name:b.name,t:b.t,function:b.function,cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,h:b.h})),
     onPick:null,                                    // app.js sets this: (buildingId) => select in the twin
     highlight, clearHighlight:clearHi, emphasize, clearEmphasis, paintBuildings, clearPaint, flyToBuilding, flyToBbox, outline,
+    fadeBuildings:on=>{ try{ if(bldPrim)bldPrim.show=!on; if(ctxPrim)ctxPrim.show=!on; }catch(e){} scene.requestRender(); },   // hide massing so ground networks read
     addHideable:p=>{ if(p) CITY_PRIMS.push(p); },                     // layers (e.g. networks) that must hide during a walk-through
     flyToPoint:(lon,lat)=>{ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
       viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lon,lat,20),260),
