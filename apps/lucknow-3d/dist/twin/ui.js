@@ -8,13 +8,17 @@ const $ = id => document.getElementById(id);
 
 export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks, lenses }) {
   const LENSMODS = lenses || {};   // { compute: {inspector}, digital: {inspector}, … }
-  // ---- networks (bottom, toggle chips + presets) ----
+  // ---- Overlays popover: networks (+ scenario section filled by app.js) ----
+  const ovbtn = $("dt-ovbtn"), ovmenu = $("dt-ovmenu");
+  if (ovbtn && ovmenu) {
+    ovbtn.onclick = e => { e.stopPropagation(); const open = ovmenu.hidden; ovmenu.hidden = !open; ovbtn.classList.toggle("on", open); ovbtn.setAttribute("aria-expanded", open ? "true" : "false"); };
+    document.addEventListener("click", e => { if (!ovmenu.hidden && !ovmenu.contains(e.target) && e.target !== ovbtn) { ovmenu.hidden = true; ovbtn.classList.remove("on"); ovbtn.setAttribute("aria-expanded", "false"); } });
+  }
   const nets = networks || [];
   const PRESETS = { Utilities: ["power", "water"], Digital: ["fiber"], All: nets.map(n => n.kind) };
-  const nx = $("dt-networks");
+  const nx = $("ov-networks");
   if (nx && nets.length) {
-    nx.innerHTML = `<span class="lbl">Networks</span>`
-      + nets.map(n => `<button data-net="${n.kind}"><span class="sw" style="background:rgb(${n.color.join(",")})"></span>${esc(n.name)}</button>`).join("")
+    nx.innerHTML = nets.map(n => `<button data-net="${n.kind}"><span class="sw" style="background:rgb(${n.color.join(",")})"></span>${esc(n.name)}</button>`).join("")
       + Object.keys(PRESETS).map(p => `<button class="clr" data-preset="${p}">${p}</button>`).join("")
       + `<button class="clr" data-preset="__off">Off</button>`;
     nx.querySelectorAll("[data-net]").forEach(b => b.onclick = () => {

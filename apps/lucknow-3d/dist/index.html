@@ -76,15 +76,31 @@
   .dt-card .rels b{color:#dfe6ff;font-family:ui-monospace,monospace;font-size:11px}
   .dt-card .dim{font-size:12px;color:#8b949e;line-height:1.5}
   .dt-card .ill{margin-top:10px;font-size:10.5px;color:#6b7684}
-  /* networks toggle (bottom-left) */
-  #dt-networks{position:absolute;left:70px;bottom:18px;z-index:6;display:flex;align-items:center;gap:6px;
-    background:#0e1130cc;border:1px solid #2a2a5a;border-radius:10px;padding:6px 8px;backdrop-filter:blur(6px);flex-wrap:wrap;max-width:60vw}
-  #dt-networks .lbl{font:10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#8b949e;margin-right:2px}
-  #dt-networks button{display:flex;align-items:center;gap:6px;background:#ffffff0c;border:1px solid #ffffff18;color:#cfd6f5;
-    border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer}
-  #dt-networks button .sw{width:9px;height:9px;border-radius:2px}
-  #dt-networks button.on{border-color:#39d3e0;color:#eef1ff;background:#39d3e014}
-  #dt-networks .clr{color:#9aa0cc}
+  /* OVERLAYS — one launcher (bottom-left) + a popover holding networks + PLAN scenario (was two floating bars) */
+  #dt-ovbtn{position:absolute;left:14px;bottom:18px;z-index:6;background:#0e1130cc;border:1px solid #2a2a5a;color:#dfe6ff;
+    border-radius:10px;padding:8px 13px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px)}
+  #dt-ovbtn:hover{border-color:#39d3e088} #dt-ovbtn.on{border-color:#39d3e0;color:#c9f4fa}
+  #dt-ovmenu{position:absolute;left:14px;bottom:62px;z-index:7;width:250px;background:#0e1130f2;border:1px solid #2a2a5a;
+    border-radius:12px;padding:11px 12px;backdrop-filter:blur(8px);box-shadow:0 14px 34px #0008}
+  #dt-ovmenu[hidden]{display:none}
+  #dt-ovmenu .ovh{font:10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#8b949e;margin:2px 0 7px}
+  #dt-ovmenu .ovh.ovsec{margin-top:13px;border-top:1px solid #ffffff12;padding-top:11px}
+  #ov-networks,#ov-scenario{display:flex;flex-wrap:wrap;gap:6px}
+  #ov-networks button,#ov-scenario button{display:flex;align-items:center;gap:6px;background:#ffffff0c;border:1px solid #ffffff18;
+    color:#cfd6f5;border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer}
+  #ov-networks button .sw{width:9px;height:9px;border-radius:2px}
+  #ov-networks button.on{border-color:#39d3e0;color:#eef1ff;background:#39d3e014}
+  #ov-networks .clr,#ov-scenario .clr{color:#9aa0cc}
+  #ov-scenario button.on{border-color:#e8b84b;color:#f4e6c0;background:#e8b84b18}
+  /* scenario impact readout (bottom-centre) */
+  #dt-scenario-panel{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;width:300px;background:#0e1130ee;border:1px solid #e8b84b55;border-radius:12px;padding:12px 14px;backdrop-filter:blur(6px);box-shadow:0 12px 30px #0007}
+  #dt-scenario-panel[hidden]{display:none}
+  #dt-scenario-panel .t{font-family:ui-serif,Georgia,serif;font-size:15px;color:#f4e6c0;margin-bottom:2px}
+  #dt-scenario-panel .st{font:10px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:8px}
+  #dt-scenario-panel .row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#aeb6dd;padding:3px 0}
+  #dt-scenario-panel .row b{color:#39d3e0;font-variant-numeric:tabular-nums}
+  #dt-scenario-panel .row.hi b{color:#e8b84b}
+  #dt-scenario-panel .ill{margin-top:9px;font-size:10.5px;color:#6b7684}
 </style></head><body>
 <div id="c"></div>
 <div class="cap"><div class="k">Indicative Masterplan · Lucknow</div>
@@ -119,7 +135,14 @@
 <div id="dt-lifecycle"></div>
 <div id="dt-lens"></div>
 <div id="dt-inspector" hidden></div>
-<div id="dt-networks"></div>
+<button id="dt-ovbtn" aria-haspopup="true" aria-expanded="false">▤ Overlays</button>
+<div id="dt-ovmenu" hidden>
+  <div class="ovh">Infrastructure networks</div>
+  <div id="ov-networks"></div>
+  <div class="ovh ovsec" id="ov-scenario-h">Plan scenario</div>
+  <div id="ov-scenario"></div>
+</div>
+<div id="dt-scenario-panel" hidden></div>
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>
 <script src="./vendor/h3-js.umd.js"></script>

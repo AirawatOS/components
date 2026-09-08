@@ -5,7 +5,7 @@
 # ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
 component_id: ds:airawatdeveloper:app/lucknow-3d
 kind: app
-version: 0.5.0   # 0.5.0: Phase 3 — Compute + Digital lenses (compute capacity + Airawat data/models/agents overlay)
+version: 0.6.1   # 0.6.1: combined networks + scenario into one Overlays popover (was two overlapping bottom bars)
 # 0.2.1: zones/parcels scaled to the ACTUAL district bounds (were tiling the whole AOI) + breadcrumb moved below the title
 # 0.2.0: digital-twin Phase 1 — DigitalTwinState + Repository (demo) + LayerManager seam + shell (breadcrumb/lifecycle/lens/inspector) + City→Zone→Parcel→Building drilldown (ES modules over the render)
 provider: ds:airawat:developer
