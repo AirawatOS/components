@@ -1,0 +1,185 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Camera View</title>
+<link rel="stylesheet" href="/shared/aos.css">
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 20px;
+         background: #0d1117; color: #e6edf3; }
+  h2 { margin: 0 0 4px; font-size: 18px; }
+  .sub { color: #8b949e; font-size: 13px; margin-bottom: 18px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+  .cam { background: #161b22; border: 1px solid #21262d; border-radius: 10px; overflow: hidden; }
+  .shot { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #010409; display: block; }
+  .none { width: 100%; aspect-ratio: 16/9; background: #010409; display: flex; align-items: center;
+          justify-content: center; color: #6e7681; font-size: 13px; text-align: center; padding: 0 20px; }
+  .meta { padding: 12px 14px; }
+  .row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .name { font-weight: 600; font-size: 14px; }
+  .where, .age { color: #8b949e; font-size: 12px; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .up { color: #3fb950; border-color: #238636; }
+  .down { color: #f85149; border-color: #da3633; }
+  .degraded, .unknown { color: #d29922; border-color: #9e6a03; }
+  .purpose { margin-top: 8px; font-size: 11px; color: #6e7681; }
+  .err { background: #3d1d1d; border: 1px solid #da3633; padding: 12px; border-radius: 8px; font-size: 13px; }
+</style>
+
+<h2>Camera View</h2>
+<div class="sub" id="sub">loading…</div>
+<details class="mgr" id="admin" hidden style="margin:0 0 18px;background:#161b22;border:1px solid #21262d;border-radius:10px;padding:0 14px">
+  <summary style="cursor:pointer;padding:12px 0;font-weight:600;font-size:14px">⚙ Manage cameras <span style="color:#8b949e;font-weight:400">— admin only</span></summary>
+  <div id="mgrbody" style="padding:4px 0 16px"></div>
+</details>
+<div class="grid" id="grid"></div>
+<style>
+  .mgr input{background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:6px 8px;font-size:13px}
+  .mgr table{width:100%;border-collapse:collapse;font-size:13px} .mgr th{text-align:left;color:#8b949e;font-weight:500;padding:6px 8px}
+  .mgr td{padding:6px 8px;border-top:1px solid #21262d;vertical-align:middle}
+  .mgr button{background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+  .mgr button.sec{background:#30363d} .mgr button.danger{background:#da3633}
+  .mgr .addrow input{margin-right:6px} .mgr .msg{color:#8b949e;font-size:12px;margin:8px 8px 0}
+</style>
+
+<script>
+const APP = 'camera-view';
+const REFRESH_MS = 15000;
+
+async function q(schema) {
+  const r = await fetch('/bridge/query', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({app_id: APP, schema: schema})
+  });
+  if (!r.ok) throw new Error(schema + ': ' + r.status);
+  return (await r.json()).results || [];
+}
+
+const latestBy = (rows, key, timeField) => {
+  const out = {};
+  for (const r of rows) {
+    const k = r[key];
+    if (!k) continue;
+    if (!out[k] || (r[timeField] || '') > (out[k][timeField] || '')) out[k] = r;
+  }
+  return out;
+};
+
+function ago(iso) {
+  if (!iso) return '';
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 90) return Math.round(s) + 's ago';
+  if (s < 5400) return Math.round(s / 60) + 'm ago';
+  return Math.round(s / 3600) + 'h ago';
+}
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function boot() {
+  const grid = document.getElementById('grid'), sub = document.getElementById('sub');
+  try {
+    const [cams, frames, health] = await Promise.all([
+      q('device.camera'), q('media.frame'), q('device.stream_health')
+    ]);
+    const lastFrame = latestBy(frames, 'camera_ref', 'captured_at');
+    const lastHealth = latestBy(health, 'camera_ref', 'observed_at');
+
+    if (IS_ADMIN) { document.getElementById('admin').hidden = false; renderAdmin(cams); }
+
+    if (!cams.length) {
+      grid.innerHTML = '';
+      sub.textContent = 'No cameras registered in this tenant.';
+      return;
+    }
+
+    grid.innerHTML = cams.map(c => {
+      const f = lastFrame[c.id], h = lastHealth[c.id];
+      const state = (h && h.state) || 'unknown';
+      const loc = c.location || {};
+      const where = [loc.zone, loc.ward].filter(Boolean).join(' · ');
+      // Bytes come from the host media seam, which authorises this user for THIS camera and records
+      // the view. The app never touches the file store and never sees a file id it can dereference.
+      const shot = f
+        ? `<img class="shot" alt="Latest frame from ${esc(c.name)}"
+              src="/media/frame/${encodeURIComponent(f.id)}">`
+        : `<div class="none">no frame captured yet${state === 'down' ? ' — camera is down' : ''}</div>`;
+      return `<div class="cam">${shot}<div class="meta">
+          <div class="row">
+            <span class="name">${esc(c.name || c.id)}</span>
+            <span class="chip ${esc(state)}">${esc(state)}</span>
+          </div>
+          <div class="row">
+            <span class="where">${esc(where)}</span>
+            <span class="age">${f ? esc(ago(f.captured_at)) : (h ? esc(ago(h.observed_at)) : '')}</span>
+          </div>
+          ${h && h.detail ? `<div class="purpose">${esc(h.detail)}</div>` : ''}
+          <div class="purpose">purpose: ${esc(c.purpose_binding || '—')} · retention: ${esc(c.retention_class || '—')}</div>
+        </div></div>`;
+    }).join('');
+
+    const live = cams.filter(c => (lastHealth[c.id] || {}).state === 'up').length;
+    sub.textContent = `${cams.length} camera${cams.length === 1 ? '' : 's'} · ${live} up · `
+      + `frames refresh every ${REFRESH_MS / 1000}s (interval capture, not live video)`;
+  } catch (e) {
+    grid.innerHTML = `<div class="err">Could not load cameras: ${esc(e.message)}</div>`;
+    sub.textContent = '';
+  }
+}
+
+// --- admin-only camera management (name / feed / enable). The bridge re-checks the admin role server-side. ---
+let IS_ADMIN = false;
+const ADMIN_ROLES = ['platform.tenant-admin', 'platform.steward', 'admin'];
+async function initAdmin() {
+  try {
+    const s = await fetch('/session').then(r => r.json());
+    const roles = new Set(s.roles || []);
+    IS_ADMIN = ADMIN_ROLES.some(r => roles.has(r));
+  } catch (e) {}
+}
+async function post(path, body) {
+  const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+function mmsg(t) { const m = document.getElementById('mgrmsg'); if (m) m.textContent = t; }
+function renderAdmin(cams) {
+  const rows = cams.map(c => {
+    const url = ((c.stream || {}).url) || '';
+    return `<tr data-id="${esc(c.id)}">
+      <td><input class="f-name" value="${esc(c.name || '')}" style="width:170px"></td>
+      <td><input class="f-url" value="${esc(url)}" style="width:340px"></td>
+      <td style="text-align:center"><input type="checkbox" class="f-en" ${c.enabled !== false ? 'checked' : ''}></td>
+      <td style="white-space:nowrap"><button onclick="saveCam(this)">Save</button>
+        <button class="danger" onclick="delCam(this)">Disable</button></td></tr>`;
+  }).join('');
+  document.getElementById('mgrbody').innerHTML =
+    `<table><thead><tr><th>Name</th><th>Feed URL (rtsp:// or https://…)</th><th style="text-align:center">On</th><th></th></tr></thead>`
+    + `<tbody>${rows || '<tr><td colspan="4" style="color:#6e7681">No cameras yet — add one below.</td></tr>'}</tbody></table>`
+    + `<div class="addrow" style="padding:12px 8px 0">`
+    + `<input id="add_name" placeholder="New camera name" style="width:170px">`
+    + `<input id="add_url" placeholder="rtsp://host:554/stream" style="width:340px">`
+    + `<button onclick="addCam()">+ Add camera</button></div><div class="msg" id="mgrmsg"></div>`;
+}
+async function saveCam(btn) {
+  const tr = btn.closest('tr'), id = tr.dataset.id;
+  const name = tr.querySelector('.f-name').value.trim(), url = tr.querySelector('.f-url').value.trim(),
+        enabled = tr.querySelector('.f-en').checked;
+  if (!name || !url) { mmsg('name and feed url required'); return; }
+  mmsg('saving…'); try { await post('/bridge/camera-configure', {id, name, url, enabled}); mmsg('✓ saved'); boot(); }
+  catch (e) { mmsg('save failed: ' + e.message); }
+}
+async function delCam(btn) {
+  const id = btn.closest('tr').dataset.id;
+  mmsg('disabling…'); try { await post('/bridge/camera-delete', {id}); mmsg('✓ disabled'); boot(); }
+  catch (e) { mmsg('failed: ' + e.message); }
+}
+async function addCam() {
+  const name = document.getElementById('add_name').value.trim(), url = document.getElementById('add_url').value.trim();
+  if (!name || !url) { mmsg('name and feed url required'); return; }
+  mmsg('adding…'); try { await post('/bridge/camera-configure', {name, url}); mmsg('✓ added'); boot(); }
+  catch (e) { mmsg('add failed: ' + e.message); }
+}
+
+initAdmin().then(boot);
+setInterval(boot, REFRESH_MS);
+</script>
