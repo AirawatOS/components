@@ -21,7 +21,17 @@ from datetime import datetime, timezone
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
 COMPONENT = "ds:airawatdeveloper:driver/crowd-count"
-MODEL_WEIGHTS = os.environ.get("YOLO_WEIGHTS", "yolov8n.pt")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+MODEL_WEIGHTS = os.environ.get("YOLO_WEIGHTS", os.path.join(_HERE, "yolov8n.pt"))
+# COUNTING METHOD (see the density-estimation note below):
+#   detection — YOLO boxes each visible person, count = #boxes. Great for sparse/moderate crowds; UNDER-counts
+#               dense ones (occlusion + tiny + NMS merge). Off-the-shelf.
+#   density   — a crowd-density model outputs a per-pixel people-density map; count = SUM(map). Stays accurate
+#               into extreme density (counts crowd "mass", never resolves individuals). Needs a crowd-trained
+#               model (CSRNet/MCNN on ShanghaiTech/QNRF) exported to TorchScript and bundled as crowd-density.pt.
+COUNT_METHOD = os.environ.get("COUNT_METHOD", "detection").lower()
+DENSITY_MODEL = os.environ.get("DENSITY_MODEL", os.path.join(_HERE, "crowd-density.pt"))
+DENSITY_SCALE = float(os.environ.get("DENSITY_SCALE", "1.0"))     # per-model calibration on SUM(map)
 DEFAULT_COVERAGE_M2 = float(os.environ.get("CAMERA_COVERAGE_M2", "250"))   # ground area one frame covers
 H3_RES = int(os.environ.get("H3_RES", "9"))
 CAMERA_ID = os.environ.get("CAMERA_ID", "").strip()
@@ -66,8 +76,56 @@ def _detector():
     return _MODEL
 
 
+# ---- density-estimation model (lazy, TorchScript, arch-agnostic) -------------------------------------------
+_DENSITY = None
+def _density_model():
+    global _DENSITY
+    if _DENSITY is not None:
+        return _DENSITY
+    if not os.path.exists(DENSITY_MODEL):
+        _DENSITY = False
+        print("[crowd-count] COUNT_METHOD=density but no model at %s — falling back to detection" % DENSITY_MODEL)
+        return _DENSITY
+    try:
+        import torch
+        _DENSITY = torch.jit.load(DENSITY_MODEL, map_location="cpu").eval()
+        print("[crowd-count] density model loaded: %s" % DENSITY_MODEL)
+    except Exception as e:
+        _DENSITY = False
+        print("[crowd-count] density model load failed (%s) — falling back to detection" % str(e)[:120])
+    return _DENSITY
+
+def _count_density(jpeg_bytes):
+    """Integrate the predicted per-pixel density map → total people. Returns (count, meta) or None to signal
+    'no density model, fall back'. Standard crowd-counting preprocessing: RGB, ImageNet-normalised, dims to a
+    multiple of 8; count = SUM(density map) * DENSITY_SCALE (per-model calibration)."""
+    m = _density_model()
+    if not m:
+        return None
+    import torch, numpy as np, cv2
+    arr = cv2.imdecode(np.frombuffer(jpeg_bytes, np.uint8), cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB).astype("float32") / 255.0
+    h, w = (rgb.shape[0] // 8) * 8, (rgb.shape[1] // 8) * 8
+    rgb = cv2.resize(rgb, (w, h))
+    mean = np.array([0.485, 0.456, 0.406], "float32"); std = np.array([0.229, 0.224, 0.225], "float32")
+    t = torch.from_numpy(((rgb - mean) / std).transpose(2, 0, 1)).unsqueeze(0)
+    with torch.no_grad():
+        dm = m(t)
+    count = float(dm.sum().item()) * DENSITY_SCALE
+    return int(round(max(0.0, count))), {"model": os.path.basename(DENSITY_MODEL), "mode": "density"}
+
 def _count_people(jpeg_bytes, frame):
-    """(count, meta). Real path = YOLO person boxes. Scaffold path = the sim's stamped ground truth."""
+    """(count, meta). Dispatch by COUNT_METHOD.
+    density   → integrate a crowd-density map (accurate into dense regimes); falls back to detection if no
+                density model is bundled.
+    detection → YOLO boxes each visible person (YOLO-first). Only if no detector is present do we fall back:
+                a simulated frame reports its stamped ground-truth (scaffold), a real one yields 0 (never a
+                guess — see no-synthetic-data)."""
+    if COUNT_METHOD == "density":
+        r = _count_density(jpeg_bytes)
+        if r is not None:
+            return r
+        # no density model present → fall through to detection
     m = _detector()
     if m:
         import numpy as np, cv2
@@ -75,8 +133,10 @@ def _count_people(jpeg_bytes, frame):
         res = m.predict(arr, classes=[0], verbose=False)     # class 0 = person (COCO)
         n = int(sum(len(r.boxes) for r in res))
         return n, {"model": MODEL_WEIGHTS, "mode": "vision"}
-    gt = (frame.get("prov") or {}).get("sim_headcount")
-    return (int(gt) if gt is not None else 0), {"model": None, "mode": "scaffold-groundtruth"}
+    prov = frame.get("prov") or {}
+    if prov.get("source") == "simulation" and prov.get("sim_headcount") is not None:
+        return int(prov["sim_headcount"]), {"model": None, "mode": "scaffold-groundtruth"}
+    return 0, {"model": None, "mode": "no-model"}
 
 
 def _cameras():
@@ -129,12 +189,11 @@ def main():
     if not tenant:
         print("[crowd-count] no tenant in broker context — refusing to guess"); return 2
 
-    # count the SIM cameras' frames (the demo scene). Real network feeds are rtsp-ingest's cameras; once a
-    # detection model is bundled, widen this to count them too — the code path is identical.
-    cams = [c for c in _cameras() if c and c.get("enabled", True)
-            and ((c.get("stream") or {}).get("protocol") or "").lower() == "sim"]
+    # count EVERY enabled camera that has a frame: real feeds get YOLO person-detection, sim cameras get their
+    # stamped ground-truth (see _count_people). The weight is now bundled, so real detection is live.
+    cams = [c for c in _cameras() if c and c.get("enabled", True)]
     if not cams:
-        print("[crowd-count] no enabled sim device.camera readable by this run — nothing to do"); return 0
+        print("[crowd-count] no enabled device.camera readable by this run — nothing to do"); return 0
 
     wrote = 0
     for cam in cams:

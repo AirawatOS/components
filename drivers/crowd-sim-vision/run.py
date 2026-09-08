@@ -32,6 +32,8 @@ SCENARIO = os.environ.get("SCENARIO", "ramkund-crush")       # baseline | ramkun
 BASELINE_K = int(os.environ.get("BASELINE_K", "40"))         # per-camera crowd at the scenario trough
 PEAK_K = int(os.environ.get("PEAK_K", "900"))                # per-camera crowd at the scenario peak
 W, H = int(os.environ.get("IMG_W", "1280")), int(os.environ.get("IMG_H", "720"))
+IMG_MAX = int(os.environ.get("IMG_MAX_PEOPLE", "45"))    # a believable per-frame crowd; a detector can't resolve
+                                                          # 100+ overlapping bodies in one 720p frame (real limit)
 CAMERA_ID = os.environ.get("CAMERA_ID", "").strip()
 SEED_HOUR = os.environ.get("SIM_HOUR")                        # pin the scenario hour for a repeatable demo
 
@@ -93,8 +95,11 @@ def _scenario_k(cam):
 
 # ---- image generation --------------------------------------------------------------------------------------
 def _composite(k):
-    """A background with K person sprites pasted at random ground positions → (jpeg_bytes, detectable)."""
+    """A background with real person-sprites pasted at random ground positions → (jpeg_bytes, detectable,
+    pasted). Capped at IMG_MAX so the frame reads as a real crowd photo the detector can resolve — beyond that
+    a single frame is a wall of occluded bodies and detection genuinely saturates."""
     from PIL import Image, ImageDraw
+    n = min(int(k), IMG_MAX)
     bg_path = os.path.join(HERE, "assets", "bg.jpg")
     if os.path.exists(bg_path):
         img = Image.open(bg_path).convert("RGB").resize((W, H))
@@ -103,21 +108,23 @@ def _composite(k):
     sprite_dir = os.path.join(HERE, "assets", "sprites")
     sprites = ([os.path.join(sprite_dir, f) for f in sorted(os.listdir(sprite_dir))
                 if f.lower().endswith((".png",))] if os.path.isdir(sprite_dir) else [])
-    rnd = random.Random(k * 7919 + (int(SEED_HOUR) if SEED_HOUR is not None else 0))
+    rnd = random.Random(n * 7919 + (int(SEED_HOUR) if SEED_HOUR is not None else 0))
     detectable = bool(sprites)
     draw = ImageDraw.Draw(img)
-    for _ in range(k):
+    for _ in range(n):
         y = rnd.randint(int(H * 0.35), H - 10)                       # perspective: nearer = lower + bigger
-        scale = 0.25 + 0.75 * (y - H * 0.35) / (H * 0.65)
-        ph = max(12, int(90 * scale)); pw = max(5, int(ph * 0.4))
-        x = rnd.randint(0, W - pw)
+        scale = 0.35 + 0.75 * (y - H * 0.35) / (H * 0.65)
         if detectable:
-            sp = Image.open(rnd.choice(sprites)).convert("RGBA").resize((pw, ph))
+            sp = Image.open(rnd.choice(sprites)).convert("RGBA")
+            ph = max(48, int(150 * scale))                            # big enough for the detector to resolve
+            pw = max(16, int(ph * sp.width / sp.height))              # PRESERVE the crop's real aspect ratio
+            sp = sp.resize((pw, ph)); x = rnd.randint(0, max(1, W - pw))
             img.paste(sp, (x, y - ph), sp)
         else:
+            ph = max(12, int(90 * scale)); pw = max(5, int(ph * 0.4)); x = rnd.randint(0, W - pw)
             draw.ellipse([x, y - ph, x + pw, y], fill=(35, 35, 40))  # silhouette placeholder (not detectable)
     buf = io.BytesIO(); img.save(buf, "JPEG", quality=80)
-    return buf.getvalue(), detectable
+    return buf.getvalue(), detectable, n
 
 
 def _from_bank(k_target):
@@ -165,7 +172,7 @@ def main():
             k = true_k
         else:
             try:
-                blob, detectable = _composite(k)
+                blob, detectable, k = _composite(k)          # k := actual people pasted (capped at IMG_MAX)
             except Exception as e:
                 print("[crowd-sim-vision] %s: composite failed (%s) — needs pillow (vision runtime)" % (name, str(e)[:100]))
                 continue
