@@ -7,6 +7,8 @@ import { mountShell } from "./twin/ui.js";
 import { createNetworkLayer } from "./layers/network.js";
 import { compute, specs as computeSpecs } from "./lenses/compute.js";
 import { digital } from "./lenses/digital.js";
+import { innovation } from "./lenses/innovation.js";
+import { governance } from "./lenses/governance.js";
 import { SCENARIOS, impacts } from "./sim/scenario.js";
 import { START, END, progress, colorFor } from "./sim/build.js";
 import { OP_BASE, WARN_NODE, reading, affected, agentAdvice } from "./sim/telemetry.js";
@@ -71,8 +73,8 @@ whenReady(async () => {
     return { title: e.name || e.id, body: body + `<div class="ill">Illustrative live telemetry</div>` };
   };
 
-  // ---- semantic lenses (Phase 3): Compute + Digital wired; Innovation/Governance still stubs ----
-  const LENSES = { compute, digital };
+  // ---- semantic lenses: all five wired (Physical is the render itself) ----
+  const LENSES = { compute, digital, innovation, governance };
   const lensCtx = { A, repo, state };
   mountShell({ state, repo, networks, lenses: LENSES, buildInspector, operateInspector, onNavigate: navigate, onEnterBuilding: id => A.enterBuilding(id) });
 

@@ -5,7 +5,7 @@
 # ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
 component_id: ds:airawatdeveloper:app/lucknow-3d
 kind: app
-version: 0.9.1   # 0.9.1: fade the building massing when a network overlay is active (Physical PLAN view) so ground lines/nodes read
+version: 1.0.0   # 1.0.0: all 5 lenses complete — Innovation (ecosystem) + Governance (ownership/operator/regulator/AI-system) wired
 # 0.2.1: zones/parcels scaled to the ACTUAL district bounds (were tiling the whole AOI) + breadcrumb moved below the title
 # 0.2.0: digital-twin Phase 1 — DigitalTwinState + Repository (demo) + LayerManager seam + shell (breadcrumb/lifecycle/lens/inspector) + City→Zone→Parcel→Building drilldown (ES modules over the render)
 provider: ds:airawat:developer
