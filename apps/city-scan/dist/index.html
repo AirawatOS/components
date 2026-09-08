@@ -1,11 +1,21 @@
 <title>City Scan — City Digital Baseline</title>
 <link rel="stylesheet" href="./vendor/maplibre-gl.css" onerror="this.remove()">
 <style>
-  :root{
+  :root{                                   /* DARK — default; theme flows in via [data-theme] (ADR-0077) */
     --ground:#0e1621; --panel:#16212e; --panel2:#1b2836; --edge:#243545; --edge2:#2f4358;
     --ink:#e8eff6; --muted:#93a6b8; --dim:#6b7f92; --accent:#38bdf8;
     --auth-open:#34d399; --auth-ai:#fbbf24; --auth-real:#60a5fa;
     font-synthesis:none;
+  }
+  :root[data-theme="light"]{
+    --ground:#f6f8fa; --panel:#ffffff; --panel2:#eef2f6; --edge:#d6dce3; --edge2:#c2cad3;
+    --ink:#161c24; --muted:#586372; --dim:#7a8696; --accent:#0a6fb0;
+    --auth-open:#1a7f37; --auth-ai:#9a6700; --auth-real:#0a5cc2;
+  }
+  :root[data-theme="high-contrast"]{
+    --ground:#000000; --panel:#000000; --panel2:#0a0a0a; --edge:#ffffff; --edge2:#ffffff;
+    --ink:#ffffff; --muted:#f2f2f2; --dim:#e0e0e0; --accent:#ffd400;
+    --auth-open:#4ce07a; --auth-ai:#ffd400; --auth-real:#8cc4ff;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
@@ -23,7 +33,8 @@
   .grid{display:grid;--lc:212px;--rc:340px;grid-template-columns:var(--lc) 1fr var(--rc);
     grid-template-rows:1fr;gap:0;height:calc(100% - 63px);transition:grid-template-columns .22s ease}
   .grid.lc0{--lc:0}.grid.rc0{--rc:0}
-  aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:auto;transition:padding .2s,opacity .15s}
+  aside{padding:18px 16px;border-right:1px solid var(--edge);overflow:hidden;display:flex;flex-direction:column;transition:padding .2s,opacity .15s}
+  .layerscroll{flex:1 1 auto;overflow:auto;min-height:0;margin:0 -4px;padding:0 4px}
   .grid.lc0 aside{padding:0;opacity:0;pointer-events:none;border:none}
   .railtog{position:absolute;top:12px;z-index:6;width:22px;height:36px;border:1px solid var(--edge2);
     background:#0e1c2ad9;color:var(--muted);border-radius:8px;cursor:pointer;font-size:15px;line-height:1;
@@ -31,7 +42,41 @@
   .railtog:hover{color:var(--ink);border-color:var(--accent)}
   .railtog.l{left:10px}.railtog.r{right:10px}
   .rail-h{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
-  .layers{display:flex;flex-direction:column;gap:7px}
+  .railhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .reloadall{border:1px solid var(--edge2);background:#0e1c2a;color:var(--muted);border-radius:6px;
+    padding:3px 9px;font-size:10.5px;cursor:pointer;transition:.13s}
+  .reloadall:hover{color:var(--accent);border-color:var(--accent)}
+  .reloadall:disabled{opacity:.6;cursor:default}
+  .exok{color:#3fb950}
+  .layers{display:flex;flex-direction:column;gap:5px}
+  /* tree nav: group (▾) → subgroup (▾) → layer leaves */
+  .tgrp{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--ink);font-weight:700;margin:12px 0 3px;cursor:pointer;user-select:none}
+  .tgrp:first-child{margin-top:0}
+  .tgrp:hover,.tsub:hover{color:var(--accent)}
+  .tsub{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600;
+    margin:5px 0 3px 4px;cursor:pointer;user-select:none}
+  .tw{display:inline-block;width:11px;font-size:10px;color:var(--dim);flex:none}
+  .tsub~.layer-btn,.tsub+.layer-btn{margin-left:14px;width:calc(100% - 14px)}
+  .layer-btn.pin{border-color:var(--edge2);box-shadow:inset 0 0 0 1px var(--edge2)}
+  .layer-btn.on.pin{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  /* bottom half of the rail: Legend (top) then the "About this layer" explanation, pinned + scrollable */
+  .railbottom{flex:none;border-top:1px solid var(--edge);margin:8px -16px 0;padding:12px 16px 2px;max-height:48%;overflow:auto;display:flex;flex-direction:column;gap:14px}
+  .explain{}
+  .exhint{font-size:12px;color:var(--dim);margin:0;line-height:1.5}
+  .extitle{font-size:13.5px;font-weight:700;color:var(--ink);margin:0 0 7px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .exunit{font-size:11px;font-weight:500;color:var(--muted)}
+  .solb{font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--accent);
+    border:1px solid var(--accent);border-radius:999px;padding:1px 7px;opacity:.85}
+  .exbody{font-size:12px;color:var(--muted);line-height:1.55;margin:0}
+  .exstat{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;padding-top:8px;
+    border-top:1px dashed var(--edge);font-size:11.5px;color:var(--muted)}
+  .exstat b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .exwarn{color:#d29922}
+  .exsub{font-size:10.5px;color:var(--dim);margin-top:4px;line-height:1.4}
+  .exreload{flex:none;border:1px solid var(--edge2);background:#0e1c2a;color:var(--muted);border-radius:6px;
+    padding:3px 9px;font-size:11px;cursor:pointer;transition:.13s}
+  .exreload:hover{color:var(--accent);border-color:var(--accent)}
   .lgrp{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:700;margin:13px 0 2px}
   .lgrp:first-child{margin-top:0}
   .layer-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--edge);
@@ -42,7 +87,7 @@
   .layer-btn .lb{flex:1}
   .layer-btn .lb b{display:block;font-weight:600;font-size:13.5px}
   .layer-btn .lb span{color:var(--muted);font-size:11.5px}
-  .legend{margin-top:22px}
+  .legend{margin:0}
   .ovsec{margin-top:22px}
   .ovbtns{display:flex;flex-direction:column;gap:7px}
   .ovbtn{display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid var(--edge);border-radius:9px;
@@ -61,6 +106,13 @@
     border-radius:8px;cursor:pointer;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
   .zoomctl button:hover{border-color:var(--accent);color:var(--accent)}
   .zoomctl button.rst{font-size:13px}
+  /* basemap style switcher */
+  .bmctl{position:absolute;left:10px;bottom:158px;z-index:6;display:flex;flex-direction:column;gap:2px;
+    background:#0e1c2ad9;border:1px solid var(--edge2);border-radius:9px;padding:4px}
+  .bmbtn{border:none;background:none;color:var(--muted);font-size:11px;padding:4px 10px 4px 8px;border-radius:6px;
+    cursor:pointer;text-align:left;white-space:nowrap;transition:.12s}
+  .bmbtn:hover{color:var(--ink);background:var(--panel)}
+  .bmbtn.on{background:var(--panel2);color:var(--accent);font-weight:600}
   .tip{position:absolute;pointer-events:none;background:#0a1320f2;border:1px solid var(--edge2);z-index:7;
     border-radius:7px;padding:7px 9px;font-size:12px;opacity:0;transition:.06s;transform:translate(8px,8px);white-space:nowrap}
   .tip b{color:var(--accent)}
@@ -131,7 +183,7 @@
     font-size:11.5px;opacity:0;transition:opacity .3s}
   .drillhint.show{opacity:1}
   /* lazy-load busy pill (shown while a layer/overlay fetches on demand) */
-  .busy{position:absolute;left:50%;top:16px;transform:translateX(-50%);z-index:8;pointer-events:none;
+  .busy{position:absolute;left:50%;top:54px;transform:translateX(-50%);z-index:8;pointer-events:none;
     background:#0c1622f2;border:1px solid var(--edge2);border-radius:999px;padding:6px 15px;color:var(--muted);
     font-size:12px;box-shadow:0 8px 24px #0006}
   .busy::before{content:"";display:inline-block;width:9px;height:9px;margin-right:8px;vertical-align:-1px;
@@ -141,6 +193,7 @@
   .scrubber{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:7;width:min(560px,80%);
     display:flex;align-items:center;gap:12px;background:#0c1622f2;border:1px solid var(--edge2);border-radius:12px;
     padding:9px 14px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(4px)}
+  .scrubber[hidden]{display:none}                 /* the [hidden] attr must beat display:flex above (else it always shows) */
   .scrubber button{flex:none;width:30px;height:30px;border-radius:50%;border:none;background:var(--accent);
     color:#04121e;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
   .scrubber button:hover{filter:brightness(1.1)}
@@ -157,22 +210,17 @@
 
 <div class="grid" id="app">
   <aside>
-    <p class="rail-h">Layers</p>
-    <div class="layers" id="layers"></div>
-    <div class="legend" id="legend" hidden>
-      <p class="rail-h" style="margin-bottom:4px">Legend</p>
-      <div class="bar" id="legbar"></div>
-      <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
+    <div class="railhead"><p class="rail-h" style="margin:0">Layers</p><button class="reloadall" id="reloadall" title="Re-fetch the active layer + all shown overlays from the registry">↻ Reload all</button></div>
+    <div class="layerscroll" id="layerscroll">
+      <div class="layers" id="layers"></div>
     </div>
-    <div class="ovsec" id="ovsec" hidden>
-      <p class="rail-h">Overlays</p>
-      <div class="ovbtns">
-        <button class="ovbtn on" id="ovwater" hidden><span class="dotb" style="background:#60a5fa"></span>Drainage</button>
-        <button class="ovbtn on" id="ovroads" hidden><span class="dotb" style="background:#e2e8f0"></span>Roads</button>
-        <button class="ovbtn" id="ovfac" hidden><span class="dotb" style="background:#ef4444"></span>Facilities</button>
-        <button class="ovbtn on" id="ovsites" hidden><span class="dotb" style="background:#2ecc71"></span>AI-City sites</button>
-        <button class="ovbtn" id="ovplan" hidden><span class="dotb" style="background:#39d3e0"></span>Land-use plan (3D)</button>
+    <div class="railbottom">
+      <div class="legend" id="legend" hidden>
+        <p class="rail-h" style="margin-bottom:4px">Legend</p>
+        <div class="bar" id="legbar"></div>
+        <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
       </div>
+      <div class="explain" id="explain"></div>
     </div>
   </aside>
 
@@ -187,6 +235,12 @@
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
     <div class="zoomctl"><button id="tilt" class="rst" title="Toggle 2.5D view — extruded hex towers; ctrl/right-drag to orbit">⬢</button><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
+    <div class="bmctl" id="bmctl" title="Basemap style">
+      <button class="bmbtn" data-bm="dark">◑ Dark</button>
+      <button class="bmbtn" data-bm="light">◐ Light</button>
+      <button class="bmbtn" data-bm="standard">🗺 Standard</button>
+      <button class="bmbtn" data-bm="satellite">🛰 Satellite</button>
+    </div>
     <div id="opacctl" style="position:absolute;top:12px;left:44px;z-index:8;display:flex;align-items:center;gap:7px;background:#0e1c2ae6;border:1px solid var(--edge2);border-radius:9px;padding:5px 11px;box-shadow:0 2px 10px #0006">
       <span style="font-size:12px;opacity:.75" title="Layer opacity">◐</span>
       <input id="opac" type="range" min="15" max="100" value="60" style="width:120px;accent-color:var(--accent);cursor:pointer" title="Layer transparency — lower to see the map + places underneath">
@@ -206,6 +260,8 @@
 <!-- h3-js (self-hosted UMD → window.h3) + the renderer-agnostic land-use planner (greenfield vacancy → zoning → massing) -->
 <script src="./vendor/h3-js.umd.js"></script>
 <script src="./plan-core.js"></script>
+<script>/* apply the user's theme (from their profile via /session) — the design system's [data-theme] (ADR-0077) */
+  fetch('/session').then(r=>r.json()).then(s=>{ if(s&&s.theme) document.documentElement.setAttribute('data-theme',s.theme); }).catch(function(){});</script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -231,22 +287,66 @@ const fmtFor=u=> u==="%"?(v=>Math.round(v*100)+"%"): u==="°C"?(v=>v.toFixed(1)+
               : (v=>(Math.round(v*100)/100)+(u?(" "+u):""));
 let APPID="city-scan";
 
+let _reauthing=false;
 async function bridge(path,body){
   const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(r.status===401){                                            // session expired — re-authenticate, don't fail silently
+    if(!_reauthing){ _reauthing=true;
+      setBusy&&setBusy("Session expired — signing you in again…");
+      try{ (window.top||window).location.reload(); }catch(e){ location.reload(); }
+    }
+    throw new Error("session-expired");
+  }
   return r.json();
 }
 async function q(schema){
   try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:50000});
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
+async function has(schema){   // cheap existence probe (limit 1) — does THIS tenant have any data for a schema?
+  try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:1});
+       return ((d.results||d.objects||d||[]).length>0); }catch(e){ return false; }
+}
+async function qAll(schema,cap=400000,statusKey){  // PAGINATE the full set — a temporal layer (air.quality) accumulates
+  let out=[],cursor=null,pages=0,complete=false,err=false,capped=false;   // per hour, so a single fetch = a spatial fraction.
+  while(pages<400){
+    const body={app_id:APPID,schema,limit:50000}; if(cursor) body.cursor=cursor;
+    let d; try{ d=await bridge("/bridge/query",body); }catch(e){ err=true; break; }
+    const rows=(d.results||d.objects||d||[]).map(x=>x.object||x); out=out.concat(rows); pages++;
+    if(statusKey&&LAYER_STAT[statusKey]){ LAYER_STAT[statusKey].fetched=out.length; ovProgress(statusKey); }
+    cursor=d.next_cursor||d.cursor;
+    if(out.length>=cap){ capped=!!cursor; break; }
+    if(!cursor||!rows.length){ complete=true; break; }
+  }
+  if(statusKey&&LAYER_STAT[statusKey]) Object.assign(LAYER_STAT[statusKey],{fetched:out.length,complete:complete&&!err,err,capped});
+  return out;
+}
 async function qf(schema,filter){                              // server-side filtered query (e.g. one cell's footprints)
   try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,filter,limit:20000});
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
 }
+// PAGE-BY-PAGE load of a big vector layer (e.g. tens of thousands of road features in a metro): the kernel now
+// keyset-paginates server-side (id > cursor + SQL LIMIT), so we pull bounded windows and call onPage() after each
+// so the map fills in progressively instead of one 50k fetch that 502s / hangs the tab. Stops at the cursor end
+// or a safety cap.
+async function qpage(schema, onPage, pageLimit, cap, filter){
+  pageLimit = pageLimit||8000; cap = cap||400000; let cursor=null, total=0, capped=false, err=false;
+  for(let i=0;i<200;i++){
+    let d; const body={app_id:APPID,schema,limit:pageLimit}; if(cursor) body.cursor=cursor; if(filter) body.filter=filter;
+    try{ d=await bridge("/bridge/query", body); }             // filter (e.g. {feature:"primary"}) pushes to SQL → cheap subset
+    catch(e){ err=true; break; }
+    const rows=(d.results||d.objects||d||[]).map(x=>x.object||x);
+    if(rows.length){ try{ onPage(rows,total+rows.length); }catch(e){} total+=rows.length; }
+    cursor=d&&d.next_cursor;
+    if(total>=cap){ capped=!!cursor; break; }               // hit the cap while more remained → capped
+    if(!cursor || !rows.length) break;
+  }
+  return {total, capped, err};
+}
 
-let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showWater=false, drillCell=null;
+let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showRoadsLocal=false, showWater=false, drillCell=null;
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
-let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=true;   // drilled cell state + overlays
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=false;   // drilled cell state + overlays
 let showPlan=false, PLAN=null, PLAN_BLD=null;   // greenfield land-use plan (3D): developable cells → zoning → massing
 let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
 const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towers) — taller ⇒ value differences read clearly
@@ -261,6 +361,16 @@ const fcol=c=>FCOL[c]||FCOL.other;
 let SCOPE=null;   // union AOI bbox (module scope so the lazy loaders can clip cross-tenant strays too)
 const _M=0.03, inB=p=> !SCOPE||!p||(p[0]>=SCOPE[0]-_M&&p[0]<=SCOPE[2]+_M&&p[1]>=SCOPE[1]-_M&&p[1]<=SCOPE[3]+_M);
 const firstpt=g=>{let c=(g||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0]))c=c[0];return c;};
+// A hydro feature's geometry (Polygon/MultiPolygon/LineString) → the set of coordinate RINGS as line paths. The
+// drainage layer draws these as LINES (a PathLayer), never a filled polygon: 'stream' features are really channels
+// (often thin ribbon polygons), so filling them earcut-tessellates on the main thread — a 65k-vertex ring froze the
+// tab — AND reads as a wrong solid blob. As lines there is no tessellation and the channel shape stays true.
+function hydroPaths(g){ if(!g||!g.coordinates) return []; const t=g.type, c=g.coordinates;
+  if(t==="LineString") return c&&c.length>1?[c]:[];
+  if(t==="MultiLineString") return c.filter(l=>l&&l.length>1);
+  if(t==="Polygon") return c.filter(r=>r&&r.length>1);
+  if(t==="MultiPolygon") return c.flat().filter(r=>r&&r.length>1);
+  return []; }
 
 function parseCells(rows,L){                                    // rows → H3 hexagons, with GENERIC temporal detection
   // A layer animates when its DATA carries multiple time frames — detected generically, no per-layer code.
@@ -307,22 +417,74 @@ const MAX_FRAMES=48;                                            // cap animated 
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
-  const rows=await q(L.key);
+  LAYER_STAT[L.key]={loading:true,loaded:0,fetched:0,complete:false,err:false,capped:false,unit:"cells"}; ovProgress(L.key);
+  const rows = (L.key==="geo.osm_feature") ? await q(L.key) : await qAll(L.key,400000,L.key);  // paginate the FULL set (temporal layers accumulate hours)
   DATA.data[L.key] = (L.key==="geo.osm_feature")
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
     : parseCells(rows,L);
-  L._loading=false;
+  const dd=DATA.data[L.key];
+  Object.assign(LAYER_STAT[L.key],{loading:false, loaded:(dd&&dd.rows?dd.rows.length:0),
+    complete:(L.key==="geo.osm_feature")?true:(LAYER_STAT[L.key].complete!==false&&!LAYER_STAT[L.key].err)});
+  L._loading=false; ovProgress(L.key);
   return DATA.data[L.key];
 }
+const OV_STAT={};                                              // per-overlay load status: {loading,loaded,fetched,capped,err,done,unit}
+const LAYER_STAT={};                                           // per-CHOROPLETH-layer load status (keyed by L.key): {loading,loaded,complete,err,capped,unit}
+function ovProgress(kind){ drawExplain(); }                    // refresh the status line while a layer/overlay streams in
+// ARTERIAL = the through-road hierarchy (the light ~12k overview set). Everything else (residential, service,
+// lanes, tracks, paths…) is the heavy ~178k "local" layer, loaded only on demand. Both come from geo.osm_feature,
+// filtered SERVER-SIDE by the `feature` (OSM highway) class so the arterial overview stays cheap.
+const ARTERIAL=["motorway","trunk","primary","secondary","tertiary","motorway_link","trunk_link","primary_link","secondary_link","tertiary_link"];
+const ARTSET=new Set(ARTERIAL);
 async function ensureOverlay(kind){                            // lazy-load the heavy vector overlays on first use
-  if(kind==="roads" && DATA.roads==null)
-    DATA.roads=(await q("geo.osm_feature")).map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature}))
-      .filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]));
-  else if(kind==="water" && DATA.water==null)
-    DATA.water=(await q("geo.hydro_feature")).filter(o=>o.geometry&&inB(firstpt(o.geometry)));
-  else if(kind==="facilities" && DATA.facilities==null)
-    DATA.facilities=(await q("geo.facility")).filter(o=>o.category!=="ai-city-site").map(o=>({c:((o.geometry||{}).coordinates)||o.centroid,cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id}))
-      .filter(f=>Array.isArray(f.c)&&f.c.length===2&&inB(f.c));
+  if(kind==="roads" && DATA.roads==null){                      // ARTERIAL overview: one small SERVER-FILTERED fetch per class
+    DATA.roads=[]; OV_STAT.roads={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
+    let anyErr=false;
+    for(const cls of ARTERIAL){
+      const r=await qpage("geo.osm_feature", (rows)=>{
+        for(const o of rows){ const path=((o.geometry||{}).coordinates)||[];
+          if(Array.isArray(path)&&path.length>1&&inB(path[0])) DATA.roads.push({path,feature:o.feature}); }
+        OV_STAT.roads.loaded=DATA.roads.length; ovProgress("roads"); try{ render(); }catch(e){}
+      }, 8000, 60000, {feature:cls});
+      anyErr=anyErr||r.err;
+    }
+    Object.assign(OV_STAT.roads,{loading:false,done:true,capped:false,err:anyErr}); ovProgress("roads");
+  }
+  else if(kind==="roads_local" && DATA.roads_local==null){     // LOCAL & residential: the heavy remainder, on demand
+    DATA.roads_local=[]; OV_STAT.roads_local={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
+    const r=await qpage("geo.osm_feature", (rows,fetched)=>{   // full network minus the arterial classes (kept client-side)
+      for(const o of rows){
+        if(ARTSET.has(o.feature)) continue;                    // arterial lives in its own layer
+        const path=((o.geometry||{}).coordinates)||[];
+        if(Array.isArray(path)&&path.length>1&&inB(path[0])) DATA.roads_local.push({path,feature:o.feature});
+      }
+      OV_STAT.roads_local.loaded=DATA.roads_local.length; OV_STAT.roads_local.fetched=fetched; ovProgress("roads_local");
+      try{ render(); }catch(e){}
+    }, 8000, 300000);
+    Object.assign(OV_STAT.roads_local,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("roads_local");
+  }
+  else if(kind==="water" && DATA.water==null){
+    DATA.water=[]; OV_STAT.water={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
+    const r=await qpage("geo.hydro_feature",(rows,fetched)=>{ // PAGE-BY-PAGE: a big drainage/canal network can be tens of
+      for(const o of rows){ if(o.geometry&&inB(firstpt(o.geometry))) DATA.water.push(o); }  // thousands of line features.
+      OV_STAT.water.loaded=DATA.water.length; OV_STAT.water.fetched=fetched; ovProgress("water");
+      try{ render(); }catch(e){}
+    }, 8000, 300000);
+    Object.assign(OV_STAT.water,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("water");
+  }
+  else if(kind==="facilities" && DATA.facilities==null){
+    DATA.facilities=[]; OV_STAT.facilities={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
+    const r=await qpage("geo.facility",(rows,fetched)=>{      // PAGE-BY-PAGE: a metro's POI set can exceed the single-fetch cap.
+      for(const o of rows){
+        if(o.category==="ai-city-site") continue;
+        const c=((o.geometry||{}).coordinates)||o.centroid;
+        if(Array.isArray(c)&&c.length===2&&inB(c)) DATA.facilities.push({c,cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id});
+      }
+      OV_STAT.facilities.loaded=DATA.facilities.length; OV_STAT.facilities.fetched=fetched; ovProgress("facilities");
+      try{ render(); }catch(e){}
+    }, 8000, 200000);
+    Object.assign(OV_STAT.facilities,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("facilities");
+  }
   else if(kind==="sites" && DATA.sites==null){                 // AI-City candidate sites (site-suitability, ADR-0029) → ranked markers
     const idv=(o,s)=>((o.identifiers||[]).find(i=>i.scheme===s)||{}).value;
     DATA.sites=(await q("geo.facility")).filter(o=>o.category==="ai-city-site").map(o=>({
@@ -348,16 +510,32 @@ async function load(){
     SB=SB?[Math.min(SB[0],bb[0]),Math.min(SB[1],bb[1]),Math.max(SB[2],bb[2]),Math.max(SB[3],bb[3])]:bb.slice(); }
   SCOPE=SB;
   const GEOM_LAYERS=["geo.building","geo.facility"];             // drill/overlay geometry layers — NOT choropleths
+  const NEVER=["cell.roads"];                                   // roads shown as the vector overlay, never a choropleth
+  // SOLUTION layers (air-intelligence, flood, crowd-safety, solid-waste): don't hard-exclude them — a baseline
+  // tenant just shouldn't see EMPTY ones. So include a solution layer ONLY IF this tenant actually has its data.
+  // (This is what lets new-delhi's air layers — readings / PM2.5 surface / hotspots — appear + correlate here.)
+  const CONDITIONAL=["air.quality","air.hotspot","air.sensor_reading","cell.cams","cell.aod","risk.flood","cell.crowd_density","waste.segregation_compliance"];
+  const present={};
+  await Promise.all(CONDITIONAL.map(async s=>{ present[s]=await has(s); }));
+  // The viz.layer catalogue is SHARED across tenants, so several descriptors can target the same source_schema
+  // (e.g. a curated global ds:airawat: layer + a stale per-tenant copy). We keep ONE per schema — preferring the
+  // one that carries a tree tag (group), then the global ds:airawat: descriptor, then declared order. Without
+  // this an untagged tenant duplicate could win and land its layer under "Other".
+  const rank=d=>((d.group?0:2)+(String(d.id||"").startsWith("ds:airawat:")?0:1));   // lower = preferred
   const descs=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field
-                                     &&!GEOM_LAYERS.includes(d.source_schema))
-                                     .sort((a,b)=>(a.order??99)-(b.order??99));
+                                     &&!GEOM_LAYERS.includes(d.source_schema)&&!NEVER.includes(d.source_schema)
+                                     &&(!CONDITIONAL.includes(d.source_schema)||present[d.source_schema]))
+                                     .sort((a,b)=>rank(a)-rank(b)||(a.order??99)-(b.order??99));
   const seen={}, specs=[];
   for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
     specs.push({key:d.source_schema,label:d.label||d.source_schema,desc:d.description||"",vf:d.value_field,
-                unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,fmt:fmtFor(d.unit)}); }
+                unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,fmt:fmtFor(d.unit),
+                grp:d.group||"",sub:d.subgroup||"",sol:d.solution||"",
+                interp:d.interpretation||d.description||""}); }   // tree taxonomy + "how to read it" — REGISTRY-driven
   LAYERS=specs;                                                 // metadata only — per-layer data loads on demand
-  DATA={aoi,scope:SB,data:{},coverage:[],roads:null,water:null,facilities:null,sensors:null};   // null overlay = not loaded yet
-  if(LAYERS[0]) await ensureLayer(LAYERS[0]);                   // FIRST PAINT: only the first layer's cells…
+  DATA={aoi,scope:SB,data:{},coverage:[],roads:null,roads_local:null,water:null,facilities:null,sensors:null};   // null overlay = not loaded yet
+  // FIRST PAINT: no choropleth auto-loaded — the map opens on the AOI + coverage report, and a layer's cells
+  // load only when the user picks it (auto-loading built-up made initial load heavy for no reason).
   let cov=await q("city.coverage"); cov.sort((a,b)=>String(b.assessed_at||"").localeCompare(String(a.assessed_at||"")));
   const cs={}; cov=cov.filter(c=>{const k=c.layer_noun; if(cs[k])return false; cs[k]=1; return true;});
   DATA.coverage=cov;                                            // …+ the coverage report. Everything else is lazy.
@@ -365,21 +543,36 @@ async function load(){
 }
 
 // ---- basemap: OSM raster via the host's CACHED declared-egress /bridge/fetch (fetched once, served from disk) ----
+// Selectable basemaps — all KEYLESS raster tiles, fetched through the host bridge (declared egress) and cached
+// on disk. Dark (CARTO Dark Matter) is the default: it fits the dark app UI and makes the data layers pop.
+const BASEMAPS={
+  dark:     {label:"Dark",      opacity:0.92, attr:"© OpenStreetMap · © CARTO", url:(z,x,y)=>`https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`},
+  light:    {label:"Light",     opacity:0.94, attr:"© OpenStreetMap · © CARTO", url:(z,x,y)=>`https://a.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`},
+  standard: {label:"Standard",  opacity:0.85, attr:"© OpenStreetMap contributors", url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+  satellite:{label:"Satellite", opacity:1.0,  attr:"Imagery © Esri, Maxar, Earthstar Geographics", url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`}  // Esri: {z}/{y}/{x}
+};
+let basemap="dark";
 async function tileImage(x,y,z){
-  const url=`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
-  const d=await bridge("/bridge/fetch",{app_id:APPID,url});
+  const bm=BASEMAPS[basemap]||BASEMAPS.dark;
+  const d=await bridge("/bridge/fetch",{app_id:APPID,url:bm.url(z,x,y)});
   if(!d||!d.body_b64) return null;
   const img=new Image(); img.src=`data:${d.content_type||"image/png"};base64,${d.body_b64}`;
   try{ await img.decode(); }catch(e){}
   return img;
 }
 function basemapLayer(){
-  const {TileLayer}=deck, {BitmapLayer}=deck;
-  return new TileLayer({id:"basemap",tileSize:256,minZoom:0,maxZoom:19,maxRequests:6,
+  const {TileLayer,BitmapLayer}=deck; const bm=BASEMAPS[basemap]||BASEMAPS.dark;
+  return new TileLayer({id:"basemap-"+basemap,tileSize:256,minZoom:0,maxZoom:19,maxRequests:6,   // id carries the style → switching drops the old tiles
     getTileData:({index})=>tileImage(index.x,index.y,index.z),
     renderSubLayers:props=>{ const {boundingBox}=props.tile;
-      return new BitmapLayer({id:props.id,image:props.data,opacity:0.85,
+      return new BitmapLayer({id:props.id,image:props.data,opacity:bm.opacity,
         bounds:[boundingBox[0][0],boundingBox[0][1],boundingBox[1][0],boundingBox[1][1]]}); }});
+}
+function setBasemap(key){
+  if(!BASEMAPS[key]) return; basemap=key;
+  const a=$("attrib"); if(a) a.textContent="Basemap "+BASEMAPS[key].attr;
+  document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===key));
+  render();
 }
 function dataLayer(){
   const L=LAYERS.find(l=>l.key===active); if(!L||!DATA.data[L.key]) return null;
@@ -427,15 +620,14 @@ async function loadFootprints(cell){                              // pull ONLY t
 }
 function drillInto(cell){                                          // zoom into a cell + reveal its native features
   if(!cell||!cell.h3) return;
-  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showWater=true; showBuildings=true; showFacilities=true; panelCollapsed=false;
-  const ow=$("ovwater"), or=$("ovroads"), of=$("ovfac");           // reflect the forced-on overlays in the toggles
-  if(ow&&!ow.hidden) ow.classList.add("on"); if(or&&!or.hidden) or.classList.add("on"); if(of&&!of.hidden) of.classList.add("on");
+  drillCell=cell; drillBuildings=[]; footLoading=false; showRoads=true; showRoadsLocal=true; showWater=true; showBuildings=true; showFacilities=true; panelCollapsed=false;
+  drawLayers();                                                    // reflect the forced-on overlays in the grouped menu
   $("drillhint").classList.remove("show");
   const c=cell.c||[view.longitude,view.latitude];
   view={...view, longitude:c[0], latitude:c[1], zoom:16, pitch:55, transitionDuration:800};
   deckgl.setProps({initialViewState:view}); cellPanel(); render();
   // lazy-load the context overlays (roads/drainage/facilities) if not already fetched, then refresh this cell
-  ["roads","water","facilities"].forEach(k=>ensureOverlay(k).then(()=>{ if(drillCell&&drillCell.h3===cell.h3){ cellPanel(); render(); } }));
+  ["roads","roads_local","water","facilities"].forEach(k=>ensureOverlay(k).then(()=>{ if(drillCell&&drillCell.h3===cell.h3){ cellPanel(); render(); } }));
   loadFootprints(cell);                                            // real Open Buildings footprints, lazily (AirOS pattern)
 }
 function exitDrill(){
@@ -460,7 +652,7 @@ function cellPanel(){
   const bb=drillCell.b?bboxOf(drillCell.b):null;
   const rows=LAYERS.map(L=>{ const d=DATA.data[L.key], cell=d&&d.rows.find(r=>r.h3===drillCell.h3);
       return (cell&&typeof cell.v==="number")?`<div class="kv"><span>${esc(L.label)}</span><b>${esc(L.fmt(cell.v))}</b></div>`:""; }).join("");
-  const roadsIn=bb?(DATA.roads||[]).filter(r=>inBox(r.path&&r.path[0],bb)).length:0;
+  const roadsIn=bb?((DATA.roads||[]).concat(DATA.roads_local||[])).filter(r=>inBox(r.path&&r.path[0],bb)).length:0;
   const waterIn=bb?(DATA.water||[]).filter(o=>inBox(firstPt(o.geometry),bb)).length:0;
   const bldg = footLoading ? '<span class="muted">loading…</span>'
              : drillBuildings.length ? `<b>${drillBuildings.length}</b>`
@@ -479,16 +671,23 @@ function cellPanel(){
 function overlayLayers(){
   const out=[], drill=!!drillCell;                             // in a drilled cell, thicken + brighten so the street
   if(showWater && (DATA.water||[]).length){                    // grid + drains read clearly between the 3D buildings
-    out.push(new deck.GeoJsonLayer({id:"drainage",             // drainage channels (geo.hydro_feature) → TEAL, distinct
-      data:{type:"FeatureCollection",features:DATA.water.map(o=>({type:"Feature",geometry:o.geometry,properties:{}}))},
-      filled:true,stroked:true,getFillColor:[20,184,166,drill?120:90],getLineColor:[94,234,212,255],
-      lineWidthUnits:"pixels",getLineWidth:drill?3.6:1.4,lineWidthMinPixels:drill?2.2:1,pickable:false,
-      updateTriggers:{getLineWidth:[drill],getFillColor:[drill]}}));
+    const wpaths=[];                                            // drainage channels (geo.hydro_feature) → TEAL LINES.
+    for(const o of DATA.water){ for(const r of hydroPaths(o.geometry)) wpaths.push(r); }  // rings/lines as paths — NOT
+    out.push(new deck.PathLayer({id:"drainage",data:wpaths,getPath:p=>p,  // filled polygons (streams are channels, and
+      getColor:[45,212,191,235],widthUnits:"pixels",getWidth:drill?3.2:1.6,  // filling a 65k-vertex ring froze the tab
+      widthMinPixels:drill?2:1,capRounded:true,jointRounded:true,pickable:false,
+      updateTriggers:{getWidth:[drill]}}));
   }
-  if(showRoads && (DATA.roads||[]).length){                    // road network (geo.osm_feature) → light paths on top
+  if(showRoadsLocal && (DATA.roads_local||[]).length){         // LOCAL/residential mesh → thin, dim, UNDER the arterial layer
+    out.push(new deck.PathLayer({id:"roads-local-ov",data:DATA.roads_local,widthUnits:"pixels",
+      getWidth:drill?2:0.7,widthMinPixels:drill?1.2:0.5,
+      getColor:drill?[148,163,184,200]:[138,160,180,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      updateTriggers:{getWidth:[drill],getColor:[drill]}}));
+  }
+  if(showRoads && (DATA.roads||[]).length){                    // ARTERIAL network (geo.osm_feature) → brighter paths on top
     out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",
-      getWidth:drill?4:1.5,widthMinPixels:drill?2:1.1,   // city-level roads were 0.5px @ alpha150 → washed out over the choropleth
-      getColor:drill?[241,245,249,245]:[240,244,248,230],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      getWidth:drill?4:1.8,widthMinPixels:drill?2:1.3,   // city-level roads were 0.5px @ alpha150 → washed out over the choropleth
+      getColor:drill?[241,245,249,245]:[240,244,248,235],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
       updateTriggers:{getWidth:[drill],getColor:[drill]}}));
   }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
@@ -630,7 +829,7 @@ function startPlay(){ const L=LAYERS.find(l=>l.key===active); if(!L||!L.temporal
 function scrubTo(i){ stopPlay(); tIdx=i; render(); }
 function updateScrubber(){
   const L=LAYERS.find(l=>l.key===active), el=$("scrubber");
-  if(!L||!L.temporal||!(L.times||[]).length){ el.hidden=true; if(tTimer) stopPlay(); return; }
+  if(!L||!L.temporal||(L.times||[]).length<2){ el.hidden=true; if(tTimer) stopPlay(); return; }  // need ≥2 frames for a timeline
   const times=L.times; if(tIdx>=times.length) tIdx=0;
   if(el.hidden || el.dataset.k!==active){        // (re)build the control when shown or the layer changed
     el.hidden=false; el.dataset.k=active;
@@ -653,42 +852,169 @@ function tip(info){
   const label = o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
               : o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
               : o.feature!==undefined ? esc(o.feature||"road")
-              : `<b>${esc(L?L.fmt(o.v):o.v)}</b> · <span class="mono" style="color:var(--muted)">${esc((o.h3||"").slice(0,10))}</span>`;
+              : (()=>{ // TEMPORAL: show the value of the FRAME currently on screen (tIdx), not the base value —
+                       // else the tooltip reports the latest hour while the cells are painted for a scrubbed-to hour.
+                  const fv=(L&&L.temporal&&Array.isArray(o.series)&&o.series[tIdx]&&typeof o.series[tIdx][L.sfield]==="number")?o.series[tIdx][L.sfield]:o.v;
+                  return `<b>${esc(L?L.fmt(fv):fv)}</b> · <span class="mono" style="color:var(--muted)">${esc((o.h3||"").slice(0,10))}</span>`; })();
   t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
 function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true; return; } b.textContent=msg; b.hidden=false; }
-const LGROUP={ "air.sensor_reading":"Air Quality","air.quality":"Air Quality","air.hotspot":"Air Quality",
-  "cell.rainfall":"Weather","cell.weather_forecast":"Weather",
-  "cell.heat":"Environment & land","cell.greencover":"Environment & land","geo.landcover":"Environment & land","geo.terrain":"Environment & land","cell.hydrology":"Environment & land",
-  "cell.builtup":"Built environment","geo.building":"Built environment","cell.buildings":"Built environment","cell.roads":"Built environment","geo.facility":"Built environment",
-  "demographics.population":"People" };
-const LORDER=["Air Quality","Weather","Environment & land","Built environment","People","Other"];
+// ── Registry-driven layer TREE ─────────────────────────────────────────────────────────────────
+// Groups + subgroups come from each viz.layer descriptor (group / subgroup / solution), NOT hardcoded here.
+// Any solution that publishes a viz.layer carrying a group/subgroup slots into this tree automatically:
+// installing Air Intelligence makes "Environment › Air Pollution" appear; City Setup contributes the base
+// layers; crowd-safety adds "People › Crowds". Nothing about air/flood/waste is baked into City Scan.
+const GRP_ORDER=["Environment","Built Environment","Mobility","People","Utilities","Land","Other"];  // display order; unknown groups append
+// LEGACY fallback — only for a layer whose descriptor predates the group tag.
+const LEGACY_G={"cell.builtup":"Built Environment","cell.greencover":"Environment","geo.terrain":"Built Environment",
+  "cell.heat":"Environment","cell.rainfall":"Environment","cell.weather_forecast":"Environment","cell.hydrology":"Environment",
+  "cell.buildings":"Built Environment","demographics.population":"People"};
+// Vector OVERLAYS (lines/points) are geometry, not choropleths — slot them into the same tree.
+const OVL=[{id:"water",label:"Natural Drainage",grp:"Environment",sub:"Water",dot:"#2dd4bf",
+            interp:"The natural river / stream / drain network (MERIT Hydro). Overlay it on flood susceptibility to see where water pools."},
+           {id:"roads",label:"Arterial Roads",grp:"Mobility",sub:"Roads",dot:"#e2e8f0",
+            interp:"The through-road hierarchy — motorway, trunk, primary, secondary, tertiary and their link ramps (OpenStreetMap). The light ~12k-segment overview of how the city connects; a traffic-emission proxy to correlate with the PM2.5 surface. Add 'Local & Residential Roads' for the full street mesh."},
+           {id:"roads_local",label:"Local & Residential Roads",grp:"Mobility",sub:"Roads",dot:"#8aa0b4",
+            interp:"Every other street — residential, service, living-street, lanes, tracks and paths (~178k segments). Heavy, so it loads only on demand; use it when you need the full street-level detail rather than the arterial overview."},
+           {id:"facilities",label:"Facilities",grp:"Built Environment",sub:"Facilities",dot:"#ef4444",
+            interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."}];
+const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities};
+let treeOpen=null;                                    // "g:<group>" / "s:<group>/<sub>" → open? (null = default all-open)
+let explainKey=null;                                  // which leaf's explanation is pinned in the bottom panel
+function buildTree(){                                  // → {group:{sub:[leaf]}} merging choropleths + overlays
+  const tree={};
+  const add=(g,s,leaf)=>{ g=g||"Other"; s=s||""; (tree[g]=tree[g]||{}); (tree[g][s]=tree[g][s]||[]).push(leaf); };
+  LAYERS.forEach(L=> add(L.grp||LEGACY_G[L.key]||"Other", L.sub||"", {t:"layer",L}));
+  OVL.forEach(o=> add(o.grp,o.sub,{t:"ovl",o}));
+  return tree;
+}
+function grpKeys(tree){ return Object.keys(tree).sort((a,b)=>{
+  let ia=GRP_ORDER.indexOf(a), ib=GRP_ORDER.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib || a.localeCompare(b); }); }
+function isOpen(k){ return !treeOpen || treeOpen[k]!==false; }   // default OPEN until the user collapses
+function setExplain(key){ explainKey=key; drawExplain(); }
+function drawExplain(){
+  const box=$("explain"); if(!box) return;
+  let leaf=null;
+  if(explainKey){ const L=LAYERS.find(l=>l.key===explainKey);
+    if(L) leaf={label:L.label,sol:L.sol,interp:L.interp,unit:L.unit};
+    else { const o=OVL.find(x=>x.id===explainKey); if(o) leaf={label:o.label,sol:"",interp:o.interp,unit:""}; } }
+  if(!leaf){ box.innerHTML=`<p class="rail-h">About this layer</p><p class="exhint">Pick a layer to see what it shows and how to read it.</p>`; return; }
+  const sol=leaf.sol?`<span class="solb" title="contributed by the ${esc(leaf.sol)} solution">${esc(leaf.sol)}</span>`:"";
+  // LOAD status (choropleth layers AND vector overlays): show how much loaded + whether it COMPLETED, with a
+  // reload control — so a partial/failed load is visible and recoverable rather than silently incomplete.
+  let statusHtml="", subHtml="";
+  const isLayer=!!LAYER_STAT[explainKey];
+  const st=OV_STAT[explainKey]||LAYER_STAT[explainKey];
+  if(st){
+    const unit=st.unit||({roads:"segments",roads_local:"segments",facilities:"facilities",water:"features"}[explainKey])||"features";
+    const n=(st.loaded||0).toLocaleString();
+    const tot=(typeof st.total==="number")?st.total:null;
+    let msg;
+    if(st.loading)              msg=`Loading… <b>${n}</b> ${unit} so far`;
+    else if(st.err)             msg=`<span class="exwarn">⚠ load error</span> — <b>${n}</b> ${unit} (incomplete)`;
+    else if(st.capped)          msg=`<b>${n}</b> ${unit} <span class="exwarn">(hit the cap — Reload for more)</span>`;
+    else if(st.complete===false)msg=`<b>${n}</b> ${unit} <span class="exwarn">(incomplete — Reload)</span>`;
+    else if(!isLayer && tot!=null) msg=`<b>${n}</b> of <b>${tot.toLocaleString()}</b> ${unit} `
+           + (st.loaded>=tot ? `<span class="exok">· all shown ✓</span>` : `<span class="exwarn">· ${(tot-st.loaded).toLocaleString()} outside AOI/not shown</span>`);
+    else                        msg=`<b>${n}</b> ${unit} loaded <span class="exok">· complete ✓</span>`;
+    // choropleth: cells are DISTINCT h3, but the registry stores one record per (cell,hour) — show both so the
+    // count reconciles (e.g. 24,277 cells · 48,554 records = a 2-hour temporal layer).
+    if(isLayer && tot!=null) subHtml=`<div class="exsub">${tot.toLocaleString()} records in registry (this layer is temporal — many records per cell)</div>`;
+    statusHtml=`<div class="exstat"><span>${msg}</span>`
+      + (st.loading ? `` : `<button class="exreload" id="exreload">↻ Reload</button>`)   // wired below (CSP blocks inline onclick)
+      + `</div>`+subHtml;
+  }
+  box.innerHTML=`<p class="rail-h">About this layer</p>`
+    +`<div class="extitle">${esc(leaf.label)}${leaf.unit?` <span class="exunit">${esc(leaf.unit)}</span>`:""}${sol}</div>`
+    +`<p class="exbody">${esc(leaf.interp||"No description provided for this layer.")}</p>`
+    +statusHtml;
+  const rb=$("exreload"); if(rb) rb.onclick=()=>reloadOverlay(explainKey);
+  if(st && !st.loading && st.total===undefined) fetchTotal(explainKey);   // lazily fetch the authoritative registry count
+}
+async function qcount(schema,filter){                          // authoritative registry count for a schema(+filter), tenant-scoped, via the bridge
+  try{ const b={app_id:APPID,schema,count:true}; if(filter) b.filter=filter;
+       const d=await bridge("/bridge/query",b); return (d&&typeof d.count==="number")?d.count:null; }
+  catch(e){ return null; }
+}
+async function fetchTotal(key){                                // populate st.total once (registry total for this layer's query)
+  const st=OV_STAT[key]||LAYER_STAT[key]; if(!st||st.total!==undefined) return;
+  st.total=null;                                               // mark attempted so we don't loop
+  try{
+    if(key==="roads"){ let t=0; for(const cls of ARTERIAL){ const c=await qcount("geo.osm_feature",{feature:cls}); if(typeof c==="number") t+=c; } st.total=t; }
+    else if(key==="roads_local"){ const all=await qcount("geo.osm_feature"); let art=0; for(const cls of ARTERIAL){ const c=await qcount("geo.osm_feature",{feature:cls}); if(typeof c==="number") art+=c; } st.total=(typeof all==="number")?all-art:null; }
+    else if(key==="water"){ st.total=await qcount("geo.hydro_feature"); }
+    else if(key==="facilities"){ st.total=await qcount("geo.facility"); }
+    else { const L=LAYERS.find(l=>l.key===key); if(L) st.total=await qcount(L.key); }
+  }catch(e){ st.total=null; }
+  if(explainKey===key) drawExplain();
+}
+async function reloadOverlay(kind){                            // clear the cache + re-fetch this layer/overlay from the registry
+  if(["roads","roads_local","water","facilities"].includes(kind)){
+    DATA[kind]=null;                                           // drop cached features → ensureOverlay re-fetches
+    if(kind==="roads") showRoads=true; else if(kind==="roads_local") showRoadsLocal=true;
+    else if(kind==="water") showWater=true; else showFacilities=true;
+    drawLayers(); drawExplain();
+    await ensureOverlay(kind);
+    drawLayers(); render(); return;
+  }
+  const L=LAYERS.find(l=>l.key===kind); if(!L) return;         // CHOROPLETH layer reload
+  DATA.data[kind]=null; if(active!==kind) active=kind; stopPlay(); tIdx=0;
+  setBusy("Reloading "+L.label+"…"); drawExplain(); render();
+  await ensureLayer(L);
+  setBusy(null); drawLayers(); render();
+}
+async function reloadAll(){                                    // re-fetch the active choropleth + every SHOWN overlay
+  const btn=$("reloadall"); if(btn){ btn.disabled=true; btn.textContent="↻ Reloading…"; }
+  const L=LAYERS.find(l=>l.key===active);
+  if(L){ DATA.data[active]=null; await ensureLayer(L); }
+  for(const k of ["roads","roads_local","water","facilities"]) if(OVLON[k]&&OVLON[k]()){ DATA[k]=null; await ensureOverlay(k); }
+  drawLayers(); drawExplain(); render();
+  if(btn){ btn.disabled=false; btn.textContent="↻ Reload all"; }
+}
 function drawLayers(){
-  const byG={}; LAYERS.forEach(L=>{ const g=LGROUP[L.key]||"Other"; (byG[g]=byG[g]||[]).push(L); });
-  let html="";
-  for(const g of LORDER){ const ls=byG[g], isAir=(g==="Air Quality");
-    if(!ls && !isAir) continue;
-    html+=`<div class="lgrp">${esc(g)}</div>`;
-    if(isAir)                                                     // raw station readings, grouped WITH the air layers
-      html+=`<button class="layer-btn ${showSensors?"on":""}" data-ov="sensors">
-        <span class="swatch" style="background:linear-gradient(135deg,#26a659,#f1c40f,#e67e22,#e74c3c)"></span>
-        <span class="lb"><b>Air Sensors — readings</b>${showSensors?`<span>${(DATA.sensors||[]).length} stations · hover a dot for PM2.5</span>`:""}</span></button>`;
-    for(const L of (ls||[])){ const d=DATA.data[L.key], n=d?d.rows.length:0, on=L.key===active;
-      const sub = on ? esc(L.desc||"") : (d?`${n} ${d.type==="path"?"segments":"cells"}`:"");   // description ONLY when selected
-      html+=`<button class="layer-btn ${on?"on":""}" data-k="${L.key}">
-        <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
-        <span class="lb"><b>${esc(L.label)}</b>${sub?`<span>${sub}</span>`:""}</span></button>`;
+  const tree=buildTree(); let html="";
+  for(const g of grpKeys(tree)){
+    const gk="g:"+g, gopen=isOpen(gk);
+    html+=`<div class="tgrp ${gopen?"open":""}" data-tg="${esc(g)}"><span class="tw">${gopen?"▾":"▸"}</span>${esc(g)}</div>`;
+    if(!gopen) continue;
+    const subs=Object.keys(tree[g]).sort((a,b)=>a.localeCompare(b));
+    const multiSub = subs.some(s=>s!=="");                                     // show sub-headers only when subgroups exist
+    for(const s of subs){
+      const items=tree[g][s], sk="s:"+g+"/"+s;
+      if(multiSub){ const sopen=isOpen(sk);
+        html+=`<div class="tsub ${sopen?"open":""}" data-ts="${esc(g)}/${esc(s)}"><span class="tw">${sopen?"▾":"▸"}</span>${esc(s||"General")}</div>`;
+        if(!sopen) continue; }
+      for(const it of items){
+        if(it.t==="layer"){ const L=it.L, d=DATA.data[L.key], n=d?d.rows.length:0, on=L.key===active, pin=explainKey===L.key;
+          const meta = d?`${n} ${d.type==="path"?"segments":"cells"}`:"";
+          html+=`<button class="layer-btn ${on?"on":""} ${pin?"pin":""}" data-k="${L.key}">
+            <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
+            <span class="lb"><b>${esc(L.label)}</b>${meta?`<span>${meta}</span>`:""}</span></button>`;
+        } else { const o=it.o, on=OVLON[o.id](), pin=explainKey===o.id;
+          html+=`<button class="layer-btn ${on?"on":""} ${pin?"pin":""}" data-ov="${o.id}">
+            <span class="swatch" style="background:${o.dot};box-shadow:inset 0 0 0 1px #0005"></span>
+            <span class="lb"><b>${esc(o.label)}</b><span>${on?"shown":"map overlay"}</span></span></button>`;
+        }
+      }
     }
   }
   $("layers").innerHTML=html;
-  document.querySelectorAll('.layer-btn[data-k]').forEach(b=>b.onclick=async()=>{
+  document.querySelectorAll('.tgrp[data-tg]').forEach(el=>el.onclick=()=>{ treeOpen=treeOpen||{}; const k="g:"+el.dataset.tg; treeOpen[k]=!isOpen(k); drawLayers(); });
+  document.querySelectorAll('.tsub[data-ts]').forEach(el=>el.onclick=()=>{ treeOpen=treeOpen||{}; const k="s:"+el.dataset.ts; treeOpen[k]=!isOpen(k); drawLayers(); });
+  document.querySelectorAll('.layer-btn[data-k]').forEach(b=>b.onclick=async()=>{             // CHOROPLETH leaf (exclusive) + pin explanation
     active=(active===b.dataset.k)?null:b.dataset.k; stopPlay(); tIdx=0;   // click the active layer again → hide it (basemap only)
+    setExplain(b.dataset.k);                                             // keep the explanation visible even when toggling off
     const L=LAYERS.find(l=>l.key===active);
     if(L && !DATA.data[L.key]){ setBusy("Loading "+L.label+"…"); render(); await ensureLayer(L); setBusy(null); }  // lazy fetch on first select
     drawLayers(); render();
   });
-  document.querySelectorAll('.layer-btn[data-ov="sensors"]').forEach(b=>b.onclick=async()=>{
-    showSensors=!showSensors; if(showSensors){ setBusy("Loading air sensors…"); await ensureOverlay("sensors"); setBusy(null); } drawLayers(); render();
+  document.querySelectorAll('.layer-btn[data-ov]').forEach(b=>b.onclick=async()=>{            // vector OVERLAY (additive on/off) + pin explanation
+    const id=b.dataset.ov, lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities"}[id];
+    if(id==="water") showWater=!showWater; else if(id==="roads") showRoads=!showRoads;
+    else if(id==="roads_local") showRoadsLocal=!showRoadsLocal; else if(id==="facilities") showFacilities=!showFacilities;
+    setExplain(id);
+    if(OVLON[id]()){ setBusy("Loading "+lbl+"…"); await ensureOverlay(id); setBusy(null); }
+    drawLayers(); render();
   });
 }
 // ── Trust roll-up: turn a raw city.coverage record into human bands + a headline + a source trail ──────
@@ -785,35 +1111,22 @@ function fitView(bbox){
     layers:[]
   });
   $("mapload").remove();
-  drawLayers(); drawTrust(); render();                        // FIRST PAINT — instant (only the active layer is loaded)
+  drawLayers(); drawExplain(); drawTrust(); render();         // FIRST PAINT — instant (only the active layer is loaded)
   // Vector overlays: always available; their (heavy) geometry loads lazily. Default drainage+roads on, facilities off.
-  $("ovsec").hidden=false; $("ovwater").hidden=false; $("ovroads").hidden=false; $("ovfac").hidden=false;   // Air Sensors readings live in the Air Quality layer group, not here
-  $("ovwater").classList.toggle("on",showWater); $("ovroads").classList.toggle("on",showRoads); $("ovfac").classList.toggle("on",showFacilities);
-  $("ovwater").onclick=async()=>{ showWater=!showWater; $("ovwater").classList.toggle("on",showWater); if(showWater) await ensureOverlay("water"); render(); };
-  $("ovroads").onclick=async()=>{ showRoads=!showRoads; $("ovroads").classList.toggle("on",showRoads); if(showRoads){ setBusy("Loading roads…"); await ensureOverlay("roads"); setBusy(null); } render(); };
-  $("ovfac").onclick=async()=>{ showFacilities=!showFacilities; $("ovfac").classList.toggle("on",showFacilities); if(showFacilities){ setBusy("Loading facilities…"); await ensureOverlay("facilities"); setBusy(null); } render(); };
-  $("ovsites").hidden=false; $("ovsites").classList.toggle("on",showSites);   // AI-City candidate sites (Plan interaction)
-  $("ovsites").onclick=async()=>{ showSites=!showSites; $("ovsites").classList.toggle("on",showSites); if(showSites) await ensureOverlay("sites"); drawSites(); render(); };
-  $("ovplan").hidden=false; $("ovplan").classList.toggle("on",showPlan);   // greenfield land-use plan (3D)
-  $("ovplan").onclick=async()=>{
-    showPlan=!showPlan; $("ovplan").classList.toggle("on",showPlan);
-    if(showPlan){
-      setBusy("Computing land-use plan…"); await ensurePlan(); setBusy(null);
-      if(!PLAN){ showPlan=false; $("ovplan").classList.remove("on"); setBusy("no buildings to plan here"); setTimeout(()=>setBusy(null),1600); return; }
-      const cs=PLAN.dev.map(d=>d.center), cx=cs.reduce((s,p)=>s+p[0],0)/cs.length, cy=cs.reduce((s,p)=>s+p[1],0)/cs.length;
-      mode3d=true; $("tilt").style.color="var(--accent)"; $("tilt").style.borderColor="var(--accent)";
-      view={...view, longitude:cx, latitude:cy, zoom:14.7, pitch:55, transitionDuration:800};
-      deckgl.setProps({initialViewState:view});
-    }
-    render();
-  };
-  ensureOverlay("sites").then(()=>{ drawSites(); render(); });                 // load + draw the ranked sites on first paint
+  // Overlays (Drainage / Roads / Facilities) are now items INSIDE the grouped layer menu (drawLayers), not a
+  // separate "Overlays" section — their toggle wiring lives there.
+  // AI-City sites + Land-use plan (3D) overlays removed from City Scan — those are Plan/solution features, not the
+  // City Baseline. Their buttons stay hidden; showSites/showPlan default false so their layers never render.
   // Overlays (roads / drainage / facilities) are OFF on load — the base map shows first; each loads lazily only when the user toggles it on.
   const setV=v=>{ view=v; deckgl.setProps({initialViewState:v}); };
   $("zin").onclick=()=>setV({...view,zoom:Math.min(19,view.zoom+0.6),transitionDuration:150});
   $("zout").onclick=()=>setV({...view,zoom:Math.max(3,view.zoom-0.6),transitionDuration:150});
   $("zreset").onclick=()=>setV({...fitView(DATA.aoi.bbox||DATA.scope),pitch:mode3d?50:0,transitionDuration:250});
   if($("opac")) $("opac").oninput=e=>{ layerAlpha=Math.max(0.05,(+e.target.value)/100); if($("opacval"))$("opacval").textContent=e.target.value+"%"; render(); };   // live choropleth transparency
+  if($("reloadall")) $("reloadall").onclick=()=>reloadAll();   // re-fetch active layer + shown overlays
+  document.querySelectorAll('.bmbtn').forEach(b=>b.onclick=()=>setBasemap(b.dataset.bm));   // basemap style switcher
+  document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===basemap));
+  { const a=$("attrib"); if(a) a.textContent="Basemap "+(BASEMAPS[basemap]||BASEMAPS.dark).attr; }
   $("tilt").onclick=()=>{                                       // 2D ⇄ 2.5D: tilt the camera + extrude the hexes into towers
     mode3d=!mode3d;
     $("tilt").style.color=mode3d?"var(--accent)":""; $("tilt").style.borderColor=mode3d?"var(--accent)":"";
