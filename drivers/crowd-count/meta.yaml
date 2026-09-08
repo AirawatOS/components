@@ -24,7 +24,7 @@ writes: [cell.crowd_density, vision.detection]
 # COUNT_METHOD=detection|density (detection=YOLO boxes; density=integrate a crowd-density map, accurate into
 # dense crowds — needs crowd-density.pt); CAMERA_ID narrows to one camera; CAMERA_COVERAGE_M2 = ground area a
 # frame covers (density = N/area); YOLO_WEIGHTS / DENSITY_MODEL / DENSITY_SCALE override the models; H3_RES=9.
-config: [COUNT_METHOD, CAMERA_ID, CAMERA_COVERAGE_M2, YOLO_WEIGHTS, DENSITY_MODEL, DENSITY_SCALE, H3_RES]
+config: [COUNT_METHOD, CAMERA_ID, CAMERA_COVERAGE_M2, YOLO_WEIGHTS, DENSITY_MODEL, DENSITY_SCALE, DENSITY_OFFSET, H3_RES]
 assets:
   - { name: yolo-weights, path: yolov8n.pt, optional: true }        # detection: bundled; absent → scaffold GT
   - { name: crowd-density, path: crowd-density.pt, optional: true } # density: TorchScript crowd model; drop-in

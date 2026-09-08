@@ -31,7 +31,9 @@ MODEL_WEIGHTS = os.environ.get("YOLO_WEIGHTS", os.path.join(_HERE, "yolov8n.pt")
 #               model (CSRNet/MCNN on ShanghaiTech/QNRF) exported to TorchScript and bundled as crowd-density.pt.
 COUNT_METHOD = os.environ.get("COUNT_METHOD", "detection").lower()
 DENSITY_MODEL = os.environ.get("DENSITY_MODEL", os.path.join(_HERE, "crowd-density.pt"))
-DENSITY_SCALE = float(os.environ.get("DENSITY_SCALE", "1.0"))     # per-model calibration on SUM(map)
+DENSITY_SCALE = float(os.environ.get("DENSITY_SCALE", "1.0"))     # per-model gain on SUM(map)
+DENSITY_OFFSET = float(os.environ.get("DENSITY_OFFSET", "0"))     # baseline subtracted first (a blank frame reads
+                                                                  # ~15 on this model over the sim's grey ground)
 DEFAULT_COVERAGE_M2 = float(os.environ.get("CAMERA_COVERAGE_M2", "250"))   # ground area one frame covers
 H3_RES = int(os.environ.get("H3_RES", "9"))
 CAMERA_ID = os.environ.get("CAMERA_ID", "").strip()
@@ -111,7 +113,7 @@ def _count_density(jpeg_bytes):
     t = torch.from_numpy(((rgb - mean) / std).transpose(2, 0, 1)).unsqueeze(0)
     with torch.no_grad():
         dm = m(t)
-    count = float(dm.sum().item()) * DENSITY_SCALE
+    count = (float(dm.sum().item()) - DENSITY_OFFSET) * DENSITY_SCALE   # calibrate: baseline then gain
     return int(round(max(0.0, count))), {"model": os.path.basename(DENSITY_MODEL), "mode": "density"}
 
 def _count_people(jpeg_bytes, frame):
