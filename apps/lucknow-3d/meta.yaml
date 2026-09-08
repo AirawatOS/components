@@ -5,7 +5,7 @@
 # ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
 component_id: ds:airawatdeveloper:app/lucknow-3d
 kind: app
-version: 0.3.0   # 0.3.0: buildings match LAND USE — type + silhouette derive from the zone (AI towers, data-centre sheds, stepped resi, etc.) + land-use ground tint
+version: 0.4.0   # 0.4.0: Phase 2 — infrastructure networks (Power/Water/Fibre) as a generic node/edge layer + toggles + presets; nodes are governed entities, buildings auto-linked to nearest node
 # 0.2.1: zones/parcels scaled to the ACTUAL district bounds (were tiling the whole AOI) + breadcrumb moved below the title
 # 0.2.0: digital-twin Phase 1 — DigitalTwinState + Repository (demo) + LayerManager seam + shell (breadcrumb/lifecycle/lens/inspector) + City→Zone→Parcel→Building drilldown (ES modules over the render)
 provider: ds:airawat:developer

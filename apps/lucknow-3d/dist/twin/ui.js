@@ -6,7 +6,25 @@ const LENSES = [["physical", "Physical", "◧"], ["compute", "Compute", "▦"], 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = id => document.getElementById(id);
 
-export function mountShell({ state, repo, onNavigate, onEnterBuilding }) {
+export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks }) {
+  // ---- networks (bottom, toggle chips + presets) ----
+  const nets = networks || [];
+  const PRESETS = { Utilities: ["power", "water"], Digital: ["fiber"], All: nets.map(n => n.kind) };
+  const nx = $("dt-networks");
+  if (nx && nets.length) {
+    nx.innerHTML = `<span class="lbl">Networks</span>`
+      + nets.map(n => `<button data-net="${n.kind}"><span class="sw" style="background:rgb(${n.color.join(",")})"></span>${esc(n.name)}</button>`).join("")
+      + Object.keys(PRESETS).map(p => `<button class="clr" data-preset="${p}">${p}</button>`).join("")
+      + `<button class="clr" data-preset="__off">Off</button>`;
+    nx.querySelectorAll("[data-net]").forEach(b => b.onclick = () => {
+      const cur = state.get().activeNetworks.slice(), k = b.dataset.net, i = cur.indexOf(k);
+      i >= 0 ? cur.splice(i, 1) : cur.push(k); state.patch({ activeNetworks: cur });
+    });
+    nx.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => {
+      const p = b.dataset.preset; state.patch({ activeNetworks: p === "__off" ? [] : (PRESETS[p] || []).slice() });
+    });
+  }
+
   // ---- lifecycle (top-centre) ----
   const lc = $("dt-lifecycle");
   lc.innerHTML = LIFECYCLES.map(([k, l]) => `<button data-lc="${k}">${l}</button>`).join("");
@@ -21,6 +39,7 @@ export function mountShell({ state, repo, onNavigate, onEnterBuilding }) {
   const render = s => {
     lc.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.lc === s.lifecycleMode));
     lr.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.lens === s.lens));
+    if (nx) nx.querySelectorAll("[data-net]").forEach(b => b.classList.toggle("on", s.activeNetworks.indexOf(b.dataset.net) >= 0));
     renderBreadcrumb(s);
     renderInspector(s);
   };

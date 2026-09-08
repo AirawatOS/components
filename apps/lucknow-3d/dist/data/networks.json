@@ -1,0 +1,35 @@
+{
+  "_note": "AI City demo infrastructure networks (Phase 2). Node positions `f` are FRACTIONAL [fx,fy] within the district bbox (0=west/south, 1=east/north), scaled at runtime — so they sit over the district. Generic node/edge model: one NetworkLayer renders all kinds; presets group them. Stable IDs (SUB-01, TX-*, WATER-*, FIBER-*). Buildings are auto-linked to their nearest node per network at load, so a transformer knows which buildings it powers.",
+  "networks": [
+    { "id": "NET-POWER", "kind": "power", "name": "Power", "color": [240, 184, 74],
+      "nodes": [
+        { "id": "SUB-01", "name": "Grid Substation", "type": "substation", "f": [0.06, 0.92] },
+        { "id": "TX-01", "name": "Transformer TX-01", "type": "transformer", "f": [0.50, 0.50] },
+        { "id": "TX-02", "name": "Transformer TX-02", "type": "transformer", "f": [0.20, 0.55] },
+        { "id": "TX-03", "name": "Transformer TX-03", "type": "transformer", "f": [0.50, 0.72] },
+        { "id": "TX-04", "name": "Transformer TX-04", "type": "transformer", "f": [0.82, 0.50] },
+        { "id": "TX-05", "name": "Transformer TX-05", "type": "transformer", "f": [0.40, 0.20] },
+        { "id": "TX-06", "name": "Transformer TX-06", "type": "transformer", "f": [0.82, 0.85] }
+      ],
+      "edges": [["SUB-01","TX-01"],["TX-01","TX-02"],["TX-01","TX-03"],["TX-01","TX-04"],["TX-01","TX-05"],["TX-04","TX-06"]] },
+
+    { "id": "NET-WATER", "kind": "water", "name": "Water", "color": [72, 150, 224],
+      "nodes": [
+        { "id": "WATER-RES-01", "name": "Reservoir", "type": "reservoir", "f": [0.93, 0.10] },
+        { "id": "WATER-ZONE-01", "name": "Water Zone 01", "type": "zone", "f": [0.50, 0.48] },
+        { "id": "WATER-ZONE-02", "name": "Water Zone 02", "type": "zone", "f": [0.24, 0.52] },
+        { "id": "WATER-ZONE-03", "name": "Water Zone 03", "type": "zone", "f": [0.74, 0.62] }
+      ],
+      "edges": [["WATER-RES-01","WATER-ZONE-01"],["WATER-ZONE-01","WATER-ZONE-02"],["WATER-ZONE-01","WATER-ZONE-03"]] },
+
+    { "id": "NET-FIBER", "kind": "fiber", "name": "Fibre", "color": [104, 222, 180],
+      "nodes": [
+        { "id": "FIBER-CORE-01", "name": "Fibre Core", "type": "core", "f": [0.50, 0.55] },
+        { "id": "EDGE-01", "name": "Edge Node 01", "type": "edge", "f": [0.22, 0.28] },
+        { "id": "EDGE-02", "name": "Edge Node 02", "type": "edge", "f": [0.78, 0.30] },
+        { "id": "EDGE-03", "name": "Edge Node 03", "type": "edge", "f": [0.24, 0.78] },
+        { "id": "EDGE-04", "name": "Edge Node 04", "type": "edge", "f": [0.80, 0.76] }
+      ],
+      "edges": [["FIBER-CORE-01","EDGE-01"],["FIBER-CORE-01","EDGE-02"],["FIBER-CORE-01","EDGE-03"],["FIBER-CORE-01","EDGE-04"]] }
+  ]
+}

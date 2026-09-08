@@ -76,6 +76,15 @@
   .dt-card .rels b{color:#dfe6ff;font-family:ui-monospace,monospace;font-size:11px}
   .dt-card .dim{font-size:12px;color:#8b949e;line-height:1.5}
   .dt-card .ill{margin-top:10px;font-size:10.5px;color:#6b7684}
+  /* networks toggle (bottom-left) */
+  #dt-networks{position:absolute;left:70px;bottom:18px;z-index:6;display:flex;align-items:center;gap:6px;
+    background:#0e1130cc;border:1px solid #2a2a5a;border-radius:10px;padding:6px 8px;backdrop-filter:blur(6px);flex-wrap:wrap;max-width:60vw}
+  #dt-networks .lbl{font:10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#8b949e;margin-right:2px}
+  #dt-networks button{display:flex;align-items:center;gap:6px;background:#ffffff0c;border:1px solid #ffffff18;color:#cfd6f5;
+    border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer}
+  #dt-networks button .sw{width:9px;height:9px;border-radius:2px}
+  #dt-networks button.on{border-color:#39d3e0;color:#eef1ff;background:#39d3e014}
+  #dt-networks .clr{color:#9aa0cc}
 </style></head><body>
 <div id="c"></div>
 <div class="cap"><div class="k">Indicative Masterplan · Lucknow</div>
@@ -110,6 +119,7 @@
 <div id="dt-lifecycle"></div>
 <div id="dt-lens"></div>
 <div id="dt-inspector" hidden></div>
+<div id="dt-networks"></div>
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>
 <script src="./vendor/h3-js.umd.js"></script>
@@ -356,6 +366,10 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     buildings: [...bldRec.values()].map(b=>({id:b.id,name:b.name,t:b.t,function:b.function,cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,h:b.h})),
     onPick:null,                                    // app.js sets this: (buildingId) => select in the twin
     highlight, clearHighlight:clearHi, flyToBuilding, flyToBbox, outline,
+    addHideable:p=>{ if(p) CITY_PRIMS.push(p); },                     // layers (e.g. networks) that must hide during a walk-through
+    flyToPoint:(lon,lat)=>{ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+      viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lon,lat,20),260),
+        {offset:new Cesium.HeadingPitchRange(Cesium.Math.toRadians(25),Cesium.Math.toRadians(-32),700),duration:1.4}); },
     enterBuilding:id=>{ const ido=bldById.get(id); if(ido&&!ido.noInt) Interiors.enter(ido); },
     frameCity:()=>{ clearHi(); outline(null); heading=22; RANGE=2400;
       const rM=Math.max((DB[2]-DB[0])*MLON,(DB[3]-DB[1])*MLAT)*0.6+300;
@@ -385,6 +399,8 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
       if(p.id&&p.id.kind==="planned"&&!p.id.noInt&&p.id.id){ card.style.display="none";
         if(window.AICITY&&AICITY.onPick) return AICITY.onPick(p.id.id);
         return Interiors.enter(p.id); }                                  // fallback if the twin shell isn't mounted
+      // SINGLE-CLICK a network node → select it in the twin (shows what it feeds/serves)
+      if(p.id&&p.id.kind==="netnode"&&p.id.id){ card.style.display="none"; if(window.AICITY&&AICITY.onPick) return AICITY.onPick(p.id.id); }
       if(p.id&&p.id.kind) return showCard(p.id);
       if(p.getProperty){ const h=p.getProperty("cesium#estimatedHeight"); return showCard({kind:"existing",est:true,h:h?Math.round(h):null,name:p.getProperty("name")}); }
     }
