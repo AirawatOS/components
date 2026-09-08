@@ -5,7 +5,7 @@
 # ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
 component_id: ds:airawatdeveloper:app/lucknow-3d
 kind: app
-version: 0.7.0   # 0.7.0: Phase 5 — BUILD timeline (construction schedule + slider + Planned/Actual/Compare, stage colouring, variance/risk, one delayed building)
+version: 0.8.0   # 0.8.0: Phase 6 — OPERATE live telemetry (synthetic, pausable) + operational state + TX-04 Warning w/ Energy-Agent advice + affected buildings
 # 0.2.1: zones/parcels scaled to the ACTUAL district bounds (were tiling the whole AOI) + breadcrumb moved below the title
 # 0.2.0: digital-twin Phase 1 — DigitalTwinState + Repository (demo) + LayerManager seam + shell (breadcrumb/lifecycle/lens/inspector) + City→Zone→Parcel→Building drilldown (ES modules over the render)
 provider: ds:airawat:developer

@@ -104,6 +104,20 @@
   #dt-build .bmode button.on{border-color:#e8b84b;color:#f4e6c0;background:#e8b84b18}
   #dt-build input[type=range]{width:min(42vw,420px);accent-color:#39d3e0;cursor:pointer}
   #dt-build .bdate{font:12px ui-monospace,Menlo,monospace;color:#c9f4fa;min-width:74px;text-align:right;font-variant-numeric:tabular-nums}
+  /* OPERATE live bar (bottom-centre) */
+  #dt-operate{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:12px;
+    background:#0e1130cc;border:1px solid #2a2a5a;border-radius:11px;padding:7px 12px;backdrop-filter:blur(6px)}
+  #dt-operate[hidden]{display:none}
+  #dt-operate #dt-oppause{width:34px;height:32px;border-radius:8px;background:#ffffff0c;border:1px solid #ffffff22;color:#dfe6ff;font-size:14px;cursor:pointer}
+  #dt-operate .bdate{font:12px ui-monospace,Menlo,monospace;color:#c9f4fa;min-width:118px;font-variant-numeric:tabular-nums}
+  #dt-operate .alert{background:#e8896b22;border:1px solid #e8896b;color:#ffd9cc;border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer}
+  #dt-operate .alert[hidden]{display:none}
+  .dt-card .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .dt-card .pill.normal{background:#2a6b3e;color:#c9f4d6} .dt-card .pill.warning{background:#7a5a1e;color:#f4e2b0} .dt-card .pill.critical{background:#7a2a2a;color:#f4c9c9}
+  .dt-card .agent{margin-top:10px;border-top:1px solid #ffffff14;padding-top:9px}
+  .dt-card .agent .an{font-size:12px;color:#39d3e0;font-weight:600;margin-bottom:3px}
+  .dt-card .agent .as{font-size:12.5px;color:#dfe6ff;line-height:1.45}
+  .dt-card .agent ul{margin:6px 0 0;padding-left:16px} .dt-card .agent li{font-size:12px;color:#aeb6dd;margin:2px 0}
   #dt-scenario-panel .t{font-family:ui-serif,Georgia,serif;font-size:15px;color:#f4e6c0;margin-bottom:2px}
   #dt-scenario-panel .st{font:10px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:8px}
   #dt-scenario-panel .row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#aeb6dd;padding:3px 0}
@@ -156,6 +170,11 @@
   <div class="bmode"></div>
   <input id="dt-buildslider" type="range" min="0" max="60" step="1" value="0" aria-label="Construction timeline">
   <div class="bdate" id="dt-builddate"></div>
+</div>
+<div id="dt-operate" hidden>
+  <button id="dt-oppause" title="Pause / resume live telemetry">⏸</button>
+  <div class="bdate" id="dt-opclock"></div>
+  <button id="dt-opalert" class="alert" hidden></button>
 </div>
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>

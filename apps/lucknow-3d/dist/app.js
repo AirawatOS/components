@@ -9,6 +9,7 @@ import { compute, specs as computeSpecs } from "./lenses/compute.js";
 import { digital } from "./lenses/digital.js";
 import { SCENARIOS, impacts } from "./sim/scenario.js";
 import { START, END, progress, colorFor } from "./sim/build.js";
+import { OP_BASE, WARN_NODE, reading, affected, agentAdvice } from "./sim/telemetry.js";
 
 const whenReady = cb => { if (window.AICITY) cb(); else window.addEventListener("aicity-ready", cb, { once: true }); };
 
@@ -57,10 +58,21 @@ whenReady(async () => {
         + (p.delayed ? `<div class="ill" style="color:#e8b84b">⚠ Behind schedule — flagged by the Construction Agent.</div>` : `<div class="ill">Illustrative construction model</div>`) };
   };
 
+  // OPERATE inspector (live telemetry for a selected asset; Energy-Agent card on the warning transformer)
+  const operateInspector = (e, s) => {
+    const t = s.simulationTime || OP_BASE, r = reading(e, t);
+    const row = m => `<div class="row"><span>${m.k}</span><b>${m.v}${m.unit ? " " + m.unit : ""}</b></div>`;
+    let body = `<div class="row"><span>State</span><b><span class="pill ${r.state}">${r.state.toUpperCase()}</span></b></div>` + r.metrics.map(row).join("");
+    if (e.id === WARN_NODE) { const a = agentAdvice(e, t);
+      body += `<div class="agent"><div class="an">✦ ${a.agent}</div><div class="as">${a.summary}</div><ul>${a.recommend.map(x => `<li>${x}</li>`).join("")}</ul></div>`;
+    }
+    return { title: e.name || e.id, body: body + `<div class="ill">Illustrative live telemetry</div>` };
+  };
+
   // ---- semantic lenses (Phase 3): Compute + Digital wired; Innovation/Governance still stubs ----
   const LENSES = { compute, digital };
   const lensCtx = { A, repo, state };
-  mountShell({ state, repo, networks, lenses: LENSES, buildInspector, onNavigate: navigate, onEnterBuilding: id => A.enterBuilding(id) });
+  mountShell({ state, repo, networks, lenses: LENSES, buildInspector, operateInspector, onNavigate: navigate, onEnterBuilding: id => A.enterBuilding(id) });
 
   // networks visibility is driven by state (toggle chips / presets)
   let lastNets = "";
@@ -153,4 +165,36 @@ whenReady(async () => {
   });
 
   console.log("[twin] Phase 5 ready — BUILD timeline over", months, "months");
+
+  // ---- OPERATE live telemetry (Phase 6) ----
+  const opFmt = ms => { const d = new Date(ms); const p = n => String(n).padStart(2, "0");
+    return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()); };
+  const pauseBtn = $("dt-oppause"), alertBtn = $("dt-opalert");
+  let opTimer = null, opPaused = false, opAffected = null, opNetAdded = false, opOn = false;
+  pauseBtn.onclick = () => { opPaused = !opPaused; pauseBtn.textContent = opPaused ? "▶" : "⏸"; };
+  alertBtn.onclick = () => navigate(WARN_NODE);
+  const opPaint = () => { if (!opAffected) opAffected = new Set(affected(repo)); A.paintBuildings(id => opAffected.has(id) ? [232, 160, 70, 255] : null); };
+  function startOperate() {
+    opAffected = new Set(affected(repo));
+    if (!opNetAdded && state.get().activeNetworks.indexOf("power") < 0) { opNetAdded = true; state.patch({ activeNetworks: state.get().activeNetworks.concat("power") }); }
+    alertBtn.hidden = false; alertBtn.textContent = "⚠ " + WARN_NODE + " · Warning";
+    if (!opTimer) opTimer = setInterval(() => { if (!opPaused) state.patch({ simulationTime: (state.get().simulationTime || OP_BASE) + 1800000 }); }, 1500);
+    opPaint();
+  }
+  function stopOperate() {
+    if (opTimer) { clearInterval(opTimer); opTimer = null; }
+    alertBtn.hidden = true; A.clearPaint(); opAffected = null;
+    if (opNetAdded) { opNetAdded = false; state.patch({ activeNetworks: state.get().activeNetworks.filter(k => k !== "power") }); }
+  }
+  state.subscribe(s => {
+    const inOp = s.lifecycleMode === "operate";
+    $("dt-operate").hidden = !inOp;
+    if (inOp) {
+      if (s.simulationTime < OP_BASE) { state.patch({ simulationTime: OP_BASE }); return; }   // seed the operational clock
+      if (!opOn) { opOn = true; startOperate(); }
+      $("dt-opclock").textContent = opFmt(s.simulationTime); opPaint();
+    } else if (opOn) { opOn = false; stopOperate(); }
+  });
+
+  console.log("[twin] Phase 6 ready — OPERATE telemetry; warning on", WARN_NODE);
 });
