@@ -69,7 +69,7 @@ def _scenario_k(cam):
     k = BASELINE_K + (PEAK_K - BASELINE_K) * curve
     if SCENARIO == "ramkund-crush" and hour in (13, 14):
         k *= 1.35                                                     # the sharp surge
-    level = cam.get("crowd_level")
+    level = (cam.get("location") or {}).get("crowd_level", cam.get("crowd_level"))
     if level is not None:
         try: k *= float(level)
         except Exception: pass
