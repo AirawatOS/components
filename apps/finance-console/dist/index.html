@@ -132,22 +132,25 @@ function rBud(){
        :`<div class="empty">No budgets yet.</div>`);
 }
 function addBud(){ openBud({}); } function editBud(id){ openBud(BUD.find(b=>b.id===id)||{}); }
-function openBud(b){ const exp=ACC.filter(a=>a.type==='expense');
-  document.getElementById('sheet').innerHTML=`<h3>${b.id?'Edit':'New'} budget</h3>
-    <div class="grid"><div class="row"><label>Code</label><input id="b_code" value="${esc(b.code||'')}" placeholder="B-TRAVEL-26"></div>
-      <div class="row"><label>Name</label><input id="b_name" value="${esc(b.name||'')}" placeholder="Travel — FY2026"></div></div>
-    <div class="grid g3"><div class="row"><label>Fiscal year</label><input id="b_fy" value="${esc(b.fiscal_year||'FY2026')}"></div>
-      <div class="row"><label>Expense account</label><select id="b_account"><option value="">—</option>${exp.map(a=>`<option value="${esc(a.id)}"${a.id===b.account?' selected':''}>${esc(a.code+' '+a.name)}</option>`).join('')}</select></div>
-      <div class="row"><label>Org unit</label><select id="b_unit"><option value="">—</option>${UNITS.map(u=>`<option value="${esc(u.id)}"${u.id===b.org_unit?' selected':''}>${esc(u.name)}</option>`).join('')}</select></div></div>
-    <div class="row" style="max-width:220px"><label>Allocated</label><input id="b_alloc" type="number" value="${esc(b.allocated!=null?b.allocated:'')}" placeholder="500000"></div>
-    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="saveBud('${esc(b.id||'')}')">Save</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
-  document.getElementById('modal').classList.add('open'); }
-async function saveBud(id){ const code=val('b_code'),name=val('b_name'),alloc=val('b_alloc'); if(!code||!name||alloc==='')return ferr('Code, name and allocated required');
-  const cur=BUD.find(x=>x.id===id)||{};
-  const o={schema:'finance.budget',id:id||`ds:${TENANT}:finance/budget/${code}`,code,name,fiscal_year:val('b_fy')||'FY2026',allocated:Number(alloc),
-    committed:cur.committed||0,spent:cur.spent||0,status:'active',tenant:TENANT,created_at:cur.created_at||new Date().toISOString()};
-  if(val('b_account'))o.account=val('b_account'); if(val('b_unit'))o.org_unit=val('b_unit');
-  const r=await save(o); if(r.error)return ferr(r.error); closeM(); await reload(); render(); }
+function openBud(b){                                        // reads like a form definition, not HTML string-soup (AOS.form)
+  const acct  = [{value:'',label:'—'}].concat(ACC.filter(a=>a.type==='expense').map(a=>({value:a.id, label:a.code+' '+a.name})));
+  const units = [{value:'',label:'—'}].concat(UNITS.map(u=>({value:u.id, label:u.name})));
+  AOS.form((b.id?'Edit':'New')+' budget', [
+    {id:'code',    label:'Code',            value:b.code||'',   placeholder:'B-TRAVEL-26',   required:true},
+    {id:'name',    label:'Name',            value:b.name||'',   placeholder:'Travel — FY2026', required:true},
+    {id:'fy',      label:'Fiscal year',     value:b.fiscal_year||'FY2026'},
+    {id:'account', label:'Expense account', type:'select', options:acct,  value:b.account||''},
+    {id:'unit',    label:'Org unit',        type:'select', options:units, value:b.org_unit||''},
+    {id:'alloc',   label:'Allocated',       type:'number', value:b.allocated!=null?b.allocated:'', placeholder:'500000', required:true},
+  ], { onSave: async v => {
+    const cur = BUD.find(x=>x.id===b.id) || {};
+    const o = {schema:'finance.budget', id:b.id||`ds:${TENANT}:finance/budget/${v.code}`, code:v.code, name:v.name,
+      fiscal_year:v.fy||'FY2026', allocated:Number(v.alloc), committed:cur.committed||0, spent:cur.spent||0,
+      status:'active', tenant:TENANT, created_at:cur.created_at||new Date().toISOString()};
+    if(v.account) o.account=v.account; if(v.unit) o.org_unit=v.unit;
+    const r = await save(o); if(r.error) return r; await reload(); render(); return r;
+  }});
+}
 
 /* ---------- JOURNAL ---------- */
 function rJnl(){
