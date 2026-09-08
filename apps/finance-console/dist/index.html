@@ -7,42 +7,12 @@
   Travel / Payroll settle into. Extends cleanly to full double-entry (the entries already ARE balanced lines).
 -->
 <style>
-  /* tokens (theme-aware) from /shared/aos.css */
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-  .wrap{display:flex;height:100%}
-  .nav{width:180px;flex:0 0 auto;border-right:1px solid var(--line);padding:14px 10px;background:rgba(10,14,20,.4)}
-  .nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:2px 8px 12px}
-  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);cursor:pointer;margin-bottom:3px;font-weight:500}
-  .nav a:hover{background:#161d27}.nav a.on{background:#14311f;color:#9fe6bf}
-  .nav a .c{margin-left:auto;font-size:11px;color:var(--dim);background:#0d1117;border:1px solid var(--line);border-radius:20px;padding:0 7px}
-  .main{flex:1;min-width:0;overflow:auto;padding:20px 24px}
-  .head{display:flex;align-items:center;margin-bottom:14px}.head h2{margin:0;font-size:18px}.head .sub{color:var(--dim);margin-left:10px;font-size:12px}
-  .right{margin-left:auto;display:flex;gap:8px}
-  .btn{border:1px solid var(--line);background:#1b232e;color:var(--ink);border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer}
-  .btn:hover{border-color:#33455a}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.pri:hover{filter:brightness(1.1)}
-  .btn.sm{padding:3px 9px;font-size:12px}.btn.ghost{background:none}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:0;margin-bottom:12px;overflow:hidden}
-  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px}
-  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-  tr:hover td{background:#121821}
-  tr.sub td{background:#0f1620;color:var(--ink)} tfoot td{border-top:2px solid var(--line)}
-  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
-  .pill.expense{color:#ff9b9b;border-color:#6d2b2b}.pill.asset{color:#9fd0ff;border-color:#274a6b}.pill.liability{color:#e6c34a;border-color:#7a5c12}
-  .pill.revenue{color:#7ee2a8;border-color:#1f6f43}.pill.equity{color:#d8ccff;border-color:#3a2f66}
-  .pill.posted{color:#7ee2a8;border-color:#1f6f43}.pill.committed{color:#e6c34a;border-color:#7a5c12}
-  .bar{height:7px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden;min-width:120px}
-  .bar > i{display:block;height:100%;background:linear-gradient(90deg,#2ea043,#d29922)}
-  .empty{color:var(--dim);padding:24px;text-align:center;border:1px dashed var(--line);border-radius:12px}
-  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 4px}
-  input,select{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid.g3{grid-template-columns:1fr 1fr 1fr}.row{margin-bottom:12px}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:30}
-  .modal.open{display:flex}.sheet{background:#0f151d;border:1px solid var(--line);border-radius:14px;padding:20px;width:560px;max-width:100%;max-height:90vh;overflow:auto}
-  .sheet h3{margin:0 0 14px}.muted{color:var(--dim)}.err{color:#ff9b9b;font-size:12px;margin-top:8px}
+  /* Base components, tokens + themes all come from /shared/aos.css — only Finance-specific styles remain here.
+     Account-TYPE pills carry their type as a coloured BORDER with --ink text, so they read on light + dark. */
+  .pill.expense,.pill.asset,.pill.liability,.pill.revenue,.pill.equity{color:var(--ink)}
+  .pill.expense{border-color:#c0504d}.pill.asset{border-color:#3b82f6}.pill.liability{border-color:#c98a1a}
+  .pill.revenue{border-color:#2ea043}.pill.equity{border-color:#8b5cf6}
   .ln{font-size:12px;color:var(--dim)} .ln b{color:var(--ink)}
-  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#14311f;border:1px solid #2a6b45;color:#9fe6bf;padding:10px 16px;border-radius:10px;z-index:50;opacity:0;transition:opacity .3s}
 </style>
 
 <div class="wrap">
