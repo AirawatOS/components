@@ -1,0 +1,10 @@
+{
+  "_note": "Deterministic sample edges (Phase 1). The generic relationship model is {sourceId, relationshipType, targetId}. This seeds the AI City knowledge graph; later phases add power/water/fibre network nodes as real entities and wire these to them. Building IDs are assigned deterministically by the renderer (BLDG-0001…); the landmark is always BLDG-LANDMARK.",
+  "relationships": [
+    { "sourceId": "BLDG-LANDMARK", "relationshipType": "locatedIn",  "targetId": "ZONE-A" },
+    { "sourceId": "BLDG-LANDMARK", "relationshipType": "poweredBy",  "targetId": "TX-014" },
+    { "sourceId": "BLDG-LANDMARK", "relationshipType": "suppliedBy", "targetId": "WATER-ZONE-01" },
+    { "sourceId": "BLDG-LANDMARK", "relationshipType": "connectedTo","targetId": "FIBER-CORE-01" },
+    { "sourceId": "BLDG-LANDMARK", "relationshipType": "accessedBy", "targetId": "RD-12" }
+  ]
+}

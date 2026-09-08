@@ -5,9 +5,11 @@
 # ONE plan (LandUsePlan.computePlan), TWO renderers (deck.gl analytical + Cesium premium).
 component_id: ds:airawatdeveloper:app/lucknow-3d
 kind: app
-version: 0.1.1   # 0.1.1: CESIUM_ION_TOKEN modeled as a secret (settable in Components) + ion tile-proxy for photoreal
+version: 0.3.0   # 0.3.0: buildings match LAND USE — type + silhouette derive from the zone (AI towers, data-centre sheds, stepped resi, etc.) + land-use ground tint
+# 0.2.1: zones/parcels scaled to the ACTUAL district bounds (were tiling the whole AOI) + breadcrumb moved below the title
+# 0.2.0: digital-twin Phase 1 — DigitalTwinState + Repository (demo) + LayerManager seam + shell (breadcrumb/lifecycle/lens/inspector) + City→Zone→Parcel→Building drilldown (ES modules over the render)
 provider: ds:airawat:developer
-display_name: Lucknow 3D
+display_name: AI City - 3D
 entrypoint: index.html
 bundle: dist
 sandboxed: true
@@ -15,9 +17,13 @@ sandboxed: true
 # app-host emits a relaxed CSP for csp_profile:3d — adds worker-src 'self' blob: + 'wasm-unsafe-eval' + blob: — while
 # keeping connect-src pinned to 'self' (all external I/O still flows only through the host bridge). Opt-in, per app.
 csp_profile: 3d
-required_schemas: [space.aoi, geo.building, viz.layer]
+required_schemas: [geo.building, viz.layer]   # AI-City extent is an app setting (ai_city_aoi), not read from space.aoi
 writes: []
 roles: [platform.tenant-admin]
+# APP SETTING (ADR-0027 component config): the AI-City precinct bounding box [minLon,minLat,maxLon,maxLat].
+# The tenant AOI (space.aoi) covers all of Lucknow; the AI City is a specific precinct, so its extent is a
+# separate, adjustable setting — defaulting IN THE APP to the original Sector-15 box. Also settable in the ⚙ panel.
+config: [ai_city_aoi]
 # INSTALL-TIME SECRET (component setup, ADR-0027): a Cesium ion access token. Kept SERVER-SIDE in Vault (set via the
 # Components app → Set/Rotate) and injected by the host's ion tile-proxy — it never reaches the browser, so the app
 # holds no credential. Empty ⇒ tokenless preview (our own geometry only). Unlocks photoreal terrain + OSM Buildings.

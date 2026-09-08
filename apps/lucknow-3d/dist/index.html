@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Lucknow 3D — AI City</title>
+<!doctype html><html><head><meta charset="utf-8"><title>AI City - 3D</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link href="./vendor/cesium/Widgets/widgets.css" rel="stylesheet">
 <style>
@@ -33,18 +33,64 @@
   #card .cr{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#aeb6dd;margin-top:6px}
   #card .cr b{color:#39d3e0;font-variant-numeric:tabular-nums}
   #card .cf{margin-top:8px;font-size:11px;color:#6b7684}
+  /* interior walk-through: exit button (top-left) + info HUD (top-centre) */
+  #exitbldg{position:absolute;top:16px;left:20px;z-index:8;background:#0e1130ee;border:1px solid #39d3e0;color:#c9f4fa;
+    border-radius:9px;padding:8px 14px;font-size:13px;cursor:pointer;backdrop-filter:blur(6px)}
+  #exitbldg:hover{background:#123}
+  #inhud{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:7;background:#0e1130e6;border:1px solid #39d3e055;
+    border-radius:11px;padding:9px 15px;text-align:center;backdrop-filter:blur(6px);max-width:70vw}
+  #inhud .k{font-family:ui-serif,Georgia,serif;font-size:16px;color:#c9f4fa}
+  #inhud .n{font-size:12px;color:#aeb6dd;margin-top:2px}
+  #inhud .h{font-size:11px;color:#6b7684;margin-top:4px}
+  /* ===== DIGITAL-TWIN SHELL (Phase 1) ===== */
+  #dt-lifecycle{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:6;display:flex;gap:4px;
+    background:#0e1130cc;border:1px solid #2a2a5a;border-radius:10px;padding:4px;backdrop-filter:blur(6px)}
+  #dt-lifecycle button{background:none;border:0;color:#aeb6dd;border-radius:7px;padding:6px 16px;font-size:12px;letter-spacing:.08em;cursor:pointer}
+  #dt-lifecycle button.on{background:#39d3e01e;color:#c9f4fa;box-shadow:inset 0 0 0 1px #39d3e066}
+  #dt-lens{position:absolute;left:14px;top:50%;transform:translateY(-50%);z-index:6;display:flex;flex-direction:column;gap:6px}
+  #dt-lens button{display:flex;align-items:center;gap:8px;background:#0e1130cc;border:1px solid #2a2a5a;color:#aeb6dd;
+    border-radius:9px;padding:8px 10px;font-size:12px;cursor:pointer;backdrop-filter:blur(6px);min-width:38px}
+  #dt-lens button .i{font-size:14px}
+  #dt-lens button.on{border-color:#39d3e0;color:#c9f4fa}
+  #dt-breadcrumb{position:absolute;top:104px;left:20px;z-index:6;display:none;align-items:center;gap:6px;flex-wrap:wrap;max-width:56vw;
+    font-size:12px;color:#aeb6dd;background:#0e1130d9;border:1px solid #2a2a5a;border-radius:9px;padding:6px 10px;backdrop-filter:blur(6px)}
+  #dt-breadcrumb.show{display:flex}
+  #dt-breadcrumb .crumb{cursor:pointer;padding:2px 4px;border-radius:5px}
+  #dt-breadcrumb .crumb:hover{color:#c9f4fa;background:#ffffff10}
+  #dt-breadcrumb .crumb.cur{color:#e8b84b;cursor:default}
+  #dt-breadcrumb .sep{color:#4a5170}
+  #dt-inspector{position:absolute;right:14px;top:150px;z-index:6;width:264px;max-height:calc(100vh - 210px);overflow:auto}
+  .dt-card{background:#0e1130ee;border:1px solid #2a2a5a;border-radius:12px;padding:13px 14px;backdrop-filter:blur(6px);box-shadow:0 12px 30px #0007}
+  .dt-card .hd{border-bottom:1px solid #ffffff14;padding-bottom:9px;margin-bottom:9px}
+  .dt-card .k{font:10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#8b949e}
+  .dt-card .nm{font-size:16px;font-weight:600;color:#eef1ff;margin-top:2px}
+  .dt-card .row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#aeb6dd;padding:3px 0}
+  .dt-card .row b{color:#39d3e0}
+  .dt-card .sub{font:10px ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;color:#8b949e;margin:11px 0 6px}
+  .dt-card .list{display:flex;flex-direction:column;gap:4px}
+  .dt-card .li{text-align:left;background:#ffffff0c;border:1px solid #ffffff12;color:#dfe6ff;border-radius:7px;padding:7px 9px;font-size:12.5px;cursor:pointer}
+  .dt-card .li:hover{border-color:#39d3e088;background:#39d3e014}
+  .dt-card .enter{width:100%;margin-top:10px;background:#39d3e01e;border:1px solid #39d3e066;color:#c9f4fa;border-radius:8px;padding:9px;font-size:13px;cursor:pointer}
+  .dt-card .enter:hover{background:#39d3e030}
+  .dt-card .rels .rel{font-size:12px;color:#aeb6dd;padding:2px 0}
+  .dt-card .rels b{color:#dfe6ff;font-family:ui-monospace,monospace;font-size:11px}
+  .dt-card .dim{font-size:12px;color:#8b949e;line-height:1.5}
+  .dt-card .ill{margin-top:10px;font-size:10.5px;color:#6b7684}
 </style></head><body>
 <div id="c"></div>
-<div class="cap"><div class="k">Indicative Masterplan · Sector 15, Vrindavan Yojana</div>
-  <h1>Lucknow 3D — AI City</h1>
+<div class="cap"><div class="k">Indicative Masterplan · Lucknow</div>
+  <h1>AI City - 3D</h1>
   <div class="s"><b id="hd">loading the twin…</b></div></div>
 <div id="status">starting…</div>
-<button id="iongear" title="Cesium ion token → photoreal">⚙ ion</button>
+<button id="iongear" title="App settings">⚙</button>
 <div id="ionpanel" hidden>
-  <div class="t">Cesium ion token</div>
+  <div class="t">AI City area — bbox</div>
+  <input id="aoibox" type="text" placeholder="minLon, minLat, maxLon, maxLat" autocomplete="off" spellcheck="false">
+  <div class="hint">The AI-City masterplan is drawn only inside this box (the original Sector-15 precinct by default). The city AOI (all of Lucknow) is left unchanged — this is an app-level setting.</div>
+  <div class="t" style="margin-top:13px">Cesium ion token</div>
   <input id="iontok" type="text" placeholder="paste ion access token" autocomplete="off" spellcheck="false">
-  <div class="row"><button id="ionsave">Save + reload</button><button id="ionclear">Clear</button></div>
   <div class="hint">A public client token from cesium.com/ion → unlocks photoreal terrain + real-city 3D buildings. Stored in this browser only.</div>
+  <div class="row"><button id="ionsave">Save + reload</button><button id="ionclear">Reset area + token</button></div>
 </div>
 <div id="ctl">
   <button id="cOrbit" title="Play / pause auto-orbit">⏸</button>
@@ -57,10 +103,18 @@
 <div class="foot">Real footprints (Google Open Buildings) · designed AI district is illustrative · photoreal basemap when an ion token is set</div>
 <div class="err" id="err"></div>
 <div id="card"></div>
+<button id="exitbldg" hidden>← Exit building</button>
+<div id="inhud" hidden></div>
+<!-- digital-twin shell (Phase 1): breadcrumb (TL) · lifecycle (TC) · lens rail (L) · inspector (R) -->
+<div id="dt-breadcrumb"></div>
+<div id="dt-lifecycle"></div>
+<div id="dt-lens"></div>
+<div id="dt-inspector" hidden></div>
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>
 <script src="./vendor/h3-js.umd.js"></script>
 <script src="./plan-core.js"></script>
+<script src="./interiors.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 let APPID="lucknow-3d";
@@ -69,13 +123,32 @@ async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPI
 function ringOf(f){let c=(f.geometry||{}).coordinates;while(Array.isArray(c)&&c.length&&Array.isArray(c[0])&&Array.isArray(c[0][0]))c=c[0];return c;}
 function centroid(r){let x=0,y=0;for(const p of r){x+=p[0];y+=p[1];}return[x/r.length,y/r.length];}
 const rgba=(a,al)=>Cesium.Color.fromBytes(a[0],a[1],a[2],Math.round((al==null?1:al)*255));
-const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="Lucknow 3D — "+m; $("status").textContent="error"; };
-// ion token control (⚙) — the token is a PUBLIC client key; kept in localStorage
-(function(){ const g=$("iongear"),p=$("ionpanel"),inp=$("iontok"); if(!g)return;
+const fail=m=>{ const e=$("err"); e.style.display="grid"; e.textContent="AI City 3D — "+m; $("status").textContent="error"; };
+
+// ===== AI CITY AREA (app setting) =====
+// The AI-City masterplan is scoped to THIS box, NOT the tenant AOI. This is deliberate: the tenant AOI
+// (space.aoi) was expanded to all of Lucknow, but the AI City is a specific precinct. So the precinct is an
+// app-level setting, defaulting to the original Sector-15 box (the AOI this app launched with, before the
+// city-wide expansion). Override via config.json `ai_city_aoi` (governed component config) or the ⚙ panel
+// (localStorage). The tenant's Lucknow AOI is never touched.
+const AICITY_KEY="ai_city_aoi";
+const DEFAULT_AICITY_AOI=[80.9437,26.7445,80.9737,26.7715];   // [minLon,minLat,maxLon,maxLat] — Sector-15 precinct
+function parseBbox(s){ if(Array.isArray(s)&&s.length===4&&s.every(n=>typeof n==="number")) return s.slice();
+  const p=String(s||"").split(/[,\s]+/).map(Number).filter(n=>!isNaN(n)); return p.length===4?p:null; }
+function aiCityAoi(cfg){ return parseBbox(cfg&&cfg.ai_city_aoi) || parseBbox(localStorage.getItem(AICITY_KEY)) || DEFAULT_AICITY_AOI.slice(); }
+const ringOfBbox=bb=>[[bb[0],bb[1]],[bb[2],bb[1]],[bb[2],bb[3]],[bb[0],bb[3]],[bb[0],bb[1]]];
+
+// settings control (⚙) — AI City area + ion token; both kept in localStorage (client-side app settings)
+(function(){ const g=$("iongear"),p=$("ionpanel"),inp=$("iontok"),ab=$("aoibox"); if(!g)return;
   inp.value=localStorage.getItem("cesium_ion_token")||""; g.style.borderColor=inp.value?"#39d3e0":"";
-  g.onclick=()=>{ p.hidden=!p.hidden; if(!p.hidden) inp.focus(); };
-  $("ionsave").onclick=()=>{ const v=(inp.value||"").trim(); v?localStorage.setItem("cesium_ion_token",v):localStorage.removeItem("cesium_ion_token"); location.reload(); };
-  $("ionclear").onclick=()=>{ localStorage.removeItem("cesium_ion_token"); location.reload(); };
+  ab.value=(parseBbox(localStorage.getItem(AICITY_KEY))||DEFAULT_AICITY_AOI).join(", ");
+  g.onclick=()=>{ p.hidden=!p.hidden; if(!p.hidden) ab.focus(); };
+  $("ionsave").onclick=()=>{
+    const bb=parseBbox(ab.value); if(bb) localStorage.setItem(AICITY_KEY,JSON.stringify(bb)); else localStorage.removeItem(AICITY_KEY);
+    const v=(inp.value||"").trim(); v?localStorage.setItem("cesium_ion_token",v):localStorage.removeItem("cesium_ion_token");
+    location.reload();
+  };
+  $("ionclear").onclick=()=>{ localStorage.removeItem(AICITY_KEY); localStorage.removeItem("cesium_ion_token"); location.reload(); };
 })();
 const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
 
@@ -119,12 +192,14 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   $("status").textContent=hasToken?"photoreal (ion)":"tokenless preview";
 
   // ---- data ----
-  const aois=await q("space.aoi"); const aoi=aois[0]||{};
+  // AI-City extent = the app setting (NOT the tenant AOI). The tenant space.aoi covers all of Lucknow; the
+  // AI City is a specific precinct, so we plan strictly inside the configured box (Sector-15 by default).
+  const aoiBbox=aiCityAoi(cfg);
   const rows=await q("geo.building");
   if(!rows.length){ $("hd").textContent="no building footprints in this workspace yet"; return; }
   const hOf=o=>{ const hm=o.height_m; return (typeof hm==="number"&&hm>0)?hm:Math.max(6,Math.min(46,Math.sqrt(o.area_m2||60)*0.85)); };
   const feats=rows.filter(o=>o&&o.geometry).map(o=>({type:"Feature",geometry:o.geometry,properties:{area:o.area_m2||0,h:hOf(o)}}));
-  const bb=aoi.bbox, aoiRing=Array.isArray(bb)&&bb.length===4?[[bb[0],bb[1]],[bb[2],bb[1]],[bb[2],bb[3]],[bb[0],bb[3]],[bb[0],bb[1]]]:null;
+  const aoiRing=ringOfBbox(aoiBbox);
   const PLAN=LandUsePlan.computePlan({type:"FeatureCollection",features:feats},{aoi:aoiRing});
 
   // ---- render helpers (SYNCHRONOUS primitives — sandbox blocks geometry workers) ----
@@ -136,7 +211,10 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   const inAny=(p,polys)=>{for(const c of polys) if(inHex(p,c.poly)) return c; return null;};
   const einst=(ring,h,col,al,id)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({id:id,geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),extrudedHeight:h,height:0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
   const finst=(ring,col,al,h)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),height:h||0,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
-  const batch=(insts,flat,tl,sh)=>{ if(insts.length) scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:!!flat,closed:!tl,translucent:!!tl}),shadows:sh==null?Cesium.ShadowMode.DISABLED:sh})); };
+  // extruded box with a BASE altitude z0 (for stacked massing — podium/shaft/crown, rooftop units, stepped setbacks)
+  const pinst=(ring,z0,z1,col,al,id)=>{const fl=[];for(const p of ring)fl.push(p[0],p[1]);return new Cesium.GeometryInstance({id:id,geometry:new Cesium.PolygonGeometry({polygonHierarchy:new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(fl)),height:z0,extrudedHeight:z1,vertexFormat:VF}),attributes:{color:Cesium.ColorGeometryInstanceAttribute.fromColor(rgba(col,al==null?1:al))}});};
+  const CITY_PRIMS=[];   // every city primitive — so the interior walk-through can hide the rest of the city
+  const batch=(insts,flat,tl,sh)=>{ if(insts.length){ const pr=scene.primitives.add(new Cesium.Primitive({asynchronous:false,geometryInstances:insts,appearance:new Cesium.PerInstanceColorAppearance({flat:!!flat,closed:!tl,translucent:!!tl}),shadows:sh==null?Cesium.ShadowMode.DISABLED:sh})); CITY_PRIMS.push(pr); return pr; } };
 
   const cells=PLAN.dev;
   const dcx=cells.reduce((s,c)=>s+c.center[0],0)/cells.length, dcy=cells.reduce((s,c)=>s+c.center[1],0)/cells.length;
@@ -148,15 +226,24 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     const AX=(aoiRing||[[dcx-0.02,0],[dcx+0.02,0]]).map(p=>p[0]), AY=(aoiRing||[[0,dcy-0.02],[0,dcy+0.02]]).map(p=>p[1]);
     const G=[Math.min(...AX),Math.min(...AY),Math.max(...AX),Math.max(...AY)], M=0.01;
     batch([finst([[G[0]-M,G[1]-M],[G[2]+M,G[1]-M],[G[2]+M,G[3]+M],[G[0]-M,G[3]+M],[G[0]-M,G[1]-M]],[34,42,32],1,0)],true,false,Cesium.ShadowMode.RECEIVE_ONLY);
-    batch(feats.map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1,{kind:"existing",h:Math.round(f.properties.h)})),false);
+    // surrounding real footprints as CONTEXT — clipped to the AI-City box (+margin) so they sit on the
+    // ground plane (geo.building spans all of Lucknow; without this we'd carpet the whole city).
+    const inCtx=f=>{const c=centroid(ringOf(f));return c[0]>=G[0]-M&&c[0]<=G[2]+M&&c[1]>=G[1]-M&&c[1]<=G[3]+M;};
+    batch(feats.filter(inCtx).map(f=>einst(ringOf(f),Math.max(6,f.properties.h),hcol(f.properties.h),1,{kind:"existing",h:Math.round(f.properties.h)})),false);
   }
 
   // ============ DESIGNED AI DISTRICT — mixed-use blocks on a street grid ============
   const STEP=0.00100;                                    // ~110 m blocks (roads between them)
-  const TYPES={tower:[120,235,[96,206,230]],office:[45,95,[232,190,96]],lab:[55,120,[228,124,168]],resi:[13,40,[214,206,184]],civic:[22,58,[242,208,124]]};
-  const pick=d=>{const r=rnd(); if(d<0.34) return r<.42?"tower":r<.70?"office":r<.88?"lab":"civic"; if(d<0.66) return r<.16?"tower":r<.48?"office":r<.72?"lab":"resi"; return r<.60?"resi":r<.80?"office":r<.92?"civic":"lab";};
-  const bld=[], trees=[], parks=[], panels=[], util=[]; let solar=false;
-  const road=new Cesium.PolylineCollection(); scene.primitives.add(road); const roadPaths=[];
+  const TYPES={tower:[120,235,[96,206,230]],office:[45,95,[232,190,96]],lab:[55,120,[228,124,168]],resi:[13,40,[214,206,184]],civic:[22,58,[242,208,124]],datacentre:[14,30,[92,176,206]],utility:[8,16,[150,160,175]]};
+  // ===== LAND USE drives the building =====  every parcel's building matches the ZONE it sits in (not a random
+  // pick). The 5 zone rects are the SAME fractional rects the twin uses (zones.json), scaled onto the district DB.
+  const ZR=[["ai",[0.30,0.30,0.70,0.70]],["innovation",[0,0,0.30,1]],["datacentre",[0.70,0,1,1]],["commercial",[0.30,0,0.70,0.30]],["utility",[0.30,0.70,0.70,1]]];
+  const zoneAbs=ZR.map(([fn,r])=>({fn,bb:[DB[0]+r[0]*(DB[2]-DB[0]),DB[1]+r[1]*(DB[3]-DB[1]),DB[0]+r[2]*(DB[2]-DB[0]),DB[1]+r[3]*(DB[3]-DB[1])]}));
+  const zoneAt=(ln,la)=>{ for(const z of zoneAbs){ const b=z.bb; if(ln>=b[0]&&ln<=b[2]&&la>=b[1]&&la<=b[3]) return z.fn; } return "ai"; };
+  const ZTYPE={ai:"tower",innovation:"lab",datacentre:"datacentre",commercial:"office",utility:"utility"};   // zone use → building type
+  const LU={ai:[64,150,178],innovation:[150,74,116],datacentre:[54,110,132],commercial:[150,120,58],utility:[86,92,108]};   // land-use ground tints
+  const bld=[], trees=[], parks=[], panels=[], util=[]; let solar=false, bidx=0;   // bidx → stable deterministic building IDs (a twin needs persistent identifiers)
+  const road=new Cesium.PolylineCollection(); scene.primitives.add(road); CITY_PRIMS.push(road); const roadPaths=[];
   const flush=seg=>{ if(seg.length>1){ road.add({positions:seg,width:3.0,material:Cesium.Material.fromType("Color",{color:rgba([120,132,150],0.55)})}); roadPaths.push(seg.slice()); } };
   const addRoadLine=(axis,coord)=>{ let seg=[]; const a0=axis==="v"?DB[1]:DB[0], a1=axis==="v"?DB[3]:DB[2];
     for(let t=a0; t<=a1; t+=STEP/6){ const p=axis==="v"?[coord,t]:[t,coord]; if(inAny(p,cells)) seg.push(Cesium.Cartesian3.fromDegrees(p[0],p[1],2)); else { flush(seg); seg=[]; } }
@@ -164,24 +251,47 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   for(let ln=DB[0]; ln<=DB[2]; ln+=STEP) addRoadLine("v",ln);
   for(let la=DB[1]; la<=DB[3]; la+=STEP) addRoadLine("h",la);
 
+  // LAND-USE ground: tint each developable cell by its zone's use, so buildings visibly sit on matching land
+  batch(cells.map(c=>finst(c.poly, LU[zoneAt(c.center[0],c.center[1])], 0.5, 0.4)),true);
+
+  // SHAPE the massing by use → an array of stacked/offset boxes {cx,cy,hw,hh,z0,z1,body}. `body` is the main
+  // clickable/enterable mass; the rest are decorative (podium, crown, setbacks, rooftop units, stacks).
+  const shape=(t,cx,cy,hw,hh,H)=>{ const P=[], B=(x,y,w,h,z0,z1,body)=>P.push({cx:x,cy:y,hw:w,hh:h,z0,z1,body:!!body});
+    if(t==="tower"||t==="landmark"){ B(cx,cy,hw,hh,0,H*0.10); B(cx,cy,hw*0.62,hh*0.62,0,H,true); B(cx,cy,hw*0.34,hh*0.34,H,H*1.07); }        // podium · slender shaft · crown
+    else if(t==="datacentre"){ B(cx,cy,hw,hh,0,H,true); for(let i=-1;i<=1;i++) B(cx+i*hw*0.55,cy+hh*0.3,hw*0.13,hh*0.13,H,H*1.18); }        // long low shed · rooftop HVAC
+    else if(t==="lab"){ B(cx,cy,hw,hh,0,H*0.42); B(cx,cy,hw*0.74,hh*0.74,0,H,true); }                                                        // podium · upper block
+    else if(t==="office"){ B(cx,cy,hw,hh,0,H,true); B(cx,cy,hw*0.6,hh*0.6,H,H*1.12); }                                                        // box · slim setback top
+    else if(t==="resi"){ B(cx,cy,hw,hh,0,H*0.6); B(cx,cy,hw*0.72,hh*0.72,0,H,true); }                                                         // stepped: wide lower · set-back upper
+    else if(t==="civic"){ B(cx,cy,hw*1.1,hh*1.1,0,H*0.5); B(cx,cy,hw*0.6,hh*0.6,0,H,true); }                                                  // wide low base · raised centre
+    else if(t==="utility"){ B(cx,cy,hw,hh,0,H,true); B(cx+hw*0.6,cy,hw*0.14,hh*0.14,0,H*1.9); }                                               // small box · stack
+    else B(cx,cy,hw,hh,0,H,true);
+    return P; };
+  const pushBuilding=(t,cx,cy,hw,hh,H,id,name,fn)=>{ for(const s of shape(t,cx,cy,hw,hh,H))
+    bld.push({p:rectR(s.cx,s.cy,s.hw,s.hh), z0:s.z0, z1:s.z1, c:TYPES[t]?TYPES[t][2]:(t==="landmark"?[150,232,250]:[150,160,175]), t,
+      cx:s.cx,cy:s.cy,hw:s.hw,hh:s.hh, body:s.body, id:s.body?id:undefined, name:s.body?name:undefined, function:s.body?fn:undefined}); };
+
   for(let la=DB[1]+STEP*0.5; la<=DB[3]; la+=STEP) for(let ln=DB[0]+STEP*0.5; ln<=DB[2]; ln+=STEP){
     if(!inAny([ln,la],cells)) continue;
-    const d=Math.hypot(ln-dcx,la-dcy)/dR;
-    // a solar utility field in one far block; a park pocket chance rising outward
-    if(!solar && d>0.72){ solar=true; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++) panels.push(rectR(ln+a*STEP*0.16,la+b*STEP*0.16,STEP*0.06,STEP*0.06)); util.push([ln+STEP*0.34,la]); continue; }
-    if(rnd() < 0.12+d*0.20){ parks.push(rectR(ln,la,STEP*0.34,STEP*0.34)); for(let k=0;k<5;k++) trees.push([ln+(rnd()-0.5)*STEP*0.6,la+(rnd()-0.5)*STEP*0.6]); continue; }
-    const nb=2+(rnd()<0.45?1:0);                          // 2–3 buildings, set back so streets read
+    const d=Math.hypot(ln-dcx,la-dcy)/dR, zn=zoneAt(ln,la);
+    // UTILITIES zone → a solar field + plant structures (placed once)
+    if(zn==="utility" && !solar){ solar=true; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++) panels.push(rectR(ln+a*STEP*0.16,la+b*STEP*0.16,STEP*0.06,STEP*0.06)); util.push([ln+STEP*0.34,la]); continue; }
+    // occasional open-space / park pocket (a little more likely toward the edges)
+    if(rnd() < 0.10+d*0.12){ parks.push(rectR(ln,la,STEP*0.34,STEP*0.34)); for(let k=0;k<5;k++) trees.push([ln+(rnd()-0.5)*STEP*0.6,la+(rnd()-0.5)*STEP*0.6]); continue; }
+    // BUILDING = the zone's land use. Mixed Use (commercial zone) interleaves offices + residential.
+    let t = ZTYPE[zn] || "office"; if(zn==="commercial" && rnd()<0.4) t="resi";
+    const fn = (t==="resi") ? "residential" : zn;
+    const big = (t==="datacentre");
+    const nb = big?1 : 2+(rnd()<0.45?1:0);
     for(let k=0;k<nb;k++){
-      const t=pick(d), T=TYPES[t], fw=STEP*(0.12+rnd()*0.09), fh=STEP*(0.12+rnd()*0.09);
-      const ox=(rnd()-0.5)*STEP*0.5, oy=(rnd()-0.5)*STEP*0.5;
+      const fw=STEP*(big?0.30:0.12+rnd()*0.09), fh=STEP*(big?0.26:0.12+rnd()*0.09);
+      const ox=big?0:(rnd()-0.5)*STEP*0.5, oy=big?0:(rnd()-0.5)*STEP*0.5, T=TYPES[t];
       const H=(T[0]+(T[1]-T[0])*(1-0.55*d))*(0.78+rnd()*0.5);
-      bld.push({p:rectR(ln+ox,la+oy,fw,fh),h:H,c:T[2],t});
-      if(t==="tower"&&H>150) bld.push({p:rectR(ln+ox,la+oy,fw*1.7,fh*1.7),h:H*0.16,c:T[2],t:"tower"});
+      pushBuilding(t, ln+ox, la+oy, fw, fh, H, "BLDG-"+String(++bidx).padStart(4,"0"), null, fn);
     }
     if(rnd()>0.55) trees.push([ln+STEP*0.5,la]);           // street trees
   }
-  bld.push({p:rectR(dcx,dcy,STEP*0.2,STEP*0.2),h:285,c:[150,232,250],t:"landmark"});   // signature landmark
-  util.forEach(u=>bld.push({p:rectR(u[0],u[1],STEP*0.09,STEP*0.09),h:16,c:[150,160,175],t:"utility"}));  // utility structures
+  pushBuilding("landmark", dcx, dcy, STEP*0.2, STEP*0.2, 285, "BLDG-LANDMARK", "AI Innovation Centre", "innovation");   // signature landmark (AI Core)
+  util.forEach((u,ui)=>pushBuilding("utility", u[0], u[1], STEP*0.09, STEP*0.09, 16, "BLDG-UTIL-"+(ui+1), null, "utility"));  // utility structures
 
   batch(parks.map(p=>finst(p,[40,96,52],0.95,0.4)),true);
   batch(panels.map(p=>finst(p,[40,66,104],0.95,3)),true);   // solar field
@@ -191,10 +301,15 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   batch([finst(ell(lkx,lky,0.0022,0.0015),[46,124,178],0.5,0.35)],true,true);   // shore sheen
   batch([finst(ell(lkx,lky,0.0016,0.0010),[20,74,132],0.92,0.6)],true,true);    // water
   for(let k=0;k<18;k++){ const a=rnd()*6.2832; trees.push([lkx+Math.cos(a)*0.0019, lky+Math.sin(a)*0.0013]); }
-  batch(bld.map(b=>einst(b.p,b.h,b.c,1,{kind:"planned",type:b.t,h:Math.round(b.h)})),false,false,Cesium.ShadowMode.ENABLED);
-  const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  const bldById=new Map(), bldRec=new Map();   // building-id → (Cesium instance id-object) / (record) — for the twin bridge
+  const bldPrim=batch(bld.map(b=>{
+    const ido = b.body ? {kind:"planned",type:b.t,h:Math.round(b.z1),cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,id:b.id,name:b.name,fn:b.function}
+                       : {kind:"decor"};                                  // decorative parts aren't separately selectable
+    if(b.body && b.id){ bldById.set(b.id,ido); bldRec.set(b.id,{cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,h:b.z1,t:b.t,id:b.id,name:b.name,function:b.function}); }
+    return pinst(b.p, b.z0||0, b.z1, b.c, 1, ido); }),false,false,Cesium.ShadowMode.ENABLED);
+  const pts=scene.primitives.add(new Cesium.PointPrimitiveCollection()); CITY_PRIMS.push(pts);
   for(const t of trees) pts.add({position:Cesium.Cartesian3.fromDegrees(t[0],t[1],3),color:rgba([70,186,116],0.95),pixelSize:5});
-  $("hd").innerHTML=`<b>${bld.length}</b> buildings · mixed-use AI district with streets, parks &amp; utilities`+(hasToken?" · photoreal":` · in ${feats.length.toLocaleString("en-IN")} real buildings`);
+  $("hd").innerHTML=`<b>${bldRec.size}</b> buildings · click any to step inside`+(hasToken?" · photoreal":` · in ${feats.length.toLocaleString("en-IN")} real buildings`);
 
   // ============ CAMERA + CONTROLS ============
   const centre=Cesium.Cartesian3.fromDegrees(dcx,dcy,0);
@@ -210,8 +325,47 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   // wheel: zoom during auto-orbit (adjust RANGE); when paused, let Cesium zoom natively toward the centre
   scene.canvas.addEventListener("wheel",e=>{ if(spin){ RANGE=Math.max(250,Math.min(9000,RANGE*(e.deltaY>0?1.12:0.9))); frame(); e.preventDefault(); } },{passive:false});
   // drag: pause auto-orbit but KEEP the look-at frame so native drag orbits + zooms around the district
-  scene.canvas.addEventListener("pointerdown",e=>{ if(e.button===0 && spin) setOrbit(false); });
+  scene.canvas.addEventListener("pointerdown",e=>{ if(e.button===0 && spin && !Interiors.isActive()) setOrbit(false); });
   $("cOrbit").classList.add("on");
+  // interior walk-through module: hides the rest of the city, builds a type-specific interior, flies through it
+  Interiors.config({viewer, scene, cityPrims:CITY_PRIMS, setOrbit, hud:$("inhud"), exitBtn:$("exitbldg")});
+
+  // ============ DIGITAL-TWIN BRIDGE (window.AICITY) ============
+  // The proven render stays intact; the twin architecture (state / repository / shell UI in app.js) drives the
+  // scene THROUGH this small, stable API. Cesium object ≠ city object (Rule #24): app.js owns the semantics.
+  const MLON=111320*Math.cos(Cesium.Math.toRadians(dcy)), MLAT=111320;
+  let _hi=null;
+  function clearHi(){ if(_hi&&bldPrim){ try{ bldPrim.getGeometryInstanceAttributes(_hi.ido).color=_hi.save; }catch(e){} } _hi=null; }
+  function highlight(id){ clearHi(); const ido=bldById.get(id); if(!ido||!bldPrim) return;
+    try{ const a=bldPrim.getGeometryInstanceAttributes(ido); _hi={ido,save:a.color.slice()};
+      a.color=Cesium.ColorGeometryInstanceAttribute.toValue(Cesium.Color.fromBytes(255,255,255,235)); scene.requestRender(); }catch(e){} }
+  function flyToBoundingSphereCentre(cx,cy,z,rM){ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(cx,cy,z),rM),
+      {offset:new Cesium.HeadingPitchRange(Cesium.Math.toRadians(30),Cesium.Math.toRadians(-30),rM*2.4),duration:1.6}); }
+  function flyToBuilding(id){ const b=bldRec.get(id); if(!b) return; flyToBoundingSphereCentre(b.cx,b.cy,b.h*0.5, Math.max(b.hw*MLON,b.hh*MLAT)*3+b.h); }
+  function flyToBbox(bb){ const cx=(bb[0]+bb[2])/2, cy=(bb[1]+bb[3])/2; flyToBoundingSphereCentre(cx,cy,60, Math.max((bb[2]-bb[0])*MLON,(bb[3]-bb[1])*MLAT)*0.9+120); }
+  // a light selection OUTLINE for a zone/parcel bbox (semantic highlight, not new massing)
+  let _outline=null;
+  function outline(bb){ if(_outline){ try{scene.primitives.remove(_outline);}catch(e){} _outline=null; } if(!bb) return;
+    const ll=[bb[0],bb[1], bb[2],bb[1], bb[2],bb[3], bb[0],bb[3], bb[0],bb[1]];
+    const pc=new Cesium.PolylineCollection(); pc.add({width:3.0, positions:Cesium.Cartesian3.fromDegreesArray(ll),
+      material:Cesium.Material.fromType("Color",{color:Cesium.Color.fromBytes(57,211,224,235)})});
+    _outline=scene.primitives.add(pc); scene.requestRender(); }
+  window.AICITY = {
+    viewer, scene, center:{lon:dcx,lat:dcy}, aoiBbox, districtBbox:DB,
+    buildings: [...bldRec.values()].map(b=>({id:b.id,name:b.name,t:b.t,function:b.function,cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,h:b.h})),
+    onPick:null,                                    // app.js sets this: (buildingId) => select in the twin
+    highlight, clearHighlight:clearHi, flyToBuilding, flyToBbox, outline,
+    enterBuilding:id=>{ const ido=bldById.get(id); if(ido&&!ido.noInt) Interiors.enter(ido); },
+    frameCity:()=>{ clearHi(); outline(null); heading=22; RANGE=2400;
+      const rM=Math.max((DB[2]-DB[0])*MLON,(DB[3]-DB[1])*MLAT)*0.6+300;
+      setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);   // release any prior look-at, then animate out
+      viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(dcx,dcy,60),rM),
+        {offset:new Cesium.HeadingPitchRange(Cesium.Math.toRadians(heading),Cesium.Math.toRadians(-28),Math.max(2400,rM*2.2)),
+         duration:1.4, complete:()=>setOrbit(true)}); },
+    interiorsActive:()=>Interiors.isActive(),
+  };
+  window.dispatchEvent(new Event("aicity-ready"));   // ← the twin shell (app.js) boots on this
 
   // ============ CLICK-TO-INSPECT (the queryable twin) ============
   const TL={tower:"AI / office tower",office:"Commercial",lab:"Innovation / lab",resi:"Residential",civic:"Civic",landmark:"Signature landmark",utility:"Utility"};
@@ -224,13 +378,22 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
         +`<div class="cr"><span>Height${info.est?" (est.)":""}</span><b>${info.h?info.h+" m":"—"}</b></div><div class="cf">Google Open Buildings · real</div>`;
     } card.style.display="block"; };
   const h2=new Cesium.ScreenSpaceEventHandler(scene.canvas);
-  h2.setInputAction(m=>{ const p=scene.pick(m.position);
+  h2.setInputAction(m=>{ if(Interiors.isActive()) return;              // ignore picks while already inside
+    const p=scene.pick(m.position);
     if(Cesium.defined(p)){
+      // SINGLE-CLICK a planned building → SELECT it in the twin (inspector + Enter). Double-click walks inside.
+      if(p.id&&p.id.kind==="planned"&&!p.id.noInt&&p.id.id){ card.style.display="none";
+        if(window.AICITY&&AICITY.onPick) return AICITY.onPick(p.id.id);
+        return Interiors.enter(p.id); }                                  // fallback if the twin shell isn't mounted
       if(p.id&&p.id.kind) return showCard(p.id);
       if(p.getProperty){ const h=p.getProperty("cesium#estimatedHeight"); return showCard({kind:"existing",est:true,h:h?Math.round(h):null,name:p.getProperty("name")}); }
     }
     card.style.display="none";
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  // DOUBLE-CLICK a planned building → walk inside (the quick path; single-click selects)
+  h2.setInputAction(m=>{ if(Interiors.isActive()) return; const p=scene.pick(m.position);
+    if(Cesium.defined(p)&&p.id&&p.id.kind==="planned"&&!p.id.noInt&&p.id.cx!=null) Interiors.enter(p.id);
+  }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
   // ============ DAY / DUSK toggle ============
   let dusk=false;
@@ -259,11 +422,11 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
 
   // ============ ANIMATED TRAFFIC + DRONES ============
   const long=roadPaths.filter(s=>s.length>=2).sort((a,b)=>b.length-a.length).slice(0,150);
-  const cars=[], carColl=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  const cars=[], carColl=scene.primitives.add(new Cesium.PointPrimitiveCollection()); CITY_PRIMS.push(carColl);
   long.forEach((path,i)=>{ const n=2+(rnd()<0.6?1:0); for(let k=0;k<n;k++){
     const pt=carColl.add({position:path[0],color:rgba((i+k)%2?[255,242,180]:[188,224,255],1),pixelSize:6});
     cars.push({path,pt,t:rnd(),spd:0.05+rnd()*0.11,dir:rnd()>.5?1:-1}); } });
-  const drones=[], dColl=scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  const drones=[], dColl=scene.primitives.add(new Cesium.PointPrimitiveCollection()); CITY_PRIMS.push(dColl);
   for(let i=0;i<10;i++) drones.push({pt:dColl.add({position:centre,color:rgba([100,224,244],0.95),pixelSize:6}),
     cx:dcx+(rnd()-0.5)*0.005, cy:dcy+(rnd()-0.5)*0.005, r:0.0006+rnd()*0.0012, a:rnd()*6.283, z:80+rnd()*110, spd:0.010+rnd()*0.02});
   const pos=(path,t)=>{ const f=Math.max(0,Math.min(0.999,t))*(path.length-1), i=f|0, u=f-i; return Cesium.Cartesian3.lerp(path[i],path[i+1]||path[i],u,new Cesium.Cartesian3()); };
@@ -275,4 +438,7 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   })(_t);
  }catch(e){ fail(e.message); console.error(e); }
 })();
-</script></body></html>
+</script>
+<!-- digital-twin architecture (state · repository · shell UI · drilldown) as native ES modules over the render -->
+<script type="module" src="./app.js"></script>
+</body></html>

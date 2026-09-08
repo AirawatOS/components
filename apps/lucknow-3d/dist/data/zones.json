@@ -1,0 +1,11 @@
+{
+  "_note": "AI City demo zones (Phase 1). `rect` = FRACTIONAL sub-rectangle [fx0,fy0,fx1,fy1] of the DISTRICT bounding box (0=west/south, 1=east/north). The repository scales these to absolute bboxes via setExtent(districtBbox) so zones/parcels always sit exactly over where the buildings are (the district), not the whole AOI. Parcels are derived 2/zone. Stable IDs — a digital twin needs persistent identifiers.",
+  "zones": [
+    { "id": "ZONE-A", "type": "zone", "name": "AI Core",             "parentId": "AICITY", "function": "ai",         "rect": [0.30, 0.30, 0.70, 0.70], "status": "planned" },
+    { "id": "ZONE-B", "type": "zone", "name": "Innovation District",  "parentId": "AICITY", "function": "innovation", "rect": [0.00, 0.00, 0.30, 1.00], "status": "planned" },
+    { "id": "ZONE-C", "type": "zone", "name": "Compute District",     "parentId": "AICITY", "function": "datacentre", "rect": [0.70, 0.00, 1.00, 1.00], "status": "planned" },
+    { "id": "ZONE-D", "type": "zone", "name": "Mixed Use",            "parentId": "AICITY", "function": "commercial", "rect": [0.30, 0.00, 0.70, 0.30], "status": "planned" },
+    { "id": "ZONE-E", "type": "zone", "name": "Utilities",            "parentId": "AICITY", "function": "utility",    "rect": [0.30, 0.70, 0.70, 1.00], "status": "planned" }
+  ],
+  "city": { "id": "AICITY", "type": "city", "name": "AI City", "parentId": null, "function": "ai", "status": "planned" }
+}
