@@ -82,6 +82,7 @@
   </div>
   <div class="right collapsed" id="right"></div>
 </div>
+<script src="/shared/a11y.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -178,6 +179,7 @@ function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';co
     ['✨ Generate code (AI)',()=>{openFile(ref, m.kind==='app'?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}],
   ];
   if(isApp)build.push(['🌐 Languages (i18n)',()=>i18nPanel(ref)]);   // AI-draft + review translations for the app's labels
+  if(isApp)build.push(['♿ Accessibility (WCAG)',()=>a11yPanel(ref)]);  // runtime WCAG 2.2 AA audit of the live app
   const items = existing
     ? [['⚙ Configure  (install · keys · schedule)',()=>configureComponent(ref)],
        ['Open meta.yaml (read-only)',()=>openFile(ref,'meta.yaml')]]
@@ -516,6 +518,32 @@ async function myRequests(){
     : '<div class="sub">No change requests yet. Use “Request a schema”.</div>';
 }
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return {q:s=>w.querySelector(s),close:()=>w.remove()};}
+
+// ---------- ♿ ACCESSIBILITY AUDIT (ADR-0077 WCAG 2.2 AA) ----------
+// Opens the live app in a preview window (Studio's strict CSP blocks nested iframes; window.open is same-origin
+// and allowed — same as component-preview), lets it render, then runs the shared runtime checker (/shared/a11y.js)
+// against the real DOM and reports findings. This is the developer-facing gate; a warn→block certify hook follows.
+function a11yPanel(ref){
+  const short=ref.split('/').pop();
+  const m=modal(`<h3>♿ Accessibility — ${esc(short)}</h3>
+    <div class="sub">WCAG 2.2 AA runtime check. A preview window opens, is audited, then closes — results appear here.</div>
+    <div id="a11yout" style="margin-top:12px">Opening preview…</div>
+    <div style="margin-top:14px;text-align:right"><button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close;
+  let w; try{ w=window.open('/apps/'+encodeURIComponent(short)+'/','a11yprev','width=1200,height=860'); }catch(e){}
+  if(!w){ m.q('#a11yout').innerHTML='<span class="err">Allow pop-ups for this site, then retry.</span>'; return; }
+  m.q('#a11yout').textContent='Auditing the live app…';
+  setTimeout(()=>{
+    let r; try{ r=window.AOSa11y.audit(w.document); }catch(e){ m.q('#a11yout').innerHTML='<span class="err">Could not read the preview ('+esc(String(e))+').</span>'; return; }
+    try{ w.close(); }catch(e){}
+    if(!r.total){ m.q('#a11yout').innerHTML='<div style="color:#3fb950">✓ No issues across '+r.rules+' WCAG checks.</div>'; return; }
+    m.q('#a11yout').innerHTML='<div style="margin-bottom:8px"><b>'+r.total+'</b> issue(s) — most severe first:</div>'+
+      r.findings.map(f=>`<div style="border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin:6px 0">
+        <b>${esc(f.rule)}</b> <span class="pill">${esc(f.impact)}</span> <span class="sub">×${f.count}</span>
+        <div class="sub" style="margin-top:2px">${esc(f.help)}</div>
+        <div class="sub" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;margin-top:3px">${f.nodes.map(esc).join(' · ')}</div></div>`).join('');
+  },1800);
+}
 
 // ---------- i18n LANGUAGES PANEL (Studio i18n S2) ----------
 // AI-draft the app's UI labels into other languages, review/edit, and insert them back into the app source as an
