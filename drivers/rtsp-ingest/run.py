@@ -147,6 +147,13 @@ def main():
         stream = cam.get("stream") or {}
         url = stream.get("url")
         name = cam.get("name") or cam.get("id")
+        # protocol split: this driver grabs live network feeds only. A 'sim' camera is driven by
+        # crowd-sim-vision (which also reports its health) — touching it here only produces a spurious
+        # 'down' ("Protocol not found"), so skip it entirely rather than fight over the same device.
+        proto = (stream.get("protocol") or "").lower()
+        if proto and proto not in ("rtsp", "http", "https", "hls", "rtmp"):
+            print("[rtsp-ingest] %s: protocol '%s' is not this driver's job — skip" % (name, proto))
+            continue
         if not url:
             print("[rtsp-ingest] %s: no stream.url" % name)
             _health(tenant, cam, "unknown", "no stream.url on the device.camera record", at)

@@ -52,6 +52,21 @@ def _context():
     return json.loads(urllib.request.urlopen(req, timeout=20).read()) or {}
 
 
+def _health(tenant, cam, state, detail, at):
+    """Report the sim camera's delivery state so the operator console shows it live (not a spurious 'down').
+    crowd-sim-vision owns these cameras' health — it is the thing actually producing their frames."""
+    cid_tail = str(cam.get("id", "cam")).rsplit("/", 1)[-1]
+    hid = "ds:%s:device/stream_health/%s/%s" % (tenant, cid_tail, at)
+    obj = {"schema": "device.stream_health", "id": hid, "camera_ref": cam["id"], "state": state,
+           "observed_at": at, "prov": {"component": COMPONENT, "at": at, "method": "crowd-image-sim"}}
+    if detail:
+        obj["detail"] = detail
+    try:
+        _call("/v1/write", {"scope": "device.stream_health", "id": hid, "object": obj})
+    except Exception as e:
+        print("[crowd-sim-vision] health write failed for %s: %s" % (cam.get("name"), str(e)[:80]))
+
+
 def _cameras():
     if CAMERA_ID:
         obj = (_call("/v1/read", {"scope": "device.camera", "id": CAMERA_ID}) or {}).get("object")
@@ -131,9 +146,11 @@ def main():
     tenant = _context().get("tenant")
     if not tenant:
         print("[crowd-sim-vision] no tenant in broker context — refusing to guess"); return 2
-    cams = [c for c in _cameras() if c and c.get("enabled", True)]
+    # ONLY sim cameras — never overwrite a real feed's frames. rtsp-ingest owns the network-protocol cameras.
+    cams = [c for c in _cameras() if c and c.get("enabled", True)
+            and ((c.get("stream") or {}).get("protocol") or "").lower() == "sim"]
     if not cams:
-        print("[crowd-sim-vision] no enabled device.camera — nothing to do"); return 0
+        print("[crowd-sim-vision] no enabled sim device.camera — nothing to do"); return 0
 
     wrote = 0
     for cam in cams:
@@ -169,6 +186,7 @@ def main():
         if loc.get("h3"):
             frame["space"] = {"h3": loc["h3"]}
         _call("/v1/write", {"scope": "media.frame", "id": fid, "object": frame})
+        _health(tenant, cam, "up", "simulated feed (crowd-sim-vision)", at)
         wrote += 1
         print("[crowd-sim-vision] %s: K=%d %s → %d bytes → %s"
               % (name, k, "(detectable)" if detectable else "(silhouettes; ground-truth only)", len(blob), file_id))

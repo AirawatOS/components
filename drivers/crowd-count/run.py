@@ -129,9 +129,12 @@ def main():
     if not tenant:
         print("[crowd-count] no tenant in broker context — refusing to guess"); return 2
 
-    cams = [c for c in _cameras() if c and c.get("enabled", True)]
+    # count the SIM cameras' frames (the demo scene). Real network feeds are rtsp-ingest's cameras; once a
+    # detection model is bundled, widen this to count them too — the code path is identical.
+    cams = [c for c in _cameras() if c and c.get("enabled", True)
+            and ((c.get("stream") or {}).get("protocol") or "").lower() == "sim"]
     if not cams:
-        print("[crowd-count] no enabled device.camera readable by this run — nothing to do"); return 0
+        print("[crowd-count] no enabled sim device.camera readable by this run — nothing to do"); return 0
 
     wrote = 0
     for cam in cams:

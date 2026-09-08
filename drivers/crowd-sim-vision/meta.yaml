@@ -10,7 +10,7 @@
 # composited sprites — no fabrication either way.
 component_id: ds:airawatdeveloper:driver/crowd-sim-vision
 kind: driver
-version: 0.1.0
+version: 0.1.1     # 0.1.1: adds device.stream_health write so the sim reports its cameras' health as up
 provider: ds:airawatdeveloper:developer
 display_name: Crowd Image Simulator
 entrypoint: run.py
@@ -18,7 +18,7 @@ confinement_min: L2
 runtime:
   profile: vision         # needs pillow for composite mode (bank mode is stdlib, but one runtime keeps it simple)
 reads:  [device.camera]
-writes: [media.frame]
+writes: [media.frame, device.stream_health]
 # SOURCE=composite|bank; SCENARIO=baseline|ramkund-crush; BASELINE_K/PEAK_K bound the curve; SIM_HOUR pins the
 # scenario hour for a repeatable demo; CAMERA_ID narrows to one camera.
 config: [SOURCE, SCENARIO, BASELINE_K, PEAK_K, IMG_W, IMG_H, SIM_HOUR, CAMERA_ID]
@@ -29,3 +29,4 @@ assets:
 scopes:
   - { verb: read,  scope: device.camera }
   - { verb: write, scope: media.frame }
+  - { verb: write, scope: device.stream_health }
