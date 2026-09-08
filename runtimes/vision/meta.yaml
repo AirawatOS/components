@@ -13,7 +13,7 @@ profile:        vision
 analytics_tier: perceptive                             # perceive/measure state from raw media
 display_name:   Vision (YOLOv8 · ultralytics · OpenCV)
 image:          manishsv/airawatos-runtime-vision:0.1.0
-image_digest:   sha256:PENDING-BUILD                    # set by the build+certify step (launcher runs only this)
+image_digest:   sha256:c9b7eecdc817d60bcb6a5f84d32a7b5e7e95a476fbddd1431e69cd18e63f0828   # local image Id == pushed digest; launcher runs only this
 provides:       [torch, torchvision, ultralytics, opencv-python-headless, pillow, numpy, h3, requests, pyyaml]
 isolation:      shared
 confidential:   false

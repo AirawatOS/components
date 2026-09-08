@@ -9,11 +9,17 @@
 # runtime — so a run is reproducible and offline.
 FROM manishsv/airawatos-runtime-modeling:0.1.0
 
-# opencv-python-headless (no libGL/X deps) for image decode; ultralytics for the YOLOv8 detector.
-# libglib is the one shared lib opencv-headless still needs.
-RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 \
+# The shared libs OpenCV's cv2 dlopens at import. ultralytics hard-depends on opencv-python (the FULL, non-
+# headless build), so even though we force the headless wheel below, we install the small X/GL runtime libs so
+# import never fails on a slim base (the libxcb.so.1 / libGL.so.1 class of error).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 libxrender1 \
  && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir "opencv-python-headless>=4.9" "ultralytics>=8.2" pillow
+# Install ultralytics first (it drags in opencv-python), THEN force opencv-python-headless to own cv2 — the two
+# distributions ship the same module, so last-installed wins. pillow for the sim compositor.
+RUN pip install --no-cache-dir "ultralytics>=8.2" pillow \
+ && pip uninstall -y opencv-python opencv-python-headless >/dev/null 2>&1 || true \
+ && pip install --no-cache-dir "opencv-python-headless>=4.9"
 
 WORKDIR /drivers
 ENV PYTHONPATH=/drivers PYTHONUNBUFFERED=1 YOLO_CONFIG_DIR=/tmp/ultralytics
