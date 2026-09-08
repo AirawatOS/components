@@ -10,6 +10,8 @@ import { digital } from "./lenses/digital.js";
 import { SCENARIOS, impacts } from "./sim/scenario.js";
 import { START, END, progress, colorFor } from "./sim/build.js";
 import { OP_BASE, WARN_NODE, reading, affected, agentAdvice } from "./sim/telemetry.js";
+import { AGENTS, recommendations } from "./agents/agents.js";
+import { mountAirawat } from "./twin/airawat.js";
 
 const whenReady = cb => { if (window.AICITY) cb(); else window.addEventListener("aicity-ready", cb, { once: true }); };
 
@@ -73,6 +75,9 @@ whenReady(async () => {
   const LENSES = { compute, digital };
   const lensCtx = { A, repo, state };
   mountShell({ state, repo, networks, lenses: LENSES, buildInspector, operateInspector, onNavigate: navigate, onEnterBuilding: id => A.enterBuilding(id) });
+
+  // ---- Airawat agents overlay (Phase 7): coordinator + domain agents + live recommendations ----
+  mountAirawat({ state, repo, agents: AGENTS, recommendations, onFocus: id => id && navigate(id) });
 
   // networks visibility is driven by state (toggle chips / presets)
   let lastNets = "";
