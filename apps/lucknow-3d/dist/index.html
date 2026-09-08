@@ -95,6 +95,15 @@
   /* scenario impact readout (bottom-centre) */
   #dt-scenario-panel{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;width:300px;background:#0e1130ee;border:1px solid #e8b84b55;border-radius:12px;padding:12px 14px;backdrop-filter:blur(6px);box-shadow:0 12px 30px #0007}
   #dt-scenario-panel[hidden]{display:none}
+  /* BUILD timeline (bottom-centre) */
+  #dt-build{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:12px;
+    background:#0e1130cc;border:1px solid #2a2a5a;border-radius:11px;padding:8px 14px;backdrop-filter:blur(6px)}
+  #dt-build[hidden]{display:none}
+  #dt-build .bmode{display:flex;gap:4px}
+  #dt-build .bmode button{background:#ffffff0c;border:1px solid #ffffff18;color:#cfd6f5;border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer}
+  #dt-build .bmode button.on{border-color:#e8b84b;color:#f4e6c0;background:#e8b84b18}
+  #dt-build input[type=range]{width:min(42vw,420px);accent-color:#39d3e0;cursor:pointer}
+  #dt-build .bdate{font:12px ui-monospace,Menlo,monospace;color:#c9f4fa;min-width:74px;text-align:right;font-variant-numeric:tabular-nums}
   #dt-scenario-panel .t{font-family:ui-serif,Georgia,serif;font-size:15px;color:#f4e6c0;margin-bottom:2px}
   #dt-scenario-panel .st{font:10px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:#8b949e;margin-bottom:8px}
   #dt-scenario-panel .row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#aeb6dd;padding:3px 0}
@@ -143,6 +152,11 @@
   <div id="ov-scenario"></div>
 </div>
 <div id="dt-scenario-panel" hidden></div>
+<div id="dt-build" hidden>
+  <div class="bmode"></div>
+  <input id="dt-buildslider" type="range" min="0" max="60" step="1" value="0" aria-label="Construction timeline">
+  <div class="bdate" id="dt-builddate"></div>
+</div>
 <script>window.CESIUM_BASE_URL="./vendor/cesium/";</script>
 <script src="./vendor/cesium/Cesium.js"></script>
 <script src="./vendor/h3-js.umd.js"></script>
@@ -376,6 +390,13 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     for(const [id,ido] of bldById){ try{ const a=bldPrim.getGeometryInstanceAttributes(ido); _emph.push([ido,a.color.slice()]);
       a.color=Cesium.ColorGeometryInstanceAttribute.toValue(set.has(id)?Cesium.Color.fromBytes(120,220,244,255):Cesium.Color.fromBytes(70,78,100,120)); }catch(e){} }
     scene.requestRender(); }
+  // PAINT every building by a per-id colour fn (BUILD timeline → construction stage). fn(id)→[r,g,b(,a)] or null=own colour.
+  let _paint=null;
+  function clearPaint(){ if(_paint&&bldPrim){ for(const [id,c] of _paint){ try{ bldPrim.getGeometryInstanceAttributes(bldById.get(id)).color=c; }catch(e){} } } _paint=null; scene.requestRender(); }
+  function paintBuildings(fn){ if(!bldPrim) return; if(!_paint) _paint=new Map();
+    for(const [id,ido] of bldById){ try{ const a=bldPrim.getGeometryInstanceAttributes(ido); if(!_paint.has(id)) _paint.set(id,a.color.slice());
+      const c=fn(id); a.color = c ? Cesium.ColorGeometryInstanceAttribute.toValue(Cesium.Color.fromBytes(c[0],c[1],c[2],c[3]==null?255:c[3])) : _paint.get(id); }catch(e){} }
+    scene.requestRender(); }
   function highlight(id){ clearHi(); const ido=bldById.get(id); if(!ido||!bldPrim) return;
     try{ const a=bldPrim.getGeometryInstanceAttributes(ido); _hi={ido,save:a.color.slice()};
       a.color=Cesium.ColorGeometryInstanceAttribute.toValue(Cesium.Color.fromBytes(255,255,255,235)); scene.requestRender(); }catch(e){} }
@@ -395,7 +416,7 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     viewer, scene, center:{lon:dcx,lat:dcy}, aoiBbox, districtBbox:DB,
     buildings: [...bldRec.values()].map(b=>({id:b.id,name:b.name,t:b.t,function:b.function,cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,h:b.h})),
     onPick:null,                                    // app.js sets this: (buildingId) => select in the twin
-    highlight, clearHighlight:clearHi, emphasize, clearEmphasis, flyToBuilding, flyToBbox, outline,
+    highlight, clearHighlight:clearHi, emphasize, clearEmphasis, paintBuildings, clearPaint, flyToBuilding, flyToBbox, outline,
     addHideable:p=>{ if(p) CITY_PRIMS.push(p); },                     // layers (e.g. networks) that must hide during a walk-through
     flyToPoint:(lon,lat)=>{ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
       viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lon,lat,20),260),

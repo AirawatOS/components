@@ -6,8 +6,9 @@ const LENSES = [["physical", "Physical", "◧"], ["compute", "Compute", "▦"], 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = id => document.getElementById(id);
 
-export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks, lenses }) {
+export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks, lenses, buildInspector }) {
   const LENSMODS = lenses || {};   // { compute: {inspector}, digital: {inspector}, … }
+  const BUILDINSP = buildInspector;
   // ---- Overlays popover: networks (+ scenario section filled by app.js) ----
   const ovbtn = $("dt-ovbtn"), ovmenu = $("dt-ovmenu");
   if (ovbtn && ovmenu) {
@@ -61,6 +62,11 @@ export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks,
 
   function renderInspector(s) {
     const el = $("dt-inspector");
+    // BUILD lifecycle overrides the inspector for a selected building (construction status), across any lens
+    if (s.lifecycleMode === "build" && BUILDINSP && s.selectedEntityId) {
+      const be = repo.get(s.selectedEntityId);
+      if (be && be.type === "building") { const r = BUILDINSP(be, s); el.innerHTML = card(r.title, r.body, "build"); el.hidden = false; return; }
+    }
     if (s.lens !== "physical") {
       const lm = LENSMODS[s.lens];
       if (lm && lm.inspector) {                                    // a wired lens (compute / digital / …)

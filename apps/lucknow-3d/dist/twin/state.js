@@ -22,6 +22,7 @@ const initial = {
   activeScenario: null,
   simulationTime: 0,          // set at boot (Date.now unavailable in some sandboxes at import time)
   compareMode: null,
+  buildMode: "planned",       // BUILD lifecycle view: 'planned' | 'actual' | 'compare'
 };
 
 export function createState(seed) {
