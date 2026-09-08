@@ -30,7 +30,15 @@
   <summary style="cursor:pointer;padding:12px 0;font-weight:600;font-size:14px">⚙ Manage cameras <span style="color:#8b949e;font-weight:400">— admin only</span></summary>
   <div id="mgrbody" style="padding:4px 0 16px"></div>
 </details>
-<div class="grid" id="grid"></div>
+<input id="search" placeholder="🔍  filter cameras — name, group, zone…" oninput="renderWall()" autocomplete="off"
+  style="width:100%;max-width:440px;margin:0 0 16px;background:#161b22;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:9px 12px;font-size:14px;box-sizing:border-box">
+<div id="grid"></div>
+<style>
+  .grp { margin: 0 0 22px; }
+  .grphead { font-size: 13px; font-weight: 600; color: #adbac7; text-transform: uppercase; letter-spacing: .4px;
+             margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid #21262d; }
+  .grphead .grpn { color: #6e7681; font-weight: 500; margin-left: 6px; }
+</style>
 <style>
   .mgr input{background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:6px 8px;font-size:13px}
   .mgr table{width:100%;border-collapse:collapse;font-size:13px} .mgr th{text-align:left;color:#8b949e;font-weight:500;padding:6px 8px}
@@ -74,6 +82,48 @@ function ago(iso) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+// STATE cache so search re-renders without refetching; wall groups by location.group (→ zone → Ungrouped)
+// and sorts within a group by location.order — the "organize + rearrange" for hundreds of cameras.
+const STATE = { cams: [], lastFrame: {}, lastHealth: {} };
+const grpOf = (c) => ((c.location || {}).group || (c.location || {}).zone || 'Ungrouped');
+const ordOf = (c) => { const o = (c.location || {}).order; return (o == null || isNaN(o)) ? 1e9 : Number(o); };
+
+function tile(c) {
+  const f = STATE.lastFrame[c.id], h = STATE.lastHealth[c.id];
+  const state = (h && h.state) || 'unknown';
+  const loc = c.location || {};
+  const where = [loc.zone, loc.ward].filter(Boolean).join(' · ');
+  const shot = f
+    ? `<img class="shot" alt="Latest frame from ${esc(c.name)}" src="/media/frame/${encodeURIComponent(f.id)}">`
+    : `<div class="none">no frame captured yet${state === 'down' ? ' — camera is down' : ''}</div>`;
+  return `<div class="cam">${shot}<div class="meta">
+      <div class="row"><span class="name">${esc(c.name || c.id)}</span><span class="chip ${esc(state)}">${esc(state)}</span></div>
+      <div class="row"><span class="where">${esc(where)}</span><span class="age">${f ? esc(ago(f.captured_at)) : (h ? esc(ago(h.observed_at)) : '')}</span></div>
+      ${h && h.detail ? `<div class="purpose">${esc(h.detail)}</div>` : ''}
+      <div class="purpose">purpose: ${esc(c.purpose_binding || '—')} · retention: ${esc(c.retention_class || '—')}</div>
+    </div></div>`;
+}
+
+function renderWall() {
+  const grid = document.getElementById('grid'), sub = document.getElementById('sub');
+  const cams = STATE.cams || [];
+  const term = (document.getElementById('search')?.value || '').trim().toLowerCase();
+  const match = (c) => { if (!term) return true; const l = c.location || {};
+    return [c.name, l.group, l.zone, l.ward].filter(Boolean).join(' ').toLowerCase().includes(term); };
+  const shown = cams.filter(match);
+  const groups = {};
+  for (const c of shown) (groups[grpOf(c)] = groups[grpOf(c)] || []).push(c);
+  const names = Object.keys(groups).sort((a, b) => a === 'Ungrouped' ? 1 : b === 'Ungrouped' ? -1 : a.localeCompare(b));
+  grid.innerHTML = names.map(g => {
+    const list = groups[g].sort((a, b) => ordOf(a) - ordOf(b) || (a.name || '').localeCompare(b.name || ''));
+    return `<section class="grp"><h3 class="grphead">${esc(g)} <span class="grpn">${list.length}</span></h3>`
+      + `<div class="grid">${list.map(tile).join('')}</div></section>`;
+  }).join('') || `<div class="none" style="aspect-ratio:auto;padding:28px">No cameras match “${esc(term)}”.</div>`;
+  const live = cams.filter(c => (STATE.lastHealth[c.id] || {}).state === 'up').length;
+  sub.textContent = `${cams.length} camera${cams.length === 1 ? '' : 's'} · ${live} up · ${names.length} group${names.length === 1 ? '' : 's'}`
+    + ` · frames refresh on each camera's interval`;
+}
+
 async function boot() {
   const grid = document.getElementById('grid'), sub = document.getElementById('sub');
   try {
@@ -83,42 +133,9 @@ async function boot() {
     const lastFrame = latestBy(frames, 'camera_ref', 'captured_at');
     const lastHealth = latestBy(health, 'camera_ref', 'observed_at');
 
+    STATE.cams = cams; STATE.lastFrame = lastFrame; STATE.lastHealth = lastHealth;
     if (IS_ADMIN) { document.getElementById('admin').hidden = false; renderAdmin(cams); }
-
-    if (!cams.length) {
-      grid.innerHTML = '';
-      sub.textContent = 'No cameras registered in this tenant.';
-      return;
-    }
-
-    grid.innerHTML = cams.map(c => {
-      const f = lastFrame[c.id], h = lastHealth[c.id];
-      const state = (h && h.state) || 'unknown';
-      const loc = c.location || {};
-      const where = [loc.zone, loc.ward].filter(Boolean).join(' · ');
-      // Bytes come from the host media seam, which authorises this user for THIS camera and records
-      // the view. The app never touches the file store and never sees a file id it can dereference.
-      const shot = f
-        ? `<img class="shot" alt="Latest frame from ${esc(c.name)}"
-              src="/media/frame/${encodeURIComponent(f.id)}">`
-        : `<div class="none">no frame captured yet${state === 'down' ? ' — camera is down' : ''}</div>`;
-      return `<div class="cam">${shot}<div class="meta">
-          <div class="row">
-            <span class="name">${esc(c.name || c.id)}</span>
-            <span class="chip ${esc(state)}">${esc(state)}</span>
-          </div>
-          <div class="row">
-            <span class="where">${esc(where)}</span>
-            <span class="age">${f ? esc(ago(f.captured_at)) : (h ? esc(ago(h.observed_at)) : '')}</span>
-          </div>
-          ${h && h.detail ? `<div class="purpose">${esc(h.detail)}</div>` : ''}
-          <div class="purpose">purpose: ${esc(c.purpose_binding || '—')} · retention: ${esc(c.retention_class || '—')}</div>
-        </div></div>`;
-    }).join('');
-
-    const live = cams.filter(c => (lastHealth[c.id] || {}).state === 'up').length;
-    sub.textContent = `${cams.length} camera${cams.length === 1 ? '' : 's'} · ${live} up · `
-      + `frames refresh every ${REFRESH_MS / 1000}s (interval capture, not live video)`;
+    renderWall();
   } catch (e) {
     grid.innerHTML = `<div class="err">Could not load cameras: ${esc(e.message)}</div>`;
     sub.textContent = '';
@@ -147,27 +164,32 @@ function renderAdmin(cams) {
     const url = ((c.stream || {}).url) || '';
     return `<tr data-id="${esc(c.id)}">
       <td><input class="f-name" value="${esc(c.name || '')}" style="width:170px"></td>
-      <td><input class="f-url" value="${esc(url)}" style="width:320px"></td>
-      <td><input class="f-iv" type="number" min="10" value="${((c.stream || {}).capture_interval_s) || 300}" style="width:72px" title="capture every N seconds"></td>
+      <td><input class="f-url" value="${esc(url)}" style="width:300px"></td>
+      <td><input class="f-grp" value="${esc((c.location || {}).group || (c.location || {}).zone || '')}" style="width:120px" title="group / section"></td>
+      <td><input class="f-ord" type="number" value="${(c.location || {}).order != null ? (c.location || {}).order : ''}" style="width:56px" title="sort order within group"></td>
+      <td><input class="f-iv" type="number" min="10" value="${((c.stream || {}).capture_interval_s) || 300}" style="width:66px" title="capture every N seconds"></td>
       <td style="text-align:center"><input type="checkbox" class="f-en" ${c.enabled !== false ? 'checked' : ''}></td>
       <td style="white-space:nowrap"><button onclick="saveCam(this)">Save</button>
         <button class="danger" onclick="delCam(this)">Disable</button></td></tr>`;
   }).join('');
   document.getElementById('mgrbody').innerHTML =
-    `<table><thead><tr><th>Name</th><th>Feed URL (rtsp:// or https://…)</th><th title="capture every N seconds">Every&nbsp;(s)</th><th style="text-align:center">On</th><th></th></tr></thead>`
-    + `<tbody>${rows || '<tr><td colspan="5" style="color:#6e7681">No cameras yet — add one below.</td></tr>'}</tbody></table>`
+    `<table><thead><tr><th>Name</th><th>Feed URL (rtsp:// or https://…)</th><th>Group</th><th title="sort order within group">#</th><th title="capture every N seconds">Every&nbsp;(s)</th><th style="text-align:center">On</th><th></th></tr></thead>`
+    + `<tbody>${rows || '<tr><td colspan="7" style="color:#6e7681">No cameras yet — add one below.</td></tr>'}</tbody></table>`
     + `<div class="addrow" style="padding:12px 8px 0">`
-    + `<input id="add_name" placeholder="New camera name" style="width:170px">`
-    + `<input id="add_url" placeholder="rtsp://host:554/stream" style="width:320px">`
-    + `<input id="add_iv" type="number" min="10" value="300" title="capture every N seconds" style="width:72px">`
+    + `<input id="add_name" placeholder="New camera name" style="width:160px">`
+    + `<input id="add_url" placeholder="rtsp://host:554/stream" style="width:300px">`
+    + `<input id="add_grp" placeholder="Group / zone" style="width:120px">`
+    + `<input id="add_ord" type="number" placeholder="#" title="sort order" style="width:56px">`
+    + `<input id="add_iv" type="number" min="10" value="300" title="capture every N seconds" style="width:66px">`
     + `<button onclick="addCam()">+ Add camera</button></div><div class="msg" id="mgrmsg"></div>`;
 }
 async function saveCam(btn) {
   const tr = btn.closest('tr'), id = tr.dataset.id;
   const name = tr.querySelector('.f-name').value.trim(), url = tr.querySelector('.f-url').value.trim(),
-        enabled = tr.querySelector('.f-en').checked, capture_interval_s = parseInt(tr.querySelector('.f-iv').value) || 300;
+        enabled = tr.querySelector('.f-en').checked, capture_interval_s = parseInt(tr.querySelector('.f-iv').value) || 300,
+        group = tr.querySelector('.f-grp').value.trim(), ord = tr.querySelector('.f-ord').value.trim();
   if (!name || !url) { mmsg('name and feed url required'); return; }
-  mmsg('saving…'); try { await post('/bridge/camera-configure', {id, name, url, enabled, capture_interval_s}); mmsg('✓ saved'); boot(); }
+  mmsg('saving…'); try { await post('/bridge/camera-configure', {id, name, url, enabled, capture_interval_s, group, order: ord === '' ? null : parseInt(ord)}); mmsg('✓ saved'); boot(); }
   catch (e) { mmsg('save failed: ' + e.message); }
 }
 async function delCam(btn) {
@@ -177,9 +199,10 @@ async function delCam(btn) {
 }
 async function addCam() {
   const name = document.getElementById('add_name').value.trim(), url = document.getElementById('add_url').value.trim(),
-        capture_interval_s = parseInt(document.getElementById('add_iv').value) || 300;
+        capture_interval_s = parseInt(document.getElementById('add_iv').value) || 300,
+        group = document.getElementById('add_grp').value.trim(), ord = document.getElementById('add_ord').value.trim();
   if (!name || !url) { mmsg('name and feed url required'); return; }
-  mmsg('adding…'); try { await post('/bridge/camera-configure', {name, url, capture_interval_s}); mmsg('✓ added'); boot(); }
+  mmsg('adding…'); try { await post('/bridge/camera-configure', {name, url, capture_interval_s, group, order: ord === '' ? null : parseInt(ord)}); mmsg('✓ added'); boot(); }
   catch (e) { mmsg('add failed: ' + e.message); }
 }
 
