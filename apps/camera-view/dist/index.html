@@ -147,25 +147,27 @@ function renderAdmin(cams) {
     const url = ((c.stream || {}).url) || '';
     return `<tr data-id="${esc(c.id)}">
       <td><input class="f-name" value="${esc(c.name || '')}" style="width:170px"></td>
-      <td><input class="f-url" value="${esc(url)}" style="width:340px"></td>
+      <td><input class="f-url" value="${esc(url)}" style="width:320px"></td>
+      <td><input class="f-iv" type="number" min="10" value="${((c.stream || {}).capture_interval_s) || 300}" style="width:72px" title="capture every N seconds"></td>
       <td style="text-align:center"><input type="checkbox" class="f-en" ${c.enabled !== false ? 'checked' : ''}></td>
       <td style="white-space:nowrap"><button onclick="saveCam(this)">Save</button>
         <button class="danger" onclick="delCam(this)">Disable</button></td></tr>`;
   }).join('');
   document.getElementById('mgrbody').innerHTML =
-    `<table><thead><tr><th>Name</th><th>Feed URL (rtsp:// or https://…)</th><th style="text-align:center">On</th><th></th></tr></thead>`
-    + `<tbody>${rows || '<tr><td colspan="4" style="color:#6e7681">No cameras yet — add one below.</td></tr>'}</tbody></table>`
+    `<table><thead><tr><th>Name</th><th>Feed URL (rtsp:// or https://…)</th><th title="capture every N seconds">Every&nbsp;(s)</th><th style="text-align:center">On</th><th></th></tr></thead>`
+    + `<tbody>${rows || '<tr><td colspan="5" style="color:#6e7681">No cameras yet — add one below.</td></tr>'}</tbody></table>`
     + `<div class="addrow" style="padding:12px 8px 0">`
     + `<input id="add_name" placeholder="New camera name" style="width:170px">`
-    + `<input id="add_url" placeholder="rtsp://host:554/stream" style="width:340px">`
+    + `<input id="add_url" placeholder="rtsp://host:554/stream" style="width:320px">`
+    + `<input id="add_iv" type="number" min="10" value="300" title="capture every N seconds" style="width:72px">`
     + `<button onclick="addCam()">+ Add camera</button></div><div class="msg" id="mgrmsg"></div>`;
 }
 async function saveCam(btn) {
   const tr = btn.closest('tr'), id = tr.dataset.id;
   const name = tr.querySelector('.f-name').value.trim(), url = tr.querySelector('.f-url').value.trim(),
-        enabled = tr.querySelector('.f-en').checked;
+        enabled = tr.querySelector('.f-en').checked, capture_interval_s = parseInt(tr.querySelector('.f-iv').value) || 300;
   if (!name || !url) { mmsg('name and feed url required'); return; }
-  mmsg('saving…'); try { await post('/bridge/camera-configure', {id, name, url, enabled}); mmsg('✓ saved'); boot(); }
+  mmsg('saving…'); try { await post('/bridge/camera-configure', {id, name, url, enabled, capture_interval_s}); mmsg('✓ saved'); boot(); }
   catch (e) { mmsg('save failed: ' + e.message); }
 }
 async function delCam(btn) {
@@ -174,9 +176,10 @@ async function delCam(btn) {
   catch (e) { mmsg('failed: ' + e.message); }
 }
 async function addCam() {
-  const name = document.getElementById('add_name').value.trim(), url = document.getElementById('add_url').value.trim();
+  const name = document.getElementById('add_name').value.trim(), url = document.getElementById('add_url').value.trim(),
+        capture_interval_s = parseInt(document.getElementById('add_iv').value) || 300;
   if (!name || !url) { mmsg('name and feed url required'); return; }
-  mmsg('adding…'); try { await post('/bridge/camera-configure', {name, url}); mmsg('✓ added'); boot(); }
+  mmsg('adding…'); try { await post('/bridge/camera-configure', {name, url, capture_interval_s}); mmsg('✓ added'); boot(); }
   catch (e) { mmsg('add failed: ' + e.message); }
 }
 

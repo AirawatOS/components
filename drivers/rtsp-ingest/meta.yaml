@@ -1,0 +1,42 @@
+# A DRIVER (kind=driver) — the camera-ingest slice of the media plane (ADR-0077 slice 2). Reads the
+# device.camera records it is granted, grabs ONE frame per enabled camera, stores the bytes in the
+# content-addressed file store via the broker, and writes a media.frame citing that file_id plus a
+# device.stream_health observation. The frame's file id IS the sha2-256 of its bytes, so a detection
+# that later cites this frame stays verifiable without trusting the transport.
+#
+# TWO HONEST LIMITATIONS, both recorded rather than hidden (ADR-0077):
+#
+#   1. NOT RESIDENT. A camera feed never ends, but there is no `service-launcher` / `lifecycle: resident`
+#      yet (PLAT-HOST-004 sanctions one; the reference host implements only run-to-completion). So this
+#      grabs a frame and exits, driven by a schedule. Real ingest holds a session — slice 4.
+#
+#   2. THE RTSP SOCKET DOES NOT GO THROUGH THE BROKER. `egress:` declares HTTP hosts the broker fetches
+#      on a component's behalf; RTSP is a different protocol and the broker has no notion of it. So this
+#      driver dials the camera directly — the "conceded in-component credential" option in ADR-0077.
+#      Consequence: this component's certificate is evidence about WHICH CAMERAS IT OPENED, never about
+#      what bytes it received. Do not read it as the latter.
+#
+#      Reachability depends on where the placed container sits. On a stack where the camera (or a
+#      fixture) is on the same network, L2 reaches it fine. A camera on a separate VLAN needs the
+#      per-session data-plane grant (ADR-0077 slice 5) — that is the case this concession is holding
+#      open, not L2 as such.
+component_id: ds:airawatdeveloper:driver/rtsp-ingest
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: RTSP Camera Ingest
+entrypoint: run.py
+# L2, not L1: the runtime-manager places components as CONTAINERS from a certified runtime image
+# (LAUNCHER_REQUIRE_CERTIFIED_IMAGE=1). L1 was only ever true where a scheduler ran the component as its
+# own subprocess — a local-dev shape, not how a real stack executes it.
+confinement_min: L2
+runtime:
+  profile: media          # components/runtimes/media — the image that carries ffmpeg
+reads: [device.camera, media.frame]
+writes: [media.frame, device.stream_health]
+# CAMERA_ID limits a run to one camera; otherwise every enabled device.camera this run can read.
+config: [CAMERA_ID, FFMPEG_BIN, FRAME_QUALITY, FFMPEG_TIMEOUT_S]
+scopes:
+  - { verb: read,  scope: device.camera }
+  - { verb: write, scope: media.frame }
+  - { verb: write, scope: device.stream_health }
