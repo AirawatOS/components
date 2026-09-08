@@ -5,6 +5,7 @@ kind: app
 version: 0.2.0
 provider: ds:airawat:developer
 display_name: Explorer
+icon: 🗺️
 entrypoint: index.html
 bundle: dist
 sandboxed: true

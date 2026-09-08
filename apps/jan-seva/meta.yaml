@@ -8,6 +8,7 @@ kind: app
 version: 0.1.9
 provider: ds:airawatdeveloper:developer
 display_name: Jan Seva — Citizen Services
+icon: 🏛️
 entrypoint: index.html
 required_schemas: [network.service_offering, platform.case, governance.consent, network.jurisdiction, civic.profile]
 writes: [governance.consent, civic.profile]

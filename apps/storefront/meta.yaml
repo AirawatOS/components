@@ -5,6 +5,7 @@ kind: app
 version: 0.1.1
 provider: ds:airawat:developer
 display_name: Marketplace
+icon: 🛒
 entrypoint: index.html
 bundle: dist
 sandboxed: true

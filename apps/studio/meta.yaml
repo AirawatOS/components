@@ -6,6 +6,7 @@ kind: app
 version: 0.1.2   # nav: layer-by-kind + clickable spec view + aligned tree; schema-request: complete x-kind envelope + editable AI proposal
 provider: ds:airawat:developer
 display_name: Studio
+icon: 🛠️
 entrypoint: index.html
 required_schemas: [studio.project, platform.subscription, platform.workflow]
 sandboxed: true

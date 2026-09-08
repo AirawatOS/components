@@ -3,9 +3,10 @@
 # It declares required_schemas (its DATA allow-list), not broker scopes.
 component_id: ds:airawat:app/air-explorer
 kind: app
-version: 0.1.1
+version: 0.2.1   # 0.2.1: OSM basemap under the PM2.5 choropleth (host tile-proxy) + CPCB station markers
 provider: ds:airawat:developer
 display_name: Air Explorer
+icon: 🌫️
 entrypoint: index.html      # SPA entry inside the bundle
 bundle: dist                # the static bundle directory served under /apps/<id>/
 sandboxed: true             # third-party default → null-origin iframe + host-mediated calls

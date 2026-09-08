@@ -6,6 +6,7 @@ kind: app
 version: 0.1.0
 provider: ds:airawat:developer
 display_name: Components
+icon: 🧩
 entrypoint: index.html
 required_schemas: [prov.egress]
 sandboxed: true

@@ -6,6 +6,7 @@ kind: app
 version: 0.4.0
 provider: ds:airawat:developer
 display_name: Finance Console
+icon: 💰
 entrypoint: index.html
 bundle: dist
 # 0.4.0: account SUB-TYPES (Type→Sub-type dependent dropdown) + JOURNAL voucher entry (payment/receipt/contra/

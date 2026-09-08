@@ -7,6 +7,7 @@ kind: app
 version: 0.1.1
 provider: ds:airawatdeveloper:developer
 display_name: My Documents
+icon: 🪪
 entrypoint: index.html
 required_schemas: [civic.credential]
 writes: [civic.credential]
