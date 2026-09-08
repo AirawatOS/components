@@ -65,6 +65,10 @@
       <button id="play" title="Play / pause">▶</button>
       <input id="trange" type="range" min="0" max="0" step="1" value="0">
       <div class="tnow"><b id="tnow">—</b><span id="tsub"></span></div>
+      <div class="grp"><span class="scen">Source</span>
+        <button class="srcbtn sbtn on" data-src="injected" title="Densities injected as numbers by kumbh-crowd-sim">Injected numbers</button>
+        <button class="srcbtn sbtn" data-src="counted" title="Densities counted from simulated images by the AI: crowd-sim-vision → crowd-count (YOLO)">AI-counted images</button>
+      </div>
       <div class="grp"><span class="scen">Scenario</span>
         <button class="sbtn on" id="scBase" data-s="baseline">Baseline peak day</button>
         <button class="sbtn crit" id="scCrush" data-s="ramkund-crush">Ramkund crush</button>
@@ -86,6 +90,11 @@ function bandColor(d){ return d>=6?[190,40,55]:d>=4.5?[229,72,77]:d>=3?[240,120,
 const GHATS=[{name:"Ramkund (Nashik)",c:[73.7897,19.9993]},{name:"Kushavarta (Trimbak.)",c:[73.5310,19.9320]}];
 
 let DATA={aoi:null,frames:[],dens:{},crush:{},recs:[],roads:[]}, tIdx=0, tPlaying=false, tTimer=null, admitted=false, scenario="baseline", deckgl=null, view=null;
+// The SAME cell.crowd_density exists from two sources — kumbh-crowd-sim injects numbers, crowd-count counts
+// people in images. A row is "counted" if its (top-level or prov) method is vision-count. RAW holds both; the
+// Source toggle picks which to render, so the demo can show injected-numbers vs AI-from-images side by side.
+let RAW={dens:[],crush:[],recs:[],det:[]}, SOURCE="injected";
+function isVision(o){ return !!(o && (o.method==="vision-count" || ((o.prov||{}).method)==="vision-count")); }
 
 async function tileImage(x,y,z){ const url=`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
   const d=await bridge("/bridge/fetch",{app_id:APPID,url}); if(!d||!d.body_b64) return null;
@@ -110,20 +119,30 @@ async function load(){
   $("mapload").remove(); drawLegend(); render(); side();
   $("play").onclick=()=>tPlaying?stop():play();
   $("trange").oninput=e=>{stop();tIdx=+e.target.value;render();side();};
-  document.querySelectorAll(".sbtn").forEach(b=>b.onclick=()=>runScenario(b.dataset.s));
+  document.querySelectorAll(".sbtn:not(.srcbtn)").forEach(b=>b.onclick=()=>runScenario(b.dataset.s));
+  document.querySelectorAll(".srcbtn").forEach(b=>b.onclick=()=>setSource(b.dataset.src));
 }
 
 async function reloadCrowd(){
-  const dens=await q("cell.crowd_density"), crush=await q("cell.crush_risk"), recs=await q("governance.recommendation");
-  DATA.dens={}; DATA.crush={};
-  const fr=new Set();
-  for(const o of dens){ const t=o.observed_at; fr.add(t); (DATA.dens[t]=DATA.dens[t]||[]).push(o); }
-  for(const o of crush){ const t=o.observed_at; (DATA.crush[t]=DATA.crush[t]||[]).push(o); }
-  DATA.frames=[...fr].sort();
-  DATA.recs=recs.filter(r=>String(r.id).includes("crowd")).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
-  tIdx=DATA.frames.findIndex(t=>t.slice(11,13)==="13"); if(tIdx<0) tIdx=Math.max(0,DATA.frames.length-1);
-  $("trange").max=Math.max(0,DATA.frames.length-1); $("trange").value=tIdx;
+  RAW.dens=await q("cell.crowd_density"); RAW.crush=await q("cell.crush_risk");
+  RAW.recs=await q("governance.recommendation"); RAW.det=await q("vision.detection");
+  applySource();
 }
+// Rebuild the render buffers from RAW for the active Source, then index frames + park the scrubber on the peak.
+function applySource(){
+  const want = SOURCE==="counted";
+  DATA.dens={}; DATA.crush={}; const fr=new Set();
+  for(const o of RAW.dens){ if(isVision(o)!==want) continue; const t=o.observed_at; fr.add(t); (DATA.dens[t]=DATA.dens[t]||[]).push(o); }
+  for(const o of RAW.crush){ if(isVision(o)!==want) continue; const t=o.observed_at; (DATA.crush[t]=DATA.crush[t]||[]).push(o); }
+  DATA.frames=[...fr].sort();
+  DATA.recs=RAW.recs.filter(r=>String(r.id).includes("crowd")).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  tIdx=DATA.frames.findIndex(t=>t.slice(11,13)==="13"); if(tIdx<0) tIdx=Math.max(0,DATA.frames.length-1);
+  $("trange").max=Math.max(0,DATA.frames.length-1); $("trange").value=Math.max(0,tIdx);
+}
+function setSource(src){ if(SOURCE===src) return; SOURCE=src; stop(); admitted=false;
+  document.querySelectorAll(".srcbtn").forEach(b=>b.classList.toggle("on",b.dataset.src===src));
+  document.querySelector("header .sim").textContent = src==="counted" ? "◉ AI-COUNTED · SIM" : "◉ SIMULATION";
+  applySource(); render(); side(); }
 
 function curFrame(){ return DATA.frames[tIdx]; }
 function frameStats(t){ const cells=DATA.dens[t]||[]; let mx=0,hc=0; for(const c of cells){ mx=Math.max(mx,c.density_sqm||0); hc+=c.headcount||0; } return {mx,hc,n:cells.length}; }
@@ -165,6 +184,8 @@ function side(){
       <div class="stat"><span>Status</span><span class="chip ${bn}">${bn.toUpperCase()}</span></div>
       <div class="stat"><span>Crowd present (est.)</span><b>${(hc/1e6).toFixed(2)}M</b></div>
       <div class="stat"><span>Active cells</span><b>${n}</b></div>
+      <div class="stat"><span>Source</span><span class="chip ${SOURCE==='counted'?'caution':'normal'}">${SOURCE==='counted'?'AI VISION COUNT':'INJECTED NUMBERS'}</span></div>
+      ${SOURCE==='counted'?`<div style="font-size:11px;color:var(--muted);margin-top:7px;border-top:1px dashed var(--edge);padding-top:7px">🤖 Density counted from ${(RAW.det||[]).length} camera frame(s) by <code>crowd-count</code> · ${(RAW.det[0]&&RAW.det[0].model)?'model '+esc(RAW.det[0].model):'scaffold ground-truth (no model yet)'}</div>`:''}
     </div>
     <div class="card"><div class="lbl">Crush-risk alerts (${crush.length} cells)</div>
       ${Object.keys(sites).length?Object.entries(sites).map(([s,d])=>`<div class="alert"><span class="dot" style="background:${d>=6?'#ff5a5f':'#f0a53c'}"></span><div><b>${s}</b> — ${d.toFixed(1)}/m² <span class="chip ${bandName(d)}" style="margin-left:4px">${bandName(d)}</span></div></div>`).join(""):'<div style="color:var(--muted);font-size:12.5px">No cells in the danger band this frame.</div>'}
@@ -194,7 +215,10 @@ function drawLegend(){ const bands=[["normal","<1.5"],["busy","1.5–3"],["cauti
 // ---- the app OWNS its backend behaviour (ADR: no bespoke host code) --------------------------------
 // Reads/writes go through the GENERIC bridges: /bridge/run (fire a certified component in this tenant),
 // /bridge/save (write a governed object as the signed-in commander), /bridge/query (read).
-const CMP={sim:"ds:airawatdeveloper:driver/kumbh-crowd-sim",engine:"ds:airawatdeveloper:engine/crush-risk-engine",
+const CMP={sim:"ds:airawatdeveloper:driver/kumbh-crowd-sim",
+           simVision:"ds:airawatdeveloper:driver/crowd-sim-vision",   // simulates crowd IMAGES
+           count:"ds:airawatdeveloper:driver/crowd-count",            // YOLO people-count → cell.crowd_density
+           engine:"ds:airawatdeveloper:engine/crush-risk-engine",
            advisor:"ds:airawatdeveloper:skill/crowd-safety-advisor"};
 async function save(o){ return bridge("/bridge/save",{app_id:APPID,id:o.id,object:o}); }
 async function sessionInfo(){ try{ return await (await fetch("/session")).json(); }catch(e){ return {}; } }
@@ -243,12 +267,20 @@ async function admit(rec){
 // → advisor skill (writes the cited recommendation). Each runs confined under its own run-token via the broker.
 async function runScenario(s){
   scenario=s; stop(); admitted=false;
-  document.querySelectorAll(".sbtn").forEach(b=>b.classList.toggle("on",b.dataset.s===s));
-  $("busy").style.display="block"; $("busy").textContent=`Running ${s==="ramkund-crush"?"Ramkund crush":"baseline"} scenario…`;
+  document.querySelectorAll(".sbtn:not(.srcbtn)").forEach(b=>b.classList.toggle("on",b.dataset.s===s));
+  const counted = SOURCE==="counted", scn=s==="ramkund-crush"?"Ramkund crush":"baseline";
+  $("busy").style.display="block";
+  $("busy").textContent=`Running ${scn} scenario…${counted?" simulating images → AI counting":""}`;
   try{
-    await bridge("/bridge/run",{component:CMP.sim,env:{SCENARIO:s}});
-    await bridge("/bridge/run",{component:CMP.engine});
-    await bridge("/bridge/run",{component:CMP.advisor});
+    if(counted){
+      // the perception chain: simulate crowd images → count people in them → density
+      await bridge("/bridge/run",{component:CMP.simVision,env:{SCENARIO:s}});
+      await bridge("/bridge/run",{component:CMP.count});
+    } else {
+      await bridge("/bridge/run",{component:CMP.sim,env:{SCENARIO:s}});   // inject the numbers directly
+    }
+    await bridge("/bridge/run",{component:CMP.engine});     // density → crush risk (unchanged, both sources)
+    await bridge("/bridge/run",{component:CMP.advisor});    // cited recommendation
   }catch(e){}
   await reloadCrowd(); $("busy").style.display="none"; render(); side();
 }

@@ -1,0 +1,20 @@
+# A RUNTIME PROFILE (ADR-0030). The VISION stack — object/person detection & counting (YOLOv8 via
+# ultralytics + opencv). Built FROM the modeling image so torch/torchvision are reused; this profile only
+# adds the vision-specific libraries. Components declare `runtime.profile: vision`. Kept separate from
+# modeling for the same blast-radius reason media/ is separate: ultralytics+opencv are ~250MB that only
+# vision components need.
+component_id:   ds:airawat:runtime/vision              # a CERTIFIABLE component (kind=runtime)
+kind:           runtime
+version:        0.1.0
+provider:       ds:airawat:developer
+implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058)
+runtime_id:     vision
+profile:        vision
+analytics_tier: perceptive                             # perceive/measure state from raw media
+display_name:   Vision (YOLOv8 · ultralytics · OpenCV)
+image:          manishsv/airawatos-runtime-vision:0.1.0
+image_digest:   sha256:PENDING-BUILD                    # set by the build+certify step (launcher runs only this)
+provides:       [torch, torchvision, ultralytics, opencv-python-headless, pillow, numpy, h3, requests, pyyaml]
+isolation:      shared
+confidential:   false
+level:          L2

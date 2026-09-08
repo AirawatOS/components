@@ -1,0 +1,33 @@
+# A DRIVER (kind=driver) — the AI people-counting front-end of the crush-risk loop
+# (vision-crowd-counting slice; see docs/decisions/vision-crowd-counting-slice.md).
+#
+# Reads the latest media.frame per enabled device.camera, counts PEOPLE with a YOLOv8 person detector, maps
+# each camera to its H3 cell, and writes the SAME cell.crowd_density that kumbh-crowd-sim writes and
+# crush-risk-engine already consumes — so the whole crush-risk loop is unchanged; only the SOURCE of the
+# density number moves from "injected" to "counted from an image". It also writes vision.detection, the
+# audited perception fact that cites the exact content-addressed frame it counted (ADR-0041/0052 lineage).
+#
+# CONFINED: every read/write and the blob fetch go through the broker under the run token — no direct I/O.
+# NO GPU/model? It falls back to the simulator's stamped ground-truth (prov.sim_headcount) and logs it
+# loudly, so the loop runs end-to-end before the vision runtime is built. Swap in the model → real perception.
+component_id: ds:airawatdeveloper:driver/crowd-count
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Crowd Count (vision)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: vision         # components/runtimes/vision — FROM modeling + ultralytics/opencv + yolov8n weight
+reads:  [device.camera, media.frame]
+writes: [cell.crowd_density, vision.detection]
+# CAMERA_ID narrows a run to one camera; CAMERA_COVERAGE_M2 = ground area one frame covers (density = N/area);
+# YOLO_WEIGHTS overrides the bundled weight; H3_RES matches the city baseline (res-9).
+config: [CAMERA_ID, CAMERA_COVERAGE_M2, YOLO_WEIGHTS, H3_RES]
+assets:
+  - { name: yolo-weights, path: yolov8n.pt, optional: true }   # bound weight; absent → scaffold ground-truth mode
+scopes:
+  - { verb: read,  scope: device.camera }
+  - { verb: read,  scope: media.frame }
+  - { verb: write, scope: cell.crowd_density }
+  - { verb: write, scope: vision.detection }

@@ -1,0 +1,31 @@
+# A DRIVER (kind=driver) — the IMAGE simulator for the vision-crowd-counting slice
+# (see docs/decisions/vision-crowd-counting-slice.md). It is the demo stand-in for real cameras: per enabled
+# device.camera it produces ONE simulated crowd JPEG per tick with a CONTROLLABLE ground-truth headcount K,
+# stores the bytes in the content-addressed file store, and writes a media.frame stamping K in
+# prov.sim_headcount. crowd-count then COUNTS that image (or, before the model lands, reads the stamped K).
+#
+# In production this driver does NOT run — real cameras + rtsp-ingest write media.frame instead, and
+# crowd-count counts those. Every frame it writes is marked prov.source="simulation" (no-synthetic-data:
+# clearly labelled demo data, never passed off as a real feed). bank mode uses REAL crowd photos instead of
+# composited sprites — no fabrication either way.
+component_id: ds:airawatdeveloper:driver/crowd-sim-vision
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Crowd Image Simulator
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: vision         # needs pillow for composite mode (bank mode is stdlib, but one runtime keeps it simple)
+reads:  [device.camera]
+writes: [media.frame]
+# SOURCE=composite|bank; SCENARIO=baseline|ramkund-crush; BASELINE_K/PEAK_K bound the curve; SIM_HOUR pins the
+# scenario hour for a repeatable demo; CAMERA_ID narrows to one camera.
+config: [SOURCE, SCENARIO, BASELINE_K, PEAK_K, IMG_W, IMG_H, SIM_HOUR, CAMERA_ID]
+assets:
+  - { name: sprites, path: assets/sprites, optional: true }   # person cut-out PNGs → detectable composites
+  - { name: background, path: assets/bg.jpg, optional: true } # plaza/ghat backdrop
+  - { name: bank, path: assets/bank, optional: true }         # real crowd photos, count in filename `_<n>`
+scopes:
+  - { verb: read,  scope: device.camera }
+  - { verb: write, scope: media.frame }

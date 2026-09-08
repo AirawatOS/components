@@ -4,11 +4,11 @@
 # simulated scenarios (baseline / Ramkund crush) via the host bridge. Reads only through /bridge/query.
 component_id: ds:airawatdeveloper:app/crowd-command
 kind: app
-version: 0.1.2
+version: 0.1.3
 provider: ds:airawatdeveloper:developer
 display_name: Crowd Command
 entrypoint: index.html
-required_schemas: [space.aoi, cell.crowd_density, cell.crush_risk, governance.recommendation, geo.osm_feature, geo.facility, viz.layer, platform.case, platform.task]
+required_schemas: [space.aoi, cell.crowd_density, cell.crush_risk, vision.detection, governance.recommendation, geo.osm_feature, geo.facility, viz.layer, platform.case, platform.task]
 writes: [governance.decision, platform.case, platform.task, platform.inbox_item]
 sandboxed: true
 roles: [safety.incident-commander]
