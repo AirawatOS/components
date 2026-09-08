@@ -6,7 +6,8 @@ const LENSES = [["physical", "Physical", "◧"], ["compute", "Compute", "▦"], 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = id => document.getElementById(id);
 
-export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks }) {
+export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks, lenses }) {
+  const LENSMODS = lenses || {};   // { compute: {inspector}, digital: {inspector}, … }
   // ---- networks (bottom, toggle chips + presets) ----
   const nets = networks || [];
   const PRESETS = { Utilities: ["power", "water"], Digital: ["fiber"], All: nets.map(n => n.kind) };
@@ -56,8 +57,16 @@ export function mountShell({ state, repo, onNavigate, onEnterBuilding, networks 
 
   function renderInspector(s) {
     const el = $("dt-inspector");
-    if (s.lens !== "physical") {   // Phase 1: only Physical is wired; other lenses are honest stubs
-      el.innerHTML = card(LENSES.find(l => l[0] === s.lens)[1] + " lens",
+    if (s.lens !== "physical") {
+      const lm = LENSMODS[s.lens];
+      if (lm && lm.inspector) {                                    // a wired lens (compute / digital / …)
+        const e = s.selectedEntityId ? repo.get(s.selectedEntityId) : null;
+        const r = lm.inspector(e, repo);
+        el.innerHTML = card(r.title, r.body, s.lens); el.hidden = false;
+        el.querySelectorAll(".li").forEach(b => b.onclick = () => onNavigate(b.dataset.id));
+        return;
+      }
+      el.innerHTML = card((LENSES.find(l => l[0] === s.lens) || [0, s.lens])[1] + " lens",  // still-stubbed lens
         `<div class="dim">This lens arrives in a later phase. The digital-twin model, selection and drilldown are shared across all lenses.</div>`);
       el.hidden = false; return;
     }

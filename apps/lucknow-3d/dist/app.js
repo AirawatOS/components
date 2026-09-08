@@ -5,6 +5,8 @@ import { createState } from "./twin/state.js";
 import { createDemoRepository } from "./twin/repository.js";
 import { mountShell } from "./twin/ui.js";
 import { createNetworkLayer } from "./layers/network.js";
+import { compute } from "./lenses/compute.js";
+import { digital } from "./lenses/digital.js";
 
 const whenReady = cb => { if (window.AICITY) cb(); else window.addEventListener("aicity-ready", cb, { once: true }); };
 
@@ -39,11 +41,23 @@ whenReady(async () => {
 
   A.onPick = id => navigate(id);                        // clicking a building OR a network node selects it
 
-  mountShell({ state, repo, networks, onNavigate: navigate, onEnterBuilding: id => A.enterBuilding(id) });
+  // ---- semantic lenses (Phase 3): Compute + Digital wired; Innovation/Governance still stubs ----
+  const LENSES = { compute, digital };
+  const lensCtx = { A, repo, state };
+  mountShell({ state, repo, networks, lenses: LENSES, onNavigate: navigate, onEnterBuilding: id => A.enterBuilding(id) });
 
   // networks visibility is driven by state (toggle chips / presets)
   let lastNets = "";
   state.subscribe(s => { const key = s.activeNetworks.slice().sort().join(","); if (key !== lastNets) { lastNets = key; netLayer.setActive(s.activeNetworks); } });
+
+  // lens on-activate / on-deactivate hooks (emphasis, fibre, camera)
+  let curLens = "physical";
+  state.subscribe(s => {
+    if (s.lens === curLens) return;
+    const prev = LENSES[curLens]; if (prev && prev.onDeactivate) prev.onDeactivate(lensCtx);
+    curLens = s.lens;
+    const nxt = LENSES[curLens]; if (nxt && nxt.onActivate) nxt.onActivate(lensCtx);
+  });
 
   console.log("[twin] Phase 2 ready —", repo.byLevel("building").length, "buildings,",
     repo.byLevel("net-node").length, "network nodes across", networks.length, "networks");

@@ -346,6 +346,13 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
   const MLON=111320*Math.cos(Cesium.Math.toRadians(dcy)), MLAT=111320;
   let _hi=null;
   function clearHi(){ if(_hi&&bldPrim){ try{ bldPrim.getGeometryInstanceAttributes(_hi.ido).color=_hi.save; }catch(e){} } _hi=null; }
+  // EMPHASIZE a set of buildings (brighten members, dim the rest) — used by lenses (e.g. Compute → data centres)
+  let _emph=null;
+  function clearEmphasis(){ if(_emph&&bldPrim){ for(const [ido,c] of _emph){ try{ bldPrim.getGeometryInstanceAttributes(ido).color=c; }catch(e){} } } _emph=null; scene.requestRender(); }
+  function emphasize(ids){ clearEmphasis(); if(!ids||!ids.length||!bldPrim) return; const set=new Set(ids); _emph=[];
+    for(const [id,ido] of bldById){ try{ const a=bldPrim.getGeometryInstanceAttributes(ido); _emph.push([ido,a.color.slice()]);
+      a.color=Cesium.ColorGeometryInstanceAttribute.toValue(set.has(id)?Cesium.Color.fromBytes(120,220,244,255):Cesium.Color.fromBytes(70,78,100,120)); }catch(e){} }
+    scene.requestRender(); }
   function highlight(id){ clearHi(); const ido=bldById.get(id); if(!ido||!bldPrim) return;
     try{ const a=bldPrim.getGeometryInstanceAttributes(ido); _hi={ido,save:a.color.slice()};
       a.color=Cesium.ColorGeometryInstanceAttribute.toValue(Cesium.Color.fromBytes(255,255,255,235)); scene.requestRender(); }catch(e){} }
@@ -365,7 +372,7 @@ const seed=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.
     viewer, scene, center:{lon:dcx,lat:dcy}, aoiBbox, districtBbox:DB,
     buildings: [...bldRec.values()].map(b=>({id:b.id,name:b.name,t:b.t,function:b.function,cx:b.cx,cy:b.cy,hw:b.hw,hh:b.hh,h:b.h})),
     onPick:null,                                    // app.js sets this: (buildingId) => select in the twin
-    highlight, clearHighlight:clearHi, flyToBuilding, flyToBbox, outline,
+    highlight, clearHighlight:clearHi, emphasize, clearEmphasis, flyToBuilding, flyToBbox, outline,
     addHideable:p=>{ if(p) CITY_PRIMS.push(p); },                     // layers (e.g. networks) that must hide during a walk-through
     flyToPoint:(lon,lat)=>{ setOrbit(false); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
       viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lon,lat,20),260),
