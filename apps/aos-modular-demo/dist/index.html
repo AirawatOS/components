@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>Modular Demo</title>
+<!-- Reference app: proves an AirawatOS app can be SPLIT across multiple JS files with native ES modules —
+     no build step, CSP-safe (script-src 'self'), digest-certified as one bundle. app.js imports its screens. -->
+<link rel="stylesheet" href="/shared/aos.css">
+<a href="#main" class="aos-skip">Skip to content</a>
+<div class="wrap">
+  <nav class="nav"><h1>🧱 Modular</h1>
+    <a data-t="accounts"><span>📒</span> Accounts</a>
+    <a data-t="about"><span>ℹ️</span> About</a>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<script src="/shared/i18n.js"></script>
+<script src="/shared/aos.js"></script>
+<script type="module" src="./app.js"></script>

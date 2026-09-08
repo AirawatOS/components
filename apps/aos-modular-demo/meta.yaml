@@ -1,0 +1,11 @@
+component_id: ds:airawat:app/aos-modular-demo
+kind: app
+version: 0.1.0
+provider: airawat
+display_name: Modular Demo
+icon: 🧱
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+public: true
+required_schemas: []
