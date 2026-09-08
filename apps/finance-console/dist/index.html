@@ -104,21 +104,22 @@ async function seedChart(){
   await reload(); toast('Seeded '+defs.length+' accounts'); render();
 }
 function addAcc(){ openAcc({}); } function editAcc(id){ openAcc(ACC.find(a=>a.id===id)||{}); }
-function openAcc(a){ document.getElementById('sheet').innerHTML=`<h3>${a.id?'Edit':'New'} account</h3>
-    <div class="grid"><div class="row"><label>Code</label><input id="a_code" value="${esc(a.code||'')}" placeholder="5300"></div>
-      <div class="row"><label>Name</label><input id="a_name" value="${esc(a.name||'')}" placeholder="Utilities expense"></div></div>
-    <div class="grid"><div class="row"><label>Type</label><select id="a_type" onchange="subOpts()">${['asset','liability','equity','revenue','expense'].map(t=>`<option${a.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
-      <div class="row"><label>Sub-type</label><select id="a_subtype"></select></div></div>
-    <div id="ferr" class="err"></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" onclick="saveAcc('${esc(a.id||'')}')">Save</button><button class="btn ghost" onclick="closeM()">Cancel</button></div>`;
-  document.getElementById('modal').classList.add('open'); subOpts(a.subtype); }
-// (re)fill the Sub-type dropdown for the chosen Type; keep the current value selected when it still applies.
-function subOpts(sel){ const t=val('a_type'); const cur=sel!=null?sel:val('a_subtype'); const list=SUBTYPES[t]||[];
-  document.getElementById('a_subtype').innerHTML='<option value="">— none —</option>'+list.map(s=>`<option${s===cur?' selected':''}>${esc(s)}</option>`).join(''); }
-async function saveAcc(id){ const code=val('a_code'),name=val('a_name'),type=val('a_type'),subtype=val('a_subtype'); if(!code||!name)return ferr('Code and name required');
-  const o={schema:'finance.account',id:id||`ds:${TENANT}:finance/account/${code}`,code,name,type,normal:NORMAL[type],tenant:TENANT,created_at:new Date().toISOString()};
-  if(subtype)o.subtype=subtype;
-  const r=await save(o);
-  if(r.error)return ferr(r.error); closeM(); await reload(); render(); }
+const subOpts=t=>[{value:'',label:'— none —'}].concat((SUBTYPES[t]||[]).map(s=>({value:s,label:s})));
+function openAcc(a){                                        // Type drives the Sub-type options — declared via onChange
+  const type0=a.type||'asset';
+  AOS.form((a.id?'Edit':'New')+' account', [
+    {id:'code', label:'Code', value:a.code||'', placeholder:'5300', required:true},
+    {id:'name', label:'Name', value:a.name||'', placeholder:'Utilities expense', required:true},
+    {id:'type', label:'Type', type:'select', options:['asset','liability','equity','revenue','expense'], value:type0,
+       onChange:(v,ctx)=>ctx.setOptions('subtype', subOpts(v), '')},
+    {id:'subtype', label:'Sub-type', type:'select', options:subOpts(type0), value:a.subtype||''},
+  ], { onSave: async v => {
+    const o={schema:'finance.account', id:a.id||`ds:${TENANT}:finance/account/${v.code}`, code:v.code, name:v.name,
+      type:v.type, normal:NORMAL[v.type], tenant:TENANT, created_at:new Date().toISOString()};
+    if(v.subtype) o.subtype=v.subtype;
+    const r=await save(o); if(r.error) return r; await reload(); render(); return r;
+  }});
+}
 
 /* ---------- BUDGETS ---------- */
 function rBud(){
