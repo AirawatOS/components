@@ -90,10 +90,19 @@ def _resolve_cert(subject_id, network_url=None):
 
 
 def _dir_digest(d):
-    """Reproduce conformance.aggregate_digest over a component dir: sha2-256 of the canonical
-    {relpath: sha256(contents)} map — equals the cert's evidence_digest iff the on-disk source is unchanged."""
-    files = {fn: hashlib.sha256(open(os.path.join(d, fn), "rb").read()).hexdigest()
-             for fn in os.listdir(d) if os.path.isfile(os.path.join(d, fn))}
+    """Reproduce conformance.aggregate_digest / conform.file_manifest EXACTLY: sha2-256 of the canonical
+    {relpath: sha256(contents)} map over the WHOLE tree (recursive, excluding __pycache__/.git and *.pyc/*.log),
+    so it equals the cert's evidence_digest for EVERY component — flat drivers AND engines/apps with subdirs.
+    (A top-level-only hash matched flat drivers but REFUSED any component with a subdirectory — the blocker to
+    retiring the rt-components bind-mount and delivering all components from the filestore.)"""
+    files = {}
+    for root, dirs, names in os.walk(d):
+        dirs[:] = [x for x in dirs if x not in ("__pycache__", ".git")]
+        for n in names:
+            if n.endswith((".pyc", ".log")):
+                continue
+            p = os.path.join(root, n)
+            files[os.path.relpath(p, d)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
     canon = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
     return "sha2-256:" + hashlib.sha256(canon).hexdigest()
 
