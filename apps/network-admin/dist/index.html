@@ -69,6 +69,7 @@
     <a class="ritem" data-v="participants">🔗 Directory<span class="rh">members</span></a>
     <div class="rgrp">Governance</div>
     <a class="ritem" data-v="requests">⚖️ Change Requests<span class="rh">propose → approve</span></a>
+    <a class="ritem" data-v="publish">📤 Publish Requests<span class="rh">submit → approve</span></a>
     <a class="ritem" data-v="marketplace">🛒 Marketplace<span class="rh">catalog · lifecycle</span></a>
   </nav>
   <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
@@ -87,7 +88,32 @@ function boot(){
   setView(VIEW);
 }
 function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
-function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,requests:requests,marketplace:marketplace}[VIEW]||specs)(); }
+function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
+
+// --- Publish Requests: ADR-0080 developer submits → network steward approves → LIVE in the marketplace ----
+async function publishReqs(){
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
+  let d; try{ const r=await jpost('/bridge/publish-requests',{status:'pending'}); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
+  catch(e){ W.innerHTML='<div class="empty">could not load publish requests ('+esc(String(e))+')</div>'; return; }
+  const R=(d.requests||[]).slice().sort((a,b)=>String(b.requested_at||'').localeCompare(String(a.requested_at||'')));
+  W.innerHTML=`<div class="lbl">Publish requests</div>
+    <div class="hint">A developer submits a certified component for review; it goes LIVE in the marketplace only when the network steward approves. Approval verifies the certificate + version discipline, then publishes on the standards body's authority (ADR-0080).</div>
+    ${R.length?`<table><tr><th>component</th><th>ver</th><th>kind</th><th>submitted by</th><th>certified</th><th></th></tr>
+    ${R.map(q=>{const cid=q.component_id||q.subject||''; const cert=q.certified?'<span class="chip" style="color:#5fd08a">✓ certified</span>':'<span class="chip" style="color:#e5a23d">not certified</span>';
+      return `<tr><td class="mono">${esc(String(cid).split(':').pop())}</td><td class="mono">${esc(q.version||'')}</td><td>${esc(q.component_kind||q.kind||'')}</td><td class="muted">${esc(String(q.requested_by||q.on_behalf_of||'—').split('/').pop())}</td><td>${cert}</td>
+      <td style="text-align:right"><button class="btn sm" data-ap="${esc(q.subject||'')}"${q.certified?'':' disabled title="certify first"'}>Approve</button> <button class="btn sm danger" data-rj="${esc(q.subject||'')}">Reject</button></td></tr>`;}).join('')}
+    </table>`:'<div class="empty">no pending publish requests</div>'}`;
+  W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decidePub('approve',b.dataset.ap));
+  W.querySelectorAll('[data-rj]').forEach(b=>b.onclick=()=>decidePub('reject',b.dataset.rj));
+}
+async function decidePub(decision,subject){
+  let reason='';
+  if(decision==='reject'){ reason=prompt('REJECT '+subject+'\n\nReason (sent to the developer):',''); if(reason===null)return; }
+  else if(!confirm('APPROVE + PUBLISH '+subject+'?\n\nThis lists it in the marketplace on the standards body\'s authority.'))return;
+  const r=await jpost('/bridge/publish-decide',{subject:subject,decision:decision,reason:reason});
+  if(r.ok){ toast(decision==='approve'?'✓ published':'rejected'); publishReqs(); }
+  else alert('✗ '+decision+' failed: '+((r.j&&(r.j.detail||r.j.error))||r.status));
+}
 
 // --- Marketplace: the Network Steward's catalog console (roll-up + lifecycle: deprecate / revoke) --------
 const KI={driver:'🔧',engine:'⚙️',skill:'🧠',agent:'🤖',app:'🖥️',solution:'📦',pipeline:'🔗',provider:'☁️'};
