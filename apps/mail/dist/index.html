@@ -157,10 +157,15 @@ function compose(pf){pf=pf||{};
     let r={};try{r=await api('/bridge/ai-assist',{app_id:'mail',task:'draft',prompt:instr+'\n\nWrite a clear, professional email body only (no subject line, no salutations placeholders like [Name]).',context:ctx,format:'plain'});}catch(e){}
     if(r.content){const cur=m.q('#bodyx').value;m.q('#bodyx').value=r.content+(cur?'\n'+cur:'');m.q('#s').textContent='';}else m.q('#s').textContent='⚠ '+(r.error||'no response');};
   m.q('#send').onclick=async()=>{
-    if(!TOA.length&&!CCA.length&&!BCCA.length){m.q('#toR').querySelector('input').focus();return;}
-    m.q('#send').disabled=true;
-    const r=await api('/bridge/mail-send',{to:TOA,cc:CCA,bcc:BCCA,subject:m.q('#subj').value,body:m.q('#bodyx').value,thread_ref:pf.thread_ref,attachments:PEND.map(encAtt)});
-    m.close();if(FOLDER==='sent')load();};
+    // commit any recipient still typed-but-not-chipped, so a user who types a name and hits Send isn't silently ignored
+    ['#toR','#ccR','#bccR'].forEach((sel,i)=>{const inp=m.q(sel)&&m.q(sel).querySelector('input');const v=inp&&inp.value.trim();
+      if(v){const p=toPrincipal(v);const arr=[TOA,CCA,BCCA][i];if(p&&!arr.includes(p))arr.push(p);inp.value='';}});
+    if(!TOA.length&&!CCA.length&&!BCCA.length){m.q('#s').textContent='⚠ Add at least one recipient (type a name and press Enter).';m.q('#toR').querySelector('input').focus();return;}
+    m.q('#send').disabled=true;m.q('#s').innerHTML='<span class="spin"></span> sending…';
+    let r={};try{r=await api('/bridge/mail-send',{to:TOA,cc:CCA,bcc:BCCA,subject:m.q('#subj').value,body:m.q('#bodyx').value,thread_ref:pf.thread_ref,attachments:PEND.map(encAtt)});}
+    catch(e){r={error:String(e)};}
+    if(r&&r.message){m.close();FOLDER='sent';load();}                              // success → show it in Sent (clear confirmation)
+    else{m.q('#send').disabled=false;m.q('#s').textContent='✗ '+((r&&(r.error||r.detail))||'send failed — please retry');}};
 }
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
