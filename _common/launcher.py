@@ -75,11 +75,13 @@ def _post(url, body, headers=None):
     return json.loads(urllib.request.urlopen(req, timeout=15).read() or b"{}")
 
 
-def _resolve_cert(subject_id):
+def _resolve_cert(subject_id, network_url=None):
     """Fetch the CA certificate for a subject. /v1/certificates/resolve returns the cert record DIRECTLY
-    (id/status/subject/conformance/signature); a miss returns {detail: "..."}."""
+    (id/status/subject/conformance/signature); a miss returns {detail: "..."}. For a FEDERATED component the
+    cert lives on the OWNING participant's network — pass its base url; trust is still the digest vs this cert
+    (a hardening step verifies the remote cert's signature against the participant's directory key)."""
     try:
-        r = _post(NETWORK_URL + "/v1/certificates/resolve", {"subject_id": subject_id})
+        r = _post((network_url or NETWORK_URL) + "/v1/certificates/resolve", {"subject_id": subject_id})
         if not isinstance(r, dict) or r.get("detail"):
             return None
         return r.get("certificate") or (r if (r.get("subject") or r.get("status")) else None)
@@ -96,11 +98,13 @@ def _dir_digest(d):
     return "sha2-256:" + hashlib.sha256(canon).hexdigest()
 
 
-def _fetch_and_verify(cid, source_file_id, cert):
+def _fetch_and_verify(cid, source_file_id, cert, filestore_url=None):
     """UNIVERSAL DELIVERY point-of-use gate: pull a component's SOURCE tar.gz from the content-addressed
     filestore and VERIFY its dir-digest == the certificate's evidence_digest BEFORE it may run. Returns the
     extracted dir on success, or None (REFUSE) on any miss/mismatch — untrusted bytes never run un-verified,
-    so distribution over HTTPS carries no privilege (trust is the digest + the cert, not the transport)."""
+    so distribution over HTTPS carries no privilege (trust is the digest + the cert, not the transport).
+    CROSS-PARTICIPANT: `filestore_url` points at the OWNING participant's filestore for a FEDERATED component;
+    the content-address + cert-digest gate makes a remote pull exactly as safe as a local one."""
     import io, tarfile, shutil
     if not source_file_id or not cert:
         return None
@@ -108,7 +112,7 @@ def _fetch_and_verify(cid, source_file_id, cert):
     dest = os.path.join(COMPONENT_CACHE, name)
     try:
         blob = urllib.request.urlopen(
-            FILESTORE_URL + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), timeout=60).read()
+            (filestore_url or FILESTORE_URL) + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), timeout=60).read()
         if os.path.isdir(dest):
             shutil.rmtree(dest, ignore_errors=True)       # never merge over stale bytes
         os.makedirs(dest, exist_ok=True)
@@ -145,7 +149,7 @@ def _materialize(tenant, component, name):
         return None
 
 
-def place(component_dir, run_token, env=None, *, label="", cid=None, source_file_id=None):
+def place(component_dir, run_token, env=None, *, label="", cid=None, source_file_id=None, source_origin=None):
     """Run a component. Returns (returncode, output). runtime.profile ⇒ certified container; else in-process.
 
     UNIVERSAL DELIVERY (Runtime-vs-Component split): if the source isn't on-disk and the authorized caller
@@ -154,7 +158,12 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     as-is. The caller (install/scheduler, which holds auth) resolves the component_asset → source_file_id."""
     env = {k: str(v) for k, v in (env or {}).items()}
     if source_file_id and not os.path.isfile(os.path.join(component_dir, "meta.yaml")):
-        got = _fetch_and_verify(cid, source_file_id, _resolve_cert(cid) if cid else None)
+        # CROSS-PARTICIPANT: source_origin={filestore,network} points at the OWNING participant's endpoints for a
+        # FEDERATED component; absent ⇒ this participant's own filestore/network (the common case).
+        _org = source_origin or {}
+        got = _fetch_and_verify(cid, source_file_id,
+                                _resolve_cert(cid, _org.get("network")) if cid else None,
+                                filestore_url=_org.get("filestore"))
         if not got:
             return 87, (f"REFUSED (universal delivery): could not fetch + digest-verify source for "
                         f"{label or cid or component_dir} from the filestore.")
