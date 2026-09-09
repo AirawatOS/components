@@ -7,7 +7,8 @@ name: Assistant
 version: 0.1.0
 provider: airawat
 entrypoint: index.html
-personal: true                 # self-service: any signed-in tenant user; owner is forced to the actor
+personal: true
+default_install: true   # ships with the OS: auto-shelved per tenant on admin login                 # self-service: any signed-in tenant user; owner is forced to the actor
 icon: "✨"
 summary: Your personal AI assistant — plans across your installed apps and acts on your behalf (with confirm).
 required_schemas: [doc.document]
