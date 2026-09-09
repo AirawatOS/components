@@ -213,6 +213,11 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
         cmd += ["--network", RUNTIME_NETWORK]
     else:                                                # dev (Docker Desktop): reach the host loopback broker
         cmd += ["--add-host", "host.docker.internal:host-gateway"]
+    # HOST-PATH INVARIANT: this bind is resolved by the HOST docker daemon (docker-in-docker), so
+    # `component_dir` must name a path that exists on the HOST at this same absolute path. That holds for BOTH
+    # source channels: the rt-components mount AND the universal-delivery COMPONENT_CACHE are each bind-mounted
+    # into the runtime-manager at their identical host path — so a filestore-rehydrated (docker-profile)
+    # component mounts into its runtime exactly like a bind-mounted one. Keep COMPONENT_CACHE host-consistent.
     cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro"]
     # ALL env (broker + config + MATERIALISED SECRETS) goes via a private --env-file, NEVER `-e VALUE`: an
     # argv value leaks into `docker inspect`, `ps`, and any subprocess exception/log (e.g. TimeoutExpired). The
