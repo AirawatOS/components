@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8"><title>Assistant</title>
+<style>
+  :root{--bg:#0b0f16;--panel:#0f1521;--line:#1e2836;--ink:#e6edf6;--mut:#8aa0b6;--acc:#5b9dff;--good:#3fb37f}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+  header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  header b{font-size:15px} header .sub{color:var(--mut);font-size:12px}
+  #who{margin-left:auto;color:var(--mut);font-size:12px}
+  #log{flex:1;overflow:auto;padding:16px;max-width:860px;width:100%;margin:0 auto}
+  .msg{margin:10px 0;display:flex;gap:10px}
+  .msg .av{width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;font-size:14px}
+  .me .av{background:#1b2740} .ai .av{background:#14241c}
+  .bub{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;white-space:pre-wrap;max-width:100%}
+  .me .bub{background:#12203a}
+  .tools{color:var(--mut);font-size:11.5px;margin:3px 0 0 36px}
+  .propose{margin:6px 0 2px 36px;background:#101a12;border:1px solid #2b6;border-radius:9px;padding:10px 12px}
+  .propose .lbl{font-size:12px;color:var(--mut)}
+  .btn{background:var(--acc);color:#03101f;border:0;border-radius:7px;padding:7px 13px;font-weight:600;cursor:pointer;font-size:13px}
+  .btn.ghost{background:transparent;color:var(--mut);border:1px solid var(--line)}
+  footer{border-top:1px solid var(--line);padding:12px 16px;display:flex;gap:8px;max-width:860px;width:100%;margin:0 auto}
+  #q{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:10px 12px;font:inherit;resize:none}
+  a{color:var(--acc)}
+  .empty{color:var(--mut);text-align:center;margin-top:12vh}
+  .empty h2{color:var(--ink);font-weight:600} .chip{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:5px 11px;margin:4px;cursor:pointer;font-size:12.5px}
+</style>
+<header><span style="font-size:18px">✨</span><div><b>Assistant</b> <span class="sub">· your personal AI on AirawatOS</span></div><span id="who"></span></header>
+<div id="log"><div class="empty" id="empty"><h2>How can I help?</h2><div style="color:var(--mut);margin:6px 0 14px">I work across your installed apps — I plan, read your data, and act with your confirmation.</div>
+  <span class="chip">How many documents do I have?</span>
+  <span class="chip">Draft a doc titled “Status” with 3 bullet points about my week</span>
+  <span class="chip">Summarise my most recent document</span></div></div>
+<footer><textarea id="q" rows="1" placeholder="Ask your assistant…"></textarea><button class="btn" id="send">Send</button></footer>
+<script>
+const $=id=>document.getElementById(id); let HIST=[]; let BUSY=false;
+fetch('/session').then(r=>r.json()).then(s=>{$('who').textContent=s.authenticated?('● '+(s.sub||'').split('/').pop()):'';}).catch(()=>{});
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function bubble(role,html){const L=$('log');const e=$('empty');if(e)e.remove();
+  const wrap=document.createElement('div');wrap.className='msg '+(role==='user'?'me':'ai');
+  wrap.innerHTML=`<div class="av">${role==='user'?'🙂':'✨'}</div><div style="min-width:0"><div class="bub">${html}</div></div>`;
+  L.appendChild(wrap);L.scrollTop=L.scrollHeight;return wrap.querySelector('div[style]');}
+async function agent(payload){return fetch('/bridge/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());}
+function renderReply(slot,j){
+  slot.querySelector('.bub').innerHTML=esc(j.reply||'').replace(/\n/g,'<br>')+(j.link?` &nbsp;<a href="${esc(j.link)}" target="_top">Open ↗</a>`:'');
+  if(Array.isArray(j.steps)&&j.steps.length){const t=document.createElement('div');t.className='tools';t.textContent='· used: '+j.steps.map(s=>s.tool).join(', ');slot.appendChild(t);}
+  if(j.propose){const p=document.createElement('div');p.className='propose';
+    p.innerHTML=`<div class="lbl">Proposed action — <b>${esc(j.propose.app)}</b> · ${esc(j.propose.label)}</div>
+      <div style="margin:6px 0 8px;font-size:12.5px;color:var(--mut)">${esc(JSON.stringify(j.propose.args))}</div>`;
+    const ok=document.createElement('button');ok.className='btn';ok.textContent='Confirm';
+    const no=document.createElement('button');no.className='btn ghost';no.textContent='Cancel';no.style.marginLeft='8px';
+    ok.onclick=async()=>{ok.disabled=true;ok.textContent='…';const r=await agent({confirm:{name:j.propose.name,args:j.propose.args}});
+      p.innerHTML='';renderReply(slot,r);HIST.push({role:'assistant',content:r.reply||''});};
+    no.onclick=()=>{p.innerHTML='<span style="color:var(--mut);font-size:12px">Cancelled.</span>';};
+    p.appendChild(ok);p.appendChild(no);slot.appendChild(p);}
+  $('log').scrollTop=$('log').scrollHeight;
+}
+async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(!q)return;$('q').value='';
+  bubble('user',esc(q));HIST.push({role:'user',content:q});BUSY=true;
+  const slot=bubble('ai','<span style="color:var(--mut)">thinking…</span>');
+  try{const j=await agent({message:q,history:HIST.slice(0,-1)});renderReply(slot,j);HIST.push({role:'assistant',content:j.reply||''});}
+  catch(e){slot.querySelector('.bub').textContent='✗ '+e;}BUSY=false;$('q').focus();
+}
+$('send').onclick=()=>send();
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+document.addEventListener('click',e=>{if(e.target.classList.contains('chip'))send(e.target.textContent);});
+</script>

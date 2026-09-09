@@ -1,0 +1,16 @@
+# The PERSONAL AGENT (ADR-0081) — a per-user assistant that plans across the user's installed apps and acts on
+# their behalf via each app's App-Agent tools. It runs as a scoped delegate (the signed-in user's session), so it
+# can only do what the user could; every side-effect is confirmed and attributed component://<app> obo user.
+component_id: ds:airawat:app/personal-assistant
+kind: app
+name: Assistant
+version: 0.1.0
+provider: airawat
+personal: true                 # self-service: any signed-in tenant user; owner is forced to the actor
+icon: "✨"
+summary: Your personal AI assistant — plans across your installed apps and acts on your behalf (with confirm).
+required_schemas: [doc.document]
+writes: []                     # the agent delegates writes to the owning app (e.g. docs), never writes directly
+audience: []
+agent:
+  summary: "Personal orchestrator: discovers your installed app-agents, plans, and delegates with confirm-gated writes."
