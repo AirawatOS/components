@@ -64,6 +64,7 @@
   <span class="t">🛠 Studio</span>
   <select id="proj"></select>
   <span class="ic" id="newProj">＋ Project</span>
+  <span class="ic" id="renProj" title="Rename this project / solution">✎</span>
   <span class="ic" id="delProj" title="Delete this project">🗑</span>
   <span style="margin-left:auto"></span>
   <span class="ic" id="guideBtn" title="New to this? A plain-language guide">❓ Guide</span>
@@ -124,6 +125,7 @@ async function boot(){
   tree();
   $('tgLeft').onclick=()=>$('left').classList.toggle('collapsed');
   $('newProj').onclick=newProject;
+  $('renProj').onclick=renameProject;
   $('delProj').onclick=deleteProject;
   $('specsBtn').onclick=specsBrowser;
   $('guideBtn').onclick=guide;
@@ -390,6 +392,22 @@ async function deleteProject(){
   m.q('#ok').onclick=async()=>{m.q('#ok').textContent='…';let r={};try{r=await post('/bridge/project-delete',{id});}catch(e){}m.close();
     if(r.deleted){SEL=null;TABS=[];FILES={};ACTIVE=null;await boot();bottom('✓ deleted project “'+title+'”');}
     else bottom('✗ '+(r.error||'delete failed'));};
+}
+async function renameProject(){
+  if(!SEL){bottom('No project selected.');return;}
+  const cur=SEL.title||'';
+  const m=modal(`<h3>Rename project / solution</h3>
+    <div class="sub">The display name shown here and on the <b>Marketplace</b> listing. The project id stays the same, so re-running <b>Compose → Solution</b> <b>renames</b> the existing solution (bumps its version) — it does not create a duplicate.</div>
+    <input id="nn" style="width:100%;margin-top:10px;box-sizing:border-box" value="${esc(cur)}" />
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Cancel</button> <button class="btn good" id="ok">Rename</button></div>`);
+  const inp=m.q('#nn'); inp.focus(); try{inp.select();}catch(e){}
+  m.q('#x').onclick=m.close;
+  m.q('#ok').onclick=async()=>{const t=inp.value.trim(); if(!t||t===cur){m.close();return;}
+    SEL.title=t; await save(SEL);
+    const p=PROJECTS.find(x=>x.id===SEL.id); if(p)p.title=t;
+    const sel=$('proj'); if(sel.selectedIndex>=0)sel.options[sel.selectedIndex].textContent=t;   // reflect in the picker
+    m.close(); tree();
+    bottom('✓ renamed to “'+t+'”.'+(SEL.target_solution?'\nRe-run Compose → Solution to update the Marketplace listing “'+SEL.target_solution.split('/').pop()+'” (it bumps the version).':''));};
 }
 function briefPrompt(p){const b=p.brief||{};const j=a=>((a||[]).join(', ')||'—');
   return `Design the solution for "${p.title}". Goal: ${p.goal||'—'}. Users: ${j(b.users)}. Real-world things: ${j(b.entities)}. Data sources: ${j(b.data_sources)}. Decisions to answer: ${j(b.decisions)}. Triggers: ${j(b.triggers)}. Reuse existing components + specs first; propose the LAYERED component graph — drivers for the data sources (domain), engines/skills for the decisions (intelligence), an app for the users (interaction) — and flag any missing specs.`;}
