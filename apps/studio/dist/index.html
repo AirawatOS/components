@@ -176,6 +176,7 @@ function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';co
     ['Open meta.yaml',()=>openFile(ref,'meta.yaml')],
     [isApp?'Preview':'Test',()=>isApp?window.open('/bridge/component-preview?component='+encodeURIComponent(ref),'_blank'):testComp(ref)],
     ['Publish',()=>publishComp(ref)],
+    ['📤 Submit for review',()=>submitForReview(ref)],
     ['✨ Generate code (AI)',()=>{openFile(ref, m.kind==='app'?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}],
   ];
   if(isApp)build.push(['🌐 Languages (i18n)',()=>i18nPanel(ref)]);   // AI-draft + review translations for the app's labels
@@ -315,6 +316,13 @@ async function testComp(ref){bottom('Running '+ref+' …');const r=await post('/
 async function publishComp(ref){bottom('Publishing '+ref+' …');const r=await post('/bridge/project-publish',{component:ref});
   if(r.published){const m=memberFor(ref);if(m){m.status='published';await save(SEL);tree();}bottom('✓ certified (verified='+r.verified+') + published to the Marketplace');}
   else bottom('✗ '+(r.error||'publish failed')+(r.detail?'\n'+r.detail:''));}
+// ADR-0080: instead of publishing directly, a developer SUBMITS the (certified) component for network-steward
+// review; it goes LIVE in the Marketplace only when the steward approves it (Network Console → Publish Requests).
+async function submitForReview(ref){const m=memberFor(ref)||{};const cid=m.component_id||m.id||ref;
+  bottom('Submitting '+cid+' for steward review …');
+  const r=await post('/bridge/publish-request',{component_id:cid,version:m.version||'0.1.0',kind:m.kind||'app',title:m.title||''});
+  if(r.filed)bottom('✓ submitted for review — '+(r.certified?'certified':'⚠ NOT yet certified: run Publish/Test to certify first')+'.\nA network steward approves it in the Network Console → Publish Requests, and it goes live on approval.');
+  else bottom('✗ '+(r.error||r.detail||'submit failed'));}
 // ---------- BOTTOM PANEL ----------
 function bottom(text){const B=$('bottom');B.classList.add('open');B.innerHTML=`<div class="bh"><b>Output</b><span style="margin-left:auto"></span><span class="ic" id="bx">✕</span></div><pre>${esc(text)}</pre>`;$('bx').onclick=()=>B.classList.remove('open');}
 function bottomFix(text,ref,error){const B=$('bottom');B.classList.add('open');
