@@ -15,9 +15,15 @@ here it is a library the pipeline/orchestrator calls so profiled components run 
 
 Env it reads: NETWORK_URL · SECRETS_URL · SECRETS_INTERNAL · CONTAINER_BROKER_URL · AIRAWAT_API · TIMEOUT
 """
-import hashlib, json, os, subprocess, sys, urllib.request
+import hashlib, json, os, subprocess, sys, urllib.request, urllib.parse
 
 NETWORK_URL = os.environ.get("NETWORK_URL", "http://localhost:8090")
+# UNIVERSAL DELIVERY (Runtime-vs-Component split): a component's SOURCE is fetched from the content-addressed
+# filestore and digest-verified at point of use, instead of arriving via the rt-components bind-mount. The heavy
+# shared runtime IMAGE still comes from the container registry (see ENFORCE_IMAGE below) — filestore = code,
+# registry = runtime.
+FILESTORE_URL = os.environ.get("FILESTORE_URL", "http://localhost:8095")
+COMPONENT_CACHE = os.environ.get("COMPONENT_CACHE", "/tmp/airawatos-components")   # writable rehydrate dir
 SECRETS_URL = os.environ.get("SECRETS_URL", "http://localhost:8102")
 SECRETS_INTERNAL = os.environ.get("SECRETS_INTERNAL", "")
 # PLACEMENT NETWORK. In production the runtime container joins the SAME docker network as the kernel and
@@ -90,6 +96,35 @@ def _dir_digest(d):
     return "sha2-256:" + hashlib.sha256(canon).hexdigest()
 
 
+def _fetch_and_verify(cid, source_file_id, cert):
+    """UNIVERSAL DELIVERY point-of-use gate: pull a component's SOURCE tar.gz from the content-addressed
+    filestore and VERIFY its dir-digest == the certificate's evidence_digest BEFORE it may run. Returns the
+    extracted dir on success, or None (REFUSE) on any miss/mismatch — untrusted bytes never run un-verified,
+    so distribution over HTTPS carries no privilege (trust is the digest + the cert, not the transport)."""
+    import io, tarfile, shutil
+    if not source_file_id or not cert:
+        return None
+    name = (cid.rsplit("/", 1)[-1] if cid else str(source_file_id).replace(":", "-"))
+    dest = os.path.join(COMPONENT_CACHE, name)
+    try:
+        blob = urllib.request.urlopen(
+            FILESTORE_URL + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), timeout=60).read()
+        if os.path.isdir(dest):
+            shutil.rmtree(dest, ignore_errors=True)       # never merge over stale bytes
+        os.makedirs(dest, exist_ok=True)
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+            tf.extractall(dest)
+    except Exception as e:
+        print(f"[launcher] source fetch failed for {cid}: {str(e)[:120]}")
+        return None
+    want = cert.get("evidence_digest")
+    got = _dir_digest(dest)
+    if want and got != want:
+        print(f"[launcher] REFUSE {cid}: source digest {got[:22]}… ≠ certified {want[:22]}…")
+        return None
+    return dest
+
+
 def _local_image_id(image):
     """The content id (sha256) of the LOCAL image for `image` — None if it isn't present."""
     try:
@@ -110,9 +145,20 @@ def _materialize(tenant, component, name):
         return None
 
 
-def place(component_dir, run_token, env=None, *, label=""):
-    """Run a component. Returns (returncode, output). runtime.profile ⇒ certified container; else in-process."""
+def place(component_dir, run_token, env=None, *, label="", cid=None, source_file_id=None):
+    """Run a component. Returns (returncode, output). runtime.profile ⇒ certified container; else in-process.
+
+    UNIVERSAL DELIVERY (Runtime-vs-Component split): if the source isn't on-disk and the authorized caller
+    supplied a `source_file_id`, pull+digest-verify it from the marketplace filestore into a writable cache and
+    run from there — no rt-components bind-mount needed. Source already present on-disk (baked / dev) is used
+    as-is. The caller (install/scheduler, which holds auth) resolves the component_asset → source_file_id."""
     env = {k: str(v) for k, v in (env or {}).items()}
+    if source_file_id and not os.path.isfile(os.path.join(component_dir, "meta.yaml")):
+        got = _fetch_and_verify(cid, source_file_id, _resolve_cert(cid) if cid else None)
+        if not got:
+            return 87, (f"REFUSED (universal delivery): could not fetch + digest-verify source for "
+                        f"{label or cid or component_dir} from the filestore.")
+        component_dir = got
     meta = _read_meta(component_dir)
     entry = meta.get("entrypoint", "run.py")
     profile = (meta.get("runtime") or {}).get("profile")
