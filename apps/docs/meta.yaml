@@ -21,3 +21,8 @@ writes: [doc.document]
 roles: []          # personal app → available to every signed-in user (no audience role required)
 
 default_install: true   # part of the base-OS default suite every tenant receives
+# ADR-0081: this app's App-Agent tools — the personal agent discovers + delegates to these
+agent_tools:
+  - {name: list_documents, kind: read, desc: List your documents (titles + ids)}
+  - {name: read_document, kind: read, params: id, desc: Read one document's title and text}
+  - {name: create_document, kind: write, params: "title,brief", desc: Draft and create a document owned by you}

@@ -12,3 +12,6 @@ sandboxed: true
 required_schemas: [platform.inbox_item]
 
 default_install: true   # part of the base-OS default suite every tenant receives
+# ADR-0081: this app's App-Agent tools — the personal agent discovers + delegates to these
+agent_tools:
+  - {name: list_tasks, kind: read, desc: List your open tasks from the Inbox}
