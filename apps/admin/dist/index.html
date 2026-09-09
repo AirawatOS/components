@@ -33,9 +33,20 @@
   .count{color:var(--dim);font-size:12px;margin-left:6px}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#132a17;border:1px solid #238636;color:#3fb950;padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s}
   .toast.show{opacity:1} .toast.err{background:#3d1418;border-color:#8b2c30;color:#ff9b9b}
+  .stbl{width:100%;max-width:920px;border-collapse:collapse;font-size:13px}
+  .stbl th{text-align:left;color:var(--dim);font-weight:600;border-bottom:1px solid var(--line);padding:6px 10px}
+  .stbl td{padding:6px 10px;border-bottom:1px solid #1b2530}
+  .stbl .num{text-align:right;font-variant-numeric:tabular-nums}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  .sub{color:var(--dim);font-size:12.5px}
+  .mini{border:1px solid var(--line);background:#1b2530;color:var(--ink);border-radius:6px;padding:3px 9px;font-size:11.5px;cursor:pointer}
+  .mini:hover{border-color:#2f3d4d}
+  .mini:disabled{opacity:.4;cursor:default}
+  .mini.danger{color:#ff7b72;border-color:#5b2b2b}
+  .mini.danger:hover{background:#2a1a1a;border-color:#ff7b72}
 </style>
 <header><h1>🛡️ Admin</h1><span class="who" id="who"></span></header>
-<div class="tabs"><span class="tab on" data-t="user">By User</span><span class="tab" data-t="role">By Role</span><span class="tab" data-t="requests">Role Requests</span><span class="tab" data-t="apps">App Access</span></div>
+<div class="tabs"><span class="tab on" data-t="user">By User</span><span class="tab" data-t="role">By Role</span><span class="tab" data-t="requests">Role Requests</span><span class="tab" data-t="apps">App Access</span><span class="tab" data-t="usage">Usage</span><span class="tab" data-t="storage">Storage</span></div>
 <div id="view"></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -54,7 +65,106 @@ function boot(){
   });
   render();
 }
-function render(){ TAB==='user'?byUser():TAB==='role'?byRole():TAB==='requests'?requests():apps(); }
+function render(){ TAB==='user'?byUser():TAB==='role'?byRole():TAB==='requests'?requests():TAB==='usage'?usage():TAB==='storage'?storage():apps(); }
+
+// ---- Usage: this tenant's resource consumption, metered at the broker seam (ADR-0079) --------------
+async function usage(){
+  const V=document.getElementById('view');
+  V.innerHTML='<div style="padding:16px 18px;color:var(--dim)">Loading usage…</div>';
+  let rows=[];
+  try{
+    const r=await jpost('/bridge/query',{app_id:'admin',schema:'metering.usage',limit:50000});
+    rows=(r.j&&(r.j.results||r.j.objects||r.j))||[]; rows=rows.map(x=>x.object||x);
+  }catch(e){ rows=[]; }
+  // aggregate per component, summing every unit key we see (schema-open units map)
+  const UNIT_ORDER=['runs','reads','writes','egress_calls','secret_uses','cpu_s','gpu_s','mem_gb_h','inference_calls','tokens','storage_gb_h','egress_bytes'];
+  const byc={}, unitKeys=new Set(); let total={};
+  for(const o of rows){
+    const c=(o.component||'—'), u=(o.units||{});
+    byc[c]=byc[c]||{__runs:0};
+    byc[c].__runs+=1;
+    for(const k in u){ if(typeof u[k]==='number'){ byc[c][k]=(byc[c][k]||0)+u[k]; unitKeys.add(k); total[k]=(total[k]||0)+u[k]; } }
+  }
+  const cols=UNIT_ORDER.filter(k=>unitKeys.has(k)).concat([...unitKeys].filter(k=>!UNIT_ORDER.includes(k)).sort());
+  const comps=Object.keys(byc).sort((a,b)=>(byc[b].__runs)-(byc[a].__runs));
+  const fmt=n=>Math.round(n||0).toLocaleString();
+  if(!rows.length){
+    V.innerHTML=`<div style="padding:16px 18px"><div class="lbl">Usage</div>
+      <div class="empty" style="text-align:left;padding:20px 0">No usage metered yet for this tenant.<br><br>
+      <span class="sub">Usage is recorded at the broker seam (reads / writes / egress / secrets per component run;
+      compute + model calls follow). It appears here as components run under your tenant.</span></div></div>`;
+    return;
+  }
+  const th=cols.map(c=>`<th class="num">${esc(c)}</th>`).join('');
+  const body=comps.map(c=>`<tr><td class="mono">${esc(c.split('/').pop())}</td><td class="num">${fmt(byc[c].__runs)}</td>${cols.map(k=>`<td class="num">${fmt(byc[c][k])}</td>`).join('')}</tr>`).join('');
+  const totalRow=`<tr style="border-top:2px solid var(--line)"><td><b>Total</b></td><td class="num"><b>${fmt(rows.length)}</b></td>${cols.map(k=>`<td class="num"><b>${fmt(total[k])}</b></td>`).join('')}</tr>`;
+  V.innerHTML=`<div style="padding:14px 18px">
+    <div class="lbl">Usage — this tenant, metered at the broker (ADR-0079)</div>
+    <div class="sub" style="margin:-2px 0 12px">${fmt(rows.length)} usage record(s) across ${comps.length} component(s). Reads/writes/egress/secrets are metered per run; compute (cpu/gpu-seconds) and model calls are added by the node-agent + model-gateway.</div>
+    <table class="stbl" style="max-width:none"><tr><th>component</th><th class="num">runs</th>${th}</tr>${body}${totalRow}</table>
+    <p class="sub" style="margin-top:12px;max-width:820px">This is consumption only. <b>Quotas/limits</b> and <b>itemized billing</b> (usage × rate card → invoice you can pay) are later slices of the metering &amp; billing plane.</p></div>`;
+}
+
+// ---- Storage: registry data-lifecycle — monitor per-schema usage + trim history / purge / vacuum ------
+async function storage(){
+  const V=document.getElementById('view');
+  V.innerHTML='<div style="padding:16px 18px;color:var(--dim)">Loading registry usage…</div>';
+  const r=await jpost('/bridge/registry-usage',{});
+  if(!r.ok){ V.innerHTML='<div style="padding:16px 18px;color:var(--dim)">Not authorized (admin only) — '+r.status+'</div>'; return; }
+  const d=r.j, mb=b=>Math.round((b||0)/1048576);
+  const rows=(d.schemas||[]).map(s=>`<tr>
+      <td class="mono">${esc(s.schema)}</td>
+      <td class="num">${(s.versions||0).toLocaleString()}</td>
+      <td class="num">${(s.live||0).toLocaleString()}</td>
+      <td class="num" style="color:var(--dim)">${(s.history||0).toLocaleString()}</td>
+      <td class="num">${mb(s.bytes).toLocaleString()} MB</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="mini" data-trim="${esc(s.schema)}"${s.history?'':' disabled'}>Trim history</button>
+        <button class="mini danger" data-purge="${esc(s.schema)}">Purge</button></td></tr>`).join('');
+  V.innerHTML=`<div style="padding:14px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <div class="sub">Scope <b>${esc(d.scope)}</b> · ${(d.total_versions||0).toLocaleString()} versions · ${(d.total_live||0).toLocaleString()} live · <b>${mb(d.total_bytes).toLocaleString()} MB</b></div>
+      <span><button class="mini" id="vac">↻ Vacuum (reclaim)</button> <span id="vacmsg" class="sub"></span></span></div>
+    <table class="stbl"><tr><th>schema</th><th class="num">versions</th><th class="num">live</th><th class="num">history</th><th class="num">size</th><th></th></tr>${rows}</table>
+    <p class="sub" style="margin-top:10px;max-width:820px">“Trim history” drops <b>superseded</b> versions and keeps the live/current data — safe reclaim. “Purge” removes <b>every</b> version of a schema — only for log/event schemas you have already archived.</p></div>`;
+  document.querySelectorAll('[data-trim]').forEach(b=>b.onclick=()=>lifecycle('trim_history',b.dataset.trim));
+  document.querySelectorAll('[data-purge]').forEach(b=>b.onclick=()=>lifecycle('purge',b.dataset.purge));
+  document.getElementById('vac').onclick=vacuum;
+  // cold archives (manifests) — the shard files are jsonl.gz in the filestore, directly usable for ML
+  jpost('/bridge/registry-archives',{}).then(a=>{
+    const arr=(a.j&&a.j.archives)||[]; if(!arr.length) return;
+    const rows=arr.map(m=>`<tr><td class="mono">${esc(m.archived_schema||'')}</td><td class="num">${(m.rows||0).toLocaleString()}</td><td>${esc(m.mode||'')}</td><td class="sub">${esc((m.format||'jsonl.gz')+' · '+((m.shards||[]).length)+' file(s)')}</td><td class="sub">${esc(m.archived_at||'')}</td></tr>`).join('');
+    const box=document.createElement('div'); box.style.padding='0 18px 18px';
+    box.innerHTML=`<p class="sub" style="margin:8px 0 6px;letter-spacing:.05em;text-transform:uppercase">Cold archives (filestore · jsonl.gz — usable for ML / restore)</p>`
+      +`<table class="stbl"><tr><th>schema</th><th class="num">rows</th><th>mode</th><th>files</th><th>archived</th></tr>${rows}</table>`;
+    document.getElementById('view').appendChild(box);
+  }).catch(()=>{});
+}
+async function lifecycle(mode,schema){
+  const msg = mode==='purge'
+    ? `PURGE “${schema}”?\n\nEvery version is first ARCHIVED to cold storage (gzipped JSONL in the filestore, with a manifest) and only then deleted — so nothing is lost. Use this for log/event schemas you no longer need hot.`
+    : `Trim superseded history of “${schema}”?\n\nThe live/current data is kept; only old (replaced) versions are removed.`;
+  if(!confirm(msg)) return;
+  const r=await jpost('/bridge/registry-archive',{schema,mode});
+  if(!r.ok){ toast((r.j&&r.j.detail)||('failed '+r.status),true); return; }
+  if(!(r.j&&r.j.started)){ toast(`${schema}: ${((r.j&&r.j.deleted)||0).toLocaleString()} rows trimmed`); storage(); return; }
+  toast(`${schema}: archiving → purging…`);                    // async: purge streams to cold first, then deletes
+  const poll=async()=>{ const s=await jpost('/bridge/registry-archive',{status:true}), j=(s.j||{});
+    if(j.running){ setTimeout(poll,4000); return; }
+    toast(j.error?('archive error: '+j.error):`${schema}: archived ${(j.archived_rows||0).toLocaleString()} → purged ${(j.deleted||0).toLocaleString()}`, !!j.error);
+    storage(); };
+  setTimeout(poll,3000);
+}
+async function vacuum(){
+  const m=document.getElementById('vacmsg');
+  const r=await jpost('/bridge/registry-vacuum',{});
+  if(!r.ok){ toast((r.j&&r.j.detail)||('vacuum failed '+r.status),true); return; }
+  m.textContent=' vacuum running…';
+  const poll=async()=>{ const s=await jpost('/bridge/registry-vacuum',{status:true}), j=(s.j||{});
+    if(j.running){ m.textContent=' vacuum running…'; setTimeout(poll,5000); }
+    else m.textContent = j.error?(' vacuum error'):(' vacuum complete ✓'); };
+  setTimeout(poll,3000);
+}
 
 // ---- Role Requests: file a request for a new canonical role; the standards body decides -----------
 async function requests(){
