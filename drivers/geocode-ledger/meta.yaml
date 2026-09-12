@@ -11,7 +11,7 @@ confinement_min: L1
 reads: [tax.assessment]
 writes: [tax.assessment]
 egress:
-  - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/geocode-ledger (+https://airawat.org; contact@airawat.org)" }
+  - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/geocode-ledger (+https://airawat.org; manishsv@gmail.com)" }
 config: [CITY_HINT, MAX, GEOCODER_URL]
 sources:
   - { ref: "ds:airawat:ref/source/nominatim", host: nominatim.openstreetmap.org, provides: [tax.assessment] }

@@ -1,10 +1,12 @@
 # A DRIVER (kind=driver). Confined by the Component Host — its only I/O is the broker. It reads the AOI
-# (space.aoi) for the bbox and ingests POINT air-quality observations from the ground-station networks
-# into air.sensor_reading. Real mode egresses to CPCB (data.gov.in) + OpenAQ with tenant keys the broker
-# injects; the reference build synthesizes a plausible station field offline so the vertical runs keyless.
+# (space.aoi) for the bbox and ingests POINT air-quality observations from the ground-station networks into
+# air.sensor_reading. Two REAL sources (SOURCE env; default cpcb,openaq): CPCB CAAQMS (data.gov.in — India's
+# regulatory network, the PM2.5 ground truth of ADR-0073) with CPCB_API_KEY injected as the api-key query
+# param, and OpenAQ v3 with OPENAQ_API_KEY as X-API-Key. NO synthetic fallback — a source that has no key /
+# is unreachable is skipped; if none yield data the run fails loudly and writes nothing.
 component_id: ds:airawat:driver/air-sensors
 kind: driver
-version: 0.1.0
+version: 0.2.1   # 0.2.1: OpenAQ considerate-use — 30/min (≤2000/hr) + pre-emptive x-ratelimit-remaining pause
 provider: ds:airawat:developer
 display_name: Air Sensors
 entrypoint: run.py
@@ -14,9 +16,10 @@ writes: [air.sensor_reading]
 # Structured egress: the broker enforces the per-host rate cap AND presents the declared User-Agent to
 # the vendor (PLAT-EGRESS-004 — identify yourself; OpenAQ suspends anonymous/abusive clients).
 egress:
-  - { host: api.openaq.org,  rate_per_min: 60, user_agent: "AirawatOS/air-sensors (+https://airawat.org; contact@airawat.org)" }
-  - { host: api.data.gov.in, rate_per_min: 40, user_agent: "AirawatOS/air-sensors (+https://airawat.org; contact@airawat.org)" }
+  - { host: api.openaq.org,  rate_per_min: 30, user_agent: "AirawatOS/air-sensors (+https://airawat.org; manishsv@gmail.com)" }   # 30/min → ≤1,800/hr, safely under OpenAQ's 2,000/hr key cap (considerate-use)
+  - { host: api.data.gov.in, rate_per_min: 40, user_agent: "AirawatOS/air-sensors (+https://airawat.org; manishsv@gmail.com)" }
 secrets: [OPENAQ_API_KEY, CPCB_API_KEY]
+config: [SOURCE, MAX_LOCATIONS, AS_OF_DATE, RESOURCE_ID, PAGE_LIMIT]   # SOURCE=cpcb,openaq (default); RESOURCE_ID=CPCB dataset id
 # Data-source DISCLOSURE: which governed ref.source each egress feeds. The platform renders these records'
 # attribution/licence wherever the derived data is shown (Component app tab; app-host chrome; Data App).
 sources:

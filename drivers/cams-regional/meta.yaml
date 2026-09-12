@@ -1,0 +1,26 @@
+# A DRIVER (kind=driver) — REGIONAL BACKGROUND AIR COMPOSITION from CAMS (ADR-0073 M2, the first of the two
+# strongest PM2.5 predictors). CAMS (Copernicus Atmosphere Monitoring Service) is the ECMWF global atmospheric
+# composition analysis/forecast — the large-scale context term a local PM2.5 model needs (§23.6). We source it
+# KEYLESS via the Open-Meteo air-quality API, which serves CAMS global (~40 km) directly, and associate each
+# coarse grid value to H3 cells by NEAREST sample — never upsampled, always carrying native_resolution_km so
+# downstream (pm25-features) treats it as the coarse regional field it is. Writes cell.cams (pm2.5/pm10/no2/o3/so2,
+# µg/m³) for the latest available UTC hour. Real CAMS only — fetch or fail loudly, no synthetic fallback.
+# Runs as a host subprocess (keyless HTTP via the broker), like rainfall-openmeteo / weather-forecast.
+component_id: ds:airawat:driver/cams-regional
+kind: driver
+version: 0.2.0   # 0.2.0 (M3): also write a coarse hourly SERIES at sample points (…/cell/cams/series/…) for temporal-lag features
+provider: ds:airawat:developer
+display_name: Regional Background Air (CAMS / Open-Meteo)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi, cell.cams]          # cell.cams read = RESUME (skip cells already written for this hour)
+writes: [cell.cams]
+egress:
+  - { host: air-quality-api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/cams-regional (+https://airawat.org; manishsv@gmail.com)" }
+config: [GRID, HOUR]                   # GRID=points/side (default 5); HOUR=ISO UTC hour (default: latest available)
+sources:
+  - { ref: "ds:airawat:ref/source/cams", host: air-quality-api.open-meteo.com, provides: [cell.cams] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.cams }
+  - { verb: write, scope: cell.cams }

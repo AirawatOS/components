@@ -3,7 +3,7 @@
 # (earthengine-api) via the runtime-manager; cert-checked + image-locked. Real Open Buildings only.
 component_id: ds:airawat:driver/buildings-openbuildings
 kind: driver
-version: 0.1.0
+version: 0.2.0   # 0.2.0 (ADR-0073 M3.4): + per-cell mean_height_m + built_volume_m3 from Open Buildings 2.5D Temporal
 provider: ds:airawat:developer
 display_name: Buildings (Google Open Buildings / GEE)
 entrypoint: run.py

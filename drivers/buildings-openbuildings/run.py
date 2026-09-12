@@ -29,8 +29,9 @@ BATCH = int(os.environ.get("BATCH", "150"))
 CONF = float(os.environ.get("CONF", "0.70"))
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/google-open-buildings"
-DERIVED = ["gee:GOOGLE/Research/open-buildings/v3/polygons"]
+DERIVED = ["gee:GOOGLE/Research/open-buildings/v3/polygons", "gee:GOOGLE/Research/open-buildings-temporal/v1"]
 OB_ASSET = "GOOGLE/Research/open-buildings/v3/polygons"
+OB_TEMPORAL = "GOOGLE/Research/open-buildings-temporal/v1"   # per-pixel building_height (m) — 2.5D
 
 
 def call(path, body):
@@ -130,13 +131,18 @@ def main():
     rect = ee.Geometry.Rectangle(bbox)
     fc = ee.FeatureCollection(OB_ASSET).filterBounds(rect).filter(ee.Filter.gte("confidence", CONF))
     built = fc.reduceToImage(["area_in_meters"], ee.Reducer.first()).gt(0).unmask(0).rename("built")   # 1 where a footprint covers the pixel
+    # M3.4: add per-pixel building HEIGHT from Open Buildings 2.5D Temporal (building_height band, metres). Masked to
+    # building pixels so the per-cell zonal MEAN is the mean height of the buildings, not diluted by empty ground.
+    bh = ee.ImageCollection(OB_TEMPORAL).select("building_height").filterBounds(rect).mosaic()
+    bh = bh.updateMask(bh.gt(0)).rename("bh")
+    img = built.addBands(bh)                                     # 2 bands: built (0/1 coverage), bh (m, building pixels only)
 
     written = failed = 0
     nb = (len(cells) + BATCH - 1) // BATCH
     for i in range(0, len(cells), BATCH):
         chunk = cells[i:i + BATCH]
         fcoll = ee.FeatureCollection([ee.Feature(ee.Geometry.Polygon([cell_boundary_lonlat(hc)]), {"h3": hc}) for hc in chunk])
-        red = built.reduceRegions(collection=fcoll, reducer=ee.Reducer.mean(), scale=4)   # mean of the mask = footprint coverage
+        red = img.reduceRegions(collection=fcoll, reducer=ee.Reducer.mean(), scale=4)   # per-band mean: built→coverage, bh→mean height
         rows = None
         for attempt in range(5):
             try:
@@ -150,24 +156,31 @@ def main():
             failed += 1; continue
         for f in rows:
             p = f.get("properties") or {}
-            hc = p.get("h3"); cov = p.get("mean")
+            hc = p.get("h3"); cov = p.get("built")
             if hc is None or not isinstance(cov, (int, float)):
                 continue                                          # no OB coverage computed for this cell → skip, don't fabricate
             la, lo = h3.cell_to_latlng(hc)
             if not (bbox[0] <= lo <= bbox[2] and bbox[1] <= la <= bbox[3]):
                 continue                                          # AOI membership guard
             area_km2 = h3.cell_area(hc, unit="km^2")
+            covf = max(0.0, min(1.0, float(cov)))
+            built_area = round(covf * area_km2 * 1e6, 1)
+            bh_mean = p.get("bh")                                 # mean building height (m) over the cell's building pixels
+            mean_h = round(float(bh_mean), 2) if isinstance(bh_mean, (int, float)) else None
             fact = {
                 "schema": "cell.buildings", "id": f"ds:{TENANT}:cell/buildings/{hc}",
                 "cell_ref": {"h3_id": hc, "resolution": res, "centroid": [round(lo, 6), round(la, 6)],
                              "boundary": [[round(x, 6), round(y, 6)] for (x, y) in cell_boundary_lonlat(hc)]},
-                "building_coverage": round(max(0.0, min(1.0, float(cov))), 4),
-                "built_area_m2": round(max(0.0, min(1.0, float(cov))) * area_km2 * 1e6, 1),
-                "method": "open-buildings-v3", "source_ref": SRC, "layer": "L2", "confidence": 0.85,
+                "building_coverage": round(covf, 4),
+                "built_area_m2": built_area,
+                "mean_height_m": mean_h,
+                "built_volume_m3": round(built_area * mean_h, 1) if mean_h is not None else None,
+                "method": "open-buildings-v3+temporal-height", "source_ref": SRC, "layer": "L2", "confidence": 0.85,
                 "derived_from": DERIVED,
-                "prov": {"method": "open-buildings-v3", "confidence": 0.85, "source_ref": SRC,
+                "prov": {"method": "open-buildings-v3+temporal-height", "confidence": 0.85, "source_ref": SRC,
                          "derived_from": DERIVED, "min_footprint_confidence": CONF, "observed_at": NOW},
                 "observed_at": NOW}
+            fact = {k: v for k, v in fact.items() if v is not None}   # omit unset optionals (house rule R4)
             call("/v1/write", {"scope": "cell.buildings", "id": fact["id"], "object": fact,
                                "valid_time": {"from": NOW}, "asserted_at": NOW})
             written += 1

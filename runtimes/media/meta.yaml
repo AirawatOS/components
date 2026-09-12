@@ -1,0 +1,39 @@
+# A RUNTIME PROFILE (ADR-0030). The MEDIA toolchain — ffmpeg, for components that pull frames or
+# segments off a camera. Components declare `runtime.profile: media`.
+#
+# Why its own profile rather than ffmpeg in an existing image:
+#   * the shared REFERENCE image runs ~9 platform services; ffmpeg there is 60MB for one component's
+#     benefit, and placement does not use that image anyway;
+#   * `geospatial` and `earth-observation` are certified with pinned image_digests that the launcher
+#     verifies (LAUNCHER_REQUIRE_CERTIFIED_IMAGE=1). Rebuilding either to add ffmpeg changes its digest
+#     and forces RE-CERTIFICATION of every driver pinned to it — unrelated, working components.
+# A profile keeps the blast radius to components that ask for it. The VMS recorder, the HLS packager and
+# the detection engine will all want this same toolchain.
+component_id:   ds:airawat:runtime/media           # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
+kind:           runtime
+version:        0.1.0
+provider:       ds:airawat:developer
+implements:     platform.runtime_invoke@0.1.0      # the governed placement interface (ADR-0058)
+runtime_id:     media
+profile:        media
+analytics_tier: descriptive                        # it observes; it does not infer
+display_name:   Media (ffmpeg · RTSP frame + segment capture)
+image:          manishsv/airawatos-runtime-media:0.1.0
+# The CERTIFIED image content id — the launcher runs ONLY an image whose LOCAL id equals this, checked
+# on the host where placement happens (`docker image inspect --format '{{.Id}}'`).
+#
+# CAVEAT, learned the hard way: this is the daemon's image ID, not a registry manifest digest, and the
+# two differ by image-store implementation. The same amd64 image reports
+#   bd1cda46…  on a classic dockerd (EC2)
+#   68dd0b15…  on Docker Desktop's containerd store (a dev Mac)
+# So this value is correct for the CLASSIC-store hosts that actually place components. A dev machine on
+# the containerd store will not match it — which is a portability wrinkle in the design, not a typo here.
+image_digest:   sha256:bd1cda4678a72d0c5d7f6d781b4e04ea4e854d6539147af91f47c944338279e8
+provides:       [ffmpeg]
+isolation:      shared
+confidential:   false
+level:          L2
+# NOTE (ADR-0077): a component on this profile opens an RTSP socket DIRECTLY — that traffic does not go
+# through the broker, which speaks HTTP. Placed containers join the stack network, so a fixture or camera
+# on that network is reachable; a camera on a separate VLAN needs the per-session data-plane grant
+# (ADR-0077 slice 5) before this profile can reach it.

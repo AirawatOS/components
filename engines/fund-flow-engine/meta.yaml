@@ -1,0 +1,36 @@
+# FUND-FLOW ENGINE (kind=engine) — public-finance lifecycle over the double-entry core.
+# Advances (disburse → utilize → LIQUIDATE → reconcile) so "outstanding / unliquidated balance" is a tracked
+# state (HRT Scenario 3 + Indicator 4); and multi-stage fund-flow (approved→allocated→released→committed→paid→
+# expended) so "where is the money stuck?" is answerable (HRT Scenario 1). Composes finance-engine for every
+# balanced posting. Writes attributed component://fund-flow-engine (it holds the finance.advance/fund_flow grants).
+component_id: ds:airawatdeveloper:engine/fund-flow-engine
+kind: engine
+version: 0.2.2   # retrofit: re-published via the Studio project-publish path (green Test + source bundle)
+                 #        under `implements:` so certify's governed-interfaces check binds them (govern_interfaces.py).
+provider: ds:airawat:developer
+display_name: Fund-Flow Engine
+entrypoint: run.py
+# The advance + flow verbs, governed as signed network.interface records (ADR-0058). `implements:` = the governed
+# list certify checks; `verbs:` = the machine-checkable map from each run.py HANDLERS key (kebab) to its governed id
+# (dot), verified by tools/verb_conformance.py. `verbs_exempt:` = handlers intentionally NOT part of the governed
+# substitutable surface (here: hrt-summary, a report assembly, not an advance/flow action).
+implements:
+  - finance.flow_stamp@0.1.0
+  - finance.flow_status@0.1.0
+  - finance.advance_disburse@0.1.0
+  - finance.advance_liquidate@0.1.0
+  - finance.advance_reconcile@0.1.0
+  - finance.advance_outstanding@0.1.0
+verbs:
+  flow-stamp: finance.flow_stamp@0.1.0
+  flow-status: finance.flow_status@0.1.0
+  advance-disburse: finance.advance_disburse@0.1.0
+  advance-liquidate: finance.advance_liquidate@0.1.0
+  advance-reconcile: finance.advance_reconcile@0.1.0
+  advance-outstanding: finance.advance_outstanding@0.1.0
+verbs_exempt:
+  - hrt-summary      # HRT watchtower read (report assembly) — not an advance/flow action
+
+required_schemas: [finance.account, finance.advance, finance.fund_flow, finance.budget, finance.transaction]
+reads: [finance.account, finance.advance, finance.fund_flow, finance.budget, finance.transaction]
+writes: [finance.advance, finance.fund_flow]

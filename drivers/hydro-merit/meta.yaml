@@ -5,7 +5,7 @@
 # Real MERIT Hydro only — no synthetic fallback.
 component_id: ds:airawat:driver/hydro-merit
 kind: driver
-version: 0.1.0
+version: 0.2.2   # 0.2.2: flood_susceptibility now uses MEAN HAND per cell (was MIN, which saturated the whole map at ~100% since every 90m cell touches a stream); real low→high ground gradient
 provider: ds:airawat:developer
 display_name: Hydrology (MERIT Hydro / GEE)
 entrypoint: run.py

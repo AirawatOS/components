@@ -1,0 +1,18 @@
+# FUNDER CONSOLE (kind=app) — the funding-agency face of ADR-0072. For a funder tenant (MoHUA / HUDD) it shows the
+# programmes it publishes, the awards it has committed, and — the federated bit — the FUNDING STACK per proposal
+# aggregated ACROSS co-funders' own registries (cross-tenant read). It drives the funding-engine to publish a
+# programme, issue an award, and RELEASE a tranche — gated: the release refuses until it can read the implementer's
+# verified milestone across the tenant boundary (information-gates-money). Reads its own funding records; the
+# cross-tenant reads + writes ride the engine's grant.
+component_id: ds:airawatdeveloper:app/funder-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Funder Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [funding.program, funding.award, funding.pledge, project.proposal, project.outcome]
+reads: [funding.program, funding.award, funding.pledge, project.proposal, project.outcome]
+writes: []
+roles: [platform.tenant-admin]

@@ -1,0 +1,52 @@
+# FUNDING ENGINE (ADR-0072 funder side). The information-gates-money loop for a funding agency. Verbs:
+#   funding-publish-program  — a funder publishes a funding.program (envelope + eligibility + CO-FUNDING structure).
+#   funding-award            — issue a signed funding.award (a funder's share) toward a proposal; awards STACK.
+#   funding-stack            — read: Σ committed awards vs the proposal ask → funded? (the 60:40 braid check).
+#   funding-release-tranche  — GATED release: refuses unless a VERIFIED MILESTONE exists (project.outcome / a named
+#                              milestone_ref); on pass, posts the tranche as a REVENUE finance.transaction into the
+#                              project ledger (composes finance-engine). Money cannot move until information moves.
+# Records live in the implementer's registry with funder as an attribute; true separate-tenant funders (records in
+# MoHUA/HUDD's own realm via the aggregator-lane grant) are the remaining infra step (ADR-0072 S3a).
+component_id: ds:airawatdeveloper:engine/funding-engine
+kind: engine
+version: 0.5.2   # retrofit: re-published via the Studio project-publish path (green Test + source bundle)
+                 #        under `implements:` so certify's governed-interfaces check binds them (govern_interfaces.py).
+                 # 0.4.0: funding-commit-revenue — roll awards into the project budget as committed revenue
+provider: ds:airawat:developer
+display_name: Funding Engine
+entrypoint: run.py
+# The federated funding verbs, governed as signed network.interface records (ADR-0058). `implements:` is the
+# governed list certify checks; `verbs:` is the machine-checkable map from each run.py HANDLERS key (kebab) to its
+# governed id (dot) — verified by tools/verb_conformance.py so a handler can't ship ungoverned. `verbs_exempt:`
+# lists handlers intentionally NOT part of the governed substitutable surface (here: the welfare need-aggregation
+# verbs, deferred to a welfare-domain governance slice).
+implements:
+  - funding.publish_program@0.1.0
+  - funding.award@0.1.0
+  - funding.stack@0.1.0
+  - funding.release_tranche@0.1.0
+  - funding.record_receipt@0.1.0
+  - funding.received@0.1.0
+  - funding.subscribe@0.1.0
+  - funding.revoke_subscription@0.1.0
+  - funding.milestone@0.1.0
+  - funding.monitor@0.1.0
+  - funding.commit_revenue@0.1.0
+verbs:
+  funding-publish-program: funding.publish_program@0.1.0
+  funding-award: funding.award@0.1.0
+  funding-stack: funding.stack@0.1.0
+  funding-release-tranche: funding.release_tranche@0.1.0
+  funding-record-receipt: funding.record_receipt@0.1.0
+  funding-received: funding.received@0.1.0
+  funding-subscribe: funding.subscribe@0.1.0
+  funding-revoke-subscription: funding.revoke_subscription@0.1.0
+  funding-milestone: funding.milestone@0.1.0
+  funding-monitor: funding.monitor@0.1.0
+  funding-commit-revenue: funding.commit_revenue@0.1.0
+verbs_exempt:
+  - need-publish     # welfare need aggregation — deferred to a welfare-domain governance slice
+  - need-rollup
+required_schemas: [funding.program, funding.award, funding.pledge, funding.progress_grant, project.proposal, project.outcome, finance.budget, finance.transaction, welfare.need_rollup, welfare.priority]
+reads:  [funding.program, funding.award, funding.pledge, funding.progress_grant, project.proposal, project.outcome, project.output, finance.budget, finance.transaction, finance.account, welfare.need_rollup, welfare.priority]
+writes: [funding.program, funding.award, funding.pledge, funding.progress_grant, welfare.need_rollup, finance.budget]

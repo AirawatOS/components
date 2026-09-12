@@ -5,9 +5,17 @@
 # the engine needs no model access. Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/mail-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Mail Engine
 entrypoint: run.py
+implements:
+  - mail.get@0.1.0
+  - mail.list@0.1.0
+  - mail.send@0.1.0
+verbs:
+  mail-list: mail.list@0.1.0
+  mail-send: mail.send@0.1.0
+  mail-get: mail.get@0.1.0
 required_schemas: [mail.message]
 writes: [mail.message]

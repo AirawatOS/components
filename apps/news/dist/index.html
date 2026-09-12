@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>News</title>
+<style>
+  :root{--bg:#0b1420;--panel:#0e1c2a;--edge:#22344a;--ink:#e6edf5;--muted:#b7c6d6;--dim:#8aa0b6;--accent:#38bdf8}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:820px;margin:0 auto;padding:20px 16px 64px}
+  h1{font-size:20px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 16px}
+  .bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+  .chip{border:1px solid var(--edge);background:transparent;color:var(--muted);border-radius:999px;
+        padding:4px 12px;font-size:12.5px;cursor:pointer;line-height:1.4;white-space:nowrap}
+  .chip:hover{border-color:var(--accent);color:var(--ink)}
+  .chip.on{background:var(--accent);color:#04121f;border-color:var(--accent);font-weight:600}
+  .item{border:1px solid var(--edge);border-radius:11px;padding:13px 15px;margin:0 0 11px;background:var(--panel)}
+  .item .hd{font-weight:600;font-size:15px}
+  .item a{color:var(--ink);text-decoration:none}.item a:hover{color:var(--accent)}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:7px;font-size:12px;color:var(--dim)}
+  .j{text-transform:capitalize;font-weight:600;color:var(--muted)}
+  .tag{background:#13273b;border-radius:5px;padding:1px 8px;font-size:11px;color:var(--accent)}
+  .sum{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.5}
+  .empty{color:var(--dim);padding:34px 0;text-align:center}
+</style></head>
+<body><div class="wrap">
+  <h1><span>📰</span> News</h1>
+  <p class="sub" id="sub">Loading…</p>
+  <div class="bar" id="jbar"></div>
+  <div class="bar" id="tbar"></div>
+  <div id="list"></div>
+</div>
+<script>
+const APPID="news";                                          // MUST match the CERTIFIED short name, not the CID
+let ALL=[], jsel="", tsel="";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+async function load(){
+  const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({app_id:APPID,schema:"news.item",filter:{}})});
+  if(!r.ok) throw new Error("query "+r.status);
+  const d=await r.json();
+  return (d.results||d.rows||d.items||[]).map(x=>x.object||x);
+}
+function chipbar(id,vals,cur,on){
+  const el=document.getElementById(id); el.innerHTML="";
+  [["","All"]].concat(vals.map(v=>[v,v])).forEach(([v,lab])=>{
+    const b=document.createElement("button"); b.className="chip"+(v===cur?" on":"");
+    b.textContent=lab; b.onclick=()=>on(v); el.appendChild(b);
+  });
+}
+function render(){
+  const jl=[...new Set(ALL.map(o=>o.jurisdiction).filter(Boolean))].sort();
+  const tl=[...new Set(ALL.flatMap(o=>o.topics||[]))].sort();
+  chipbar("jbar",jl,jsel,v=>{jsel=v;render();});
+  chipbar("tbar",tl,tsel,v=>{tsel=v;render();});
+  let rows=ALL.filter(o=>(!jsel||o.jurisdiction===jsel)&&(!tsel||(o.topics||[]).includes(tsel)));
+  rows.sort((a,b)=>String(b.published_at||"").localeCompare(String(a.published_at||"")));
+  const list=document.getElementById("list");
+  document.getElementById("sub").textContent=ALL.length?
+    (ALL.length+" updates · "+jl.length+" places · "+tl.length+" topics"):"No news yet.";
+  if(!rows.length){list.innerHTML='<p class="empty">No news items match this filter.</p>';return;}
+  list.innerHTML=rows.slice(0,150).map(o=>
+    '<div class="item">'+
+      '<div class="hd"><a href="'+esc(o.url)+'" target="_blank" rel="noopener">'+esc(o.title)+'</a></div>'+
+      '<div class="row"><span class="j">'+esc(o.jurisdiction||"")+'</span>'+
+        '<span>'+esc(o.source||"")+'</span><span>'+esc((o.published_at||"").slice(0,10))+'</span>'+
+        (o.topics||[]).map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div>'+
+      (o.summary?'<div class="sum">'+esc(o.summary.slice(0,220))+'</div>':'')+
+    '</div>').join("");
+}
+load().then(r=>{ALL=r;render();}).catch(e=>{
+  document.getElementById("sub").textContent="";
+  document.getElementById("list").innerHTML='<p class="empty">Could not load news ('+esc(e.message||e)+').</p>';
+});
+</script>
+</body></html>

@@ -1,0 +1,22 @@
+# An APP (kind=app) — the operator's camera view. Holds NO component authority (PLAT-HOST-005): it gets
+# no run-token and no registry handle, reads its three governed schemas through the host's /bridge/query
+# as the SIGNED-IN USER, and gets frame bytes from the host's /media/frame/<id> seam — which decides per
+# request whether this user may view that camera and records every attempt as prov.media_session
+# (ADR-0077 Tier 1). The app never sees the file store and never holds a credential.
+#
+# This shows FRAMES on an interval, not live video. Live video is the media plane proper (ADR-0077
+# slice 6) and needs HLS/WebRTC packaging, a rolling segment store, and per-segment authorisation.
+# Do not point this app at an unauthenticated stream to fake it — a VMS whose live view has no access
+# control is very hard to walk back once operators depend on it.
+component_id: ds:airawatdeveloper:app/camera-view
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Camera View
+icon: 📹
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [device.camera, media.frame, device.stream_health]
+writes: []
+roles: [safety.incident-commander, safety.ground-marshal]

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MoSPI Statistics</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#141a22; --muted:#5b6675; --line:#e4e8ee;
+  --accent:#1f5eff; --accent2:#0b8a5b; --chip:#eef2f8; --chipink:#2a3646; --shadow:0 1px 3px rgba(20,26,34,.06);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f141b; --panel:#161d27; --ink:#e8edf3; --muted:#9aa6b4; --line:#26303c;
+  --accent:#5b8bff; --accent2:#3fd39a; --chip:#1c2530; --chipink:#c6d2df; --shadow:none;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:18px 18px 40px}
+header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+header h1{font-size:20px;margin:0;letter-spacing:-.2px}
+header .sub{color:var(--muted);font-size:12.5px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 10px}
+.tab{border:1px solid var(--line);background:var(--panel);color:var(--chipink);border-radius:999px;
+  padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px}
+.tab[aria-selected=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.tab .n{opacity:.7;font-weight:500;margin-left:5px;font-size:11.5px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:16px;margin-top:12px}
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;min-width:150px;flex:1}
+.ctl label{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+select{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;
+  padding:8px 10px;font-size:13px;cursor:pointer;width:100%}
+.kpis{display:flex;gap:22px;flex-wrap:wrap;margin:2px 2px 10px}
+.kpi .v{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.kpi .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.kpi .d.up{color:var(--accent2)} .kpi .d.dn{color:#d1495b}
+.title{font-weight:650;font-size:15px;margin:2px 0 2px} .title small{color:var(--muted);font-weight:500}
+svg{width:100%;height:300px;display:block;overflow:visible}
+.axis{stroke:var(--line)} .grid{stroke:var(--line);stroke-dasharray:2 4;opacity:.7}
+.line{fill:none;stroke:var(--accent);stroke-width:2.2} .dot{fill:var(--accent)}
+.tick{fill:var(--muted);font-size:10.5px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.tablewrap{max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px}
+.muted{color:var(--muted)} .empty{padding:40px;text-align:center;color:var(--muted)}
+footer{margin-top:18px;color:var(--muted);font-size:11.5px;line-height:1.6}
+footer b{color:var(--ink)}
+.attrib{display:inline-block;background:var(--chip);color:var(--chipink);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📊 MoSPI Statistics</h1>
+    <span class="sub">India's official statistics — sourced from the MoSPI eSankhyiki open API</span>
+  </header>
+  <div class="tabs" id="tabs"></div>
+  <div class="card">
+    <div class="controls" id="controls"></div>
+  </div>
+  <div class="card" id="view">
+    <div class="empty">Loading…</div>
+  </div>
+  <footer>
+    <span class="attrib">Source: MoSPI eSankhyiki</span> &nbsp; Data © Ministry of Statistics &amp; Programme
+    Implementation, Government of India. Retrieved via <b>esankhyiki.mospi.gov.in</b>. Figures are official
+    releases (Provisional/Final as marked); this app is a read-only viewer over governed, attributed records.
+  </footer>
+</div>
+<script>
+const DATASETS = [
+  {id:"CPI",  label:"CPI",  full:"Consumer Price Index", schema:"stat.price_index",
+     value:"index", v2:"inflation_pct", v2label:"YoY inflation", unit:"Index (2012=100)",
+     facets:[["sector","Sector"],["group","Group"],["subgroup","Sub-group"]]},
+  {id:"WPI",  label:"WPI",  full:"Wholesale Price Index", schema:"stat.series",
+     value:"value", v2:null, unit:"Index (2011-12=100)", facets:[["category","Major group"]]},
+  {id:"IIP",  label:"IIP",  full:"Index of Industrial Production", schema:"stat.series",
+     value:"value", v2:"value2", v2label:"Growth %", unit:"Index (2011-12=100)",
+     facets:[["category","Type"],["subgroup","Category"]]},
+  {id:"NAS",  label:"NAS",  full:"National Accounts (GDP/GVA)", schema:"stat.series",
+     value:"value", v2:"value2", v2label:"Constant price", unit:"₹ Crore",
+     facets:[["indicator","Indicator"],["category","Industry"]]},
+  {id:"PLFS", label:"PLFS", full:"Periodic Labour Force Survey", schema:"stat.series",
+     value:"value", v2:null, unit:"per cent", facets:[["indicator","Indicator"],["category","Gender"],["subgroup","Sector"]]},
+  {id:"ASI",  label:"ASI",  full:"Annual Survey of Industries", schema:"stat.series",
+     value:"value", v2:null, unit:"", facets:[["indicator","Indicator"]]},
+];
+const APPID = "mospi-stats";   // must match the app-host CERTIFIED key (short component name)
+let CUR = DATASETS[0], ROWS = [], COUNTS = {};
+
+function getF(o,k){ if(k==="_geo") return o.geo_name||"All India"; if(o[k]!=null) return o[k]; if(o.dims&&o.dims[k]!=null) return o.dims[k]; return undefined; }
+async function query(schema, extra){
+  // /bridge/query needs app_id + a TOP-LEVEL schema; any extra equality filter goes in `filter`.
+  const r = await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({app_id:APPID, schema, filter:(extra||{}), limit:8000})});
+  if(!r.ok) return [];
+  const d = await r.json();
+  const res = d.results || d.rows || d.objects || [];
+  return res.map(x => x.object || x);
+}
+async function load(ds){
+  CUR = ds; ROWS = [];
+  document.getElementById("view").innerHTML = '<div class="empty">Loading '+ds.full+'…</div>';
+  let rows = await query(ds.schema, ds.schema==="stat.series" ? {dataset:ds.id} : null);
+  // CPI (stat.price_index) → normalize into the same shape the renderer expects
+  ROWS = rows.map(o => ({
+    geo_name:o.geo_name, period:o.period, year:o.year, month:o.month,
+    value: num(o[ds.value]), value2: ds.v2? num(o[ds.v2]) : null,
+    unit:o.unit||ds.unit, status:o.status,
+    sector:o.sector, group:o.group, subgroup:o.subgroup,
+    indicator:o.indicator, category:o.category, dims:o.dims||{},
+  })).filter(r=>r.value!=null && r.period);
+  buildControls(); render();
+}
+function num(v){ const n=parseFloat(v); return isFinite(n)? n : null; }
+function distinct(key){ return [...new Set(ROWS.map(r=>getF(r,key)).filter(v=>v!=null && v!==""))].sort(); }
+
+function buildControls(){
+  const c = document.getElementById("controls"); c.innerHTML="";
+  const facets = [...CUR.facets, ["_geo","Geography"]];
+  window._sel = {};
+  facets.forEach(([k,label])=>{
+    const opts = distinct(k); if(!opts.length) return;
+    const pref = k==="_geo" ? (opts.includes("All India")?"All India":opts[0]) : opts[0];
+    window._sel[k]=pref;
+    const wrap=document.createElement("div"); wrap.className="ctl";
+    wrap.innerHTML='<label>'+label+'</label>';
+    const s=document.createElement("select");
+    opts.forEach(o=>{ const op=document.createElement("option"); op.value=o; op.textContent=o; if(o===pref)op.selected=true; s.appendChild(op); });
+    s.onchange=()=>{ window._sel[k]=s.value; render(); };
+    wrap.appendChild(s); c.appendChild(wrap);
+  });
+}
+function seriesRows(){
+  let rs = ROWS.filter(r => Object.entries(window._sel).every(([k,v]) => String(getF(r,k))===String(v)));
+  // dedupe by period (keep last), sort chronologically
+  const by={}; rs.forEach(r=>by[r.period]=r);
+  return Object.values(by).sort((a,b)=> perKey(a)-perKey(b));
+}
+function perKey(r){ // monthly YYYY-MM → YYYY.MM ; fiscal/annual YYYY-YY or YYYY → YYYY
+  const p=r.period||""; if(/^\d{4}-\d{2}$/.test(p)) return parseFloat(p.slice(0,4))+parseFloat(p.slice(5))/12;
+  return parseFloat((p.match(/\d{4}/)||[r.year||0])[0]); }
+function fmt(n){ if(n==null)return "–"; return (Math.abs(n)>=1000? n.toLocaleString("en-IN",{maximumFractionDigits:1}) : (Math.round(n*100)/100)); }
+
+function render(){
+  const view=document.getElementById("view");
+  const rs=seriesRows();
+  if(!rs.length){ view.innerHTML='<div class="empty">No data for this selection.'+(ROWS.length?"":" This dataset hasn't been ingested yet.")+'</div>'; return; }
+  const last=rs[rs.length-1], prev=rs.length>1?rs[rs.length-2]:null;
+  const delta = prev? last.value-prev.value : null;
+  const facetTxt = CUR.facets.map(([k])=>getF(last,k)).filter(Boolean).join(" · ");
+  let h='';
+  h+='<div class="title">'+CUR.full+' <small>'+(facetTxt?("— "+facetTxt+" · "):"")+(window._sel._geo||"")+'</small></div>';
+  h+='<div class="kpis">';
+  h+='<div class="kpi"><div class="v">'+fmt(last.value)+'</div><div class="l">'+(last.unit||CUR.unit||"value")+' · '+last.period+'</div></div>';
+  if(delta!=null) h+='<div class="kpi"><div class="v d '+(delta>=0?"up":"dn")+'">'+(delta>=0?"▲ ":"▼ ")+fmt(Math.abs(delta))+'</div><div class="l">change vs '+prev.period+'</div></div>';
+  if(CUR.v2 && last.value2!=null) h+='<div class="kpi"><div class="v">'+fmt(last.value2)+'</div><div class="l">'+(CUR.v2label||"secondary")+'</div></div>';
+  h+='</div>';
+  h+=chart(rs);
+  // table (latest first)
+  h+='<div class="tablewrap"><table><thead><tr><th>Period</th><th class="num">Value</th>'+(CUR.v2?'<th class="num">'+CUR.v2label+'</th>':'')+'<th>Status</th></tr></thead><tbody>';
+  rs.slice().reverse().forEach(r=>{ h+='<tr><td>'+r.period+'</td><td class="num">'+fmt(r.value)+'</td>'+(CUR.v2?'<td class="num">'+fmt(r.value2)+'</td>':'')+'<td class="muted">'+(r.status||"")+'</td></tr>'; });
+  h+='</tbody></table></div>';
+  view.innerHTML=h;
+}
+function chart(rs){
+  const W=1000,H=300,pad={l:52,r:14,t:14,b:34};
+  const xs=rs.map((_,i)=>i), ys=rs.map(r=>r.value);
+  const ymin=Math.min(...ys), ymax=Math.max(...ys); const ylo=ymin-(ymax-ymin||1)*0.08, yhi=ymax+(ymax-ymin||1)*0.08;
+  const X=i=> pad.l + (rs.length<2?0:i/(rs.length-1))*(W-pad.l-pad.r);
+  const Y=v=> H-pad.b - (yhi===ylo?0.5:(v-ylo)/(yhi-ylo))*(H-pad.t-pad.b);
+  let g='';
+  for(let k=0;k<=4;k++){ const val=ylo+(yhi-ylo)*k/4, y=Y(val); g+='<line class="grid" x1="'+pad.l+'" y1="'+y+'" x2="'+(W-pad.r)+'" y2="'+y+'"/><text class="tick" x="'+(pad.l-6)+'" y="'+(y+3)+'" text-anchor="end">'+fmt(val)+'</text>'; }
+  const step=Math.max(1,Math.ceil(rs.length/8));
+  rs.forEach((r,i)=>{ if(i%step===0||i===rs.length-1){ g+='<text class="tick" x="'+X(i)+'" y="'+(H-pad.b+16)+'" text-anchor="middle">'+r.period+'</text>'; }});
+  const pts=rs.map((r,i)=>X(i)+','+Y(r.value)).join(" ");
+  g+='<polyline class="line" points="'+pts+'"/>';
+  rs.forEach((r,i)=>{ g+='<circle class="dot" cx="'+X(i)+'" cy="'+Y(r.value)+'" r="'+(rs.length>60?1.6:2.6)+'"><title>'+r.period+': '+fmt(r.value)+'</title></circle>'; });
+  g+='<line class="axis" x1="'+pad.l+'" y1="'+(H-pad.b)+'" x2="'+(W-pad.r)+'" y2="'+(H-pad.b)+'"/>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+CUR.full+' time series">'+g+'</svg>';
+}
+async function boot(){
+  const tabs=document.getElementById("tabs");
+  // count availability per dataset (cheap: one probe each; ignore failures)
+  DATASETS.forEach(ds=>{
+    const b=document.createElement("button"); b.className="tab"; b.id="tab-"+ds.id;
+    b.setAttribute("aria-selected", ds===CUR?"true":"false");
+    b.innerHTML=ds.label+' <span class="n" id="n-'+ds.id+'"></span>';
+    b.onclick=()=>{ document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected","false")); b.setAttribute("aria-selected","true"); load(ds); };
+    tabs.appendChild(b);
+  });
+  await load(CUR);
+}
+boot();
+</script>
+</body>
+</html>

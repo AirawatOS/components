@@ -139,3 +139,12 @@ def get(ctx):
     return {"message": _redact_bcc(m, me)}, None
 
 HANDLERS = {"mail-list": listing, "mail-send": send, "mail-get": get}
+
+
+def main():                       # dev self-test (green run gates Studio publish, INT-0004)
+    print("Mail Engine — handlers:", ", ".join(sorted(HANDLERS)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

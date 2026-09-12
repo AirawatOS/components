@@ -4,7 +4,7 @@
 # in the shared earth-observation runtime (earthengine-api); cert-checked + image-locked. Real footprints only.
 component_id: ds:airawat:driver/buildings-footprints
 kind: driver
-version: 0.1.0
+version: 0.2.1   # 0.2.1: robust centroid over Polygon AND MultiPolygon footprints (tile-scale hit an OB MultiPolygon → TypeError; per-cell path never did)
 provider: ds:airawat:developer
 display_name: Building Footprints (Google Open Buildings / GEE)
 entrypoint: run.py

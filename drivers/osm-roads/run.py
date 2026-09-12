@@ -18,7 +18,7 @@ roads land in another's namespace.
 
 Inputs (env): AOI_ID (optional; the pipeline passes it) · TENANT · OVERPASS_URL
 """
-import json, math, os, sys, time, urllib.request
+import json, math, os, shutil, subprocess, sys, time, urllib.request
 sys.path.insert(0, os.path.join(   # components/drivers/osm-roads → up 3 → components → /_common
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "_common"))
 import ids   # shared id-derivation helper (ADR-0063): id from the natural key + governed identifiers[]
@@ -155,6 +155,32 @@ def ways_from_pbf(pbf_path, bbox):
     return h.ways
 
 
+def _clip_to_bbox(src_path, bbox):
+    """If the PBF is large and the `osmium` CLI is present, extract a reference-complete slice for the AOI bbox
+    (with a small pad) BEFORE the expensive locations=True pass. A regional/zone PBF otherwise forces pyosmium to
+    index every node in the country and blows the 180s host-subprocess cap (HTTP 504). osmium extract uses a
+    spatial index and clips in seconds; complete_ways keeps every node of a way crossing the edge so line geometry
+    stays intact. No-op (returns src) when the CLI is missing or the file is small. See ADR-0060 / Wave-1."""
+    try:
+        if not shutil.which("osmium") or os.path.getsize(src_path) < 150 * 1024 * 1024:
+            return src_path
+    except Exception:
+        return src_path
+    w, s, e, n = bbox
+    pad = 0.03
+    dst = src_path + ".clip.osm.pbf"
+    box = f"{w-pad},{s-pad},{e+pad},{n+pad}"
+    try:
+        t0 = time.time()
+        subprocess.run(["osmium", "extract", "-b", box, src_path, "-o", dst, "--overwrite", "-s", "complete_ways"],
+                       check=True, capture_output=True, timeout=150)
+        print(f"  clipped PBF to AOI bbox {box} → {os.path.getsize(dst)//1024//1024} MB in {time.time()-t0:.0f}s (osmium extract)", flush=True)
+        return dst
+    except Exception as ex:
+        print(f"  osmium extract clip skipped ({str(ex)[:80]}) — reading full PBF", flush=True)
+        return src_path
+
+
 def fetch_highway_ways_from_asset(pbf_id, bbox):
     """Pull the uploaded PBF asset from the filestore (via the broker), write it to a temp file, osmium-extract."""
     import base64, tempfile
@@ -163,13 +189,18 @@ def fetch_highway_ways_from_asset(pbf_id, bbox):
     if not raw:
         raise SystemExit(f"FATAL: PBF asset {pbf_id} is empty / not in the filestore")
     tf = tempfile.NamedTemporaryFile(suffix=".osm.pbf", delete=False)
+    clipped = None
     try:
         tf.write(raw); tf.close()
         print(f"reading roads from uploaded PBF asset {pbf_id[:20]}… ({len(raw)//1024//1024} MB) via osmium", flush=True)
-        return ways_from_pbf(tf.name, bbox)
+        path = _clip_to_bbox(tf.name, bbox)
+        clipped = path if path != tf.name else None
+        return ways_from_pbf(path, bbox)
     finally:
-        try: os.unlink(tf.name)
-        except Exception: pass
+        for p in (tf.name, clipped):
+            if p:
+                try: os.unlink(p)
+                except Exception: pass
 
 
 def to_feature(el):
@@ -225,16 +256,36 @@ def main():
         ways = fetch_highway_ways(bbox)                          # fallback: live Overpass (rate-limited at metro scale)
         print(f"overpass returned {len(ways)} highway ways", flush=True)
 
-    written = skipped = 0
+    # WRITE_VECTORS=0 skips the (slow) per-way geo.osm_feature writes when the L1 vectors already exist — the
+    # per-cell length is still accumulated in memory, so cell.roads (the L2 analytical layer) is reached in
+    # seconds instead of behind a full ~60k-way re-ingest. Use it to (re)compute cell.roads without re-writing L1.
+    WRITE_VECTORS = os.environ.get("WRITE_VECTORS", "1") != "0"
+    written = skipped = processed = 0
     classes = {}
     cells = {}                                                   # hc -> {"len": m, "seg": n, "classes": {cls: m}}
+    # L1 geo.osm_feature is written in BATCHES (/v1/write/batch) — a metro has ~200k ways and one /v1/write per
+    # way overran the run-time cap, so a partial (~70%) network was written. Batching writes the FULL set in
+    # ~100 calls, well inside the cap. (id is a deterministic way/<osm_id> key, so re-runs upsert cleanly.)
+    _batch = []
+    def _flush():
+        nonlocal written
+        if not _batch:
+            return
+        r = call("/v1/write/batch", {"items": _batch, "asserted_at": NOW}) or {}
+        written += int(r.get("written", 0))
+        if r.get("errors"):
+            print("  batch sample errors:", json.dumps(r["errors"][:2])[:300], flush=True)
+        _batch.clear()
     for el in ways:
         feat = to_feature(el)
         if feat is None:
             skipped += 1
             continue
-        call("/v1/write", {"scope": "geo.osm_feature", "id": feat["id"], "object": feat})   # L1 native line
-        written += 1
+        if WRITE_VECTORS:
+            _batch.append({"scope": "geo.osm_feature", "id": feat["id"], "object": feat})   # L1 native line
+            if len(_batch) >= 2000:
+                _flush()
+        processed += 1
         cls = feat["feature"]
         classes[cls] = classes.get(cls, 0) + 1
         coords = feat["geometry"]["coordinates"]
@@ -248,9 +299,11 @@ def main():
             d = cells.setdefault(hc, {"len": 0.0, "seg": 0, "classes": {}})
             d["len"] += L; d["seg"] += 1; d["classes"][cls] = d["classes"].get(cls, 0.0) + L
 
-    if written == 0:
-        raise SystemExit("FATAL: no usable highway ways were written for this AOI")
-    print(f"wrote {written} geo.osm_feature ways; skipped {skipped} (insufficient geometry)", flush=True)
+    if WRITE_VECTORS:
+        _flush()                                                 # write the final partial batch
+    if processed == 0:
+        raise SystemExit("FATAL: no usable highway ways found for this AOI")
+    print(f"processed {processed} highway ways ({'wrote ' + str(written) + ' geo.osm_feature' if WRITE_VECTORS else 'geo.osm_feature write SKIPPED (WRITE_VECTORS=0)'}); skipped {skipped}", flush=True)
     print("road classes:", json.dumps(dict(sorted(classes.items())), ensure_ascii=False), flush=True)
 
     # L2: cell.roads — road length + density per H3 cell (the analytical layer City Scan renders).

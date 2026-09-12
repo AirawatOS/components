@@ -61,4 +61,14 @@ async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(
 $('send').onclick=()=>send();
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 document.addEventListener('click',e=>{if(e.target.classList.contains('chip'))send(e.target.textContent);});
+// PROACTIVE: on open, greet with a briefing of what needs the user's attention (civic issues + news + tasks).
+(async function brief(){
+  const slot=bubble('ai','<span style="color:var(--mut)">Preparing your briefing…</span>');
+  try{
+    const r=await fetch('/bridge/agent-brief',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(x=>x.json());
+    slot.querySelector('.bub').innerHTML=esc(r.reply||'Nothing urgent right now — ask me anything.').replace(/\n/g,'<br>');
+    if(r&&r.reply)HIST.push({role:'assistant',content:r.reply});
+  }catch(e){ slot.querySelector('.bub').innerHTML='Hi — how can I help? Try “what needs my attention?”'; }
+  $('log').scrollTop=$('log').scrollHeight;
+})();
 </script>

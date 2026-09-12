@@ -12,7 +12,7 @@ confinement_min: L2
 reads: [space.aoi, cell.rainfall]     # cell.rainfall read = RESUME
 writes: [cell.rainfall]
 egress:
-  - { host: archive-api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/rainfall (+https://airawat.org; contact@airawat.org)" }
+  - { host: archive-api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/rainfall (+https://airawat.org; manishsv@gmail.com)" }
 config: [YEAR, GRID]
 sources:
   - { ref: "ds:airawat:ref/source/open-meteo", host: archive-api.open-meteo.com, provides: [cell.rainfall] }

@@ -1,0 +1,26 @@
+# WASTE COLLECTOR (kind=app) — the field-worker capture surface for the Solid Waste Management solution. A
+# sanitation crew opens it on a phone, picks their WARD/ROUTE, and works through the properties on that route,
+# tapping COLLECTED or MISSED at each door. Each tap records a governed waste.pickup event (GPS/centroid-stamped)
+# via the collection-capture-engine — the REAL feed that replaces the illustrative seed. This is what closes the
+# loop: capture (here) → monitor (Waste Console) → decide (coverage + compliance engines). It writes nothing
+# directly; the pickup write rides the engine's own grant (so a non-admin collector can capture), and route
+# discovery is a server-side point-in-polygon over the ward boundary.
+component_id: ds:airawatdeveloper:app/waste-collector
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Waste Collector
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [geo.ward]
+reads: [geo.ward]
+writes: []
+roles: [platform.tenant-admin]
+# DECLARED APP EGRESS (broker-for-apps, ADR-0061): the collector map may reach ONLY this host, and only through
+# the host's CACHED /bridge/fetch (the sandbox CSP still blocks direct calls) — OSM raster basemap tiles (© OSM),
+# same as the City Scan viewer, so the field map shows real streets under the route.
+egress:
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/waste-collector (+https://airawat.org; manishsv@gmail.com)" }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: tile.openstreetmap.org, provides: [viz.basemap] }

@@ -1,0 +1,32 @@
+# A DRIVER (kind=driver) — HISTORICAL air-quality LABEL CORPUS from OpenAQ's public S3 archive (ADR-0073 M3.5).
+# The live OpenAQ v3 API serves only recent snapshots and is rate-limited; training + leave-station-out /
+# temporal-holdout validation of the PM2.5 model needs MONTHS of hourly µg/m³ ground truth. OpenAQ mirrors its
+# full measurement history to an anonymous, public S3 bucket (s3://openaq-data-archive) as one gzip-CSV per
+# station per day. This driver walks that archive for the AOI's stations over a bounded window and ingests every
+# hourly reading into air.sensor_reading — the SAME schema the live air-sensors driver writes, so pm25-features
+# treats archive + live labels identically. The gzip file is BINARY: the broker returns it base64 (body_b64),
+# and the driver decodes → gunzips → parses. The archive itself is KEYLESS; only station DISCOVERY (bbox) uses
+# the OpenAQ key — pass LOCATION_IDS to skip discovery entirely. REAL archive only — a missing daily file is a
+# skip, never a fabrication; an empty window fails loudly (ADR: no synthetic data). ODbL-1.0 attribution carried
+# in every fact's prov (source_ref → ref.source/openaq). Host subprocess.
+component_id: ds:airawat:driver/openaq-archive
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: OpenAQ Historical Archive (S3)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi]
+writes: [air.sensor_reading]
+# The archive host is anonymous (no key); we still present an identifiable User-Agent (PLAT-EGRESS-004). The
+# keyed api.openaq.org egress is used only when LOCATION_IDS is not supplied (bbox discovery of station ids).
+egress:
+  - { host: openaq-data-archive.s3.amazonaws.com, rate_per_min: 120, user_agent: "AirawatOS/openaq-archive (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: api.openaq.org, rate_per_min: 30, user_agent: "AirawatOS/openaq-archive (+https://airawat.org; manishsv@gmail.com)" }
+secrets: [OPENAQ_API_KEY]                # only for bbox discovery; the S3 archive is keyless
+config: [LOCATION_IDS, DATE_FROM, DATE_TO, DAYS_BACK, MAX_LOCATIONS]
+sources:
+  - { ref: "ds:airawat:ref/source/openaq", host: openaq-data-archive.s3.amazonaws.com, provides: [air.sensor_reading] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: air.sensor_reading }

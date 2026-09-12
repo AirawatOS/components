@@ -1,0 +1,18 @@
+# COLLECTION COVERAGE ENGINE (Solid Waste Management solution). The project's other decision — "was every
+# property covered / which was missed / which areas are worst". Reads waste.pickup events and the REAL ward
+# boundaries (geo.ward), assigns each pickup to its ward by point-in-polygon, computes collection coverage per
+# ward (completed / total), and raises a signal.alert for each ward below the coverage floor (with the missed
+# count). Pure geometry + counting — no fabricated numbers; it reports whatever pickups exist.
+component_id: ds:airawatdeveloper:engine/collection-coverage-engine
+kind: engine
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+provider: ds:airawat:developer
+display_name: Collection Coverage Engine
+entrypoint: run.py
+implements:
+  - waste.coverage_scan@0.1.0
+verbs:
+  collection-coverage-scan: waste.coverage_scan@0.1.0
+required_schemas: [waste.pickup, geo.ward, signal.alert]
+reads:  [waste.pickup, geo.ward]
+writes: [signal.alert]

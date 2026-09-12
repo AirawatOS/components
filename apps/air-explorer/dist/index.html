@@ -24,6 +24,12 @@
   .empty{color:var(--dim);border:1px dashed var(--edge);border-radius:12px;padding:18px;text-align:center;font-size:13.5px}
   .advisory{border:1px solid var(--edge);border-left:3px solid var(--accent);border-radius:10px;background:var(--panel);padding:14px 16px;font-size:14px;line-height:1.5}
   .src{color:var(--dim);font-size:11.5px;margin-top:20px}
+  .mapwrap{border:1px solid var(--edge);border-radius:13px;background:var(--panel);padding:12px}
+  #cv{width:100%;height:auto;display:block;border-radius:8px;background:#0a1526}
+  .maptip{color:var(--dim);font-size:12px;margin:8px 2px 0}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+  .legend .lg{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+  .legend .sw{width:13px;height:13px;border-radius:3px;flex:none}
 </style>
 <body>
 <div class="wrap">
@@ -31,6 +37,13 @@
   <p class="who" id="who">…</p>
 
   <div class="hero" id="hero"></div>
+
+  <h2>PM2.5 nowcast — modelled surface</h2>
+  <div class="mapwrap">
+    <canvas id="cv" width="864" height="560"></canvas>
+    <div class="legend" id="legend"></div>
+    <div class="maptip" id="mapmeta">Loading modelled PM2.5 surface…</div>
+  </div>
 
   <h2>Pollution hotspots</h2>
   <div class="cards" id="hotspots"><div class="empty">Loading…</div></div>
@@ -45,7 +58,9 @@
 </div>
 <script>
 const SEV = {critical:{c:'#e5484d',bg:'#3a1416'}, warning:{c:'#e5a23d',bg:'#3a2a12'}, info:{c:'#e6d24a',bg:'#33310f'}};
-function pmBand(v){ return v<30?['Good','#26a659']:v<60?['Satisfactory','#9acd32']:v<90?['Moderate','#e6d24a']:v<120?['Poor','#e5a23d']:v<250?['Very Poor','#e5484d']:['Severe','#8e44ad']; }
+// CPCB AQI bands for PM2.5 (µg/m³)
+const BANDS = [[30,'Good','#26a659'],[60,'Satisfactory','#9acd32'],[90,'Moderate','#e6d24a'],[120,'Poor','#e5a23d'],[250,'Very Poor','#e5484d'],[1e9,'Severe','#8e44ad']];
+function pmBand(v){ for(const b of BANDS){ if(v<b[0]) return [b[1],b[2]]; } return ['Severe','#8e44ad']; }
 const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 async function q(schema, limit=5000){
@@ -57,6 +72,77 @@ async function q(schema, limit=5000){
     return (d.results||[]).map(x=>x.object||x).filter(o=>o&&o.schema===schema);
   }catch(e){ return []; }
 }
+// paginate the full set (the grid is ~24k cells — one page won't hold it)
+async function qAll(schema, cap=40000){
+  let out=[], cursor=null, pages=0;
+  while(pages<80){
+    let body={app_id:'air-explorer', schema, limit:5000}; if(cursor) body.cursor=cursor;
+    let r; try{ r = await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }catch(e){ break; }
+    if(!r.ok) break;
+    const d = await r.json();
+    const rows=(d.results||[]).map(x=>x.object||x).filter(o=>o&&o.schema===schema);
+    out=out.concat(rows); pages++;
+    cursor=d.next_cursor||d.cursor;
+    if(!cursor || !rows.length || out.length>=cap) break;
+  }
+  return out;
+}
+
+// Web-Mercator world pixels (256-px tiles) at zoom z
+function lon2wx(lon,z){ return (lon+180)/360*Math.pow(2,z)*256; }
+function lat2wy(lat,z){ const r=lat*Math.PI/180; return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z)*256; }
+
+function drawMap(grid, stations){
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), W=cv.width;
+  const cells=grid.filter(c=>typeof c.pm25==='number' && c.space && Array.isArray(c.space.centroid));
+  const meta=document.getElementById('mapmeta');
+  if(!cells.length){ meta.textContent='No modelled PM2.5 surface yet — run pm25-model (INFER mode).'; return; }
+  const lo=cells.map(c=>c.space.centroid[0]), la=cells.map(c=>c.space.centroid[1]);
+  const lo0=Math.min(...lo),lo1=Math.max(...lo),la0=Math.min(...la),la1=Math.max(...la);
+  const mLo=(lo1-lo0)*0.04, mLa=(la1-la0)*0.04;                 // small margin
+  const bLo0=lo0-mLo,bLo1=lo1+mLo,bLa0=la0-mLa,bLa1=la1+mLa;
+  // pick zoom so the AOI is ~W px wide
+  let z=11; for(z=13;z>=8;z--){ if((lon2wx(bLo1,z)-lon2wx(bLo0,z))<=W) break; }
+  const ox=lon2wx(bLo0,z), oy=lat2wy(bLa1,z);                   // world-px of top-left (maxLat)
+  const Wp=lon2wx(bLo1,z)-ox, Hp=lat2wy(bLa0,z)-oy;
+  const H=Math.max(300, Math.min(680, Math.round(Hp)));
+  cv.height=H; ctx.clearRect(0,0,W,H);
+  const sx=W/Wp, sy=H/Hp;                                       // fit world-px rect into the canvas
+  const X=lon=>(lon2wx(lon,z)-ox)*sx, Y=lat=>(lat2wy(lat,z)-oy)*sy;
+  const n=Math.pow(2,z);
+  const tx0=Math.floor(ox/256), tx1=Math.floor((ox+Wp)/256), ty0=Math.floor(oy/256), ty1=Math.floor((oy+Hp)/256);
+  let done=false;
+  const cw=Math.max(3, (X(lo1)-X(lo0))/Math.max(1,Math.sqrt(cells.length))*1.3);
+  function overlay(){
+    if(done) return; done=true;
+    ctx.save(); ctx.globalAlpha=0.55;                           // let the streets show through
+    for(const c of cells){ ctx.fillStyle=pmBand(c.pm25)[1]; ctx.fillRect(X(c.space.centroid[0])-cw/2, Y(c.space.centroid[1])-cw/2, cw, cw); }
+    ctx.restore();
+    // ground-station markers (real geographic anchors: Anand Vihar, R K Puram…)
+    for(const st of (stations||[])){ const c=(st.space||{}).centroid; if(!Array.isArray(c)) continue;
+      const x=X(c[0]),y=Y(c[1]); if(x<0||x>W||y<0||y>H) continue;
+      ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fillStyle='#0b1220'; ctx.fill();
+      ctx.lineWidth=1.5; ctx.strokeStyle=typeof st.pm25==='number'?pmBand(st.pm25)[1]:'#fff'; ctx.stroke(); }
+  }
+  let pending=(tx1-tx0+1)*(ty1-ty0+1);
+  for(let tx=tx0;tx<=tx1;tx++) for(let ty=ty0;ty<=ty1;ty++){
+    const img=new Image();
+    img.onload=()=>{ ctx.drawImage(img,(tx*256-ox)*sx,(ty*256-oy)*sy,256*sx,256*sy); if(--pending<=0) overlay(); };
+    img.onerror=()=>{ if(--pending<=0) overlay(); };
+    img.src=`/bridge/tile/${z}/${((tx%n)+n)%n}/${ty}`;
+  }
+  setTimeout(overlay, 3500);                                    // fallback: draw the surface even if tiles are slow/blocked
+  // provenance + legend
+  const s=cells[0], pv=s.prov||{}; const pmv=cells.map(c=>c.pm25);
+  const mean=(pmv.reduce((a,b)=>a+b,0)/pmv.length);
+  meta.innerHTML='Modelled PM2.5 surface on OpenStreetMap · <b>'+cells.length.toLocaleString()+'</b> H3 cells · mean <b>'+mean.toFixed(1)+'</b> µg/m³ · hour '
+    +esc((s.observed_at||'').slice(0,16).replace('T',' '))+' · <b>'+esc(s.method||'—')+'</b>'+(pv.validation?' · '+esc(pv.validation):'')
+    +' · ○ = CPCB station';
+  document.getElementById('legend').innerHTML = BANDS.map((b,i)=>{
+    const lo=i?BANDS[i-1][0]:0;
+    return '<span class="lg"><span class="sw" style="background:'+b[2]+'"></span>'+esc(b[1])+' ('+lo+(b[0]>1e8?'+':('–'+b[0]))+')</span>';
+  }).join('');
+}
 
 (async ()=>{
   try{ const s = await (await fetch('/session')).json();
@@ -64,13 +150,17 @@ async function q(schema, limit=5000){
   catch(e){ document.getElementById('who').textContent='(not signed in)'; }
 
   const [hot, grid, sr, rec] = await Promise.all([
-    q('air.hotspot'), q('air.quality'), q('air.sensor_reading'), q('governance.recommendation') ]);
+    q('air.hotspot'), qAll('air.quality'), q('air.sensor_reading'), q('governance.recommendation') ]);
+
+  // prefer the modelled surface for the map/hero if present
+  const modelled = grid.filter(c=>String(c.method||'').indexOf('xgboost')>=0);
+  const surface = modelled.length? modelled : grid;
+  drawMap(surface, sr);
 
   // hero stats
-  const pm = grid.map(c=>c.pm25).filter(v=>typeof v==='number').sort((a,b)=>a-b);
+  const pm = surface.map(c=>c.pm25).filter(v=>typeof v==='number').sort((a,b)=>a-b);
   const med = pm.length? pm[Math.floor(pm.length/2)] : null;
   const mx  = pm.length? pm[pm.length-1] : null;
-  const worst = hot.slice().sort((a,b)=>(b.value||0)-(a.value||0))[0];
   const nCrit = hot.filter(h=>h.severity==='critical').length, nWarn = hot.filter(h=>h.severity==='warning').length;
   const hband = mx!=null?pmBand(mx):null;
   document.getElementById('hero').innerHTML =
@@ -80,7 +170,7 @@ async function q(schema, limit=5000){
        <div class="s">${med!=null?pmBand(med)[0]+' · µg/m³':'no grid yet'}</div></div>
      <div class="stat"><div class="k">Peak PM2.5</div><div class="v" style="color:${hband?hband[1]:'inherit'}">${mx!=null?Math.round(mx):'—'}</div>
        <div class="s">${hband?hband[0]:''}</div></div>
-     <div class="stat"><div class="k">Grid · sensors</div><div class="v">${grid.length}<span style="font-size:15px;color:var(--dim)"> · ${new Set(sr.map(x=>x.sensor_id)).size}</span></div>
+     <div class="stat"><div class="k">Grid · sensors</div><div class="v">${surface.length}<span style="font-size:15px;color:var(--dim)"> · ${new Set(sr.map(x=>x.sensor_id)).size}</span></div>
        <div class="s">H3 cells · stations</div></div>`;
 
   // hotspots
@@ -118,6 +208,6 @@ async function q(schema, limit=5000){
   }
 
   document.getElementById('src').textContent =
-    'Air Intelligence · reads air.quality (interpolation) + air.hotspot (detection) + air.sensor_reading (ground truth) + governance.recommendation (advisory). Real data only.';
+    'Air Intelligence · modelled PM2.5 nowcast (air.quality, XGBoost fleet model) + air.hotspot + air.sensor_reading ground truth + governance.recommendation. Real data only.';
 })();
 </script>

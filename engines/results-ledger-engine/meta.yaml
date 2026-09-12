@@ -1,0 +1,26 @@
+# RESULTS LEDGER ENGINE (ADR-0071/0072 thread closure). Ties OUTLAY → OUTPUT → OUTCOME into one auditable chain
+# inside the implementing agency. Three verbs:
+#   results-record-output  — record a delivered project.output (units/connections/cells-treated) bound to project·
+#                            milestone·intervention·location·cost, AND post the spend as a balanced finance.transaction
+#                            (composes finance-engine) against the project budget. The OUTLAY→OUTPUT joint.
+#   results-close-outcome  — re-measure the need over the project's cells (real welfare.priority baseline), attribute
+#                            the movement to the delivered outputs, write a project.outcome. The OUTPUT→OUTCOME joint.
+#   results-thread         — read-only: assemble the whole chain (recommendation → proposal → budget → outputs →
+#                            outcome) for one project, so a funder/console sees ₹ → units → people, every link a fact.
+component_id: ds:airawatdeveloper:engine/results-ledger-engine
+kind: engine
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+provider: ds:airawat:developer
+display_name: Results Ledger Engine
+entrypoint: run.py
+implements:
+  - project.outcome_close@0.1.0
+  - project.output_record@0.1.0
+  - project.results_thread@0.1.0
+verbs:
+  results-record-output: project.output_record@0.1.0
+  results-close-outcome: project.outcome_close@0.1.0
+  results-thread: project.results_thread@0.1.0
+required_schemas: [project.output, project.outcome, project.project, project.proposal, welfare.priority, finance.budget]
+reads:  [project.project, project.proposal, welfare.priority, finance.budget, project.output, project.outcome, governance.recommendation]
+writes: [project.output, project.outcome]

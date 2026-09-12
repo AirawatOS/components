@@ -1,0 +1,24 @@
+# An ENGINE (kind=engine) — triages human-REPORTED incidents (signal.incident) into civic.issue and routes the
+# actionable ones to the responsible agency on the decision→task→Inbox spine (News/Civic vertical, slice 3).
+# Trust-tiered: a VC-verified certified_volunteer or a ground_team report is AUTHORITATIVE (always routed); an
+# anonymous citizen report routes only if high-severity / law-and-order / disaster, else it waits for verification.
+# ADR-0029: the AI/engine PROPOSES; a human at the agency ADMITS. All I/O via the broker under the run-token.
+component_id: ds:airawat:engine/report-triage
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Incident Triage (signal.incident → civic.issue + route to agency)
+entrypoint: run.py
+confinement_min: L1
+reads: [signal.incident, civic.issue, credential.volunteer]
+writes: [civic.issue, governance.recommendation, platform.case, platform.task, platform.inbox_item]
+config: [MAX, AGENCY_MAP, CITIZEN_ROUTE_SEVERITIES, CITIZEN_ROUTE_CATEGORIES]
+scopes:
+  - { verb: read,  scope: signal.incident }
+  - { verb: read,  scope: civic.issue }
+  - { verb: read,  scope: credential.volunteer }
+  - { verb: write, scope: civic.issue }
+  - { verb: write, scope: governance.recommendation }
+  - { verb: write, scope: platform.case }
+  - { verb: write, scope: platform.task }
+  - { verb: write, scope: platform.inbox_item }

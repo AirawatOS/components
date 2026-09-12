@@ -14,4 +14,4 @@ required_schemas: []
 system: false          # domain app — installed via the urban pack, not forced on every tenant
 roles: [platform.tenant-admin]
 egress:
-  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-setup (+https://airawat.org; contact@airawat.org)" }
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-setup (+https://airawat.org; manishsv@gmail.com)" }

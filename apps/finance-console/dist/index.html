@@ -13,6 +13,10 @@
   .pill.expense{border-color:#c0504d}.pill.asset{border-color:#3b82f6}.pill.liability{border-color:#c98a1a}
   .pill.revenue{border-color:#2ea043}.pill.equity{border-color:#8b5cf6}
   .ln{font-size:12px;color:var(--dim)} .ln b{color:var(--ink)}
+  .ladder{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+  .stage{display:grid;grid-template-columns:96px 1fr 92px;align-items:center;gap:10px}
+  .stage .snm{font-size:12px;text-transform:capitalize;color:var(--dim)}
+  .stage.stuck .snm{color:#c0504d;font-weight:700} .stage .samt{font-size:12px;text-align:right}
 </style>
 
 <div class="wrap">
@@ -21,6 +25,8 @@
     <a data-t="accounts"><span>📒</span> <span data-i18n="fin.accounts">Accounts</span> <span class="c" id="c-accounts">0</span></a>
     <a data-t="budgets"><span>🎯</span> <span data-i18n="fin.budgets">Budgets</span> <span class="c" id="c-budgets">0</span></a>
     <a data-t="journal"><span>📓</span> <span data-i18n="fin.journal">Journal</span> <span class="c" id="c-journal">0</span></a>
+    <a data-t="fundflow"><span>🚦</span> <span data-i18n="fin.fundflow">Fund flow</span> <span class="c" id="c-fundflow">0</span></a>
+    <a data-t="advances"><span>💸</span> <span data-i18n="fin.advances">Advances</span> <span class="c" id="c-advances">0</span></a>
     <a data-t="reports"><span>📊</span> <span data-i18n="fin.reports">Reports</span></a>
     <a data-t="payroll"><span>🧑‍💼</span> <span data-i18n="fin.payroll">Payroll</span> <span class="c" id="c-payroll">0</span></a>
   </nav>
@@ -35,10 +41,12 @@
 AI18n.add({
   en:{"fin.title":"Finance","fin.accounts":"Accounts","fin.budgets":"Budgets","fin.journal":"Journal",
       "fin.reports":"Reports","fin.payroll":"Payroll","fin.h.accounts":"Chart of accounts","fin.h.budgets":"Budgets",
-      "fin.h.journal":"Journal","fin.h.reports":"Financial statements","fin.h.payroll":"Payroll → projects"},
+      "fin.h.journal":"Journal","fin.h.reports":"Financial statements","fin.h.payroll":"Payroll → projects",
+      "fin.fundflow":"Fund flow","fin.advances":"Advances"},
   hi:{"fin.title":"वित्त","fin.accounts":"खाते","fin.budgets":"बजट","fin.journal":"जर्नल",
       "fin.reports":"रिपोर्ट","fin.payroll":"वेतन","fin.h.accounts":"खातों का चार्ट","fin.h.budgets":"बजट",
-      "fin.h.journal":"जर्नल","fin.h.reports":"वित्तीय विवरण","fin.h.payroll":"वेतन → परियोजनाएँ"}
+      "fin.h.journal":"जर्नल","fin.h.reports":"वित्तीय विवरण","fin.h.payroll":"वेतन → परियोजनाएँ",
+      "fin.fundflow":"निधि प्रवाह","fin.advances":"अग्रिम"}
 });
 const api=AOS.post;                       // shared App Runtime (/shared/aos.js)
 const esc=AOS.esc;
@@ -74,12 +82,14 @@ async function boot(){
   document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>{TAB=a.dataset.t;render();});
   render();
 }
-let EMP=[],COMP=[],ALLOC=[],PROJ=[],SCHED={};
-async function reload(){ [ACC,BUD,TXN,UNITS,EMP,COMP,ALLOC,PROJ]=await Promise.all([query('finance.account'),query('finance.budget'),query('finance.transaction'),query('org.org_unit'),query('org.employee'),query('hr.compensation'),query('project.allocation'),query('project.project')]);
+let EMP=[],COMP=[],ALLOC=[],PROJ=[],SCHED={},FF=[],ADV=[];
+async function reload(){ [ACC,BUD,TXN,UNITS,EMP,COMP,ALLOC,PROJ,FF,ADV]=await Promise.all([query('finance.account'),query('finance.budget'),query('finance.transaction'),query('org.org_unit'),query('org.employee'),query('hr.compensation'),query('project.allocation'),query('project.project'),query('finance.fund_flow'),query('finance.advance')]);
   try{SCHED=await api('/bridge/payroll-schedule',{app_id:APP,action:'get'})||{};}catch(e){SCHED={};}
   document.getElementById('c-accounts').textContent=ACC.length; document.getElementById('c-budgets').textContent=BUD.length; document.getElementById('c-journal').textContent=TXN.length;
-  const cp=document.getElementById('c-payroll'); if(cp)cp.textContent=COMP.length; }
-function render(){ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB)); ({accounts:rAcc,budgets:rBud,journal:rJnl,reports:rReports,payroll:rPay}[TAB])(); }
+  const cp=document.getElementById('c-payroll'); if(cp)cp.textContent=COMP.length;
+  const cf=document.getElementById('c-fundflow'); if(cf)cf.textContent=FF.length;
+  const ca=document.getElementById('c-advances'); if(ca)ca.textContent=ADV.filter(a=>Number(a.outstanding||0)>0.005).length; }
+function render(){ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.t===TAB)); ({accounts:rAcc,budgets:rBud,journal:rJnl,reports:rReports,payroll:rPay,fundflow:rFlow,advances:rAdv}[TAB])(); }
 const empName=id=>{const e=EMP.find(x=>(x.citizen===id||x.id===id));return e?(e.name||e.id):(id||'—');};
 const projName=id=>{const p=PROJ.find(x=>x.id===id);return p?(p.code||p.name):(id||'—');};
 const compFor=eid=>COMP.filter(c=>c.employee===eid&&c.status!=='ended').sort((a,b)=>(b.effective_from||'').localeCompare(a.effective_from||''))[0];
@@ -304,6 +314,85 @@ function rReports(){
         +`<tr><td style="padding-left:26px">—</td><td>Current-year result</td><td class="num">${money(net)}</td></tr>`,
         `<tr><td></td><td><b>Total liabilities + equity</b></td><td class="num"><b>${money(liabT+eqT)}</b></td></tr>`);
 }
+
+/* ---------- FUND FLOW (S1: where is the money stuck?) ---------- */
+const STAGES=['approved','allocated','released','committed','paid','expended'];
+function rFlow(){
+  let body;
+  if(!FF.length) body=`<div class="empty">No fund flows yet. Record an approved / allocated / released amount to track where money is on its journey.</div>`;
+  else body=FF.slice().sort((a,b)=>(a.project||'').localeCompare(b.project||'')).map(f=>{
+     const max=Math.max(1,...STAGES.map(s=>Number(f[s]||0)));
+     const rows=STAGES.map(s=>{const v=Number(f[s]||0);const stuck=f.bottleneck===s;
+        return `<div class="stage${stuck?' stuck':''}"><div class="snm">${s}</div><div class="bar"><i style="width:${(100*v/max).toFixed(0)}%${stuck?';background:#c0504d':''}"></i></div><div class="samt">${money(v)}</div></div>`;}).join('');
+     const msg=f.bottleneck?`<div style="color:#c0504d;font-size:12px;margin-top:8px">▶ Held up at <b>${esc(f.bottleneck)}</b> — money reached upstream but hasn't fully moved on.</div>`
+                           :`<div style="color:#2ea043;font-size:12px;margin-top:8px">Flowing cleanly — no bottleneck.</div>`;
+     return `<div class="card" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc((f.project||'').split('/').pop()||f.id)}</b><span class="pill">${esc(f.channel||'')}</span></div><div class="ladder">${rows}</div>${msg}</div>`;
+  }).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Fund flow</h2><span class="sub">approved → allocated → released → committed → paid → expended</span><div class="right"><button class="btn pri" onclick='stampStage()'>＋ Record stage</button></div></div>`+body;
+}
+function stampStage(){
+  AOS.form('Record a fund-flow stage',[
+    {id:'project',label:'Project',value:(FF[0]&&FF[0].project)||'',placeholder:'ds:kmc:project/…',required:true},
+    {id:'channel',label:'Channel',type:'select',options:['government','grant','partner'],value:(FF[0]&&FF[0].channel)||'government'},
+    {id:'stage',label:'Stage reached',type:'select',options:STAGES,value:'released'},
+    {id:'amount',label:'Amount (₹cr)',type:'number',required:true},
+    {id:'add',label:'Mode',type:'select',options:[{value:'',label:'Set total at this stage'},{value:'1',label:'Add to existing'}],value:''}
+  ],{onSave:async v=>{
+     const r=await api('/bridge/flow-stamp',{app_id:APP,project:v.project,channel:v.channel,stage:v.stage,amount:Number(v.amount),add:!!v.add});
+     if(r.error)return r; await reload(); render(); toast('Stage recorded: '+v.stage+(r.bottleneck?(' · bottleneck '+r.bottleneck):'')); return r;
+  }});
+}
+
+/* ---------- ADVANCES (S3: disburse → liquidate → reconcile; Indicator 4 outstanding) ---------- */
+const assetOpts=()=>ACC.filter(a=>a.type==='asset').map(a=>({value:a.id,label:a.code+' '+a.name}));
+const expOpts=()=>ACC.filter(a=>a.type==='expense').map(a=>({value:a.id,label:a.code+' '+a.name}));
+function rAdv(){
+  const outT=ADV.filter(a=>Number(a.outstanding||0)>0.005).reduce((s,a)=>s+Number(a.outstanding||0),0);
+  const disbT=ADV.reduce((s,a)=>s+Number(a.amount||0),0), liqT=ADV.reduce((s,a)=>s+Number(a.liquidated||0),0);
+  const rows=ADV.slice().sort((a,b)=>Number(b.outstanding||0)-Number(a.outstanding||0)).map(a=>{
+    const out=Number(a.outstanding||0);
+    const act=out>0.005?`<button class="btn sm pri" onclick='liq("${esc(a.id)}")'>liquidate</button>`
+                       :`<button class="btn sm ghost" ${a.status==='reconciled'?'disabled':''} onclick='recon("${esc(a.id)}")'>${a.status==='reconciled'?'reconciled':'reconcile'}</button>`;
+    return `<tr><td><b>${esc(a.to_party||'—')}</b><div class="muted" style="font-size:11px">${esc((a.project||'').split('/').pop()||'')}${a.purpose?' · '+esc(a.purpose):''}</div></td>
+      <td class="num">${money(a.amount)}</td><td class="num">${money(a.liquidated)}</td><td class="num"><b>${money(out)}</b></td>
+      <td><span class="pill ${out>0.005?'':'posted'}">${esc((a.status||'').replace(/_/g,' '))}</span></td><td>${act}</td></tr>`;}).join('');
+  document.getElementById('main').innerHTML=`<div class="head"><h2>Advances</h2><span class="sub">disbursed money tracked as a receivable until liquidated against proof</span><div class="right"><button class="btn pri" onclick='disburse()'>＋ Disburse advance</button></div></div>`
+    +`<div class="card" style="padding:12px 16px;display:flex;gap:26px;flex-wrap:wrap">
+        <div><div class="muted" style="font-size:11px">DISBURSED</div><b style="font-size:18px">${money(disbT)}</b></div>
+        <div><div class="muted" style="font-size:11px">LIQUIDATED</div><b style="font-size:18px">${money(liqT)}</b></div>
+        <div><div class="muted" style="font-size:11px">OUTSTANDING</div><b style="font-size:18px;color:${outT>0.005?'#c0504d':'#2ea043'}">${money(outT)}</b></div></div>`
+    +(ADV.length?`<div class="card"><table><thead><tr><th>Recipient</th><th class="num">Advance</th><th class="num">Liquidated</th><th class="num">Outstanding</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">No advances yet — disburse one to a spending unit.</div>`);
+}
+function disburse(){
+  const assets=assetOpts(); if(assets.length<2)return toast('Add two asset accounts first (Advances-Receivable + Cash/Bank) in Accounts.');
+  const advG=(ACC.find(a=>a.type==='asset'&&/advance/i.test(a.name))||{}).id||'';
+  const cashG=(ACC.find(a=>a.type==='asset'&&/cash|bank/i.test(a.name))||{}).id||'';
+  const projOpts=[{value:'',label:'—'}].concat(PROJ.map(p=>({value:p.id,label:p.code||p.name||p.id})));
+  AOS.form('Disburse an advance',[
+    {id:'to',label:'Recipient (spending unit)',required:true,placeholder:'PHC Kakadeo'},
+    {id:'amount',label:'Amount (₹cr)',type:'number',required:true},
+    {id:'project',label:'Project',type:'select',options:projOpts,value:''},
+    {id:'channel',label:'Channel',type:'select',options:['government','grant','partner'],value:'government'},
+    {id:'advance_account',label:'Advances-Receivable (asset)',type:'select',options:assets,value:advG},
+    {id:'cash_account',label:'Paid from — Cash/Bank (asset)',type:'select',options:assets,value:cashG},
+    {id:'purpose',label:'Purpose',placeholder:'Q2 operating advance'}
+  ],{onSave:async v=>{
+     if(v.advance_account===v.cash_account)return {error:'Advances and Cash/Bank accounts must differ'};
+     const r=await api('/bridge/advance-disburse',{app_id:APP,to:v.to,amount:Number(v.amount),project:v.project||undefined,channel:v.channel,advance_account:v.advance_account,cash_account:v.cash_account,purpose:v.purpose});
+     if(r.error)return r; await reload(); render(); toast('Advance disbursed · outstanding '+money(r.outstanding)); return r;
+  }});
+}
+function liq(id){ const a=ADV.find(x=>x.id===id)||{}; const exps=expOpts();
+  AOS.form('Liquidate advance · '+(a.to_party||''),[
+    {id:'amount',label:'Amount to liquidate (₹cr)',type:'number',value:a.outstanding!=null?a.outstanding:'',required:true},
+    {id:'expense_account',label:'Charge to expense',type:'select',options:exps,value:(exps[0]&&exps[0].value)||''},
+    {id:'proof_ref',label:'Proof / utilization-certificate ref',placeholder:'UC-2026-014'}
+  ],{onSave:async v=>{
+     const r=await api('/bridge/advance-liquidate',{app_id:APP,advance:id,amount:Number(v.amount),expense_account:v.expense_account,proof_ref:v.proof_ref});
+     if(r.error)return r; await reload(); render(); toast('Liquidated · outstanding '+money(r.outstanding)); return r;
+  }});
+}
+async function recon(id){ const r=await api('/bridge/advance-reconcile',{app_id:APP,advance:id}); if(r.error){toast(r.error);return;} await reload(); render(); toast('Advance reconciled'); }
 
 function ferr(m){ const e=document.getElementById('ferr'); if(e)e.textContent=m; }
 function closeM(){ document.getElementById('modal').classList.remove('open'); }

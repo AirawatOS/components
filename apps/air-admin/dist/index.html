@@ -1,0 +1,220 @@
+<!doctype html><meta charset="utf-8"><title>Air Intelligence Admin</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#38bdf8;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  h1{margin:0;font-size:16px}
+  .who{margin-left:auto;color:var(--dim);font-size:12px}
+  .rfr{border:1px solid var(--line);background:#1b2530;color:var(--ink);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
+  .rfr:hover{border-color:#2f3d4d}
+  .wrap{display:flex;gap:0;height:calc(100vh - 50px)}
+  .rail{width:360px;flex:none;border-right:1px solid var(--line);overflow:auto;padding:16px}
+  .main{flex:1;overflow:auto;padding:16px 22px}
+  .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px}
+  .lbl:first-child{margin-top:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .row{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px}
+  .row .k{color:var(--dim);flex:1}
+  .row .v{font-variant-numeric:tabular-nums;font-weight:600}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:#30363d}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .sub{color:var(--dim);font-size:12px}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+  .step h3{margin:0 0 4px;font-size:14px;display:flex;align-items:center;gap:9px}
+  .step .n{width:22px;height:22px;border-radius:50%;background:#1b2530;border:1px solid #2f3d4d;color:var(--accent);font-size:12px;display:flex;align-items:center;justify-content:center;flex:none}
+  .step p{margin:2px 0 10px;color:var(--dim);font-size:12.5px}
+  .btn{border:1px solid #2f3d4d;background:#1b2530;color:var(--ink);border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:var(--accent)} .btn:disabled{opacity:.45;cursor:default}
+  .btn.go{background:#12333f;border-color:#1f6f8b;color:#7fd7f0}
+  .btn.go:hover{border-color:var(--accent)}
+  input,select{background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:13px}
+  .field{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+  .field label{color:var(--dim);font-size:12px;width:150px}
+  .console{background:#0a0d12;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre-wrap;max-height:320px;overflow:auto;color:#c9d4df}
+  .console .ok{color:var(--ok)} .console .bad{color:var(--bad)} .console .hd{color:var(--accent)}
+  .tag{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;border:1px solid var(--line)}
+  .tag.champ{color:var(--ok);border-color:#1f5130;background:#0f2417}
+  .tag.rej{color:var(--dim)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+  th{text-align:left;color:var(--dim);font-weight:600;border-bottom:1px solid var(--line);padding:5px 8px}
+  td{padding:5px 8px;border-bottom:1px solid #1b2530;font-variant-numeric:tabular-nums}
+  .note{color:var(--warn);font-size:12px;margin-top:6px}
+</style>
+<header>
+  <h1>🌫️ Air Intelligence Admin</h1>
+  <span class="who" id="who"></span>
+  <button class="rfr" onclick="loadStatus()">↻ Refresh</button>
+</header>
+<div class="wrap">
+  <div class="rail" id="rail"><div class="sub">Loading pipeline status…</div></div>
+  <div class="main" id="main"></div>
+</div>
+<script>
+const enc=encodeURIComponent;
+let SESS={}, ST={};
+async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
+async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+  let j={};try{j=await r.json();}catch(e){} return {ok:r.ok,status:r.status,j};}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ---- the ADR-0073 PM2.5 pipeline (certified components, install order) --------------------------
+const PIPE=[
+ {id:'ds:airawat:driver/air-sensors',            n:'Live CPCB sensors → air.sensor_reading', key:'CPCB_API_KEY'},
+ {id:'ds:airawat:driver/cams-regional',          n:'CAMS regional (Open-Meteo, keyless)'},
+ {id:'ds:airawat:driver/era5-pblh',              n:'ERA5 boundary-layer height (keyless)'},
+ {id:'ds:airawat:driver/maiac-aod',              n:'MODIS MAIAC AOD (GEE)'},
+ {id:'ds:airawat:driver/nightlight-viirs',       n:'VIIRS nightlights (GEE)'},
+ {id:'ds:airawat:driver/firms-fire',             n:'NASA FIRMS active fire'},
+ {id:'ds:airawat:driver/feature-backfill',       n:'Historical CAMS/ERA5 backfill (keyless)'},
+ {id:'ds:airawatdeveloper:driver/corpus-builder',n:'Training-corpus builder (keyless archive)'},
+ {id:'ds:airawatdeveloper:engine/pm25-features', n:'Feature store'},
+ {id:'ds:airawatdeveloper:engine/pm25-model',    n:'PM2.5 model — train / gate / infer'},
+];
+const FS='pm25-train-cpcb';                        // the training feature-set / champion slot key
+// live schedules created by "Go live"
+const SCHED=[
+ {comp:'ds:airawat:driver/cams-regional', cron:'2 * * * *',  name:'CAMS refresh', env:{}},
+ {comp:'ds:airawat:driver/era5-pblh',     cron:'2 * * * *',  name:'PBLH refresh', env:{}},
+ {comp:'ds:airawatdeveloper:engine/pm25-features', cron:'15 * * * *', name:'Feature snapshot', env:{}},
+ {comp:'ds:airawatdeveloper:engine/pm25-model', cron:'30 * * * *', name:'Hourly nowcast (INFER)', env:{INFER:'1',FEATURE_SET:FS,SNAPSHOT_FEATURE_SET:'pm25'}},
+ {comp:'ds:airawatdeveloper:engine/pm25-model', cron:'0 1 * * 0', name:'Weekly train (PERSIST, gated)', env:{PERSIST:'1',FEATURE_SET:FS,SNAPSHOT_FEATURE_SET:'pm25',MAX_TRAIN:'100000',CV_FOLDS:'3'}},
+];
+
+async function count(schema){ const {j}=await jpost('/bridge/query',{schema,count:true}); return (j&&typeof j.count==='number')?j.count:null; }
+async function rows(schema,limit){ const {j}=await jpost('/bridge/query',{schema,limit:limit||500}); return (j&&j.results||[]).map(x=>x.object||x); }
+
+async function loadStatus(){
+  const rail=document.getElementById('rail');
+  try{
+    const [aoi,sensors,cams,pblh,aod,bld,roads,pop,terr,fm,models,aq,sch]=await Promise.all([
+      count('space.aoi'),count('air.sensor_reading'),count('cell.cams'),count('cell.boundary_layer'),count('cell.aod'),
+      count('cell.buildings'),count('cell.roads'),count('demographics.population'),count('geo.terrain'),
+      rows('air.feature_matrix',50),rows('air.model',50),count('air.quality'),jget('/bridge/schedules').catch(()=>({schedules:[]}))
+    ]);
+    ST={aoi,sensors,cams,pblh,aod,bld,roads,pop,terr,fm,models,aq,sch:(sch.schedules||sch||[])};
+    const champ=(models||[]).filter(m=>m.champion&&(m.feature_set===FS)).sort((a,b)=>(b.observed_at||'').localeCompare(a.observed_at||''))[0];
+    const chalC=(models||[]).filter(m=>!m.champion).length;
+    const corpus=(fm||[]).filter(m=>m.feature_set===FS).sort((a,b)=>(b.observed_at||'').localeCompare(a.observed_at||''))[0];
+    const dot=(v)=>`<span class="dot ${v>0?'ok':'bad'}"></span>`;
+    rail.innerHTML=`
+      <div class="lbl">Area of interest</div>
+      <div class="card"><div class="row"><span class="dot ${aoi>0?'ok':'bad'}"></span><span class="k">space.aoi defined</span><span class="v">${aoi??'—'}</span></div></div>
+      <div class="lbl">Baseline layers (from City Baseline)</div>
+      <div class="card">
+        ${[['Buildings',bld],['Roads',roads],['Population',pop],['Terrain',terr]].map(([k,v])=>
+          `<div class="row">${dot(v)}<span class="k">${k}</span><span class="v">${v??'—'}</span></div>`).join('')}
+        ${bld>0?'':'<div class="note">Run City Baseline first — the model joins these per-cell layers.</div>'}
+      </div>
+      <div class="lbl">Air inputs</div>
+      <div class="card">
+        <div class="row"><span class="dot ${sensors>0?'ok':'warn'}"></span><span class="k">Sensor readings (labels)</span><span class="v">${sensors??'—'}</span></div>
+        ${[['CAMS',cams],['Boundary layer',pblh],['AOD',aod]].map(([k,v])=>`<div class="row">${dot(v)}<span class="k">${k}</span><span class="v">${v??'—'}</span></div>`).join('')}
+      </div>
+      <div class="lbl">Training corpus</div>
+      <div class="card">${corpus?`<div class="row"><span class="dot ok"></span><span class="k">${esc(corpus.feature_set)}</span><span class="v">${corpus.rows} rows</span></div><div class="sub mono">${esc((corpus.prov&&corpus.prov.stations)||'?')} stations · built ${esc((corpus.built_at||'').slice(0,10))}</div>`:'<div class="row"><span class="dot bad"></span><span class="k">No corpus yet</span></div>'}</div>
+      <div class="lbl">Champion model</div>
+      <div class="card">${champ?`<div class="row"><span class="tag champ">champion</span><span class="k">r²</span><span class="v">${(champ.metrics&&champ.metrics.leave_station_out&&champ.metrics.leave_station_out.r2)??'—'}</span></div><div class="sub mono">${champ.n_stations||'?'} stations · ${(champ.observed_at||'').slice(0,16).replace('T',' ')}</div><div class="sub">${chalC} challenger record(s)</div>`:'<div class="row"><span class="dot bad"></span><span class="k">No champion trained</span></div>'}</div>
+      <div class="lbl">Output surface</div>
+      <div class="card"><div class="row"><span class="dot ${aq>0?'ok':'bad'}"></span><span class="k">air.quality cells</span><span class="v">${aq??'—'}</span></div></div>
+      <div class="lbl">Live schedules</div>
+      <div class="card">${(ST.sch&&ST.sch.length)?ST.sch.filter(s=>/pm25|cams|pblh|era5|feature|nowcast/i.test((s.component||'')+(s.id||'')+(s.name||''))).map(s=>`<div class="row"><span class="dot ${s.enabled?'ok':'warn'}"></span><span class="k">${esc(s.name||(s.component||'').split('/').pop())}</span><span class="v mono">${esc(s.cron||'')}</span></div>`).join('')||'<div class="sub">none for air yet</div>':'<div class="sub">none</div>'}</div>`;
+    renderModel(models);
+  }catch(e){ rail.innerHTML='<div class="note">Status error: '+esc(e.message)+'</div>'; }
+}
+
+function renderModel(models){
+  const box=document.getElementById('modelbox'); if(!box) return;
+  const rec=(models||[]).filter(m=>m.feature_set===FS).sort((a,b)=>(b.observed_at||'').localeCompare(a.observed_at||''));
+  if(!rec.length){ box.innerHTML='<div class="sub">No models yet — run Train.</div>'; return; }
+  box.innerHTML=`<table><thead><tr><th>when</th><th>r²</th><th>stations</th><th>verdict</th></tr></thead><tbody>${
+    rec.slice(0,10).map(m=>`<tr><td class="mono">${esc((m.observed_at||'').slice(0,16).replace('T',' '))}</td><td>${(m.metrics&&m.metrics.leave_station_out&&m.metrics.leave_station_out.r2)??'—'}</td><td>${m.n_stations||'—'}</td><td><span class="tag ${m.champion?'champ':'rej'}">${esc(m.verdict||(m.champion?'champion':'—'))}</span></td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+// ---- actions ------------------------------------------------------------------------------------
+let LOG;
+function logLine(s,cls){ LOG.innerHTML+=(cls?`<span class="${cls}">`:'')+esc(s)+(cls?'</span>':'')+'\n'; LOG.scrollTop=LOG.scrollHeight; }
+function logHd(s){ logLine('▸ '+s,'hd'); }
+
+async function doInstall(){
+  logHd('Installing '+PIPE.length+' components into '+esc(SESS.tenant||'this tenant')+'…');
+  for(const c of PIPE){
+    const {ok,j}=await jpost('/bridge/install',{id:c.id});
+    logLine((ok?'  ✓ ':'  ✗ ')+c.id+(ok?'':(' — '+(j.error||j.detail||'failed'))), ok?'ok':'bad');
+  }
+  logHd('Install done.'); loadStatus();
+}
+async function setKey(){
+  const comp=document.getElementById('kcomp').value, name=document.getElementById('kname').value.trim(), val=document.getElementById('kval').value;
+  if(!name||!val){ logLine('  (enter a key name + value)','bad'); return; }
+  logHd('Setting '+name+' on '+comp.split('/').pop()+'…');
+  const {ok,j}=await jpost('/bridge/secret',{action:'set',component:comp,name,value:val});
+  logLine((ok?'  ✓ key stored (Vault, per-tenant)':'  ✗ '+(j.error||'failed')), ok?'ok':'bad');
+  document.getElementById('kval').value='';
+}
+async function runComp(id,env,label){
+  logHd('Run: '+label+' …  (synchronous — may take minutes)');
+  const {ok,j}=await jpost('/bridge/run',{component:id,env:env||{}});
+  const res=(j&&j.log)?String(j.log).split('\n').filter(l=>/RESULT:|GATE|PERSIST|INFER|assembled|wrote|error|Traceback|FATAL/i.test(l)).slice(-6).join('\n'):'';
+  logLine('  status='+(j.status||j.exit)+(res?'\n  '+res.replace(/\n/g,'\n  '):''), (j.status==='ok'||j.exit===0)?'ok':'bad');
+  loadStatus();
+}
+async function goLive(){
+  logHd('Creating '+SCHED.length+' live schedules…');
+  for(const s of SCHED){
+    const {ok,j}=await jpost('/bridge/schedule',{component:s.comp,cron:s.cron,name:s.name,env:s.env,enabled:true});
+    logLine((ok?'  ✓ ':'  ✗ ')+s.name+' ('+s.cron+')'+(ok?'':(' — '+(j.error||''))), ok?'ok':'bad');
+  }
+  logHd('Schedules live.'); loadStatus();
+}
+function confirmRun(fn,msg){ if(confirm(msg)) fn(); }
+
+function renderMain(){
+  const m=document.getElementById('main');
+  m.innerHTML=`
+    <div class="lbl">Setup pipeline — ${esc(SESS.tenant||'')}</div>
+    <div class="step"><h3><span class="n">1</span>Install components</h3>
+      <p>Install the ${PIPE.length} certified drivers + engines of the ADR-0073 PM2.5 pipeline into this tenant (grants + certs checked by the network/kernel).</p>
+      <button class="btn" onclick="confirmRun(doInstall,'Install the Air Intelligence pipeline into ${esc(SESS.tenant||'this tenant')}?')">Install pipeline components</button></div>
+    <div class="step"><h3><span class="n">2</span>Data-source keys</h3>
+      <p>Bind per-tenant keys in Vault (you enter them — they are never shown back). CPCB key powers live sensors; GEE powers the EO drivers.</p>
+      <div class="field"><label>Component</label>
+        <select id="kcomp">${PIPE.filter(c=>c.key||/maiac|nightlight|firms|sensors/.test(c.id)).map(c=>`<option value="${c.id}">${esc(c.n)}</option>`).join('')}</select></div>
+      <div class="field"><label>Key name</label><input id="kname" placeholder="e.g. CPCB_API_KEY" style="width:220px"></div>
+      <div class="field"><label>Value</label><input id="kval" type="password" placeholder="paste key" style="width:260px"><button class="btn" onclick="setKey()">Set key</button></div></div>
+    <div class="step"><h3><span class="n">3</span>Ingest current conditions</h3>
+      <p>Pull the latest hour: live CPCB stations, CAMS + PBLH + AOD, nightlights. (Baseline layers come from City Baseline.)</p>
+      <button class="btn" onclick="runComp('ds:airawat:driver/air-sensors',{},'live CPCB sensors')">Sensors</button>
+      <button class="btn" onclick="runComp('ds:airawat:driver/cams-regional',{},'CAMS')">CAMS</button>
+      <button class="btn" onclick="runComp('ds:airawat:driver/era5-pblh',{},'PBLH')">PBLH</button>
+      <button class="btn" onclick="runComp('ds:airawat:driver/maiac-aod',{},'AOD')">AOD</button>
+      <button class="btn" onclick="runComp('ds:airawat:driver/nightlight-viirs',{},'nightlights')">Nightlights</button></div>
+    <div class="step"><h3><span class="n">4</span>Build training corpus</h3>
+      <p>corpus-builder: reference-grade CPCB fleet × CAMS/ERA5 reanalysis over multiple years → one governed <span class="mono">air.feature_matrix</span>. Needs sensors ingested (for station coords).</p>
+      <div class="field"><label>Years</label><input id="cyears" value="2023,2024,2025" style="width:160px"></div>
+      <button class="btn" onclick="confirmRun(()=>runComp('ds:airawatdeveloper:driver/corpus-builder',{YEARS:document.getElementById('cyears').value,FEATURE_SET:'${FS}',SNAPSHOT_FEATURE_SET:'pm25'},'corpus-builder ('+document.getElementById('cyears').value+')'),'Build the training corpus? Downloads large archives — takes several minutes.')">Build corpus</button></div>
+    <div class="step"><h3><span class="n">5</span>Train model (champion / challenger gate)</h3>
+      <p>pm25-model PERSIST: trains a challenger, scores leave-station-out, and promotes it to champion only if it clears the floor and beats the incumbent.</p>
+      <button class="btn go" onclick="confirmRun(()=>runComp('ds:airawatdeveloper:engine/pm25-model',{PERSIST:'1',FEATURE_SET:'${FS}',SNAPSHOT_FEATURE_SET:'pm25',MAX_TRAIN:'100000',CV_FOLDS:'3'},'train (PERSIST, gated)'),'Train a challenger and gate it against the incumbent champion?')">Train model</button></div>
+    <div class="step"><h3><span class="n">6</span>Build snapshot &amp; infer</h3>
+      <p>pm25-features builds the current-hour grid; pm25-model INFER loads the champion and writes the <span class="mono">air.quality</span> surface.</p>
+      <button class="btn" onclick="runComp('ds:airawatdeveloper:engine/pm25-features',{},'feature snapshot')">Build snapshot</button>
+      <button class="btn go" onclick="runComp('ds:airawatdeveloper:engine/pm25-model',{INFER:'1',FEATURE_SET:'${FS}',SNAPSHOT_FEATURE_SET:'pm25'},'infer (load champion)')">Infer now</button></div>
+    <div class="step"><h3><span class="n">7</span>Go live</h3>
+      <p>Put the loop on schedules: hourly CAMS/PBLH → snapshot → nowcast, and a weekly gated retrain.</p>
+      <button class="btn go" onclick="confirmRun(goLive,'Create the ${SCHED.length} live schedules?')">Enable live schedules</button></div>
+    <div class="lbl">Model history</div>
+    <div class="step"><div id="modelbox"><div class="sub">…</div></div></div>
+    <div class="lbl">Activity</div>
+    <div class="console" id="console">Ready. Actions run as the signed-in tenant admin, through the governed bridges.\n</div>`;
+  LOG=document.getElementById('console');
+}
+
+(async function(){
+  try{ SESS=await jget('/session'); }catch(e){ SESS={}; }
+  document.getElementById('who').textContent=SESS.authenticated?('● '+(SESS.sub||'')+' · '+(SESS.tenant||'')):'not signed in';
+  renderMain(); loadStatus();
+})();
+</script>

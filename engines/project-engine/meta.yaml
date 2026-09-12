@@ -5,10 +5,30 @@
 # `project` — the project is the roll-up axis (also by owning org_unit). Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/project-engine
 kind: engine
-version: 0.4.0
+version: 0.4.3   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Project Engine
 entrypoint: run.py
+implements:
+  - project.adjust@0.1.0
+  - project.allocation_set@0.1.0
+  - project.evaluate@0.1.0
+  - project.proposal_decide@0.1.0
+  - project.proposal_save@0.1.0
+  - project.proposal_submit@0.1.0
+  - project.review@0.1.0
+  - project.rollup@0.1.0
+verbs:
+  proposal-submit: project.proposal_submit@0.1.0
+  proposal-save: project.proposal_save@0.1.0
+  proposal-decide: project.proposal_decide@0.1.0
+  project-rollup: project.rollup@0.1.0
+  project-review: project.review@0.1.0
+  project-evaluate: project.evaluate@0.1.0
+  project-adjust: project.adjust@0.1.0
+  allocation-set: project.allocation_set@0.1.0
+verbs_exempt:
+  - allocation-list   # read-only list helper backing the authoring UI; side-effect-free, no substitutable contract
 # 0.2.0: decided change-request writes governance.decision with case/task (schema-required); review/evaluate require an approved baseline.
 # reads: projects + proposals + allocations, employees, and the real ledger (transactions/budgets) for actuals.
 required_schemas: [project.project, project.proposal, project.allocation, project.review, project.evaluation, org.employee, finance.transaction, finance.budget, platform.inbox_item]

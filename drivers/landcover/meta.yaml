@@ -15,7 +15,7 @@ reads: [space.aoi]
 writes: [geo.landcover]
 # Structured egress: the broker enforces the per-host rate cap AND presents the declared User-Agent.
 egress:
-  - { host: overpass-api.de, rate_per_min: 20, user_agent: "AirawatOS/landcover (+https://airawat.org; contact@airawat.org)" }
+  - { host: overpass-api.de, rate_per_min: 20, user_agent: "AirawatOS/landcover (+https://airawat.org; manishsv@gmail.com)" }
 # Data-source DISCLOSURE: the derived geo.landcover attributes to OpenStreetMap (ODbL).
 sources:
   - { ref: "ds:airawat:ref/source/osm", host: overpass-api.de, provides: [geo.landcover] }

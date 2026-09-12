@@ -1,0 +1,25 @@
+# A SKILL (kind=skill, INT-0002). Frames welfare recommendations into clear human language. HYBRID reasoning:
+# the ENGINE owns the maths (persons, cells, lever, budget) — this skill only rewrites the TITLE + SUMMARY so a
+# councillor or citizen can read them, grounded ONLY in the recommendation's own stated facts (it changes no
+# number, invents nothing, stays direction-aware). Confined: broker only. No model ⇒ it keeps the engine's
+# deterministic text, LOUDLY flagged. AI phrases; the authority still decides downstream.
+component_id: ds:airawatdeveloper:skill/welfare-recommendation-advisory
+kind: skill
+version: 0.1.2
+provider: ds:airawat:developer
+display_name: Welfare Recommendation Advisory
+entrypoint: run.py
+confinement_min: L1
+# --- skill contract (INT-0002) ---
+domain: welfare
+applies_to_facts: [governance.recommendation]
+reasoning: hybrid
+triggers: [manual, on-fact-change]
+instructions: SKILL.md
+# --- governed vocabulary ---
+reads: [governance.recommendation, welfare.capability]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read,  scope: governance.recommendation }
+  - { verb: read,  scope: welfare.capability }
+  - { verb: write, scope: governance.recommendation }

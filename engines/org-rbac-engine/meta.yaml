@@ -5,10 +5,18 @@
 # materialise a target scope + resolve the caller's holdings. Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/org-rbac-engine
 kind: engine
-version: 0.2.0
+version: 0.2.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Org RBAC Engine
 entrypoint: run.py
+implements:
+  - governance.authz_check@0.1.0
+  - org.employee_provision@0.1.0
+  - org.posting_apply@0.1.0
+verbs:
+  posting-apply: org.posting_apply@0.1.0
+  authz-check: governance.authz_check@0.1.0
+  employee-provision: org.employee_provision@0.1.0
 # reads: employees + postings (posting-apply), the org unit/area tree (materialise authz-check targets), role_grants
 # (resolve the caller's effective grants). writes: role_grant (posting-apply projects into it).
 required_schemas: [org.employee, org.posting, org.org_unit, org.area, governance.role_grant]

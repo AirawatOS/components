@@ -1,0 +1,11 @@
+# An APP (kind=app) — MoSPI Statistics: browse India's official statistics (CPI, WPI, IIP, NAS, PLFS, ASI)
+# ingested from the MoSPI eSankhyiki open API. Read-only viewer over governed stat.price_index + stat.series.
+# Reads via the app-host /bridge/query (declares the schemas it reads below). Attributed to MoSPI throughout.
+component_id: ds:airawat:app/mospi-stats
+kind: app
+version: 0.1.2
+provider: ds:airawat:developer
+display_name: MoSPI Statistics
+icon: 📊
+entrypoint: index.html
+required_schemas: [stat.price_index, stat.series]

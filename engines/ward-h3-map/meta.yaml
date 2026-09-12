@@ -1,0 +1,19 @@
+# An ENGINE (kind=engine) — maps each AOI H3 cell to the WARD whose boundary contains its centroid, writing
+# space.ward_cell (ward↔H3). This is the ward→H3 mapping done at City Setup after a ward boundary is uploaded.
+# Pure point-in-polygon over the tenant's existing cells (demographics.population grid, else cell.buildings) — no
+# external deps, no egress. Runs as a host subprocess.
+component_id: ds:airawat:engine/ward-h3-map
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Ward → H3 mapper (space.ward → space.ward_cell)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.ward, demographics.population, cell.buildings]
+writes: [space.ward_cell]
+config: [RES]
+scopes:
+  - { verb: read,  scope: space.ward }
+  - { verb: read,  scope: demographics.population }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: write, scope: space.ward_cell }

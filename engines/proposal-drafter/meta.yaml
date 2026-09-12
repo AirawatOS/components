@@ -1,0 +1,19 @@
+# PROPOSAL DRAFTER (ADR-0071 S1). Turns a welfare recommendation into a DRAFT project.proposal — the human hinge's
+# starting point. Reads the cell-grain welfare.priority behind a governance.recommendation (+ capability/floor/cost
+# and any signal.report ground-truth), pre-fills a results chain + indicative budget + the funding-pivot fields
+# (answers/evidence/site/intervention/ask), and composes the project-engine's proposal-submit so the existing
+# baseline lifecycle (version, Inbox routing, decided-change-request → governance.decision) is reused, not rebuilt.
+# AI pre-fills ~80%; the Junior Engineer confirms feasibility, picks the lever, and finalises the budget.
+component_id: ds:airawatdeveloper:engine/proposal-drafter
+kind: engine
+version: 0.1.3   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+provider: ds:airawat:developer
+display_name: Proposal Drafter
+entrypoint: run.py
+implements:
+  - project.proposal_draft@0.1.0
+verbs:
+  proposal-draft: project.proposal_draft@0.1.0
+required_schemas: [governance.recommendation, welfare.priority, welfare.capability, welfare.floor, welfare.cost_model, welfare.intervention, welfare.gap, project.proposal]
+reads:  [governance.recommendation, welfare.priority, welfare.capability, welfare.floor, welfare.cost_model, welfare.intervention, welfare.gap]
+writes: []

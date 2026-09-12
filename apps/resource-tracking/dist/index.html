@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Resource Tracking</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --ink:#131a23; --muted:#5a6675; --line:#e4e8ef;
+  --accent:#2f6df6; --accent-soft:#e9eefc; --gold:#b7791f; --gold-bg:#fbf3e2;
+  --good:#0b8a5b; --good-bg:#e6f5ee; --warn:#c0392b; --warn-bg:#fbe9e7; --rail:#dfe4ec;
+  --gov:#2f6df6; --grant:#0b8a5b; --partner:#8b5cf6;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0e131a; --panel:#161d27; --ink:#e7edf4; --muted:#95a2b2; --line:#25303c;
+  --accent:#6f8cff; --accent-soft:#1b2333; --gold:#e0b25a; --gold-bg:#2a2213;
+  --good:#3ed39a; --good-bg:#12261d; --warn:#f0857a; --warn-bg:#2c1815; --rail:#2b3644;
+  --gov:#6f8cff; --grant:#3ed39a; --partner:#a78bfa;
+}}
+:root[data-theme=dark]{
+  --bg:#0e131a; --panel:#161d27; --ink:#e7edf4; --muted:#95a2b2; --line:#25303c;
+  --accent:#6f8cff; --accent-soft:#1b2333; --gold:#e0b25a; --gold-bg:#2a2213;
+  --good:#3ed39a; --good-bg:#12261d; --warn:#f0857a; --warn-bg:#2c1815; --rail:#2b3644;
+  --gov:#6f8cff; --grant:#3ed39a; --partner:#a78bfa;
+}
+*{box-sizing:border-box} html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 20px 48px}
+header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px}
+h1{font-size:21px;margin:0;letter-spacing:-.2px} .sub{color:var(--muted);font-size:12.5px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
+@media(max-width:820px){.grid{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+.kpi .v{font-size:25px;font-weight:750;letter-spacing:-.5px;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .d{font-size:12px;color:var(--muted);margin-top:3px}
+.kpi.warn .v{color:var(--warn)} .kpi.good .v{color:var(--good)}
+.bars{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:8px 0 4px;background:var(--rail)}
+.bars i{display:block;height:100%}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px}
+.card h2{font-size:15px;margin:0 0 4px} .card .h{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+.ladder{display:flex;flex-direction:column;gap:9px}
+.stage{display:grid;grid-template-columns:120px 1fr 92px;align-items:center;gap:10px}
+.stage .nm{font-size:12.5px;text-transform:capitalize;color:var(--ink)}
+.stage .track{height:16px;background:var(--rail);border-radius:5px;position:relative;overflow:hidden}
+.stage .fill{height:100%;background:var(--accent);border-radius:5px}
+.stage.stuck .fill{background:var(--warn)} .stage.stuck .nm{color:var(--warn);font-weight:700}
+.stage .amt{text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px}
+.stuckmsg{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-top:10px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:4px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+.p-out{background:var(--warn-bg);color:var(--warn)} .p-part{background:var(--gold-bg);color:var(--gold)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:5px} .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+.empty{color:var(--muted);padding:14px 2px} footer{margin-top:20px;color:var(--muted);font-size:11.5px}
+.attrib{background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:2px 8px;font-weight:600;font-size:11px}
+</style></head><body>
+<div class="wrap">
+  <header>
+    <h1>🛰️ Resource Tracking</h1>
+    <span class="sub">Public money, end-to-end — envelope → allocation → execution → outstanding. <span id="who"></span></span>
+  </header>
+  <div id="app"><div class="empty">Loading…</div></div>
+  <footer><span class="attrib">HRT watchtower</span> &nbsp; Assembled by the fund-flow-engine over governed <code>finance.budget / finance.fund_flow / finance.advance</code>. Every figure traces to a balanced, attributed ledger entry.</footer>
+</div>
+<script>
+const cr = n => (n==null?"–":"₹"+Number(n).toLocaleString("en-IN",{maximumFractionDigits:2})+"cr");
+const STAGES=["approved","allocated","released","committed","paid","expended"];
+async function load(){
+  let d;
+  try{ const r=await fetch("/bridge/hrt-summary",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:"{}"});
+       d=await r.json(); if(d.error) throw new Error(d.error); }
+  catch(e){ document.getElementById("app").innerHTML='<div class="empty">Could not load ('+e.message+'). Open this in the tenant that holds the funds.</div>'; return; }
+  document.getElementById("who").textContent = d.tenant ? ("· "+d.tenant) : "";
+  const env=d.envelope||{}, al=d.allocation||{}, ex=d.execution||{}, os=d.outstanding||{}, rev=d.revenue||{};
+  const bs=env.by_source||{}; const et=env.total||0;
+  const pct=v=> et? (100*v/et):0;
+  let h="";
+  // KPI row
+  h+='<div class="grid">';
+  h+='<div class="kpi"><div class="l">Resource envelope</div><div class="v">'+cr(et)+'</div>'
+    +'<div class="bars">'
+    +'<i style="width:'+pct(bs.government||0)+'%;background:var(--gov)"></i>'
+    +'<i style="width:'+pct(bs.grant||0)+'%;background:var(--grant)"></i>'
+    +'<i style="width:'+pct(bs.partner||0)+'%;background:var(--partner)"></i></div>'
+    +'<div class="legend"><span><i class="sw" style="background:var(--gov)"></i>Govt '+cr(bs.government||0)+'</span>'
+    +'<span><i class="sw" style="background:var(--grant)"></i>Grant '+cr(bs.grant||0)+'</span>'
+    +(bs.partner?'<span><i class="sw" style="background:var(--partner)"></i>Partner '+cr(bs.partner)+'</span>':'')+'</div></div>';
+  h+='<div class="kpi"><div class="l">Allocated</div><div class="v">'+cr(al.allocated)+'</div><div class="d">committed rev '+cr(rev.committed)+' · realized '+cr(rev.realized)+'</div></div>';
+  h+='<div class="kpi '+(ex.rate_pct>=90?"good":"")+'"><div class="l">Execution rate</div><div class="v">'+(ex.rate_pct==null?"–":ex.rate_pct+"%")+'</div><div class="d">'+cr(ex.spent)+' of '+cr(ex.allocated)+' spent</div></div>';
+  h+='<div class="kpi '+((os.outstanding||0)>0?"warn":"good")+'"><div class="l">Outstanding (unliquidated)</div><div class="v">'+cr(os.outstanding)+'</div><div class="d">'+cr(os.disbursed)+' disbursed · '+cr(os.liquidated)+' liquidated · '+(os.count||0)+' open</div></div>';
+  h+='</div>';
+  // fund-flow ladder(s) with bottleneck
+  (d.bottlenecks||[]).forEach(f=>{
+    const st=f.stages||{}; const max=Math.max(1,...STAGES.map(s=>st[s]||0));
+    h+='<div class="card"><h2>Fund flow — '+(f.channel||"")+' channel</h2><div class="h">'+(f.project||"")+'</div><div class="ladder">';
+    STAGES.forEach(s=>{ const v=st[s]||0; const stuck=(f.bottleneck===s);
+      h+='<div class="stage'+(stuck?" stuck":"")+'"><div class="nm">'+s+'</div>'
+        +'<div class="track"><div class="fill" style="width:'+(100*v/max)+'%"></div></div>'
+        +'<div class="amt">'+cr(v)+'</div></div>'; });
+    h+='</div>';
+    if(f.bottleneck) h+='<div class="stuckmsg">▶ Money is held up at <b>'+f.bottleneck+'</b> — approved/allocated upstream but not fully moved on.</div>';
+    else h+='<div class="d" style="margin-top:8px;color:var(--good)">No bottleneck — money is flowing through cleanly.</div>';
+    h+='</div>';
+  });
+  // outstanding watch-list
+  h+='<div class="card"><h2>Outstanding advances</h2><div class="h">Disbursed but not yet liquidated — the "received-but-unaccounted" watch-list.</div>';
+  const wl=d.watchlist||[];
+  if(!wl.length) h+='<div class="empty">Nothing outstanding — every advance is liquidated. ✅</div>';
+  else{ h+='<table><thead><tr><th>Recipient</th><th>Project</th><th class="num">Advance</th><th class="num">Liquidated</th><th class="num">Outstanding</th><th class="num">Age</th><th>Status</th></tr></thead><tbody>';
+    wl.forEach(a=>{ h+='<tr><td>'+(a.to_party||"–")+'</td><td class="sub">'+((a.project||"").split("/").pop())+'</td>'
+      +'<td class="num">'+cr(a.amount)+'</td><td class="num">'+cr(a.liquidated)+'</td><td class="num">'+cr(a.outstanding)+'</td>'
+      +'<td class="num">'+(a.age_days==null?"–":a.age_days+"d")+'</td>'
+      +'<td><span class="pill '+(a.status==="partially_liquidated"?"p-part":"p-out")+'">'+(a.status||"").replace(/_/g," ")+'</span></td></tr>'; });
+    h+='</tbody></table>'; }
+  h+='</div>';
+  document.getElementById("app").innerHTML=h;
+}
+load();
+</script></body></html>

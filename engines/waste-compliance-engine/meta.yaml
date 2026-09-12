@@ -1,0 +1,18 @@
+# WASTE COMPLIANCE ENGINE (Solid Waste Management solution). The headline decision of the project — "which areas
+# have the strongest/weakest source-segregation compliance". Reads the governed waste.segregation_compliance
+# measures over the city's units, ranks the areas below a segregation floor worst-first, and emits a
+# governance.recommendation naming the weakest areas + the corrective action (IEC drive + graded enforcement +
+# re-inspection). Decision spine (ADR-0029): AI recommends; a sanitation authority admits it into a decision.
+component_id: ds:airawatdeveloper:engine/waste-compliance-engine
+kind: engine
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+provider: ds:airawat:developer
+display_name: Waste Compliance Engine
+entrypoint: run.py
+implements:
+  - waste.compliance_rank@0.1.0
+verbs:
+  waste-compliance-rank: waste.compliance_rank@0.1.0
+required_schemas: [waste.segregation_compliance, civic.household, governance.recommendation]
+reads:  [waste.segregation_compliance, civic.household]
+writes: [governance.recommendation]
