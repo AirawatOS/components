@@ -1,0 +1,195 @@
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Field Report</title>
+<style>
+  :root{--bg:#0b1622;--panel:#12202f;--edge:#22364a;--ink:#e6eef6;--muted:#8fa6bd;--accent:#38bdf8;--ok:#34d399;--warn:#f59e0b;--bad:#f87171}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--edge);position:sticky;top:0;background:var(--bg);z-index:2}
+  header h1{font-size:16px;margin:0;font-weight:700}
+  .net{margin-left:auto;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--edge)}
+  .net.on{color:var(--ok);border-color:#14532d}.net.off{color:var(--warn);border-color:#78350f}
+  main{max-width:640px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:14px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+  input,select,textarea{width:100%;background:#0c1826;border:1px solid var(--edge);border-radius:8px;color:var(--ink);padding:8px 10px;font:inherit}
+  textarea{min-height:64px;resize:vertical}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  button{background:var(--accent);color:#04121e;border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--edge)}
+  button:disabled{opacity:.5;cursor:default}
+  .hd{display:flex;align-items:center;gap:8px;margin:0 0 8px}.hd h2{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .badge{margin-left:auto;font-size:12px;color:var(--muted)}
+  .item{border-top:1px solid var(--edge);padding:8px 0;font-size:13px}
+  .st{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--edge);margin-left:6px}
+  .st.queued{color:var(--warn)}.st.synced{color:var(--ok)}.st.rejected{color:var(--bad)}
+  .muted{color:var(--muted)}.tiny{font-size:11px}
+  .prov{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--warn)}.dot.ok{background:var(--ok)}
+</style>
+<header>
+  <h1>📣 Field Report</h1>
+  <span id="net" class="net off">…</span>
+</header>
+<main>
+  <div class="card">
+    <div class="prov"><span id="pdot" class="dot"></span><span id="prov">Checking device…</span>
+      <button id="enrol" class="ghost tiny" style="margin-left:auto;padding:5px 10px" hidden>Enrol device</button></div>
+  </div>
+
+  <div class="card">
+    <div class="hd"><h2>File an incident</h2></div>
+    <label>What is happening?</label>
+    <input id="title" placeholder="e.g. Open drain overflowing near the temple">
+    <div class="row">
+      <div><label>Category</label>
+        <select id="category"><option value="sanitation">Sanitation</option><option value="water">Water</option>
+          <option value="roads_transport">Roads &amp; transport</option><option value="health">Health</option>
+          <option value="law_and_order">Law &amp; order</option><option value="environment">Environment</option>
+          <option value="infrastructure">Infrastructure</option><option value="disaster">Disaster</option>
+          <option value="other" selected>Other</option></select></div>
+      <div><label>Severity</label>
+        <select id="severity"><option>low</option><option selected>medium</option><option>high</option><option>critical</option></select></div>
+    </div>
+    <label>Location (landmark / area)</label>
+    <input id="place" placeholder="e.g. Panchavati, Nashik">
+    <label>Details</label>
+    <textarea id="desc" placeholder="Optional description"></textarea>
+    <div class="row" style="margin-top:6px">
+      <div><label>Latitude</label><input id="lat" inputmode="decimal" placeholder="auto / optional"></div>
+      <div><label>Longitude</label><input id="lng" inputmode="decimal" placeholder="auto / optional"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button id="loc" class="ghost">📍 Use my location</button>
+      <button id="file" style="margin-left:auto">Save report</button>
+    </div>
+    <p id="msg" class="tiny muted" style="margin:8px 0 0"></p>
+  </div>
+
+  <div class="card">
+    <div class="hd"><h2>Outbox</h2><span class="badge" id="obadge">0</span>
+      <button id="sync" class="ghost tiny" style="padding:5px 10px">Sync now</button></div>
+    <div id="outbox"><p class="muted tiny">No queued reports.</p></div>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+// ---------- multibase base64url ('u', no padding) — matches network crypto.py ----------
+const mb=buf=>{let b=btoa(String.fromCharCode(...new Uint8Array(buf)));return "u"+b.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");};
+// ---------- JCS canonicalization — byte-identical to crypto.py _canon (sorted keys, JSON strings, JS-number fmt) ----------
+function canon(o){
+  if(o===null) return "null";
+  if(typeof o==="boolean") return o?"true":"false";
+  if(typeof o==="number"){ if(!isFinite(o)) throw new Error("non-finite"); return String(o); }
+  if(typeof o==="string") return JSON.stringify(o);
+  if(Array.isArray(o)) return "["+o.map(canon).join(",")+"]";
+  if(typeof o==="object"){ const ks=Object.keys(o).sort(); return "{"+ks.map(k=>JSON.stringify(k)+":"+canon(o[k])).join(",")+"}"; }
+  throw new Error("non-canonicalizable");
+}
+const enc=new TextEncoder();
+// ---------- IndexedDB (device key/VC + signed outbox) ----------
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("airawat-fieldkit",1);
+  r.onupgradeneeded=e=>{const d=e.target.result; if(!d.objectStoreNames.contains("kv"))d.createObjectStore("kv"); if(!d.objectStoreNames.contains("outbox"))d.createObjectStore("outbox",{keyPath:"uuid"});};
+  r.onsuccess=e=>res(e.target.result); r.onerror=e=>rej(e.target.error);});}
+async function kvGet(k){const d=await idb();return new Promise(r=>{const t=d.transaction("kv").objectStore("kv").get(k);t.onsuccess=()=>r(t.result);t.onerror=()=>r(undefined);});}
+async function kvPut(k,v){const d=await idb();return new Promise(r=>{const t=d.transaction("kv","readwrite").objectStore("kv").put(v,k);t.onsuccess=()=>r();});}
+async function obAll(){const d=await idb();return new Promise(r=>{const t=d.transaction("outbox").objectStore("outbox").getAll();t.onsuccess=()=>r(t.result||[]);});}
+async function obPut(o){const d=await idb();return new Promise(r=>{const t=d.transaction("outbox","readwrite").objectStore("outbox").put(o);t.onsuccess=()=>r();});}
+
+let DEVICE=null;                                            // {vc, pubkey, priv(CryptoKey), tenant}
+const uuid=()=>crypto.randomUUID().replace(/-/g,"").slice(0,16);
+const nowISO=()=>new Date().toISOString().replace(/\.\d+Z$/,"Z");
+
+async function loadDevice(){
+  const d=await kvGet("device");
+  if(d && d.vc && d.priv){ DEVICE=d; return true; } return false;
+}
+async function enrolDevice(){
+  // generate a non-extractable Ed25519 keypair on THIS device; only the public half leaves.
+  const kp=await crypto.subtle.generateKey({name:"Ed25519"}, false, ["sign","verify"]);
+  const raw=await crypto.subtle.exportKey("raw", kp.publicKey);
+  const pub=mb(raw);
+  const device_id="kit-"+uuid().slice(0,8);
+  const r=await fetch("/bridge/provision-device",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({device_key:pub, device_id})});
+  if(!r.ok){ throw new Error("enrol failed ("+r.status+"): "+(await r.text()).slice(0,120)); }
+  const j=await r.json(); const vc=j.credential;
+  DEVICE={vc, pubkey:pub, priv:kp.privateKey, tenant:vc.issuer_tenant, holder:j.holder};
+  await kvPut("device", DEVICE);
+  return DEVICE;
+}
+async function signCapture(payload){
+  const u=uuid(), vt=nowISO(), tenant=DEVICE.tenant;
+  const core={uuid:u, valid_time:vt, tenant, payload};
+  const sig=await crypto.subtle.sign({name:"Ed25519"}, DEVICE.priv, enc.encode(canon(core)));
+  return {uuid:u, valid_time:vt, payload, sig:mb(sig), vc_id:DEVICE.vc.id, status:"queued", created:vt};
+}
+
+// ---------- UI ----------
+function online(){return navigator.onLine;}
+function paintNet(){const e=$("net"); if(online()){e.className="net on";e.textContent="● online";} else {e.className="net off";e.textContent="○ offline — reports will queue";}}
+function paintProv(){const ok=!!DEVICE; $("pdot").className="dot"+(ok?" ok":"");
+  $("prov").textContent = ok ? ("Device enrolled · "+(DEVICE.holder||DEVICE.vc.holder)) : "Device not enrolled — sign in online and enrol to file offline.";
+  $("enrol").hidden = ok; $("file").disabled = !ok; }
+async function paintOutbox(){
+  const items=(await obAll()).sort((a,b)=>b.created.localeCompare(a.created));
+  const q=items.filter(i=>i.status==="queued").length; $("obadge").textContent=q+" queued";
+  $("sync").disabled = !online() || !q;
+  $("outbox").innerHTML = items.length ? items.map(i=>`<div class="item"><b>${esc(i.payload.title||"(no title)")}</b>
+     <span class="st ${i.status}">${i.status}${i.reason?" · "+esc(i.reason):""}</span>
+     <div class="muted tiny">${esc(i.payload.category||"")} · ${esc(i.payload.place||i.payload.location_text||"")} · captured ${esc(i.created)}</div></div>`).join("")
+     : '<p class="muted tiny">No queued reports.</p>';
+}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function flash(m,bad){const e=$("msg");e.textContent=m;e.style.color=bad?"var(--bad)":"var(--muted)";}
+
+async function fileReport(){
+  if(!DEVICE){ flash("Enrol the device first.",true); return; }
+  const title=$("title").value.trim(); if(!title){ flash("Describe what is happening.",true); return; }
+  const payload={title, jurisdiction:DEVICE.vc.claims.jurisdiction||DEVICE.tenant,
+    category:$("category").value, severity:$("severity").value};
+  const place=$("place").value.trim(); if(place) payload.location_text=place;
+  const desc=$("desc").value.trim(); if(desc) payload.description=desc;
+  const lat=parseFloat($("lat").value), lng=parseFloat($("lng").value);
+  if(isFinite(lat)&&isFinite(lng)){ payload.lat=lat; payload.lng=lng; }
+  const cap=await signCapture(payload);
+  await obPut(cap);
+  ["title","place","desc","lat","lng"].forEach(id=>$(id).value="");
+  flash(online()? "Saved — syncing…" : "Saved offline — will sync when back online.");
+  await paintOutbox();
+  if(online()) sync();
+}
+
+async function sync(){
+  if(!online() || !DEVICE) return;
+  const items=(await obAll()).filter(i=>i.status==="queued");
+  if(!items.length) return;
+  $("sync").disabled=true;
+  const captures=items.map(i=>({uuid:i.uuid, valid_time:i.valid_time, payload:i.payload, sig:i.sig}));
+  try{
+    const r=await fetch("/bridge/offline-relay",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({credential:DEVICE.vc, captures})});
+    const j=await r.json(); const byId={}; (j.results||[]).forEach(x=>byId[x.uuid]=x);
+    for(const it of items){ const res=byId[it.uuid];
+      if(res && (res.status==="written"||res.status==="duplicate")){ it.status="synced"; it.id=res.id; }
+      else if(res){ it.status="rejected"; it.reason=res.reason||"rejected"; }
+      await obPut(it); }
+    flash("Sync: "+(j.written||0)+" filed, "+(j.rejected||0)+" rejected.");
+  }catch(e){ flash("Sync failed — still offline? "+String(e.message||e).slice(0,80),true); }
+  await paintOutbox();
+}
+
+$("enrol").onclick=async()=>{ try{ flash("Enrolling device…"); await enrolDevice(); paintProv(); flash("Device enrolled — you can now file offline."); }catch(e){ flash(String(e.message||e),true); } };
+$("file").onclick=fileReport;
+$("sync").onclick=sync;
+$("loc").onclick=()=>navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>{$("lat").value=p.coords.latitude.toFixed(6);$("lng").value=p.coords.longitude.toFixed(6);flash("Location captured.");},()=>flash("Location unavailable.",true));
+window.addEventListener("online",()=>{paintNet();paintOutbox();sync();});
+window.addEventListener("offline",()=>{paintNet();paintOutbox();});
+
+(async function boot(){
+  paintNet();
+  if("serviceWorker" in navigator){ try{ await navigator.serviceWorker.register("sw.js"); }catch(e){} }
+  await loadDevice(); paintProv(); await paintOutbox();
+  if(!DEVICE && online()){ $("enrol").hidden=false; }        // offer enrolment
+  if(online()) sync();
+})();
+</script>

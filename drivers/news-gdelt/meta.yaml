@@ -1,0 +1,20 @@
+# A DRIVER (kind=driver) — real, KEYLESS news ingestion from the GDELT DOC 2.0 API → news.item (News vertical).
+# The global sibling of news-rss: for each jurisdiction query it hits GDELT's article search (keyless JSON),
+# tags each article with its jurisdiction + civic topics, and writes news.item (same schema, deduped by url hash).
+# Real coverage only — fetch or fail loudly; NO synthetic fabrication, NO tenant default.
+# Runs as a host subprocess (keyless HTTP via the broker) — no runtime profile.
+component_id: ds:airawat:driver/news-gdelt
+kind: driver
+version: 0.2.0
+provider: ds:airawat:developer
+display_name: News (GDELT DOC 2.0)
+entrypoint: run.py
+confinement_min: L1
+writes: [news.item]
+egress:
+  - { host: api.gdeltproject.org, rate_per_min: 30, user_agent: "AirawatOS/news-gdelt (+https://airawat.org; manishsv@gmail.com)" }
+config: [QUERIES, MAXITEMS, TIMESPAN]
+sources:
+  - { ref: "ds:airawat:ref/source/gdelt", host: api.gdeltproject.org, provides: [news.item] }
+scopes:
+  - { verb: write, scope: news.item }
