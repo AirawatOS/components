@@ -3,9 +3,13 @@
 # ITS OWN read grants (no elevated token). Any module calls it via /bridge/policy-resolve or ctx.call.
 component_id: ds:airawatdeveloper:engine/policy-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Policy Engine
 entrypoint: run.py
+implements:
+  - org.policy_resolve@0.1.0
+verbs:
+  policy-resolve: org.policy_resolve@0.1.0
 required_schemas: [org.employee, org.posting, org.position, hr.job_level, org.policy]
 writes: []

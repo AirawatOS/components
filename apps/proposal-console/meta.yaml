@@ -1,0 +1,18 @@
+# PROPOSAL STUDIO (kind=app) — the Junior Engineer's authoring surface (ADR-0071 S1). Browse the welfare
+# recommendations the system flagged; DRAFT a project.proposal from one (the AI pre-fills the results chain, the
+# site cells, an indicative budget and the funding ask); then the JE confirms feasibility, PICKS THE INTERVENTION
+# LEVER, edits the budget line items, sets the funding ask, and SUBMITS for approval — which routes to the Inbox
+# and (on approve) mints a governance.decision + commits the budget. Authoring only: it reads the diagnosis and
+# drives the proposal-drafter / project-engine verbs; it holds no direct write scope of its own.
+component_id: ds:airawatdeveloper:app/proposal-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Proposal Studio
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [governance.recommendation, project.proposal, project.project, welfare.priority, welfare.capability, finance.budget]
+reads: [governance.recommendation, project.proposal, project.project, welfare.priority, welfare.capability, finance.budget]
+writes: []
+roles: [platform.tenant-admin]

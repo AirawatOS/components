@@ -1,0 +1,304 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Waste Collector</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  :root{--bg:#0a120e;--pan:#102019;--pan2:#0c1712;--edge:#1f3a2c;--ink:#eafef4;--dim:#8fb6a4;--grn:#3ad392;--teal:#2fd0c8;--gold:#e8c24b;--good:#2ecc71;--miss:#e0863a;--bad:#e05a6b}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-text-size-adjust:100%}
+  #app{position:absolute;inset:0;display:flex;flex-direction:column;max-width:520px;margin:0 auto;overflow:hidden}
+  header{padding:12px 16px;border-bottom:1px solid var(--edge)}
+  header .k{font:10.5px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--grn)}
+  header h1{margin:2px 0 0;font-size:19px;font-weight:700}
+  .bar{padding:10px 16px;border-bottom:1px solid var(--edge);display:flex;gap:9px;align-items:center;background:var(--pan2)}
+  select{flex:1;padding:12px;border-radius:11px;border:1px solid var(--edge);background:var(--pan);color:var(--ink);font-size:15px;-webkit-appearance:none;appearance:none}
+  .btn{padding:12px 15px;border-radius:11px;border:1px solid var(--grn);background:linear-gradient(180deg,#3ad39222,#3ad39210);color:#c8f7dd;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .btn:active{transform:scale(.97)} .btn:disabled{opacity:.5}
+  .btn.sm{padding:8px 12px;font-size:13px}
+  .toolbar{display:flex;gap:8px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--edge);font-size:12.5px;color:var(--dim)}
+  .seg{display:flex;border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+  .seg button{padding:8px 14px;background:var(--pan);color:var(--dim);border:none;font-size:13px;font-weight:700;cursor:pointer}
+  .seg button.on{background:var(--grn);color:#04140c}
+  .chk{margin-left:auto;display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+  .chk input{width:17px;height:17px;accent-color:var(--grn)}
+  .prog{padding:9px 16px;border-bottom:1px solid var(--edge)}
+  .prog .top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--dim);margin-bottom:6px}
+  .prog .top b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .track{height:9px;border-radius:6px;background:#0a1611;border:1px solid var(--edge);overflow:hidden}
+  .track > i{display:block;height:100%;background:linear-gradient(90deg,var(--grn),var(--teal));width:0;transition:width .3s}
+  #msg{font-size:12px;color:var(--dim);padding:5px 16px;min-height:14px}
+  main{flex:1;overflow:auto;position:relative}
+  .list{padding:8px 12px 20px}
+  .prop{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--edge);border-radius:13px;background:var(--pan);margin-bottom:8px}
+  .prop.cur{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal) inset}
+  .prop .ix{width:30px;height:30px;border-radius:8px;background:var(--pan2);border:1px solid var(--edge);display:grid;place-items:center;font:11px ui-monospace,monospace;color:var(--dim);flex:none}
+  .prop.cur .ix{background:#0c2b26;border-color:var(--teal);color:var(--teal)}
+  .prop .id{flex:1;min-width:0}
+  .prop .id .a{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prop .id .b{font:10.5px ui-monospace,monospace;color:var(--dim);margin-top:1px}
+  .acts{display:flex;gap:7px;flex:none}
+  .tap{width:52px;height:44px;border-radius:11px;border:1px solid var(--edge);background:var(--pan2);color:var(--dim);font-size:12px;font-weight:700;cursor:pointer;display:grid;place-items:center}
+  .tap:active{transform:scale(.94)}
+  .tap.done.col{background:#12351f;border-color:#1f5c33;color:var(--good)}
+  .tap.done.mis{background:#3a2411;border-color:#5c3a1f;color:var(--miss)}
+  .pager{display:flex;align-items:center;justify-content:center;gap:12px;padding:6px 12px 16px}
+  .pager span{font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .empty{color:var(--dim);font-size:14px;padding:30px 16px;text-align:center;border:1px dashed var(--edge);border-radius:13px;margin:10px}
+  /* map */
+  #mapwrap{position:absolute;inset:0;display:none;flex-direction:column}
+  #cv{flex:1;width:100%;touch-action:none;background:#0e1c15;cursor:grab}
+  #cv:active{cursor:grabbing}
+  .legend{position:absolute;top:8px;left:12px;display:flex;gap:11px;font-size:11px;color:var(--ink);background:#0a1611cc;border:1px solid var(--edge);border-radius:9px;padding:6px 10px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  .mapctl{position:absolute;top:44px;right:10px;display:flex;flex-direction:column;gap:7px}
+  .mapctl button{width:42px;height:42px;border-radius:11px;border:1px solid var(--edge);background:#0a1611dd;color:var(--ink);font-size:19px;font-weight:700;cursor:pointer;display:grid;place-items:center;backdrop-filter:blur(2px)}
+  .mapctl button:active{transform:scale(.94);border-color:var(--teal)}
+  .attrib{position:absolute;bottom:74px;right:8px;font-size:9.5px;color:#cfe;background:#0a1611aa;border-radius:5px;padding:2px 6px}
+  .zbadge{position:absolute;bottom:74px;left:12px;font:10.5px ui-monospace,monospace;color:var(--dim);background:#0a1611aa;border-radius:5px;padding:2px 7px}
+  .actcard{border-top:1px solid var(--edge);background:var(--pan2);padding:11px 14px;display:flex;align-items:center;gap:11px}
+  .actcard .lab{flex:1;min-width:0}
+  .actcard .lab .t{font-size:11px;color:var(--teal);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .actcard .lab .n{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .actcard .lab .c{font:10.5px ui-monospace,monospace;color:var(--dim)}
+  .actcard .tap{width:66px;height:46px}
+  .load{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9;color:var(--dim)}
+</style></head><body>
+<div id="app">
+  <header><div class="k" id="eyebrow">Solid Waste · Field Capture</div><h1>Waste Collector</h1></header>
+  <div class="bar">
+    <select id="ward"><option value="">Loading wards…</option></select>
+    <button class="btn" id="load">Start route</button>
+  </div>
+  <div class="toolbar" id="toolbar" style="display:none">
+    <div class="seg"><button id="tab-list" class="on">List</button><button id="tab-map">Map</button></div>
+    <label class="chk"><input type="checkbox" id="remaining"> Remaining only</label>
+  </div>
+  <div class="prog" id="prog" style="display:none">
+    <div class="top"><span id="wname">—</span><span><b id="dn">0</b>/<b id="tot">0</b> done · <b id="cov">—</b></span></div>
+    <div class="track"><i id="fill"></i></div>
+  </div>
+  <div id="msg"></div>
+  <main>
+    <div class="list" id="list"><div class="empty">Choose your ward and tap <b>Start route</b>.</div></div>
+    <div id="mapwrap">
+      <canvas id="cv"></canvas>
+      <div class="legend">
+        <span><i style="background:#8aa0b8"></i>pending</span>
+        <span><i style="background:var(--good)"></i>done</span>
+        <span><i style="background:var(--miss)"></i>missed</span>
+        <span><i style="background:var(--teal)"></i>now</span>
+      </div>
+      <div class="mapctl">
+        <button id="zin" title="Zoom in">+</button>
+        <button id="zout" title="Zoom out">−</button>
+        <button id="nowbtn" title="Centre on current stop">◎</button>
+        <button id="fitbtn" title="Fit whole ward">⤢</button>
+      </div>
+      <div class="zbadge" id="zbadge">z—</div>
+      <div class="attrib">© OpenStreetMap</div>
+      <div class="actcard" id="actcard"><div class="lab"><div class="t">Route complete</div><div class="n">—</div></div></div>
+    </div>
+  </main>
+</div>
+<div class="load" id="load0">loading…</div>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let APPID="waste-collector", TENANT=null, PROPS=[], BOUNDARY=[], WARDNAME="";
+let MODE="list", PAGE=0, REMAINING=false, SEL=null;
+const PAGE_SIZE=20;
+async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); if(!r.ok){let t="";try{t=(await r.json()).error||"";}catch(e){} throw new Error(t||(p+" "+r.status)); } return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:2000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
+const shortId=id=>String(id).split("/").slice(-1)[0];
+const pending=()=>PROPS.filter(p=>!p.status);
+const current=()=>pending()[0]||null;
+const nextP=()=>pending()[1]||null;
+
+function progress(){
+  const done=PROPS.filter(p=>p.status).length, col=PROPS.filter(p=>p.status==="completed").length, tot=PROPS.length;
+  $("dn").textContent=done; $("tot").textContent=tot;
+  $("cov").textContent=done?Math.round(col/done*100)+"% coverage":"—";
+  $("fill").style.width=tot?(done/tot*100)+"%":"0";
+}
+
+/* ---------- LIST (paginated) ---------- */
+function propRow(p){
+  const col=p.status==="completed", mis=p.status==="missed", isCur=current()&&p.id===current().id;
+  const idx=PROPS.indexOf(p)+1;
+  return `<div class="prop ${isCur?'cur':''}" data-id="${esc(p.id)}">
+    <div class="ix">${isCur?'▶':idx}</div>
+    <div class="id"><div class="a">Property ${esc(shortId(p.id))}</div>
+      <div class="b">${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${p.today?' · today ✓':''}</div></div>
+    <div class="acts">
+      <button class="tap ${col?'done col':''}" data-act="completed">${col?'✓':'Col'}</button>
+      <button class="tap ${mis?'done mis':''}" data-act="missed">${mis?'✕':'Miss'}</button>
+    </div></div>`;
+}
+function renderList(){
+  const rows=REMAINING?pending():PROPS;
+  const pages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  if(PAGE>=pages) PAGE=pages-1; if(PAGE<0) PAGE=0;
+  const slice=rows.slice(PAGE*PAGE_SIZE,(PAGE+1)*PAGE_SIZE);
+  $("list").innerHTML = rows.length
+    ? slice.map(propRow).join("")+
+      `<div class="pager"><button class="btn sm" id="prev" ${PAGE<=0?'disabled':''}>‹ Prev</button>
+        <span>Page ${PAGE+1} / ${pages} · ${rows.length} ${REMAINING?'left':'properties'}</span>
+        <button class="btn sm" id="next" ${PAGE>=pages-1?'disabled':''}>Next ›</button></div>`
+    : `<div class="empty">${REMAINING?'Route complete — every property recorded. ✓':'No properties on this route.'}</div>`;
+  $("list").querySelectorAll(".prop").forEach(row=>{
+    const id=row.dataset.id;
+    row.querySelectorAll(".tap").forEach(b=>b.onclick=()=>record(id,b.dataset.act));
+  });
+  const pv=$("prev"), nx=$("next");
+  if(pv) pv.onclick=()=>{PAGE--;renderList();main().scrollTop=0;};
+  if(nx) nx.onclick=()=>{PAGE++;renderList();main().scrollTop=0;};
+}
+const main=()=>document.querySelector("main");
+
+/* ---------- MAP (OSM raster basemap via /bridge/fetch + web-mercator, pan/zoom) ---------- */
+let Z=16, ORX=0, ORY=0, CAMINIT=false, OVZ=16;
+const TILES={}, TILEREQ={};
+const lon2px=lon=>(lon+180)/360*256*(1<<Z);
+const lat2px=lat=>{const s=Math.sin(lat*Math.PI/180); return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*256*(1<<Z);};
+const px2lon=wx=>wx/(256*(1<<Z))*360-180;
+const px2lat=wy=>{const n=wy/(256*(1<<Z)); return Math.atan(Math.sinh(Math.PI*(1-2*n)))*180/Math.PI;};
+const px=lon=>lon2px(lon)-ORX, py=lat=>lat2px(lat)-ORY;
+function bbox(){
+  let a=1e9,b=-1e9,c=1e9,d=-1e9;
+  PROPS.concat(BOUNDARY.map(k=>({lon:k[0],lat:k[1]}))).forEach(p=>{a=Math.min(a,p.lon);b=Math.max(b,p.lon);c=Math.min(c,p.lat);d=Math.max(d,p.lat);});
+  return {minLon:a,maxLon:b,minLat:c,maxLat:d};
+}
+const centerOn=(lon,lat,cw,ch)=>{ ORX=lon2px(lon)-cw/2; ORY=lat2px(lat)-ch/2; };
+function overviewZ(cw,ch){ const B=bbox(); let z; for(z=18;z>=11;z--){ Z=z; const w=lon2px(B.maxLon)-lon2px(B.minLon), h=lat2px(B.minLat)-lat2px(B.maxLat); if(w<=cw-24&&h<=ch-24) break; } return z; }
+function fitWhole(cw,ch){ const B=bbox(); if(!isFinite(B.minLon))return; OVZ=overviewZ(cw,ch); Z=OVZ; centerOn((B.minLon+B.maxLon)/2,(B.minLat+B.maxLat)/2,cw,ch); ensureTiles(cw,ch); }
+function initCamera(cw,ch){ const B=bbox(); if(!isFinite(B.minLon))return; OVZ=overviewZ(cw,ch);
+  const c=current(); if(c){ Z=Math.min(18,OVZ+2); centerOn(c.lon,c.lat,cw,ch); }   // START zoomed in on the current stop so points/route are legible
+  else { Z=OVZ; centerOn((B.minLon+B.maxLon)/2,(B.minLat+B.maxLat)/2,cw,ch); }
+  ensureTiles(cw,ch); }
+function zoomAt(fx,fy,dz){ const cv=$("cv"),cw=cv.clientWidth,ch=cv.clientHeight; const nz=Math.max(11,Math.min(19,Z+dz)); if(nz===Z)return;
+  const lon=px2lon(ORX+fx), lat=px2lat(ORY+fy); Z=nz; ORX=lon2px(lon)-fx; ORY=lat2px(lat)-fy; ensureTiles(cw,ch); }
+function focusNow(){ const cv=$("cv"),cw=cv.clientWidth,ch=cv.clientHeight; const c=current()||(SEL&&PROPS.find(p=>p.id===SEL)); if(!c)return; if(Z<17)Z=17; centerOn(c.lon,c.lat,cw,ch); ensureTiles(cw,ch); }
+function ensureTiles(cw,ch){
+  const n=1<<Z, x0=Math.floor(ORX/256), x1=Math.floor((ORX+cw)/256), y0=Math.floor(ORY/256), y1=Math.floor((ORY+ch)/256);
+  for(let tx=x0;tx<=x1;tx++) for(let ty=y0;ty<=y1;ty++){
+    if(tx<0||ty<0||tx>=n||ty>=n) continue;
+    const key=Z+"/"+tx+"/"+ty; if(TILES[key]||TILEREQ[key]) continue; TILEREQ[key]=1;
+    bridge("/bridge/fetch",{app_id:APPID,url:`https://tile.openstreetmap.org/${Z}/${tx}/${ty}.png`})
+      .then(dd=>{ if(dd&&dd.body_b64){ const img=new Image(); img.onload=()=>{TILES[key]=img;}; img.src=`data:${dd.content_type||"image/png"};base64,${dd.body_b64}`; } })
+      .catch(()=>{});
+  }
+}
+function drawMap(){
+  const cv=$("cv"), dpr=window.devicePixelRatio||1, cw=cv.clientWidth, ch=cv.clientHeight;
+  if(cw===0) return;
+  cv.width=cw*dpr; cv.height=ch*dpr;
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,cw,ch);
+  if(!CAMINIT){ initCamera(cw,ch); CAMINIT=true; }
+  ensureTiles(cw,ch);
+  const nx0=Math.floor(ORX/256), nx1=Math.floor((ORX+cw)/256), ny0=Math.floor(ORY/256), ny1=Math.floor((ORY+ch)/256);
+  for(let tx=nx0;tx<=nx1;tx++) for(let ty=ny0;ty<=ny1;ty++){ const img=TILES[Z+"/"+tx+"/"+ty]; if(img) g.drawImage(img,Math.round(tx*256-ORX),Math.round(ty*256-ORY),256,256); }
+  g.fillStyle="rgba(6,16,11,0.34)"; g.fillRect(0,0,cw,ch);
+  if(BOUNDARY.length>2){
+    g.beginPath(); BOUNDARY.forEach((c,i)=>{const x=px(c[0]),y=py(c[1]); i?g.lineTo(x,y):g.moveTo(x,y);}); g.closePath();
+    g.fillStyle="#3ad3921a"; g.fill(); g.lineWidth=2; g.strokeStyle="#3ad392cc"; g.stroke();
+  }
+  const cur=current(), nx=nextP();
+  if(cur&&nx){ g.setLineDash([5,5]); g.beginPath(); g.moveTo(px(cur.lon),py(cur.lat)); g.lineTo(px(nx.lon),py(nx.lat)); g.strokeStyle="#2fd0c8"; g.lineWidth=2; g.stroke(); g.setLineDash([]); }
+  const col={completed:"#2ecc71",missed:"#e0863a"}, r=Z>=17?5:(Z>=15?3.8:2.8);
+  PROPS.forEach(p=>{ const x=px(p.lon),y=py(p.lat); if(x<-8||y<-8||x>cw+8||y>ch+8)return;
+    g.beginPath(); g.arc(x,y,r,0,7); g.fillStyle=p.status?col[p.status]:"#8aa0b8"; g.fill(); g.lineWidth=1; g.strokeStyle="#0a1611aa"; g.stroke(); });
+  if(nx){ const x=px(nx.lon),y=py(nx.lat); g.beginPath(); g.arc(x,y,7.5,0,7); g.strokeStyle="#2fd0c8"; g.lineWidth=2.5; g.stroke();
+    g.fillStyle="#2fd0c8"; g.font="700 9px ui-monospace,monospace"; g.fillText("NEXT",x+9,y+3); }
+  if(cur){ const x=px(cur.lon),y=py(cur.lat), t=(Date.now()%1400)/1400;
+    g.beginPath(); g.arc(x,y,9+t*10,0,7); g.strokeStyle=`rgba(47,208,200,${1-t})`; g.lineWidth=2.5; g.stroke();
+    g.beginPath(); g.arc(x,y,8,0,7); g.fillStyle="#2fd0c8"; g.fill(); g.strokeStyle="#04140c"; g.lineWidth=2; g.stroke();
+    g.fillStyle="#eafef4"; g.font="700 11px ui-sans-serif"; g.fillText("NOW",x+12,y-8); }
+  const sel=SEL&&PROPS.find(p=>p.id===SEL);
+  if(sel&&(!cur||sel.id!==cur.id)){ const x=px(sel.lon),y=py(sel.lat); g.beginPath(); g.arc(x,y,10,0,7); g.strokeStyle="#e8c24b"; g.lineWidth=2.5; g.stroke(); }
+  $("zbadge").textContent="z"+Z;
+}
+let RAF=0;
+function animate(){ if(MODE!=="map"){RAF=0;return;} drawMap(); RAF=requestAnimationFrame(animate); }
+function actCard(){
+  const sel=(SEL&&PROPS.find(p=>p.id===SEL))||current(), card=$("actcard");
+  if(!sel){ card.innerHTML=`<div class="lab"><div class="t">Route complete ✓</div><div class="n">All properties recorded</div></div>`; return; }
+  const isCur=current()&&sel.id===current().id;
+  card.innerHTML=`<div class="lab"><div class="t">${isCur?'Now — go here':'Selected'}</div>
+      <div class="n">Property ${esc(shortId(sel.id))}</div><div class="c">${sel.lat.toFixed(5)}, ${sel.lon.toFixed(5)}</div></div>
+    <button class="tap ${sel.status==='completed'?'done col':''}" data-a="completed">Col</button>
+    <button class="tap ${sel.status==='missed'?'done mis':''}" data-a="missed">Miss</button>`;
+  card.querySelectorAll(".tap").forEach(b=>b.onclick=()=>record(sel.id,b.dataset.a));
+}
+function selectAt(mx,my){
+  let best=null,bd=22*22;
+  PROPS.forEach(p=>{const dx=px(p.lon)-mx,dy=py(p.lat)-my,d=dx*dx+dy*dy; if(d<bd){bd=d;best=p;}});
+  if(best){ SEL=best.id; actCard(); return true; } return false;
+}
+/* pan / zoom / tap gesture handling */
+function bindMap(){
+  const cv=$("cv"); let drag=null, moved=0, pinch=null;
+  const rel=e=>{const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top};};
+  const dist=t=>{const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.hypot(dx,dy);};
+  const mid=t=>{const r=cv.getBoundingClientRect();return {x:(t[0].clientX+t[1].clientX)/2-r.left,y:(t[0].clientY+t[1].clientY)/2-r.top};};
+  cv.addEventListener("touchstart",e=>{ if(e.touches.length===2){ pinch={d:dist(e.touches)}; drag=null; } else { const p=rel(e); drag={x:p.x,y:p.y}; moved=0; } },{passive:true});
+  cv.addEventListener("touchmove",e=>{ e.preventDefault();
+    if(e.touches.length===2&&pinch){ const nd=dist(e.touches), m=mid(e.touches); if(nd/pinch.d>1.6){zoomAt(m.x,m.y,1);pinch.d=nd;} else if(nd/pinch.d<0.62){zoomAt(m.x,m.y,-1);pinch.d=nd;} }
+    else if(drag){ const p=rel(e), dx=p.x-drag.x, dy=p.y-drag.y; ORX-=dx; ORY-=dy; drag={x:p.x,y:p.y}; moved+=Math.abs(dx)+Math.abs(dy); } },{passive:false});
+  cv.addEventListener("touchend",e=>{ if(drag&&moved<9){ selectAt(drag.x,drag.y); } drag=null; pinch=null; },{passive:true});
+  // mouse
+  cv.addEventListener("mousedown",e=>{ const p=rel(e); drag={x:p.x,y:p.y}; moved=0; });
+  window.addEventListener("mousemove",e=>{ if(!drag||MODE!=="map")return; const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top,dx=x-drag.x,dy=y-drag.y; ORX-=dx;ORY-=dy;drag={x,y};moved+=Math.abs(dx)+Math.abs(dy); });
+  window.addEventListener("mouseup",e=>{ if(drag&&moved<6){ const r=cv.getBoundingClientRect(); selectAt(e.clientX-r.left,e.clientY-r.top); } drag=null; });
+  cv.addEventListener("wheel",e=>{ e.preventDefault(); const p=rel(e); zoomAt(p.x,p.y, e.deltaY<0?1:-1); },{passive:false});
+  $("zin").onclick=()=>{const cv=$("cv");zoomAt(cv.clientWidth/2,cv.clientHeight/2,1);};
+  $("zout").onclick=()=>{const cv=$("cv");zoomAt(cv.clientWidth/2,cv.clientHeight/2,-1);};
+  $("nowbtn").onclick=focusNow;
+  $("fitbtn").onclick=()=>{const cv=$("cv");fitWhole(cv.clientWidth,cv.clientHeight);};
+}
+
+/* ---------- shared ---------- */
+function renderMode(){
+  const map=MODE==="map";
+  $("mapwrap").style.display=map?"flex":"none"; $("list").style.display=map?"none":"block";
+  $("tab-list").classList.toggle("on",!map); $("tab-map").classList.toggle("on",map);
+  progress();
+  if(map){ SEL=SEL||(current()&&current().id); actCard(); if(!RAF) animate(); }
+  else renderList();
+}
+async function record(building_id,status){
+  const p=PROPS.find(x=>x.id===building_id); if(!p) return;
+  const prev=p.status; p.status=status;                 // optimistic
+  if(MODE==="list") renderList(); else { SEL=(current()&&current().id)||building_id; actCard(); }
+  progress();
+  try{
+    await bridge("/bridge/waste-record-pickup",{building_id,status,lon:p.lon,lat:p.lat});
+    p.today=true; $("msg").textContent=(status==="completed"?"✓ Collected":"✕ Missed")+" — "+shortId(building_id);
+    if(MODE==="list") renderList(); else actCard();
+  }catch(e){ p.status=prev; $("msg").textContent="could not record: "+e.message; if(MODE==="list")renderList(); else actCard(); progress(); }
+}
+$("load").onclick=async()=>{
+  const wid=$("ward").value; if(!wid){ $("msg").textContent="pick a ward first"; return; }
+  $("load").disabled=true; $("msg").textContent="loading route…";
+  try{
+    const r=await bridge("/bridge/waste-route",{ward_id:wid,limit:400});
+    if(r.error){ $("msg").textContent=r.error; return; }
+    PROPS=r.properties||[]; BOUNDARY=r.boundary||[]; WARDNAME=r.ward||wid; PAGE=0; SEL=null; CAMINIT=false;
+    $("wname").textContent=WARDNAME+(r.capped?" (first 400)":"");
+    $("toolbar").style.display="flex"; $("prog").style.display="block";
+    $("msg").textContent=`${PROPS.length} properties · ${r.done_today} done today`;
+    renderMode();
+  }catch(e){ $("msg").textContent="route unavailable: "+e.message; }
+  finally{ $("load").disabled=false; }
+};
+$("tab-list").onclick=()=>{MODE="list";renderMode();};
+$("tab-map").onclick=()=>{MODE="map";renderMode();};
+$("remaining").onchange=e=>{REMAINING=e.target.checked;PAGE=0;if(MODE==="list")renderList();};
+window.addEventListener("resize",()=>{ if(MODE==="map") drawMap(); });
+bindMap();
+(async()=>{
+  try{
+    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({})); APPID=cfg.app_id||APPID; TENANT=cfg.tenant||null;
+    if(TENANT) $("eyebrow").textContent="Solid Waste · "+TENANT;
+    const wards=(await q("geo.ward")).filter(w=>w.name).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+    $("ward").innerHTML=`<option value="">Select ward / route…</option>`+wards.map(w=>`<option value="${esc(w.id)}">${esc(w.name)}</option>`).join("");
+    $("load0").remove();
+  }catch(e){ $("load0").textContent="error: "+e.message; }
+})();
+</script></body></html>

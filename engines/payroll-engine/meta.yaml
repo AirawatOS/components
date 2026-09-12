@@ -5,10 +5,18 @@
 # Delegates all writes to the finance-engine (holds NO finance write grant of its own). Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/payroll-engine
 kind: engine
-version: 0.5.0
+version: 0.5.2   # dev-safe main (self-test when no target tenant) → publishes via Studio; + governed verbs
 provider: ds:airawat:developer
 display_name: Payroll Engine
 entrypoint: run.py
+implements:
+  - finance.payroll_apportion@0.1.0
+  - finance.payroll_schedule@0.1.0
+verbs:
+  payroll-apportion: finance.payroll_apportion@0.1.0
+  payroll-schedule: finance.payroll_schedule@0.1.0
+verbs_exempt:
+  - payroll-preview   # read-only dry-run of what payroll-apportion would post; no writes, no cross-participant contract
 # 0.4.0: payroll-schedule verb (self-serve toggle) reads+writes the platform.schedule that drives the monthly run.
 # 0.3.0: headless SCHEDULED run needs RUN-TOKEN read grants — the steward grant is built from `reads`+`writes`
 # (the interactive user-token path used required_schemas, but a headless cron has no user token). It posts under

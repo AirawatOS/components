@@ -1,0 +1,16 @@
+# An ENGINE (kind=engine) — a certified READER for shared official-statistics series (stat.price_index).
+# It declares ONLY a read of stat.price_index. Installed on a data-provider tenant (e.g. mospi), that tenant's
+# steward signs it a read grant; consumer tenants then read the provider's series through this component via the
+# cross-tenant aggregator READ lane (grant-gated, read-only). This is how a MoSPI CPI series is made available
+# to other participants for their analysis, with the provider's explicit consent and full attribution.
+component_id: ds:airawat:engine/stat-reader
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Official-statistics reader (stat.price_index)
+entrypoint: run.py
+confinement_min: L1
+reads: [stat.price_index]
+config: [SOURCE_TENANT, INDICATOR, LIMIT]
+scopes:
+  - { verb: read, scope: stat.price_index }

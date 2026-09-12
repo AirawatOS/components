@@ -1,0 +1,203 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Proposal Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0a0e1a;--pan:#111832;--pan2:#0e1430;--edge:#243056;--ink:#eef2ff;--dim:#9aa4cc;--gold:#e8b84b;
+        --cy:#39d3e0;--good:#2ecc71;--warn:#e0863a;--bad:#e05a6b;--vi:#b788e6}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+  #app{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+  header{padding:12px 20px;border-bottom:1px solid var(--edge);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header .k{font:10.5px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
+  header h1{margin:0;font-family:ui-serif,Georgia,serif;font-size:19px;font-weight:600;
+    background:linear-gradient(180deg,#fbe6b4,#e8b84b 60%,#b58a34);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header .sub{font-size:12px;color:var(--dim)}
+  main{flex:1;display:grid;grid-template-columns:340px 1fr;overflow:hidden}
+  @media(max-width:820px){main{grid-template-columns:1fr}}
+  .rail{border-right:1px solid var(--edge);overflow:auto;padding:12px}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{flex:1;text-align:center;padding:7px;border:1px solid var(--edge);border-radius:8px;font-size:12px;color:var(--dim);cursor:pointer;background:var(--pan2)}
+  .tab.on{color:var(--gold);border-color:var(--gold);background:linear-gradient(180deg,#e8b84b1a,#e8b84b0d)}
+  .item{background:var(--pan);border:1px solid var(--edge);border-radius:10px;padding:11px 12px;margin-bottom:9px;cursor:pointer;transition:border-color .15s}
+  .item:hover{border-color:var(--cy)}
+  .item.sel{border-color:var(--gold)}
+  .item h4{margin:0 0 3px;font-size:13.5px;font-weight:600}
+  .item .meta{font-size:11.5px;color:var(--dim)}
+  .badge{font:10px ui-monospace,monospace;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:6px;margin-left:6px}
+  .b-draft{color:var(--warn);background:#2a1c0e}.b-submitted{color:var(--cy);background:#0c2a2f}
+  .b-approved{color:var(--good);background:#0c2a1a}.b-rejected{color:var(--bad);background:#2a0e12}
+  .draftbtn{margin-top:7px;width:100%;padding:7px;border-radius:8px;border:1px solid var(--gold);
+    background:linear-gradient(180deg,#e8b84b22,#e8b84b10);color:#f6e7bf;font-size:12px;font-weight:650;cursor:pointer}
+  .ed{overflow:auto;padding:18px 22px}
+  .empty{height:100%;display:grid;place-items:center;color:var(--dim);font-size:13px;text-align:center}
+  .card{background:var(--pan);border:1px solid var(--edge);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+  .card h3{margin:0 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);font-family:ui-monospace,monospace}
+  .card .hint{font-size:11.5px;color:var(--dim);margin:0 0 11px}
+  label{display:block;font-size:11.5px;color:var(--dim);margin:9px 0 3px}
+  input,select,textarea{width:100%;background:var(--pan2);border:1px solid var(--edge);color:var(--ink);border-radius:8px;padding:8px 9px;font-size:13px;font-family:inherit}
+  textarea{min-height:64px;resize:vertical}
+  .prov{background:var(--pan2);border:1px solid var(--edge);border-radius:9px;padding:11px 13px;font-size:12.5px}
+  .prov .row{display:flex;justify-content:space-between;padding:2px 0}.prov .row span{color:var(--dim)}
+  .prov code{font:11px ui-monospace,monospace;color:var(--vi)}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th{font:10px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);text-align:left;padding:4px 6px;font-weight:500}
+  td{padding:3px 4px}
+  td input{padding:6px 7px;font-size:12.5px}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .rm{color:var(--bad);cursor:pointer;font-size:15px;text-align:center}
+  .addline{margin-top:7px;font-size:12px;color:var(--cy);cursor:pointer;background:none;border:1px dashed var(--edge);border-radius:7px;padding:6px 10px}
+  .total{display:flex;justify-content:space-between;align-items:baseline;margin-top:11px;padding-top:9px;border-top:1px solid var(--edge)}
+  .total .v{font-size:20px;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+  .chip{font:11px ui-monospace,monospace;background:var(--pan2);border:1px solid var(--edge);border-radius:20px;padding:3px 9px;color:var(--dim)}
+  .bar{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,var(--bg) 40%);padding:14px 0 4px;display:flex;gap:10px;align-items:center}
+  .btn{padding:9px 16px;border-radius:9px;font-size:13px;font-weight:650;cursor:pointer;border:1px solid}
+  .btn.save{border-color:var(--edge);background:var(--pan2);color:var(--ink)}
+  .btn.submit{border-color:var(--gold);background:linear-gradient(180deg,#e8b84b26,#e8b84b12);color:#f6e7bf}
+  .msg{font-size:12.5px;color:var(--dim)}.msg.ok{color:var(--good)}.msg.err{color:var(--bad)}
+  .load{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9;color:var(--dim)}
+</style></head><body>
+<div id="app">
+  <header>
+    <div><div class="k" id="eyebrow">ADR-0071 · Proposals</div><h1>Proposal Studio</h1></div>
+    <div class="sub">Turn what the city flagged into a fundable project. The system pre-fills; you confirm feasibility, pick the lever, set the budget, and submit.</div>
+  </header>
+  <main>
+    <div class="rail">
+      <div class="tabs"><div class="tab on" id="t-sig" onclick="setTab('sig')">Signals</div><div class="tab" id="t-prop" onclick="setTab('prop')">Proposals</div></div>
+      <div id="list"></div>
+    </div>
+    <div class="ed" id="ed"><div class="empty">Select a signal to draft a proposal, or open an existing one.</div></div>
+  </main>
+</div>
+<div class="load" id="load">loading…</div>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let APPID="proposal-console", TENANT=null, TAB="sig", RECS=[], PROPS=[], SEL=null;
+const LEVERS=["In-situ redevelopment (vertical)","Relocation + new housing supply","Infrastructure augmentation",
+  "Slum redevelopment (PMAY)","New service connections","Civil works / construction","Equipment / assets","Program / event","Other"];
+const fmt=n=>(n==null||isNaN(n))?"—":Number(n).toLocaleString("en-IN",{maximumFractionDigits:2});
+async function bridge(p,b){const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify(b||{})});if(!r.ok)throw new Error(p+" "+r.status+" "+(await r.text()).slice(0,120));return r.json();}
+async function q(schema){try{const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:800});return (d.results||d.objects||d||[]).map(x=>x.object||x);}catch(e){return [];}}
+const slug=s=>String(s||"").split("/").pop();
+
+function setTab(t){TAB=t;$("t-sig").classList.toggle("on",t=="sig");$("t-prop").classList.toggle("on",t=="prop");renderList();}
+async function reload(){RECS=(await q("governance.recommendation")).filter(r=>String(r.id).includes("welfare-cells"));PROPS=await q("project.proposal");renderList();}
+
+function renderList(){
+  const L=$("list");L.innerHTML="";
+  if(TAB=="sig"){
+    if(!RECS.length){L.innerHTML='<div class="msg">No welfare recommendations yet. Run the welfare prioritisation first.</div>';return;}
+    RECS.forEach(r=>{const d=document.createElement("div");d.className="item";
+      d.innerHTML=`<h4>${esc(r.title||slug(r.id))}</h4><div class="meta">${esc((r.summary||"").slice(0,90))}</div>`;
+      const b=document.createElement("button");b.className="draftbtn";b.textContent="Draft proposal →";
+      b.onclick=async(e)=>{e.stopPropagation();b.textContent="drafting…";b.disabled=true;
+        try{const res=await bridge("/bridge/proposal-draft",{recommendation:r.id,submit:false});await reload();
+          const np=PROPS.find(p=>p.id==res.proposal);if(np){setTab("prop");open(np);}}
+        catch(e){b.textContent="✗ "+e.message;}};
+      d.appendChild(b);L.appendChild(d);});
+  }else{
+    if(!PROPS.length){L.innerHTML='<div class="msg">No proposals yet. Draft one from a Signal.</div>';return;}
+    PROPS.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+    PROPS.forEach(p=>{const d=document.createElement("div");d.className="item"+(SEL&&SEL.id==p.id?" sel":"");
+      const st=p.status||"draft";
+      d.innerHTML=`<h4>${esc(p.title||slug(p.id))}<span class="badge b-${st}">${st}</span></h4>`+
+        `<div class="meta">v${p.version} · outlay ₹${fmt(p.total_outlay)} cr · ${(p.site&&p.site.cells||[]).length} cells</div>`;
+      d.onclick=()=>open(p);L.appendChild(d);});
+  }
+}
+
+function field(label,el){const w=document.createElement("div");const l=document.createElement("label");l.textContent=label;w.appendChild(l);w.appendChild(el);return w;}
+function inp(v,t="text"){const e=document.createElement("input");e.type=t;e.value=(v==null?"":v);return e;}
+
+function open(p){
+  SEL=JSON.parse(JSON.stringify(p));renderList();
+  const ed=$("ed");ed.innerHTML="";
+  const editable = ["draft","submitted"].includes(SEL.status||"draft");
+  // provenance / diagnosis (read-only)
+  const site=SEL.site||{}, ask=SEL.ask||{}, iv=SEL.intervention||{};
+  const c0=document.createElement("div");c0.className="card";
+  c0.innerHTML=`<h3>Diagnosis it answers</h3><p class="hint">The system's evidence — carried, not editable. This is the "why".</p>`+
+    `<div class="prov"><div class="row"><span>responds to</span><code>${esc(slug((SEL.answers||[])[0]||"—"))}</code></div>`+
+    `<div class="row"><span>people below floor</span><b>${fmt(ask.beneficiaries)}</b></div>`+
+    `<div class="row"><span>priority cells</span><b>${(site.cells||[]).length}</b></div>`+
+    `<div class="row"><span>jurisdiction</span><b>${esc(site.jurisdiction||TENANT||"—")}</b></div></div>`+
+    `<div class="chips">${(site.cells||[]).slice(0,10).map(h=>`<span class="chip">${esc(h)}</span>`).join("")}${(site.cells||[]).length>10?`<span class="chip">+${(site.cells||[]).length-10} more</span>`:""}</div>`;
+  ed.appendChild(c0);
+
+  // narrative
+  const c1=document.createElement("div");c1.className="card";c1.innerHTML=`<h3>The case</h3><p class="hint">Confirm feasibility on the ground and state it plainly.</p>`;
+  const title=inp(SEL.title);const summ=document.createElement("textarea");summ.value=SEL.summary||"";
+  c1.appendChild(field("Title",title));c1.appendChild(field("Feasibility summary (JE)",summ));ed.appendChild(c1);
+
+  // intervention lever
+  const c2=document.createElement("div");c2.className="card";c2.innerHTML=`<h3>Intervention lever</h3><p class="hint">What will actually be done here. The AI defers this to you.</p>`;
+  const lev=document.createElement("select");LEVERS.forEach(o=>{const op=document.createElement("option");op.value=o;op.textContent=o;if(o===iv.kind)op.selected=true;lev.appendChild(op);});
+  const levdesc=inp(iv.description||"");
+  c2.appendChild(field("Lever",lev));c2.appendChild(field("Description",levdesc));
+  if(iv.env_resource){const envf=inp(`${fmt(iv.env_draw)} ${iv.env_resource}`);envf.disabled=true;c2.appendChild(field("Environmental draw (from diagnosis)",envf));}
+  ed.appendChild(c2);
+
+  // budget
+  const c3=document.createElement("div");c3.className="card";c3.innerHTML=`<h3>Budget (outlay)</h3><p class="hint">Indicative from the cost model — replace with a cited DPR. Total = the funding ask.</p>`;
+  const tbl=document.createElement("table");tbl.innerHTML=`<thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Rate ₹cr</th><th class="num">Amount ₹cr</th><th></th></tr></thead>`;
+  const tb=document.createElement("tbody");tbl.appendChild(tb);
+  let LINES=JSON.parse(JSON.stringify(SEL.outlay||[]));
+  const totalEl=document.createElement("div");
+  function recalc(){let t=0;LINES.forEach(l=>{l.amount=(parseFloat(l.quantity)||0)*(parseFloat(l.rate)||0);t+=l.amount;});
+    totalEl.innerHTML=`<div class="total"><span class="hint" style="margin:0">funding ask</span><span class="v">₹${fmt(t)} cr</span></div>`;}
+  function drawLines(){tb.innerHTML="";LINES.forEach((l,i)=>{const tr=document.createElement("tr");
+    const d=inp(l.description);d.style.minWidth="120px";const qq=inp(l.quantity,"number");qq.className="num";const un=inp(l.unit);un.style.width="60px";
+    const rt=inp(l.rate,"number");rt.className="num";const am=document.createElement("td");am.className="num";
+    const upd=()=>{l.description=d.value;l.quantity=qq.value;l.unit=un.value;l.rate=rt.value;recalc();am.textContent=fmt((parseFloat(qq.value)||0)*(parseFloat(rt.value)||0));};
+    [d,qq,un,rt].forEach(x=>x.oninput=upd);
+    const c=(el)=>{const td=document.createElement("td");td.appendChild(el);return td;};
+    tr.appendChild(c(d));tr.appendChild(c(qq));tr.appendChild(c(un));tr.appendChild(c(rt));am.textContent=fmt(l.amount);tr.appendChild(am);
+    const x=document.createElement("td");x.className="rm";x.textContent="×";x.onclick=()=>{LINES.splice(i,1);drawLines();recalc();};tr.appendChild(x);
+    tb.appendChild(tr);});}
+  drawLines();recalc();
+  c3.appendChild(tbl);const add=document.createElement("button");add.className="addline";add.textContent="+ add line";
+  add.onclick=()=>{LINES.push({description:"",quantity:1,unit:"item",rate:0,amount:0,output:"y1",resource_type:"works"});drawLines();recalc();};
+  c3.appendChild(add);c3.appendChild(totalEl);ed.appendChild(c3);
+
+  // ask
+  const c4=document.createElement("div");c4.className="card";c4.innerHTML=`<h3>Funding ask</h3><p class="hint">Self-fund from own budget, address a program, or post for open discovery.</p>`;
+  const mode=document.createElement("select");[["open","Open discovery (any funder)"],["addressed","Addressed to a program"],["self","Self-funded (own budget)"]].forEach(([v,t])=>{const op=document.createElement("option");op.value=v;op.textContent=t;if(v===(ask.mode||"open"))op.selected=true;mode.appendChild(op);});
+  const prog=inp(ask.program||"");
+  const g=document.createElement("div");g.className="g2";g.appendChild(field("Mode",mode));g.appendChild(field("Program (if addressed)",prog));c4.appendChild(g);ed.appendChild(c4);
+
+  // evidence
+  const c5=document.createElement("div");c5.className="card";c5.innerHTML=`<h3>Evidence</h3><p class="hint">Attach ground-truth — site photos, reports, references. You attach it; the system never invents it.</p>`;
+  let EV=(SEL.evidence||[]).slice();const evchips=document.createElement("div");evchips.className="chips";
+  function drawEv(){evchips.innerHTML=EV.length?EV.map((e,i)=>`<span class="chip">${esc(e)} <b style="color:var(--bad);cursor:pointer" data-i="${i}">×</b></span>`).join(""):'<span class="msg">none attached</span>';
+    evchips.querySelectorAll("b[data-i]").forEach(b=>b.onclick=()=>{EV.splice(+b.dataset.i,1);drawEv();});}
+  drawEv();const evin=inp("");evin.placeholder="paste a report/document ref, press Enter";
+  evin.onkeydown=e=>{if(e.key=="Enter"&&evin.value.trim()){EV.push(evin.value.trim());evin.value="";drawEv();}};
+  c5.appendChild(evchips);c5.appendChild(evin);ed.appendChild(c5);
+
+  // action bar
+  const bar=document.createElement("div");bar.className="bar";
+  const msg=document.createElement("span");msg.className="msg";
+  const collect=()=>({title:title.value,summary:summ.value,outlay:LINES,
+    intervention:Object.assign({},iv,{kind:lev.value,description:levdesc.value,from_catalog:false}),
+    ask:Object.assign({},ask,{mode:mode.value,program:prog.value||null,amount_cr:LINES.reduce((s,l)=>s+(parseFloat(l.quantity)||0)*(parseFloat(l.rate)||0),0)}),
+    evidence:EV});
+  async function doSave(submit){msg.className="msg";msg.textContent=submit?"submitting…":"saving…";
+    try{const r=await bridge("/bridge/proposal-save",{project:SEL.project,version:SEL.version,patch:collect(),submit});
+      msg.className="msg ok";msg.textContent=submit?("✓ submitted for approval → "+slug(r.routed_to||"")):"✓ draft saved";
+      await reload();const np=PROPS.find(p=>p.id==SEL.id);if(np)open(np);}
+    catch(e){msg.className="msg err";msg.textContent="✗ "+e.message;}}
+  if(editable){
+    const sv=document.createElement("button");sv.className="btn save";sv.textContent="Save draft";sv.onclick=()=>doSave(false);
+    const sb=document.createElement("button");sb.className="btn submit";sb.textContent="Submit for approval";sb.onclick=()=>doSave(true);
+    bar.appendChild(sv);bar.appendChild(sb);
+  }else{const s=document.createElement("span");s.className="msg";s.textContent="This proposal is "+(SEL.status)+" — locked. Adjust the approved baseline to change it.";bar.appendChild(s);}
+  bar.appendChild(msg);ed.appendChild(bar);
+}
+
+(async()=>{try{
+  const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({}));APPID=cfg.app_id||APPID;TENANT=cfg.tenant||null;
+  if(TENANT)$("eyebrow").textContent="ADR-0071 · "+TENANT;
+  await reload();$("load").remove();
+}catch(e){$("load").textContent="error: "+e.message;}})();
+</script></body></html>

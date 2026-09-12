@@ -208,7 +208,7 @@
   <div class="sub" id="sub">loading…</div>
 </header>
 
-<div class="grid" id="app">
+<div class="grid rc0" id="app">
   <aside>
     <div class="railhead"><p class="rail-h" style="margin:0">Layers</p><button class="reloadall" id="reloadall" title="Re-fetch the active layer + all shown overlays from the registry">↻ Reload all</button></div>
     <div class="layerscroll" id="layerscroll">
@@ -236,8 +236,6 @@
     <button class="railtog r" id="togR" title="Show/hide report">›</button>
     <div class="zoomctl"><button id="tilt" class="rst" title="Toggle 2.5D view — extruded hex towers; ctrl/right-drag to orbit">⬢</button><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zreset" class="rst" title="Reset view">⌖</button></div>
     <div class="bmctl" id="bmctl" title="Basemap style">
-      <button class="bmbtn" data-bm="dark">◑ Dark</button>
-      <button class="bmbtn" data-bm="light">◐ Light</button>
       <button class="bmbtn" data-bm="standard">🗺 Standard</button>
       <button class="bmbtn" data-bm="satellite">🛰 Satellite</button>
     </div>
@@ -345,8 +343,16 @@ async function qpage(schema, onPage, pageLimit, cap, filter){
 }
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showRoadsLocal=false, showWater=false, drillCell=null;
+let ASK_HL=[];   // Visualize analyst: H3 cells to highlight from the last grounded answer
+function askLayer(){
+  if(!ASK_HL.length || !window.h3) return null;
+  const data=ASK_HL.map(h=>{try{return {h,poly:h3.cellToBoundary(h,true)};}catch(e){return null;}}).filter(Boolean);
+  if(!data.length) return null;
+  return new deck.PolygonLayer({id:"ask-hl",data,getPolygon:d=>d.poly,stroked:true,filled:true,
+    getFillColor:[56,189,248,55],getLineColor:[56,189,248,255],lineWidthUnits:"pixels",getLineWidth:2.5,pickable:false});
+}
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
-let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=false;   // drilled cell state + overlays
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=false, showIssues=false;   // drilled cell state + overlays
 let showPlan=false, PLAN=null, PLAN_BLD=null;   // greenfield land-use plan (3D): developable cells → zoning → massing
 let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
 const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towers) — taller ⇒ value differences read clearly
@@ -355,6 +361,15 @@ const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprint
 const FCOL={healthcare:[239,68,68],education:[59,130,246],emergency:[249,115,22],government:[168,85,247],
             utility:[234,179,8],transport:[6,182,212],religious:[236,72,153],commerce:[34,197,94],other:[148,163,184]};
 const fcol=c=>FCOL[c]||FCOL.other;
+// civic.issue category → marker colour (the governed 12-category vocab; a tenant may categorise differently, so
+// any unknown category falls back to grey — the legend below lists whatever categories are actually present).
+const ICOL={law_and_order:[239,68,68],water:[56,189,248],sanitation:[132,204,22],health:[236,72,153],
+            roads_transport:[249,115,22],environment:[34,197,94],infrastructure:[148,163,184],governance:[168,85,247],
+            disaster:[190,18,60],welfare:[234,179,8],education:[59,130,246],other:[100,116,139]};
+const icol=c=>ICOL[c]||ICOL.other;
+const ICAT_LABEL={law_and_order:"Law & order",roads_transport:"Roads & transport"};   // prettier labels; others title-cased
+const icatLabel=c=>ICAT_LABEL[c]||String(c||"other").replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase());
+const rgbcss=a=>`rgb(${a[0]},${a[1]},${a[2]})`;
 
 // ---- LAZY LOADING: first paint fetches only the active layer + coverage; every other choropleth loads on
 //      click, and the heavy vector overlays (66k roads / drainage / facilities) load only when toggled or drilled.
@@ -493,6 +508,19 @@ async function ensureOverlay(kind){                            // lazy-load the 
       vac:idv(o,"vacant-pct"), road:idv(o,"nearest-road-m")}))
       .filter(f=>Array.isArray(f.c)&&f.c.length===2).sort((a,b)=>b.score-a.score);
   }
+  else if(kind==="issues" && DATA.issues==null){               // civic.issue that carry a geocoded point → coloured-by-category markers
+    DATA.issues=[]; OV_STAT.issues={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
+    const r=await qpage("civic.issue",(rows,fetched)=>{        // PAGE-BY-PAGE: issues accumulate over time
+      for(const o of rows){
+        const g=o.geometry||{}; const c=g.coordinates;         // GeoJSON Point [lon,lat] written by news-geocode / a field report
+        if(Array.isArray(c)&&c.length>=2&&typeof c[0]==="number"&&inB(c))
+          DATA.issues.push({_iss:1,c:[c[0],c[1]],cat:o.category||"other",title:o.title||"",sev:o.severity||"",place:o.place_label||"",status:o.status||""});
+      }
+      OV_STAT.issues.loaded=DATA.issues.length; OV_STAT.issues.fetched=fetched; ovProgress("issues");
+      try{ render(); }catch(e){}
+    }, 8000, 200000);
+    Object.assign(OV_STAT.issues,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("issues");
+  }
   else if(kind==="sensors" && DATA.sensors==null){             // raw ground-station readings → latest-per-station points
     const raw=await q("air.sensor_reading"), by={};
     for(const o of raw){ const k=o.sensor_id||JSON.stringify((o.space||{}).centroid), t=o.observed_at||"";
@@ -543,17 +571,15 @@ async function load(){
 }
 
 // ---- basemap: OSM raster via the host's CACHED declared-egress /bridge/fetch (fetched once, served from disk) ----
-// Selectable basemaps — all KEYLESS raster tiles, fetched through the host bridge (declared egress) and cached
-// on disk. Dark (CARTO Dark Matter) is the default: it fits the dark app UI and makes the data layers pop.
+// Selectable basemaps — KEYLESS raster tiles, fetched through the host bridge (declared egress) and cached
+// on disk. Standard (OSM) is the default. (CARTO Dark/Light removed — their CDN is not in the declared egress.)
 const BASEMAPS={
-  dark:     {label:"Dark",      opacity:0.92, attr:"© OpenStreetMap · © CARTO", url:(z,x,y)=>`https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`},
-  light:    {label:"Light",     opacity:0.94, attr:"© OpenStreetMap · © CARTO", url:(z,x,y)=>`https://a.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`},
   standard: {label:"Standard",  opacity:0.85, attr:"© OpenStreetMap contributors", url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
   satellite:{label:"Satellite", opacity:1.0,  attr:"Imagery © Esri, Maxar, Earthstar Geographics", url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`}  // Esri: {z}/{y}/{x}
 };
-let basemap="dark";
+let basemap="standard";
 async function tileImage(x,y,z){
-  const bm=BASEMAPS[basemap]||BASEMAPS.dark;
+  const bm=BASEMAPS[basemap]||BASEMAPS.standard;
   const d=await bridge("/bridge/fetch",{app_id:APPID,url:bm.url(z,x,y)});
   if(!d||!d.body_b64) return null;
   const img=new Image(); img.src=`data:${d.content_type||"image/png"};base64,${d.body_b64}`;
@@ -561,7 +587,7 @@ async function tileImage(x,y,z){
   return img;
 }
 function basemapLayer(){
-  const {TileLayer,BitmapLayer}=deck; const bm=BASEMAPS[basemap]||BASEMAPS.dark;
+  const {TileLayer,BitmapLayer}=deck; const bm=BASEMAPS[basemap]||BASEMAPS.standard;
   return new TileLayer({id:"basemap-"+basemap,tileSize:256,minZoom:0,maxZoom:19,maxRequests:6,   // id carries the style → switching drops the old tiles
     getTileData:({index})=>tileImage(index.x,index.y,index.z),
     renderSubLayers:props=>{ const {boundingBox}=props.tile;
@@ -691,6 +717,7 @@ function overlayLayers(){
       updateTriggers:{getWidth:[drill],getColor:[drill]}}));
   }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
+  const iss=issuesLayer(); if(iss) out.push(iss);
   const sen=sensorsLayer(); if(sen) out.push(sen);
   const st=sitesLayer(); if(st) out.push(...st);
   return out;
@@ -803,11 +830,18 @@ function facilitiesLayer(){                                     // critical faci
     stroked:true, getLineColor:[8,16,26,220], lineWidthMinPixels:0.6,
     updateTriggers:{getRadius:[drill], data:[drill, drill&&drillCell.h3]}});
 }
+function issuesLayer(){                                          // civic.issue points → coloured BY CATEGORY (news-geocoded + field reports)
+  if(!showIssues || !(DATA.issues||[]).length) return null;
+  return new deck.ScatterplotLayer({id:"issues",data:DATA.issues,pickable:true,
+    getPosition:o=>o.c, getFillColor:o=>[...icol(o.cat),235],
+    radiusUnits:"meters", getRadius:34, radiusMinPixels:4, radiusMaxPixels:16,
+    stroked:true, getLineColor:[8,16,26,235], lineWidthMinPixels:0.8});
+}
 function render(){
   if(!deckgl) return;
   const layers = (showPlan && PLAN)
-    ? [basemapLayer(), ...planLayers(), highlightLayer()]      // greenfield plan view (footprints + zoning + massing)
-    : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer()];
+    ? [basemapLayer(), ...planLayers(), highlightLayer(), askLayer()]      // greenfield plan view (footprints + zoning + massing)
+    : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer()];
   deckgl.setProps({layers:layers.filter(Boolean)});
   drawPlanCard();
   // legend
@@ -849,7 +883,8 @@ function tip(info){
   if(!info||!info.object){ t.style.opacity=0; return; }
   const L=LAYERS.find(l=>l.key===active);
   const o=info.object;
-  const label = o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
+  const label = o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
+              : o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
               : o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
               : o.feature!==undefined ? esc(o.feature||"road")
               : (()=>{ // TEMPORAL: show the value of the FRAME currently on screen (tIdx), not the base value —
@@ -877,8 +912,10 @@ const OVL=[{id:"water",label:"Natural Drainage",grp:"Environment",sub:"Water",do
            {id:"roads_local",label:"Local & Residential Roads",grp:"Mobility",sub:"Roads",dot:"#8aa0b4",
             interp:"Every other street — residential, service, living-street, lanes, tracks and paths (~178k segments). Heavy, so it loads only on demand; use it when you need the full street-level detail rather than the arterial overview."},
            {id:"facilities",label:"Facilities",grp:"Built Environment",sub:"Facilities",dot:"#ef4444",
-            interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."}];
-const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities};
+            interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."},
+           {id:"issues",label:"Civic Issues",grp:"People",sub:"Civic",dot:"#a855f7",
+            interp:"Geocoded civic issues — coloured by CATEGORY (law & order, water, roads, health…). Each point is a real, governed civic.issue placed on the map from the locality named in a news report or filed in a field report; issues that name no locality are not shown (never guessed). Hover a point for its category, severity and place. News is pulled and categorised per tenant, so the mix of categories reflects this city."}];
+const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities,issues:()=>showIssues};
 let treeOpen=null;                                    // "g:<group>" / "s:<group>/<sub>" → open? (null = default all-open)
 let explainKey=null;                                  // which leaf's explanation is pinned in the bottom panel
 function buildTree(){                                  // → {group:{sub:[leaf]}} merging choropleths + overlays
@@ -906,7 +943,7 @@ function drawExplain(){
   const isLayer=!!LAYER_STAT[explainKey];
   const st=OV_STAT[explainKey]||LAYER_STAT[explainKey];
   if(st){
-    const unit=st.unit||({roads:"segments",roads_local:"segments",facilities:"facilities",water:"features"}[explainKey])||"features";
+    const unit=st.unit||({roads:"segments",roads_local:"segments",facilities:"facilities",water:"features",issues:"mapped issues"}[explainKey])||"features";
     const n=(st.loaded||0).toLocaleString();
     const tot=(typeof st.total==="number")?st.total:null;
     let msg;
@@ -924,10 +961,20 @@ function drawExplain(){
       + (st.loading ? `` : `<button class="exreload" id="exreload">↻ Reload</button>`)   // wired below (CSP blocks inline onclick)
       + `</div>`+subHtml;
   }
+  // CATEGORICAL legend for the Civic Issues overlay — one swatch per category ACTUALLY present, with counts.
+  let catLegend="";
+  if(explainKey==="issues" && (DATA.issues||[]).length){
+    const cnt={}; for(const o of DATA.issues) cnt[o.cat]=(cnt[o.cat]||0)+1;
+    const rows=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([c,n])=>
+      `<div style="display:flex;align-items:center;gap:7px;margin:3px 0;font-size:12px">
+         <span style="width:11px;height:11px;border-radius:50%;background:${rgbcss(icol(c))};box-shadow:inset 0 0 0 1px #0006;flex:none"></span>
+         <span style="flex:1">${esc(icatLabel(c))}</span><b>${n}</b></div>`).join("");
+    catLegend=`<div style="margin-top:9px"><p class="rail-h" style="margin:0 0 4px">Categories on the map</p>${rows}</div>`;
+  }
   box.innerHTML=`<p class="rail-h">About this layer</p>`
     +`<div class="extitle">${esc(leaf.label)}${leaf.unit?` <span class="exunit">${esc(leaf.unit)}</span>`:""}${sol}</div>`
     +`<p class="exbody">${esc(leaf.interp||"No description provided for this layer.")}</p>`
-    +statusHtml;
+    +statusHtml+catLegend;
   const rb=$("exreload"); if(rb) rb.onclick=()=>reloadOverlay(explainKey);
   if(st && !st.loading && st.total===undefined) fetchTotal(explainKey);   // lazily fetch the authoritative registry count
 }
@@ -944,15 +991,16 @@ async function fetchTotal(key){                                // populate st.to
     else if(key==="roads_local"){ const all=await qcount("geo.osm_feature"); let art=0; for(const cls of ARTERIAL){ const c=await qcount("geo.osm_feature",{feature:cls}); if(typeof c==="number") art+=c; } st.total=(typeof all==="number")?all-art:null; }
     else if(key==="water"){ st.total=await qcount("geo.hydro_feature"); }
     else if(key==="facilities"){ st.total=await qcount("geo.facility"); }
+    else if(key==="issues"){ st.total=await qcount("civic.issue"); }   // total civic issues; loaded = the geocoded subset shown
     else { const L=LAYERS.find(l=>l.key===key); if(L) st.total=await qcount(L.key); }
   }catch(e){ st.total=null; }
   if(explainKey===key) drawExplain();
 }
 async function reloadOverlay(kind){                            // clear the cache + re-fetch this layer/overlay from the registry
-  if(["roads","roads_local","water","facilities"].includes(kind)){
+  if(["roads","roads_local","water","facilities","issues"].includes(kind)){
     DATA[kind]=null;                                           // drop cached features → ensureOverlay re-fetches
     if(kind==="roads") showRoads=true; else if(kind==="roads_local") showRoadsLocal=true;
-    else if(kind==="water") showWater=true; else showFacilities=true;
+    else if(kind==="water") showWater=true; else if(kind==="issues") showIssues=true; else showFacilities=true;
     drawLayers(); drawExplain();
     await ensureOverlay(kind);
     drawLayers(); render(); return;
@@ -967,7 +1015,7 @@ async function reloadAll(){                                    // re-fetch the a
   const btn=$("reloadall"); if(btn){ btn.disabled=true; btn.textContent="↻ Reloading…"; }
   const L=LAYERS.find(l=>l.key===active);
   if(L){ DATA.data[active]=null; await ensureLayer(L); }
-  for(const k of ["roads","roads_local","water","facilities"]) if(OVLON[k]&&OVLON[k]()){ DATA[k]=null; await ensureOverlay(k); }
+  for(const k of ["roads","roads_local","water","facilities","issues"]) if(OVLON[k]&&OVLON[k]()){ DATA[k]=null; await ensureOverlay(k); }
   drawLayers(); drawExplain(); render();
   if(btn){ btn.disabled=false; btn.textContent="↻ Reload all"; }
 }
@@ -1009,9 +1057,10 @@ function drawLayers(){
     drawLayers(); render();
   });
   document.querySelectorAll('.layer-btn[data-ov]').forEach(b=>b.onclick=async()=>{            // vector OVERLAY (additive on/off) + pin explanation
-    const id=b.dataset.ov, lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities"}[id];
+    const id=b.dataset.ov, lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities",issues:"civic issues"}[id];
     if(id==="water") showWater=!showWater; else if(id==="roads") showRoads=!showRoads;
     else if(id==="roads_local") showRoadsLocal=!showRoadsLocal; else if(id==="facilities") showFacilities=!showFacilities;
+    else if(id==="issues") showIssues=!showIssues;
     setExplain(id);
     if(OVLON[id]()){ setBusy("Loading "+lbl+"…"); await ensureOverlay(id); setBusy(null); }
     drawLayers(); render();
@@ -1126,7 +1175,7 @@ function fitView(bbox){
   if($("reloadall")) $("reloadall").onclick=()=>reloadAll();   // re-fetch active layer + shown overlays
   document.querySelectorAll('.bmbtn').forEach(b=>b.onclick=()=>setBasemap(b.dataset.bm));   // basemap style switcher
   document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===basemap));
-  { const a=$("attrib"); if(a) a.textContent="Basemap "+(BASEMAPS[basemap]||BASEMAPS.dark).attr; }
+  { const a=$("attrib"); if(a) a.textContent="Basemap "+(BASEMAPS[basemap]||BASEMAPS.standard).attr; }
   $("tilt").onclick=()=>{                                       // 2D ⇄ 2.5D: tilt the camera + extrude the hexes into towers
     mode3d=!mode3d;
     $("tilt").style.color=mode3d?"var(--accent)":""; $("tilt").style.borderColor=mode3d?"var(--accent)":"";
@@ -1137,7 +1186,61 @@ function fitView(bbox){
   const g=$("app");
   $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";};
   $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";};
+  $("togR").textContent=g.classList.contains("rc0")?"‹":"›";   // right rail (Coverage & trust) starts collapsed
   document.addEventListener("keydown",e=>{ if(e.key==="Escape") exitDrill(); });   // Esc leaves the drilled cell
   const hint=$("drillhint"); hint.classList.add("show"); setTimeout(()=>hint.classList.remove("show"),4200);
+})();
+</script>
+<!-- Visualize embedded analyst: grounded spatial Q&A over governed layers + knowledge, with map highlight -->
+<script>
+(function(){
+  const wrap=document.createElement('div'); wrap.id='askwrap';
+  wrap.innerHTML='<button id="askbtn" title="Ask the city analyst">🔍 Ask</button>'
+   +'<div id="askpanel" hidden><div class="askhd"><span>City analyst</span><span id="askx">×</span></div>'
+   +'<div id="asklog"><div class="am ai">Ask about the city, grounded in governed data — e.g. “which areas are most congested?”, “where should we add healthcare centres?”.</div></div>'
+   +'<div class="askin"><input id="askq" placeholder="Ask a question…" autocomplete="off"><button id="asksend">→</button></div></div>';
+  document.body.appendChild(wrap);
+  const css=document.createElement('style'); css.textContent=
+   '#askwrap{position:fixed;right:16px;bottom:16px;z-index:30;font:14px system-ui,sans-serif}'
+   +'#askbtn{background:#38bdf8;color:#04121f;border:none;border-radius:999px;padding:10px 16px;font-weight:600;cursor:pointer;box-shadow:0 2px 12px #0007}'
+   +'#askpanel{position:absolute;right:0;bottom:48px;width:370px;max-height:64vh;display:flex;flex-direction:column;background:#0e1c2a;border:1px solid #22344a;border-radius:12px;box-shadow:0 6px 24px #0009;overflow:hidden}'
+   +'#askpanel[hidden]{display:none}'
+   +'.askhd{padding:9px 12px;background:#13273b;color:#e6edf5;font-weight:600;display:flex;justify-content:space-between}'
+   +'#askx{cursor:pointer;color:#8aa0b6}'
+   +'#asklog{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:90px}'
+   +'.am{padding:8px 11px;border-radius:10px;max-width:88%;white-space:pre-wrap;line-height:1.45;font-size:13.5px}'
+   +'.am.me{align-self:flex-end;background:#38bdf8;color:#04121f}'
+   +'.am.ai{align-self:flex-start;background:#13273b;color:#e6edf5}'
+   +'.am .src{margin-top:6px;font-size:11.5px;color:#7dd3fc}'
+   +'.askin{display:flex;gap:6px;padding:10px;border-top:1px solid #22344a}'
+   +'#askq{flex:1;background:#0a1622;border:1px solid #22344a;color:#e6edf5;border-radius:8px;padding:8px 10px}'
+   +'#asksend{background:#38bdf8;color:#04121f;border:none;border-radius:8px;padding:0 13px;font-weight:700;cursor:pointer}';
+  document.head.appendChild(css);
+  const G=id=>document.getElementById(id);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function addMsg(role,html){const l=G('asklog');const d=document.createElement('div');d.className='am '+role;d.innerHTML=html;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
+  let ASKING=false;
+  G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden)G('askq').focus();};
+  G('askx').onclick=()=>{G('askpanel').hidden=true;};
+  async function ask(){
+    if(ASKING) return;
+    const q=G('askq').value.trim(); if(!q) return;
+    G('askq').value=''; ASKING=true;
+    addMsg('me',esc(q));
+    const slot=addMsg('ai','<span style="opacity:.6">Analysing governed layers…</span>');
+    try{
+      const d=await bridge('/bridge/city-ask',{question:q});
+      slot.innerHTML=esc(d.answer||'No answer.')
+        +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'');
+      ASK_HL=Array.isArray(d.highlight)?d.highlight:[];
+      if(typeof render==='function') render();
+      if(ASK_HL.length && window.h3){ try{ const c=h3.cellToLatLng(ASK_HL[0]);
+        view={...view,longitude:c[1],latitude:c[0],zoom:Math.max(view.zoom||11,13),transitionDuration:800};
+        deckgl.setProps({initialViewState:view}); }catch(e){} }
+    }catch(e){ slot.innerHTML='Could not answer: '+esc(e.message||e); }
+    ASKING=false; G('asklog').scrollTop=G('asklog').scrollHeight; G('askq').focus();
+  }
+  G('asksend').onclick=ask;
+  G('askq').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();ask();}});
 })();
 </script>

@@ -5,9 +5,9 @@
 # reading only through the host bridge (/bridge/query) over its declared schemas.
 component_id: ds:airawat:app/city-scan
 kind: app
-version: 0.3.0   # 0.3.0: "Land-use plan (3D)" overlay — greenfield vacancy (real footprints) → contiguous developable parcel → zoning + massing (bundles h3-js + plan-core.js); 0.2.0: AI-City sites overlay
+version: 0.4.8   # 0.4.8: renamed display_name City Scan → Visualize (ADR-0075 — shared surface named for the capability); component_id unchanged
 provider: ds:airawat:developer
-display_name: City Scan
+display_name: Visualize   # ADR-0075: the shared map surface, named for the capability (was "City Scan"); component_id stays city-scan
 entrypoint: index.html
 # Declares the governed viz.layer CATALOG — which, per the host bridge, also authorises reading any map layer
 # the catalog exposes. So new indicator layers (hydrology, population, buildings…) appear with just a descriptor
@@ -15,8 +15,11 @@ entrypoint: index.html
 required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature, air.sensor_reading, geo.building]
 sandboxed: true
 # DECLARED APP EGRESS (broker-for-apps): the viewer may reach ONLY these external hosts, and only through the
-# host's /bridge/fetch (the CSP still blocks direct calls). Used for the OpenStreetMap tile basemap (© OSM).
+# host's /bridge/fetch (the CSP still blocks direct calls). Basemap tiles (all keyless, cached on disk by the
+# bridge): OSM standard, CARTO Dark Matter / Positron (dark + light), and Esri World Imagery (satellite).
 egress:
-  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-scan (+https://airawat.org; contact@airawat.org)" }
+  - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-scan (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: a.basemaps.cartocdn.com, rate_per_min: 600, user_agent: "AirawatOS/city-scan (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: server.arcgisonline.com, rate_per_min: 600, user_agent: "AirawatOS/city-scan (+https://airawat.org; manishsv@gmail.com)" }
 sources:
   - { ref: "ds:airawat:ref/source/osm", host: tile.openstreetmap.org, provides: [viz.basemap] }

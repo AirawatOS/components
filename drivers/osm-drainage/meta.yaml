@@ -16,7 +16,7 @@ confinement_min: L2
 reads: [space.aoi]
 writes: [geo.hydro_feature, cell.drainage]
 egress:
-  - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-drainage (+https://airawat.org; contact@airawat.org)" }
+  - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-drainage (+https://airawat.org; manishsv@gmail.com)" }
 config:  [OSM_PBF_FILE_ID]
 sources:
   - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: true, hint: "Regional OpenStreetMap extract (.osm.pbf). Uploaded once so every run reads drains locally instead of hitting Overpass." }

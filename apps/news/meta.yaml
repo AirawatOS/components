@@ -1,0 +1,15 @@
+# An APP (kind=app) — News: a jurisdiction- & topic-aware reader over governed news.item (News vertical, slice 1).
+# Reads news.item through the host bridge and renders the latest updates, filterable by place + civic topic.
+# Declares an App-Agent tool (list_updates) so the Personal Agent can surface prioritized updates by the user's
+# role + jurisdiction (ADR-0081).
+component_id: ds:airawat:app/news
+kind: app
+version: 0.1.1
+provider: ds:airawat:developer
+display_name: News
+entrypoint: index.html
+icon: 📰
+required_schemas: [news.item]
+roles: []
+agent_tools:
+  - { name: list_updates, kind: read, params: "topic", desc: "Latest news / public-information updates for the user, ranked by their jurisdiction (place) and role (topics). Real sources (Google News, GDELT)." }

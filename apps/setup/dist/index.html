@@ -1,0 +1,119 @@
+<!doctype html><meta charset="utf-8"><title>Setup</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#38bdf8;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  h1{margin:0;font-size:16px} .who{margin-left:auto;color:var(--dim);font-size:12px}
+  .rfr{border:1px solid var(--line);background:#1b2530;color:var(--ink);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
+  .wrap{max-width:1000px;margin:0 auto;padding:18px 22px}
+  .sol{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:16px;overflow:hidden}
+  .sol > .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;cursor:pointer}
+  .sol .hd h2{margin:0;font-size:15px} .sol .hd .desc{color:var(--dim);font-size:12.5px;margin-left:2px}
+  .sol .body{padding:6px 16px 14px}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #1b2530}
+  .step:last-child{border-bottom:none}
+  .step .st{width:20px;height:20px;border-radius:50%;flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:11px;background:#1b2530;border:1px solid #2f3d4d;color:var(--dim)}
+  .step .st.ok{background:#0f2417;border-color:#1f5130;color:var(--ok)} .step .st.bad{color:var(--bad);border-color:#5b2b2b}
+  .step .mid{flex:1;min-width:0}
+  .step .t{font-size:13.5px;font-weight:600} .step .d{color:var(--dim);font-size:12px}
+  .step .act{flex:none;display:flex;gap:6px;align-items:center}
+  .kind{display:inline-block;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--line);border-radius:5px;padding:0 6px;margin-left:6px}
+  .btn{border:1px solid #2f3d4d;background:#1b2530;color:var(--ink);border-radius:8px;padding:6px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:var(--accent)} .btn:disabled{opacity:.45;cursor:default} .btn.go{background:#12333f;border-color:#1f6f8b;color:#7fd7f0}
+  input{background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:13px}
+  .allbtn{margin:10px 0 4px}
+  .console{background:#0a0d12;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:14px;font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow:auto;color:#c9d4df}
+  .console .ok{color:var(--ok)} .console .bad{color:var(--bad)} .console .hd{color:var(--accent)}
+  .mono{font-family:ui-monospace,Menlo,monospace}
+  .empty{color:var(--dim);padding:40px;text-align:center}
+</style>
+<header><h1>🧰 Setup</h1><span class="who" id="who"></span><button class="rfr" onclick="load()">↻ Refresh</button></header>
+<div class="wrap"><div id="list"><div class="empty">Loading solutions…</div></div>
+  <div class="console" id="console">Setup discovers each installed solution's declared steps and drives them as the signed-in tenant admin.\n</div>
+</div>
+<script>
+let SESS={}, LOG;
+async function jget(p){const r=await fetch(p);if(!r.ok)throw new Error(p+' '+r.status);return r.json();}
+async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+  let j={};try{j=await r.json();}catch(e){} return {ok:r.ok,status:r.status,j};}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function logLine(s,c){LOG.innerHTML+=(c?`<span class="${c}">`:'')+esc(s)+(c?'</span>':'')+'\n';LOG.scrollTop=LOG.scrollHeight;}
+function logHd(s){logLine('▸ '+s,'hd');}
+
+async function count(schema){const {j}=await jpost('/bridge/query',{schema,count:true});return (j&&typeof j.count==='number')?j.count:null;}
+
+async function load(){
+  const list=document.getElementById('list');
+  let decls=[];
+  try{ const {j}=await jpost('/bridge/query',{schema:'platform.setup'}); decls=(j.results||[]).map(x=>x.object||x); }
+  catch(e){ list.innerHTML='<div class="empty">Could not load setup contributions: '+esc(e.message)+'</div>'; return; }
+  decls.sort((a,b)=>(a.order||99)-(b.order||99));
+  window.__decls=decls;                 // keep action handlers' step indices in sync with what's rendered
+  if(!decls.length){ list.innerHTML='<div class="empty">No solutions publish a setup yet. Install a solution from the Marketplace.</div>'; return; }
+  // resolve probe readiness up front
+  const probes={};
+  for(const d of decls) for(const s of (d.steps||[])) if(s.kind==='probe'&&s.schema&&!(s.schema in probes)) probes[s.schema]=await count(s.schema);
+  list.innerHTML=decls.map((d,di)=>renderSol(d,di,probes)).join('');
+}
+
+function renderSol(d,di,probes){
+  const steps=(d.steps||[]).map((s,si)=>renderStep(d,di,si,s,probes)).join('');
+  return `<div class="sol"><div class="hd"><h2>${esc(d.title||d.solution)}</h2><span class="desc">${esc(d.description||'')}</span></div>
+    <div class="body">${steps}</div></div>`;
+}
+
+function renderStep(d,di,si,s,probes){
+  const id=`s_${di}_${si}`;
+  let dot='<span class="st">'+(si+1)+'</span>', act='';
+  if(s.kind==='install-closure'){
+    act=`<button class="btn" id="${id}" onclick="doInstall(${di},${si})">Install ${((s.members||[]).length)} components</button>`;
+  } else if(s.kind==='secret'){
+    act=`<input id="${id}_v" type="password" placeholder="${esc(s.hint?'paste key':'value')}" style="width:200px"><button class="btn" onclick="doSecret(${di},${si})">Set</button>`;
+  } else if(s.kind==='run'){
+    act=`<button class="btn ${/train|infer|nowcast/i.test(s.title)?'go':''}" id="${id}" onclick="doRun(${di},${si})">Run</button>`;
+  } else if(s.kind==='schedule'){
+    act=`<button class="btn" id="${id}" onclick="doSchedule(${di},${si})">Enable</button>`;
+  } else if(s.kind==='probe'){
+    const v=probes[s.schema]; const okv=v!=null&&v>=(s.min||1);
+    dot=`<span class="st ${okv?'ok':'bad'}">${okv?'✓':'!'}</span>`;
+    act=`<span class="mono" style="color:${okv?'var(--ok)':'var(--dim)'}">${v==null?'—':v} ${esc(s.schema)}</span>`;
+  } else if(s.kind==='aoi'){
+    act=`<span class="mono" style="color:var(--dim)">${(probes['space.aoi']||0)>0?'✓ AOI set':'define an AOI (City Setup)'}</span>`;
+  } else if(s.kind==='asset'){
+    act=`<span class="mono" style="color:var(--dim)">upload in Components → ${esc((s.component||'').split('/').pop())} Settings</span>`;
+  }
+  return `<div class="step">${dot}<div class="mid"><div class="t">${esc(s.title)}<span class="kind">${esc(s.kind)}</span></div>
+    <div class="d">${esc(s.detail||s.hint||(s.component||'').split('/').pop()||'')} ${s.cron?('· <span class="mono">'+esc(s.cron)+'</span>'):''}</div></div>
+    <div class="act">${act}</div></div>`;
+}
+
+function step(di,si){ return (window.__decls[di].steps||[])[si]; }
+async function doInstall(di,si){ const s=step(di,si); logHd('Install closure ('+(s.members||[]).length+') for '+esc(window.__decls[di].title));
+  for(const m of (s.members||[])){ const {ok,j}=await jpost('/bridge/install',{id:m}); logLine((ok?'  ✓ ':'  ✗ ')+m+(ok?'':' — '+(j.error||j.detail||'')), ok?'ok':'bad'); }
+  logHd('done'); load(); }
+async function doSecret(di,si){ const s=step(di,si); const v=document.getElementById(`s_${di}_${si}_v`).value;
+  if(!v){ logLine('  (enter a value)','bad'); return; }
+  const comps=(s.components&&s.components.length)?s.components:[s.component];   // one key can bind on several components
+  logHd('Set '+s.name+' on '+comps.length+' component(s)');
+  for(const c of comps){ const {ok,j}=await jpost('/bridge/secret',{action:'set',component:c,name:s.name,value:v});
+    logLine((ok?'  ✓ ':'  ✗ ')+c.split('/').pop()+(ok?' (Vault)':' — '+(j.error||'')), ok?'ok':'bad'); }
+  document.getElementById(`s_${di}_${si}_v`).value=''; }
+async function doRun(di,si){ const s=step(di,si); const b=document.getElementById(`s_${di}_${si}`); if(b){b.disabled=true;b.textContent='Running…';}
+  logHd('Run: '+esc(s.title)+' … (may take minutes)');
+  const {j}=await jpost('/bridge/run',{component:s.component,env:s.env||{}});
+  const line=(j&&j.log)?String(j.log).split('\n').filter(l=>/RESULT:|GATE|PROMOTED|REJECTED|wrote|assembled|INFER|error|FATAL|Traceback/i.test(l)).slice(-4).join('\n  '):'';
+  logLine('  status='+(j.status||j.exit)+(line?'\n  '+line:''), (j.status==='ok'||j.exit===0)?'ok':'bad');
+  if(b){b.disabled=false;b.textContent='Run';} load(); }
+async function doSchedule(di,si){ const s=step(di,si); logHd('Schedule: '+esc(s.title)+' ('+s.cron+')');
+  const {ok,j}=await jpost('/bridge/schedule',{component:s.component,cron:s.cron,env:s.env||{},name:s.title,enabled:true});
+  logLine(ok?'  ✓ live':'  ✗ '+(j.error||''), ok?'ok':'bad'); }
+
+(async function(){
+  try{ SESS=await jget('/session'); }catch(e){}
+  document.getElementById('who').textContent=SESS.authenticated?('● '+(SESS.sub||'')+' · '+(SESS.tenant||'')):'not signed in';
+  LOG=document.getElementById('console');
+  const {j}=await jpost('/bridge/query',{schema:'platform.setup'}); window.__decls=(j.results||[]).map(x=>x.object||x).sort((a,b)=>(a.order||99)-(b.order||99));
+  load();
+})();
+</script>

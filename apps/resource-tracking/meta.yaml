@@ -1,0 +1,11 @@
+# An APP (kind=app) — Resource Tracking (the HRT watchtower). One screen for a Secretary / Finance Head:
+# the four core public-finance indicators + the fund-flow bottleneck + the outstanding-advance watch-list,
+# assembled by the fund-flow-engine `hrt-summary` read verb over governed finance.* records. Read-only.
+component_id: ds:airawatdeveloper:app/resource-tracking
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Resource Tracking
+icon: 🛰️
+entrypoint: index.html
+required_schemas: [finance.budget, finance.advance, finance.fund_flow]

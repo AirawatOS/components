@@ -1,0 +1,33 @@
+# A SOLUTION (kind=solution, INT-0003 / ADR-0035) — a composed bundle of certified components. Installing it
+# FANS OUT to install every member. This is the City Digital Baseline (ADR-0060): the setup wizard, the scan
+# viewer, and every ingest driver + cell engine the baseline is built from. City Scan renders whatever the
+# registry's viz.layer catalogue exposes, so installing further solutions (Air Intelligence, Urban Flood
+# Response, …) automatically adds their groups to the Scan tree — nothing about them is baked into this bundle.
+component_id: ds:airawat:solution/city-digital-baseline
+kind: solution
+version: 0.1.1
+provider: ds:airawat:developer
+display_name: City Digital Baseline
+entrypoint: run.py
+summary: "Stand up a city's L0–L4 digital baseline: draw the AOI, auto-pull the free EO/OSM/climate layers (land cover, heat, terrain, rainfall, forecast, hydrology, roads, facilities, buildings, population), and explore them in a registry-driven layer tree with a coverage & trust report."
+members:
+  # ── viewers / wizard ──────────────────────────────────────────────
+  - ds:airawat:app/city-setup            # the onboarding wizard (draws AOI → runs the baseline via /bridge/city-onboard)
+  - ds:airawat:app/city-scan             # the L2 cell viewer — registry-driven layer TREE + explanation panel + trust report
+  # ── baseline ingest drivers (mirror the /bridge/city-onboard fan-out) ─
+  - ds:airawat:driver/landcover-dw       # cell.builtup + cell.greencover (Dynamic World)
+  - ds:airawat:driver/heat               # cell.heat (Open-Meteo land-surface temp)
+  - ds:airawat:driver/terrain-dem        # geo.terrain (Copernicus DEM)
+  - ds:airawat:driver/rainfall-openmeteo # cell.rainfall (climate normal)
+  - ds:airawat:driver/weather-forecast   # cell.weather_forecast (48-h hourly series)
+  - ds:airawat:driver/hydro-merit        # cell.hydrology (MERIT Hydro rivers & flow → flood susceptibility)
+  - ds:airawat:driver/osm-roads          # cell.roads + geo.osm_feature (OpenStreetMap)
+  - ds:airawat:driver/osm-facilities     # geo.facility (OpenStreetMap POIs)
+  - ds:airawat:driver/buildings-openbuildings  # cell.buildings coverage (Open Buildings)
+  - ds:airawat:driver/buildings-footprints     # geo.building footprints, extruded in 3D
+  - ds:airawat:driver/population-ghsl    # demographics.population (GHSL)
+  # ── cell engines ──────────────────────────────────────────────────
+  - ds:airawat:engine/cell-indexer       # rasterise point/observation feeds onto the H3 cell grid
+  - ds:airawat:engine/coverage-qa        # the city.coverage trust report over every baseline layer
+reads: []
+writes: []

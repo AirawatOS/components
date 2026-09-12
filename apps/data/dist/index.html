@@ -9,7 +9,8 @@
   .list{width:280px;flex:none;border-right:1px solid var(--line);overflow:auto}
   .it{padding:11px 14px;border-bottom:1px solid #1a1f27;cursor:pointer}
   .it:hover{background:#161b22} .it.sel{background:#1b2530;border-left:2px solid var(--accent)}
-  .it .nm{font-weight:600;font-size:13px} .it .sub{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+  .it .nm{font-weight:600;font-size:13px;text-transform:capitalize} .it .sub{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+  .grp{padding:9px 14px 5px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;background:#0f141b;border-bottom:1px solid #1a1f27;position:sticky;top:0}
   .detail{flex:1;overflow:auto;padding:18px 20px}
   .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px}
   /* the inline attribution surface — shown WITH the data, in context */
@@ -33,26 +34,41 @@
   <div class="detail" id="detail"><div class="empty">Select a dataset to browse the data you have access to.</div></div>
 </div>
 <script>
-// The datasets this app may browse (its required_schemas allow-list). The user only SEES rows the
-// app-host returns under their token — access is enforced at the boundary, not here.
-const DATASETS=[
-  {schema:'air.sensor_reading', name:'Air — sensor readings', sub:'ground-station observations'},
-  {schema:'air.quality',        name:'Air — quality (cells)', sub:'interpolated / fused'},
-  {schema:'demographics.population', name:'Population', sub:'per-cell population'},
-  {schema:'space.aoi',          name:'Areas of interest', sub:'AOIs / bboxes'},
-  {schema:'ref.source',         name:'Data sources (catalogue)', sub:'governed attribution records'},
-];
+// The Data app is a GOVERNED DATA BROWSER: it lists every governed schema that actually has rows in the
+// caller's tenant (from /bridge/data-schemas, which excludes sensitivity=sensitive schemas), grouped by
+// domain. The user only ever SEES rows the kernel returns under their token — a user's read is tenant-scoped
+// and RBAC-gated at the kernel boundary, not here.
+const DOMAIN_LABEL={air:'Air quality',cell:'Cells (H3)',geo:'Geospatial',demographics:'Demographics',econ:'Economy',
+  environment:'Environment',met:'Meteorology',project:'Projects',finance:'Finance',funding:'Funding',hr:'HR',org:'Organisation',
+  waste:'Solid waste',welfare:'Welfare',tax:'Tax',campaign:'Campaigns',chat:'Chat',mail:'Mail',platform:'Platform',
+  governance:'Governance',prov:'Provenance',space:'Space / AOI',ref:'Reference',city:'City',metering:'Metering',
+  signal:'Signals / alerts',doc:'Documents',knowledge:'Knowledge',justice:'Justice',stat:'Statistics',credential:'Credentials',
+  interaction:'Interactions',safety:'Safety',mobility:'Mobility',infra:'Infrastructure',plan:'Planning',viz:'Map layers'};
+const DSET=[];                     // discovered [{schema, count, domain}]
 let APPID, SEL=null, CUR=null, PAGE=[];
 async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function subject(s){return s.split('.',2)[1]||s;}
+function renderList(){
+  const byDom={}; DSET.forEach(d=>{(byDom[d.domain]=byDom[d.domain]||[]).push(d);});
+  const doms=Object.keys(byDom).sort((a,b)=>(DOMAIN_LABEL[a]||a).localeCompare(DOMAIN_LABEL[b]||b));
+  document.getElementById('list').innerHTML = doms.map(dom=>
+    `<div class="grp">${esc(DOMAIN_LABEL[dom]||dom)}</div>`+
+    byDom[dom].map(d=>`<div class="it" data-s="${esc(d.schema)}">
+      <div class="nm">${esc(subject(d.schema).replace(/_/g,' '))}</div>
+      <div class="sub">${esc(d.schema)}${d.count!=null?' · '+d.count.toLocaleString():''}</div></div>`).join('')
+  ).join('') || '<div class="empty" style="padding:24px">No data in this tenant yet.</div>';
+  document.querySelectorAll('.it').forEach(el=>el.onclick=()=>{
+    document.querySelectorAll('.it').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
+    SEL={schema:el.dataset.s, name:subject(el.dataset.s).replace(/_/g,' ')}; CUR=null; PAGE=[]; load(true);});
+}
 async function boot(){
   const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
   fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
-  document.getElementById('list').innerHTML=DATASETS.map(d=>`<div class="it" data-s="${esc(d.schema)}">
-    <div class="nm">${esc(d.name)}</div><div class="sub">${esc(d.schema)}</div></div>`).join('');
-  document.querySelectorAll('.it').forEach(el=>el.onclick=()=>{
-    document.querySelectorAll('.it').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
-    SEL=DATASETS.find(d=>d.schema===el.dataset.s); CUR=null; PAGE=[]; load(true);});
+  document.getElementById('list').innerHTML='<div class="empty" style="padding:24px">Discovering datasets…</div>';
+  const r=await jpost('/bridge/data-schemas',{});
+  if(r.ok&&r.j.schemas){ DSET.push(...r.j.schemas); renderList(); }
+  else { document.getElementById('list').innerHTML=`<div class="empty" style="padding:24px">Could not list datasets (${r.status||'?'}).</div>`; }
 }
 function attribBox(attr){
   if(!attr||!attr.length) return '<div class="attrib"><div class="hd">Data sources</div><div class="meta" style="color:var(--dim)">no external-source attribution recorded for this data</div></div>';

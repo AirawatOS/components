@@ -6,10 +6,14 @@
 # dimension is a MODELLED proxy (low confidence) until real income/consumption replaces it.
 component_id: ds:airawatdeveloper:engine/welfare-deprivation-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Welfare Deprivation Engine
 entrypoint: run.py
+implements:
+  - welfare.deprivation_scan@0.1.0
+verbs:
+  welfare-deprivation-scan: welfare.deprivation_scan@0.1.0
 required_schemas: [civic.household, welfare.gap, welfare.floor, econ.nightlight, demographics.population, welfare.deprivation]
 reads:  [civic.household, welfare.gap, welfare.floor, econ.nightlight, demographics.population]
 writes: [welfare.deprivation]

@@ -14,7 +14,7 @@ NO tenant/AOI default.
   Env: TENANT · AOI_ID (opt; else discover) · OSM_PBF_FILE_ID (filestore digest of the uploaded PBF, injected
        by the scheduler from the driver's component-asset)
 """
-import base64, json, os, sys, tempfile, time, urllib.request
+import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.request
 
 AOI_HINT = os.environ.get("AOI_ID", "")
 TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or ""   # NO default — never guess the tenant
@@ -145,19 +145,52 @@ def pois_from_pbf(pbf_path, bbox):
     return out
 
 
+def _clip_to_bbox(src_path, bbox):
+    """If the PBF is large and the `osmium` CLI is present, extract a reference-complete slice for the AOI bbox
+    (with a small pad) BEFORE the expensive locations=True pass. A regional/zone PBF (300 MB–1.5 GB) otherwise
+    forces pyosmium to index every node in the country and blows the 180s host-subprocess cap (HTTP 504). osmium
+    extract uses a spatial index and clips in seconds; ways crossing the edge keep all their nodes (reference-
+    complete) so way centroids stay correct. No-op (returns src) when the CLI is missing or the file is small —
+    the driver still works, just without the speed-up. See ADR-0060 / Wave-1."""
+    try:
+        if not shutil.which("osmium") or os.path.getsize(src_path) < 150 * 1024 * 1024:
+            return src_path
+    except Exception:
+        return src_path
+    w, s, e, n = bbox
+    pad = 0.03
+    dst = src_path + ".clip.osm.pbf"
+    box = f"{w-pad},{s-pad},{e+pad},{n+pad}"
+    try:
+        t0 = time.time()
+        subprocess.run(["osmium", "extract", "-b", box, src_path, "-o", dst, "--overwrite", "-s", "complete_ways"],
+                       check=True, capture_output=True, timeout=150)
+        mb = os.path.getsize(dst) // 1024 // 1024
+        print(f"  clipped PBF to AOI bbox {box} → {mb} MB in {time.time()-t0:.0f}s (osmium extract)", flush=True)
+        return dst
+    except Exception as ex:
+        print(f"  osmium extract clip skipped ({str(ex)[:80]}) — reading full PBF", flush=True)
+        return src_path
+
+
 def pois_from_asset(pbf_id, bbox):
     res = call("/v1/file/get", {"id": pbf_id})
     raw = base64.b64decode(res.get("content_b64") or "")
     if not raw:
         raise SystemExit(f"FATAL: PBF asset {pbf_id} is empty / not in the filestore")
     tf = tempfile.NamedTemporaryFile(suffix=".osm.pbf", delete=False)
+    clipped = None
     try:
         tf.write(raw); tf.close()
         print(f"reading facilities from uploaded PBF asset {pbf_id[:20]}… ({len(raw)//1024//1024} MB) via osmium", flush=True)
-        return pois_from_pbf(tf.name, bbox)
+        path = _clip_to_bbox(tf.name, bbox)
+        clipped = path if path != tf.name else None
+        return pois_from_pbf(path, bbox)
     finally:
-        try: os.unlink(tf.name)
-        except Exception: pass
+        for p in (tf.name, clipped):
+            if p:
+                try: os.unlink(p)
+                except Exception: pass
 
 
 def main():

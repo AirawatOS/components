@@ -1,0 +1,44 @@
+# A DRIVER (kind=driver) — the PM2.5 TRAINING-CORPUS builder (ADR-0073 M3.6), now a governed, certified,
+# reproducible component (P0.2) rather than a host-side script. It is the BULK-ARCHIVAL ingest lane: it
+# downloads the Vonter india-cpcb-aqi national parquet dumps (~0.5-0.7 GB/year — far over the broker's small
+# /v1/fetch cap, so a direct streamed download to disk, as befits the unsandboxed ingestion tier with DECLARED
+# egress), filters to the reference-grade CPCB fleet (station-name join to our already-ingested coords),
+# 15-min → hourly PM2.5 + station weather, joins CAMS+ERA5 reanalysis (Open-Meteo archive, via the broker on
+# THIS driver's run-token + declared egress) and the static per-cell baseline layers, and writes ONE training
+# Parquet to the filestore + ONE governed air.feature_matrix manifest (provenance + attribution) via its own
+# run-token. Re-running it reproduces the corpus the pm25-model champion trains on. Real facts only.
+#   Env: YEARS ("2023,2024,2025") · FEATURE_SET (manifest tag; default pm25-train-cpcb) · MAX_STATIONS (cap for
+#        a cheap smoke run) · DATE_FROM/DATE_TO (clamp the feature-fetch window) · TENANT
+component_id: ds:airawatdeveloper:driver/corpus-builder
+kind: driver
+version: 0.1.1   # 0.1.1: publish carries declared egress → run-token allows the Open-Meteo reanalysis fetch
+provider: ds:airawat:developer
+display_name: PM2.5 Training-Corpus Builder (CPCB fleet × reanalysis)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi, air.sensor_reading, cell.buildings, cell.builtup, cell.greencover,
+        econ.nightlight, cell.roads, demographics.population, geo.terrain, cell.hydrology]
+writes: [air.feature_matrix]
+egress:
+  - { host: github.com,                        rate_per_min: 20, user_agent: "AirawatOS/corpus-builder (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: objects.githubusercontent.com,     rate_per_min: 20, user_agent: "AirawatOS/corpus-builder (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: release-assets.githubusercontent.com, rate_per_min: 20, user_agent: "AirawatOS/corpus-builder (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: air-quality-api.open-meteo.com,    rate_per_min: 60, user_agent: "AirawatOS/corpus-builder (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: archive-api.open-meteo.com,        rate_per_min: 60, user_agent: "AirawatOS/corpus-builder (+https://airawat.org; manishsv@gmail.com)" }
+config: [YEARS, FEATURE_SET, MAX_STATIONS, DATE_FROM, DATE_TO]
+sources:
+  - { ref: "ds:airawat:ref/source/cpcb",      host: github.com,                  provides: [air.feature_matrix] }
+  - { ref: "ds:airawat:ref/source/cams",      host: air-quality-api.open-meteo.com, provides: [air.feature_matrix] }
+  - { ref: "ds:airawat:ref/source/ecmwf-ifs", host: archive-api.open-meteo.com,  provides: [air.feature_matrix] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: air.sensor_reading }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: read,  scope: cell.builtup }
+  - { verb: read,  scope: cell.greencover }
+  - { verb: read,  scope: econ.nightlight }
+  - { verb: read,  scope: cell.roads }
+  - { verb: read,  scope: demographics.population }
+  - { verb: read,  scope: geo.terrain }
+  - { verb: read,  scope: cell.hydrology }
+  - { verb: write, scope: air.feature_matrix }

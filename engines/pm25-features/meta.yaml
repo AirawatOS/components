@@ -1,0 +1,37 @@
+# AN ENGINE (kind=engine) — the PM2.5 FEATURE STORE builder (ADR-0073 M1 scaffold → M3 feature store).
+# Assembles the (h3 × hour) feature matrix a PM2.5 model trains/infers on, by reading the governed per-cell
+# facts (regional background, boundary-layer height, and the static baseline layers) and JOINING them on h3_id
+# into one row per cell for the target hour. The matrix is MATERIALISED to the filestore (content-addressed
+# blob) — the ADR-0073 §1 "registry facts in → columnar training set out" seam. M1 writes newline-delimited
+# JSON (universally loadable into DuckDB/pandas/pyarrow); M3 swaps the encoder to Parquet + adds temporal lags,
+# H3-neighbour, and wind-aware transport features once a feature runtime with pyarrow is stood up. No synthetic
+# fill — a cell carries null for any feature whose source fact is absent, and missingness is explicit.
+component_id: ds:airawatdeveloper:engine/pm25-features
+kind: engine
+version: 0.8.0   # 0.8.0 (M3.6): MODE=train — long panel, one row per labelled station-hour, features aligned to that hour
+provider: ds:airawat:developer
+display_name: PM2.5 Feature Store Builder
+entrypoint: run.py
+confinement_min: L2
+# reads the governed per-cell feature facts (the install GRANT is derived from these). Any that are absent for
+# a tenant simply contribute null columns — declaring them does not require them to be populated.
+reads: [space.aoi, cell.buildings, cell.builtup, cell.greencover, cell.roads, econ.nightlight, cell.cams, cell.boundary_layer, cell.aod, cell.rainfall, demographics.population, geo.terrain, cell.hydrology, air.sensor_reading]
+writes: [air.feature_matrix]            # the manifest that points at the materialised blob (the matrix itself is a filestore BLOB)
+required_schemas: [space.aoi, cell.buildings, cell.builtup, cell.greencover, cell.roads, econ.nightlight, cell.cams, cell.boundary_layer, cell.aod, cell.rainfall, demographics.population, geo.terrain, cell.hydrology, air.sensor_reading]
+config: [HOUR, OUT_FORMAT]              # HOUR=target UTC hour (default: latest cell.cams hour); OUT_FORMAT=ndjson (M3: parquet)
+scopes:
+  - { verb: read, scope: space.aoi }
+  - { verb: read, scope: cell.cams }
+  - { verb: read, scope: cell.boundary_layer }
+  - { verb: read, scope: cell.aod }
+  - { verb: read, scope: cell.rainfall }
+  - { verb: read, scope: demographics.population }
+  - { verb: read, scope: geo.terrain }
+  - { verb: read, scope: cell.hydrology }
+  - { verb: read, scope: cell.buildings }
+  - { verb: read, scope: cell.builtup }
+  - { verb: read, scope: cell.greencover }
+  - { verb: read, scope: econ.nightlight }
+  - { verb: read, scope: cell.roads }
+  - { verb: read, scope: air.sensor_reading }
+  - { verb: write, scope: air.feature_matrix }

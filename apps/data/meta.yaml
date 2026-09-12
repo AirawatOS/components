@@ -6,11 +6,16 @@
 # (its DATA allow-list) — the datasets it may browse.
 component_id: ds:airawat:app/data
 kind: app
-version: 0.1.0
+version: 0.2.1   # 0.2.1: presence-based (fast, parallel, cached) dataset discovery
+# 0.2.0: DATA BROWSER — lists every governed schema that has rows in the caller's tenant (via /bridge/data-schemas,
+#        which excludes sensitivity=sensitive), grouped by domain, instead of a hardcoded 5-dataset list. The
+#        `data_browser` flag relaxes the app-level read allow-list to any governed schema; the REAL gate is
+#        unchanged — the kernel tenant-scopes + RBAC-gates every read under the user's token.
 provider: ds:airawat:developer
 display_name: Data
 icon: 🧭
 entrypoint: index.html
 bundle: dist
 sandboxed: true
-required_schemas: [air.sensor_reading, air.quality, demographics.population, space.aoi, ref.source]
+data_browser: true
+required_schemas: [ref.source]

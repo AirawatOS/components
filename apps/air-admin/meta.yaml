@@ -1,0 +1,18 @@
+# AN APP (kind=app) — Air Intelligence Admin. The operator console for standing up + running the ADR-0073
+# PM2.5 pipeline in ANY city: install the certified components, set the data-source keys, run the ingest →
+# corpus → train (gated) → infer loop, and put it on live schedules — all through the governed bridges
+# (/bridge/install · /bridge/secret · /bridge/run · /bridge/schedule). It READS the pipeline's live state
+# (baseline layers, sensors, corpus, champion model + challenger history, the air.quality surface, schedules)
+# so an operator can see readiness at a glance and drive each step. Host-served SPA; all I/O via the bridge.
+component_id: ds:airawat:app/air-admin
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Air Intelligence Admin
+entrypoint: dist/index.html
+icon: "🌫️"
+roles: [tenant-admin, platform.tenant-admin]
+required_schemas: [space.aoi, air.sensor_reading, cell.cams, cell.boundary_layer, cell.aod,
+                   cell.buildings, cell.roads, demographics.population, geo.terrain, cell.builtup,
+                   cell.greencover, cell.hydrology, econ.nightlight, air.feature_matrix, air.model,
+                   air.quality, platform.schedule]

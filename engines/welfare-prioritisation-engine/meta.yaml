@@ -6,10 +6,16 @@
 # (unpublishable) estimate. AI recommends; the authority decides.
 component_id: ds:airawatdeveloper:engine/welfare-prioritisation-engine
 kind: engine
-version: 0.1.3
+version: 0.1.6   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Welfare Prioritisation Engine
 entrypoint: run.py
-required_schemas: [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, env.resource_budget, welfare.cost_model, governance.recommendation]
-reads:  [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, env.resource_budget, welfare.cost_model]
-writes: [governance.recommendation]
+implements:
+  - welfare.prioritise@0.1.0
+  - welfare.prioritise_cells@0.1.0
+verbs:
+  welfare-prioritise: welfare.prioritise@0.1.0
+  welfare-prioritise-cells: welfare.prioritise_cells@0.1.0
+required_schemas: [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, civic.household, env.resource_budget, welfare.cost_model, welfare.intervention, governance.recommendation, welfare.priority]
+reads:  [stat.estimate, welfare.gap, welfare.floor, welfare.capability, welfare.deprivation, civic.household, env.resource_budget, welfare.cost_model, welfare.intervention]
+writes: [governance.recommendation, welfare.priority]

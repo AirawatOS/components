@@ -61,6 +61,18 @@ def _milestone_progress(baseline):
     return round(100.0 * done / len(ms), 1)
 
 
+def _route_inbox(ctx, tenant, prid, code, version, name, total, now, sponsor=None):
+    """Route a submitted proposal to the approver's Inbox (sponsor if a real user, else the tenant-admin role)."""
+    approver = sponsor if (sponsor and str(sponsor).startswith("user://")) else f"role://{tenant}/platform.tenant-admin"
+    iid = f"ds:{tenant}:platform/inbox_item/proposal-{code}-v{version}"
+    ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
+        "title": f"Project proposal — {code} v{version}", "body": f"{name} · outlay {total}",
+        "ref": prid, "kind": "task", "status": "unread", "created_at": now,
+        "actions": [_j({"label": "Approve", "verb": "proposal-decide", "style": "pri", "args": {"project": f"ds:{tenant}:project/{code}", "version": version, "decision": "approve"}}),
+                    _j({"label": "Reject", "verb": "proposal-decide", "style": "danger", "args": {"project": f"ds:{tenant}:project/{code}", "version": version, "decision": "reject"}})]})
+    return approver
+
+
 # --- 1) PROPOSE ----------------------------------------------------------------------------------------------
 def h_proposal_submit(ctx):
     """Author/submit a project proposal (a new baseline version, status=submitted). Upserts the thin project entity."""
@@ -77,6 +89,8 @@ def h_proposal_submit(ctx):
         return None, "a proposal needs at least one OUTPUT (the how)"
     outlay = prop.get("outlay") or []
     total = _sum_outlay(outlay)
+    as_draft = bool(body.get("as_draft"))                    # ADR-0071: leave as an editable DRAFT (no Inbox routing yet)
+    new_status = "draft" if as_draft else "submitted"
     pid = f"ds:{tenant}:project/{code}"
     now = _now()
     existing = ctx["kget"](pid) or {}
@@ -85,26 +99,60 @@ def h_proposal_submit(ctx):
         "objective": pj.get("objective") or (outcomes[0].get("statement") if outcomes else None),
         "sponsor": pj.get("sponsor") or existing.get("sponsor"),
         "start_date": pj.get("start_date") or existing.get("start_date"), "end_date": pj.get("end_date") or existing.get("end_date"),
-        "status": "submitted", "baseline_version": existing.get("baseline_version"),
+        "status": new_status, "baseline_version": existing.get("baseline_version"),
         "currency": pj.get("currency") or existing.get("currency") or "INR", "created_at": existing.get("created_at") or now})
     version = _next_version(ctx, pid)
     prid = f"ds:{tenant}:project/proposal/{code}--v{version}"
-    ctx["kwrite"](prid, {"schema": "project.proposal", "id": prid, "tenant": tenant, "project": pid,
-        "version": version, "status": "submitted", "title": prop.get("title") or f"{code} proposal v{version}",
+    prop_rec = {"schema": "project.proposal", "id": prid, "tenant": tenant, "project": pid,
+        "version": version, "status": new_status, "title": prop.get("title") or f"{code} proposal v{version}",
         "summary": prop.get("summary"), "outcomes": outcomes, "outputs": outputs,
         "milestones": prop.get("milestones") or [], "deliverables": prop.get("deliverables") or [], "outlay": outlay,
         "total_outlay": total, "currency": pj.get("currency") or "INR", "submitted_by": sub, "submitted_at": now,
-        "supersedes": (existing.get("baseline_version") if body.get("adjust") else None), "created_at": now})
-    # route the approval to the Inbox — to the sponsor if they have a login, else to any tenant admin (role-addressed).
-    sponsor = pj.get("sponsor") or existing.get("sponsor")
-    approver = sponsor if (sponsor and str(sponsor).startswith("user://")) else f"role://{tenant}/platform.tenant-admin"
-    iid = f"ds:{tenant}:platform/inbox_item/proposal-{code}-v{version}"
-    ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
-        "title": f"Project proposal — {code} v{version}", "body": f"{pj.get('name') or existing.get('name') or code} · outlay {total}",
-        "ref": prid, "kind": "task", "status": "unread", "created_at": now,
-        "actions": [_j({"label": "Approve", "verb": "proposal-decide", "style": "pri", "args": {"project": pid, "version": version, "decision": "approve"}}),
-                    _j({"label": "Reject", "verb": "proposal-decide", "style": "danger", "args": {"project": pid, "version": version, "decision": "reject"}})]})
-    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total, "status": "submitted", "routed_to": approver}, None
+        "supersedes": (existing.get("baseline_version") if body.get("adjust") else None), "created_at": now}
+    # ADR-0071: pass through the optional funding-pivot fields when a drafter supplies them (schema 0.2.0)
+    for k in ("answers", "evidence", "site", "intervention", "ask"):
+        if prop.get(k) is not None:
+            prop_rec[k] = prop[k]
+    ctx["kwrite"](prid, prop_rec)
+    # DRAFT stays with the author (no routing); SUBMITTED routes the approval to the Inbox.
+    routed = None if as_draft else _route_inbox(ctx, tenant, prid, code, version,
+        pj.get("name") or existing.get("name") or code, total, now, pj.get("sponsor") or existing.get("sponsor"))
+    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total, "status": new_status, "routed_to": routed}, None
+
+
+def h_proposal_save(ctx):
+    """JE authoring (ADR-0071): edit a DRAFT proposal in place — the human refines the AI pre-fill (intervention lever,
+    budget, ask, feasibility narrative). submit:true flips draft→submitted and routes the approval to the Inbox."""
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    pid, version = body.get("project"), body.get("version")
+    if not pid or version is None:
+        return None, "project + version required"
+    code = pid.rsplit("/", 1)[-1]
+    prid = f"ds:{tenant}:project/proposal/{code}--v{version}"
+    prop = ctx["kget"](prid)
+    if not prop:
+        return None, f"proposal not found: {prid}"
+    if prop.get("status") not in ("draft", "submitted"):
+        return None, f"cannot edit a {prop.get('status')} proposal — adjust an approved baseline instead"
+    patch = body.get("patch") or {}
+    for k in ("title", "summary", "outcomes", "outputs", "milestones", "deliverables", "outlay",
+              "answers", "evidence", "site", "intervention", "ask"):
+        if k in patch:
+            prop[k] = patch[k]
+    prop["total_outlay"] = _sum_outlay(prop.get("outlay"))
+    now = _now()
+    submit = bool(body.get("submit"))
+    if submit:
+        prop["status"] = "submitted"; prop["submitted_by"] = sub; prop["submitted_at"] = now
+    ctx["kwrite"](prid, prop)
+    routed = None
+    proj = ctx["kget"](pid) or {}
+    if submit:
+        if proj:
+            proj["status"] = "submitted"; ctx["kwrite"](pid, proj)
+        routed = _route_inbox(ctx, tenant, prid, code, version, proj.get("name") or code, prop["total_outlay"], now,
+                              proj.get("sponsor"))
+    return {"proposal": prid, "status": prop["status"], "total_outlay": prop["total_outlay"], "routed_to": routed}, None
 
 
 # --- 2) APPROVE / REJECT (decided change-request → governance.decision) ---------------------------------------
@@ -310,7 +358,7 @@ def h_allocation_list(ctx):
     return {"allocations": rows}, None
 
 
-HANDLERS = {"proposal-submit": h_proposal_submit, "proposal-decide": h_proposal_decide,
+HANDLERS = {"proposal-submit": h_proposal_submit, "proposal-save": h_proposal_save, "proposal-decide": h_proposal_decide,
             "project-rollup": h_project_rollup, "project-review": h_project_review,
             "project-evaluate": h_project_evaluate, "project-adjust": h_project_adjust,
             "allocation-set": h_allocation_set, "allocation-list": h_allocation_list}

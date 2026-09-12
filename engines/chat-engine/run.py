@@ -81,3 +81,12 @@ def send(ctx):
     return {"messages": out}, None
 
 HANDLERS = {"chat-channels": channels, "chat-create": create, "chat-messages": messages, "chat-send": send}
+
+
+def main():                       # dev self-test (green run gates Studio publish, INT-0004)
+    print("Chat Engine — handlers:", ", ".join(sorted(HANDLERS)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,15 @@
+# A DRIVER (kind=driver) — parse an uploaded WARD BOUNDARY file (GeoJSON) → space.ward (City Setup).
+# The operator uploads the city's official ward/prabhag GIS at City Setup; the file is stored as a component
+# asset (populates WARD_GEOJSON = its file_id) and this driver parses each feature into a governed space.ward.
+# Then ward-h3-map assigns cells to wards. Real uploaded boundaries only — NO synthetic wards. Host subprocess.
+component_id: ds:airawat:driver/ward-ingest
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Ward boundary ingest (GeoJSON → space.ward)
+entrypoint: run.py
+confinement_min: L1
+writes: [space.ward]
+config: [WARD_GEOJSON, SOURCE, WARD_NO_KEY, WARD_NAME_KEY]
+scopes:
+  - { verb: write, scope: space.ward }

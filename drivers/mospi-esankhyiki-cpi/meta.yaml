@@ -1,0 +1,21 @@
+# A DRIVER (kind=driver) — ingest India's official Consumer Price Index (CPI) → stat.price_index.
+# It does NOT call MoSPI directly. It talks to the platform's mospi-gateway service (which fronts MoSPI's
+# eSankhyiki open API and handles that endpoint's legacy-TLS quirk). Egress is broker-mediated + allow-listed
+# to the internal gateway host only. Real official statistics — fetch or fail loudly, NO synthetic fabrication.
+# Intended for a MoSPI data-provider tenant that shares the series read-only to other participants.
+component_id: ds:airawat:driver/mospi-esankhyiki-cpi
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: MoSPI CPI ingest (eSankhyiki → stat.price_index)
+entrypoint: run.py
+confinement_min: L1
+writes: [stat.price_index]
+egress: [mospi-gateway]
+# GATEWAY_URL: internal gateway base (default http://mospi-gateway:8107).
+# BASE_YEAR: 2012 (fully-populated live series) | 2010 | 2024.  SERIES: Current | Back.
+# STATE_CODES: comma-sep MoSPI state codes; 99 = All India (default).  YEARS: comma-sep YYYY (default 2 latest).
+# GROUP_CODES / SECTOR_CODES: optional comma-sep upstream filters.
+config: [GATEWAY_URL, BASE_YEAR, SERIES, STATE_CODES, YEARS, GROUP_CODES, SECTOR_CODES]
+scopes:
+  - { verb: write, scope: stat.price_index }

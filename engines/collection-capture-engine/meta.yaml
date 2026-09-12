@@ -1,0 +1,22 @@
+# COLLECTION CAPTURE ENGINE (Solid Waste Management solution). The FIELD-CAPTURE seam behind the Waste Collector
+# App — how REAL pickup data enters the platform, replacing the illustrative seed. Two verbs:
+#   waste-route          (read)  — given a ward, return the properties (buildings) on that route with each one's
+#                                  latest pickup status, so the collector can work through them.
+#   waste-record-pickup  (write) — record ONE property's pickup (collected | missed), GPS/centroid-stamped, as a
+#                                  governed waste.pickup event attributed to component://this-engine obo the collector.
+# The write rides the ENGINE's own grant (not the collector's roles), so a non-admin field worker can capture data.
+component_id: ds:airawatdeveloper:engine/collection-capture-engine
+kind: engine
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+provider: ds:airawat:developer
+display_name: Collection Capture Engine
+entrypoint: run.py
+implements:
+  - waste.record_pickup@0.1.0
+  - waste.route@0.1.0
+verbs:
+  waste-route: waste.route@0.1.0
+  waste-record-pickup: waste.record_pickup@0.1.0
+required_schemas: [waste.pickup, geo.ward, geo.building]
+reads:  [geo.ward, geo.building, waste.pickup]
+writes: [waste.pickup]

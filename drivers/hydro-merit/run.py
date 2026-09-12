@@ -23,12 +23,12 @@ and writes nothing. RESUMABLE — skips cells that already have a cell.hydrology
 
 flood_susceptibility is the HAND flood proxy (Nobre et al. 2011, Rennó et al. 2008): a location's
 vertical distance to the nearest channel is a strong, physically-grounded predictor of inundation.
-susceptibility = clamp(1 − hand_min / HAND_REF_M, 0, 1); HAND_REF_M default 15 m (≥15 m above drainage
+susceptibility = clamp(1 − hand_min / HAND_REF_M, 0, 1); HAND_REF_M default 25 m (≥25 m above drainage
 ⇒ negligible fluvial flood risk). This is a screening indicator, not an engineering flood model.
 
   Env: AOI_ID · TENANT · GEE_SERVICE_ACCOUNT_KEY (Vault) · GEE_PROJECT/GEE_SERVICE_ACCOUNT (opt, from key)
        BATCH (cells/reduceRegions, default 250) · RESUME (1) · STREAM_THRESHOLD_KM2 (default 2.0)
-       HAND_REF_M (default 15) · DRAINAGE_MIN_KM2 (default 1.0, sets drainage_present)
+       HAND_REF_M (default 25) · DRAINAGE_MIN_KM2 (default 1.0, sets drainage_present)
 """
 import json, os, time, urllib.request
 
@@ -45,7 +45,7 @@ SA_KEY = os.environ.get("GEE_SERVICE_ACCOUNT_KEY", "")
 BATCH = int(os.environ.get("BATCH", "250"))
 STREAM_THRESHOLD_KM2 = float(os.environ.get("STREAM_THRESHOLD_KM2", "2.0"))
 DRAINAGE_MIN_KM2 = float(os.environ.get("DRAINAGE_MIN_KM2", "1.0"))
-HAND_REF_M = float(os.environ.get("HAND_REF_M", "15"))
+HAND_REF_M = float(os.environ.get("HAND_REF_M", "25"))
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/merit-hydro"
 DERIVED = ["gee:MERIT/Hydro/v1_0_1"]
@@ -127,11 +127,14 @@ def cell_boundary_lonlat(hcell):
     return [[lo, la] for (la, lo) in h3.cell_to_boundary(hcell)]   # [lng,lat] rings for ee.Geometry + the fact
 
 
-def flood_susceptibility(hand_min):
-    """HAND flood proxy: vertical distance to nearest drainage → 0-1 susceptibility (low HAND ⇒ high)."""
-    if hand_min is None:
+def flood_susceptibility(hand):
+    """HAND flood proxy: a cell's typical vertical distance to the nearest drainage → 0-1 susceptibility (low HAND ⇒
+    high). MUST use the cell's MEAN HAND, not the min: at res-9 nearly every 90 m cell contains one pixel next to a
+    stream (HAND≈0), so min-HAND saturates the whole map at ~1.0. Mean HAND gives the real low-ground → high-ground
+    gradient (Nobre et al. 2011)."""
+    if hand is None:
         return None
-    return round(max(0.0, min(1.0, 1.0 - (hand_min / HAND_REF_M))), 3)
+    return round(max(0.0, min(1.0, 1.0 - (hand / HAND_REF_M))), 3)
 
 
 # ---------------------------------------------------------------- L2: cell.hydrology
@@ -202,7 +205,7 @@ def index_cells(ee, bbox, res):
                 "hand_min_m": round(float(hand_min), 2),
                 "hand_mean_m": round(float(hand_mean), 2) if isinstance(hand_mean, (int, float)) else None,
                 "upstream_area_max_km2": round(float(upa_max), 4),
-                "flood_susceptibility": flood_susceptibility(float(hand_min)),
+                "flood_susceptibility": flood_susceptibility(float(hand_mean) if isinstance(hand_mean, (int, float)) else float(hand_min)),
                 "drainage_present": bool(upa_max >= DRAINAGE_MIN_KM2),
                 "elevation_min_m": round(float(p["elv_min"]), 1) if isinstance(p.get("elv_min"), (int, float)) else None,
                 "method": "merit-hydro-hand", "source_ref": SRC, "layer": "L2",
@@ -260,7 +263,10 @@ def extract_drainage(ee, bbox):
         p = f.get("properties") or {}
         upa_km2 = p.get("max") if isinstance(p.get("max"), (int, float)) else None
         # deterministic id: MERIT streams carry no external natural key, so derive a stable local id from the
-        # polygon centroid's fine H3 cell (re-runs upsert the same channel rather than duplicating).
+        # polygon centroid's fine H3 cell (re-runs upsert the same channel rather than duplicating). The stream
+        # MASK polygon is the connected drainage extent — kept as-is (consumers draw it as lines, not a filled
+        # blob; see City Scan). A medial-axis "centreline" pass was tried and reverted — on blocky 90 m raster
+        # polygons it fragmented into disconnected, lossy segments.
         try:
             cx, cy = _ring_centroid(geom)
             local = h3.latlng_to_cell(cy, cx, 12)

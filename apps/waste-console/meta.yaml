@@ -1,0 +1,18 @@
+# WASTE CONSOLE (kind=app) — the operator face of the Solid Waste Management solution. Two decisions, two tabs:
+# (1) SEGREGATION — city-mean household segregation compliance + the areas below the floor + the corrective-action
+# recommendation the waste-compliance-engine produced; (2) COVERAGE — the wards below the collection-coverage floor
+# (worst first) with their missed-property counts, from the coverage signal.alerts. Each tab has a Recompute button
+# that re-runs its engine (waste-compliance-rank / collection-coverage-scan). Monitoring + recompute only — it reads
+# the solution's outputs and drives the two engine verbs; it holds no direct write scope of its own.
+component_id: ds:airawatdeveloper:app/waste-console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Waste Console
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [waste.segregation_compliance, waste.pickup, geo.ward, signal.alert, governance.recommendation]
+reads: [waste.segregation_compliance, waste.pickup, geo.ward, signal.alert, governance.recommendation]
+writes: []
+roles: [platform.tenant-admin]

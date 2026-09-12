@@ -3,10 +3,16 @@
 # or ctx.call from Expense/Travel/Payroll. Writes are attributed component://finance-engine — it holds the ledger grants.
 component_id: ds:airawatdeveloper:engine/finance-engine
 kind: engine
-version: 0.2.0
+version: 0.2.1
+# 0.2.1: the finance-post VERB is now a governed network.interface (finance.post@0.1.0), declared under implements:
+#        + the machine-checkable verbs: map (tools/verb_conformance.py). PILOT of the Studio publish path.
 # 0.2.0: optional deterministic `id` on a post → idempotent settlement (payroll apportionment re-runs don't double-charge).
 provider: ds:airawat:developer
 display_name: Finance Engine
 entrypoint: run.py
+implements:
+  - finance.post@0.1.0
+verbs:
+  finance-post: finance.post@0.1.0
 required_schemas: [finance.account, finance.budget, finance.transaction]
 writes: [finance.transaction, finance.budget]

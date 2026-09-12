@@ -1,0 +1,30 @@
+# A DRIVER (kind=driver) — SATELLITE AEROSOL OPTICAL DEPTH from MODIS MAIAC (ADR-0073 M2). AOD at 550 nm is
+# the single most useful satellite predictor of surface PM2.5 — it measures the whole aerosol column, so it is a
+# PROXY, never a measurement of surface PM2.5 (the model learns the AOD→surface relationship, gated by boundary-
+# layer height + humidity; ADR-0073 §2). Reduces the MAIAC 1 km AOD server-side per H3 cell → mean + std + the
+# valid (cloud-free, QA-passed) fraction, over a short recent window. Missing satellite data is EXPECTED and
+# represented explicitly (valid_fraction, observation_age_hours) — never gap-filled. Runs in the shared earth-
+# observation runtime (earthengine-api) via the runtime-manager; cert-checked + image-locked. Real MAIAC only.
+component_id: ds:airawat:driver/maiac-aod
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Satellite AOD (MODIS MAIAC / GEE)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads: [space.aoi, cell.aod]           # cell.aod read = RESUME
+writes: [cell.aod]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/maiac-aod" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/maiac-aod" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/maiac-aod" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # same Google service-account key as terrain-dem / hydro-merit (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, WINDOW_DAYS, BATCH]
+sources:
+  - { ref: "ds:airawat:ref/source/maiac", host: earthengine.googleapis.com, provides: [cell.aod] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.aod }
+  - { verb: write, scope: cell.aod }

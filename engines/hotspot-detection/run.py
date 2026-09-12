@@ -41,6 +41,7 @@ def main():
     if not T:
         print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
 
+    HOUR = os.environ.get("HOUR", "").strip()              # optional: detect on a SPECIFIC air.quality hour (else latest)
     rows = _call("/v1/query", {"scope": "air.quality", "limit": 100000}).get("results", [])
     latest = {}                                            # h3 -> (pm25, observed_at, centroid, res)
     for r in rows:
@@ -50,6 +51,8 @@ def main():
         if not cell or pm is None:
             continue
         obs = o.get("observed_at") or ""
+        if HOUR and obs != HOUR:                            # targeting one hour → ignore all others
+            continue
         if cell not in latest or obs > latest[cell][1]:
             latest[cell] = (pm, obs, sp.get("centroid"), sp.get("res"))
     if not latest:

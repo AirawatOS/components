@@ -5,9 +5,19 @@
 # chat.message attributed component://chat-engine obo the signed-in user (ADR-0052) — this engine holds the grants.
 component_id: ds:airawatdeveloper:engine/chat-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Chat Engine
 entrypoint: run.py
+implements:
+  - chat.create@0.1.0
+  - chat.list_channels@0.1.0
+  - chat.list_messages@0.1.0
+  - chat.send@0.1.0
+verbs:
+  chat-channels: chat.list_channels@0.1.0
+  chat-create: chat.create@0.1.0
+  chat-messages: chat.list_messages@0.1.0
+  chat-send: chat.send@0.1.0
 required_schemas: [chat.channel, chat.message]
 writes: [chat.channel, chat.message]

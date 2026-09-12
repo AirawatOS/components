@@ -1,0 +1,25 @@
+# A DRIVER (kind=driver) — PLANETARY BOUNDARY-LAYER HEIGHT from ECMWF (ADR-0073 M2, the SECOND of the two
+# strongest PM2.5 predictors). The boundary-layer height (mixing depth) is the single strongest meteorological
+# control on surface PM2.5: a shallow nocturnal/winter PBL traps emissions in a thin layer and concentrations
+# spike; a deep daytime PBL dilutes them (brief §23.7). We source the ECMWF boundary_layer_height KEYLESS via
+# the Open-Meteo forecast API, sample a coarse grid across the AOI, and assign every H3 cell its nearest sample
+# → cell.boundary_layer (pblh_m) for the latest available UTC hour. Coarse field → native_resolution_km carried,
+# never upsampled (ADR-0073 §2). Real ECMWF only — fetch or fail loudly, no synthetic fallback. Host subprocess.
+component_id: ds:airawat:driver/era5-pblh
+kind: driver
+version: 0.2.0   # 0.2.0 (M3): also write a coarse hourly SERIES at sample points (…/cell/boundary_layer/series/…) for lag features
+provider: ds:airawat:developer
+display_name: Boundary-Layer Height (ECMWF / Open-Meteo)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi, cell.boundary_layer]   # cell.boundary_layer read = RESUME
+writes: [cell.boundary_layer]
+egress:
+  - { host: api.open-meteo.com, rate_per_min: 30, user_agent: "AirawatOS/era5-pblh (+https://airawat.org; manishsv@gmail.com)" }
+config: [GRID, HOUR]
+sources:
+  - { ref: "ds:airawat:ref/source/ecmwf-ifs", host: api.open-meteo.com, provides: [cell.boundary_layer] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.boundary_layer }
+  - { verb: write, scope: cell.boundary_layer }

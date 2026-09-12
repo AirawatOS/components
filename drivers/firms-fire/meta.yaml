@@ -1,0 +1,25 @@
+# A DRIVER (kind=driver) — ACTIVE-FIRE detections from NASA FIRMS (ADR-0073 M2). Wind-transported smoke from
+# crop-residue burning is one of the largest episodic drivers of Delhi's PM2.5; the fire term (count + Fire
+# Radiative Power) is what a transport-aware model needs. Ingests VIIRS/MODIS near-real-time active-fire points
+# inside the AOI from the NASA FIRMS Area API into signal.fire events (point + FRP + confidence + acquisition
+# time). The FIRMS MAP_KEY sits in the URL PATH, so the broker injects it via the `as: template` mode (the
+# component sends `{KEY}` and never sees the value). REAL FIRMS only — fetch or fail loudly; ZERO detections in
+# the window is a legitimate result (reported, not an error — no fires ≠ failure). Host subprocess.
+component_id: ds:airawat:driver/firms-fire
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Active Fires (NASA FIRMS)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi]
+writes: [signal.fire]
+egress:
+  - { host: firms.modaps.eosdis.nasa.gov, rate_per_min: 20, user_agent: "AirawatOS/firms-fire (+https://airawat.org; manishsv@gmail.com)" }
+secrets: [FIRMS_MAP_KEY]               # free NASA FIRMS API key (Connections → Vault). Injected into the URL PATH via as:template.
+config: [FIRMS_SOURCE, DAY_RANGE]      # FIRMS_SOURCE=VIIRS_SNPP_NRT (default); DAY_RANGE=days back (1-10, default 2)
+sources:
+  - { ref: "ds:airawat:ref/source/firms", host: firms.modaps.eosdis.nasa.gov, provides: [signal.fire] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: signal.fire }

@@ -4,10 +4,20 @@
 # campaign-progress. Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/campaign-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Campaign Engine
 entrypoint: run.py
+implements:
+  - campaign.assign@0.1.0
+  - campaign.create@0.1.0
+  - campaign.record_verification@0.1.0
+verbs:
+  campaign-create: campaign.create@0.1.0
+  campaign-assign: campaign.assign@0.1.0
+  verify-submit: campaign.record_verification@0.1.0
+verbs_exempt:
+  - campaign-progress   # read-only progress report over the engine's own assignments; no cross-participant delivery
 required_schemas: [campaign.campaign, campaign.assignment, tax.candidate, org.employee, platform.inbox_item]
 reads: [campaign.campaign, campaign.assignment, tax.candidate, org.employee, platform.inbox_item]
 writes: [campaign.campaign, campaign.assignment, tax.candidate, governance.decision, platform.inbox_item]

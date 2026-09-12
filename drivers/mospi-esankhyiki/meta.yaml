@@ -1,0 +1,19 @@
+# A DRIVER (kind=driver) — generic MoSPI eSankhyiki ingest for IIP / WPI / NAS / PLFS / ASI → stat.series.
+# Talks ONLY to the platform mospi-gateway (which fronts MoSPI + normalizes each dataset to a common record).
+# Config-driven: DATASET selects which series. Egress broker-mediated + allow-listed to the internal gateway.
+# Real official statistics — fetch or fail loudly, NO synthetic fabrication. For a MoSPI data-provider tenant.
+component_id: ds:airawat:driver/mospi-esankhyiki
+kind: driver
+version: 0.1.2
+provider: ds:airawat:developer
+display_name: MoSPI eSankhyiki ingest (IIP/WPI/NAS/PLFS/ASI → stat.series)
+entrypoint: run.py
+confinement_min: L1
+writes: [stat.series]
+egress: [mospi-gateway]
+# DATASET (required): IIP | WPI | NAS | PLFS | ASI.  GATEWAY_URL (default http://mospi-gateway:8107).
+# YEARS: comma-sep (calendar YYYY for IIP/WPI/PLFS; fiscal YYYY-YY for NAS/ASI). INDICATOR_CODES: comma-sep
+# (NAS/PLFS). AGG: 1 = headline only (WPI). NIC_CODE: ASI aggregate (default 99999 = all industries).
+config: [DATASET, GATEWAY_URL, YEARS, INDICATOR_CODES, AGG, NIC_CODE]
+scopes:
+  - { verb: write, scope: stat.series }

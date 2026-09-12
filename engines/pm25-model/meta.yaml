@@ -1,0 +1,22 @@
+# AN ENGINE (kind=engine) — the PM2.5 MODEL trainer + evaluator (ADR-0073 M4). Reads the MATERIALISED feature
+# store: the air.feature_matrix manifest points at the Parquet blob pm25-features built, so this engine fetches ONE
+# columnar file (the full 33-feature (h3×hour) matrix incl. lags + H3-neighbour context) instead of rescanning a
+# dozen raw registry scopes. Trains the ADR model sequence — physical CAMS baseline, mean baseline, Ridge, Random
+# Forest, XGBoost — on the CPCB-labelled rows and validates with LEAVE-ONE-STATION-OUT CV (the acceptance
+# criterion). Reports RMSE/MAE/R² per model + XGBoost's exact TreeSHAP top contributors. Real labels only.
+component_id: ds:airawatdeveloper:engine/pm25-model
+kind: engine
+version: 0.6.0   # 0.6.0: CHAMPION/CHALLENGER GATE — PERSIST trains a challenger + only promotes it to champion if it clears MIN_R2 AND matches/beats the incumbent by MIN_IMPROVE; else records a rejected challenger (champion:false) and keeps the incumbent. INFER loads the champion slot only.
+provider: ds:airawat:developer
+display_name: PM2.5 Model (train + persist champion / full-grid inference)
+entrypoint: run.py
+confinement_min: L2
+reads: [air.feature_matrix, air.model]   # feature-matrix manifest → Parquet blob; air.model → the champion's serialised-model blob
+writes: [air.quality, air.model]         # INFER: per-cell PM2.5 estimate → map layer · PERSIST: champion model manifest
+required_schemas: [air.feature_matrix, air.model]
+config: [MATRIX_FILE_ID, FEATURE_SET, INFER, PERSIST, MODEL_FILE_ID, TRAIN_IF_MISSING, MIN_R2, MIN_IMPROVE, SNAPSHOT_FEATURE_SET, SNAPSHOT_FILE_ID, SCENARIO, MAX_ROWS, MAX_TRAIN, CV_FOLDS, HOLDOUT_YEAR, CLIP_MAX]
+scopes:
+  - { verb: read, scope: air.feature_matrix }
+  - { verb: read, scope: air.model }
+  - { verb: write, scope: air.quality }
+  - { verb: write, scope: air.model }

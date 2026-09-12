@@ -223,8 +223,12 @@ def _headless_ctx(period):
 
 def main():
     import os, time as _t
-    if not os.environ.get("RUN_TOKEN"):                    # not a scheduled run (e.g. `python run.py` sanity check)
-        print("Payroll Engine — handlers:", ", ".join(sorted(HANDLERS)))
+    # A REAL scheduled run targets an operating tenant (the scheduler injects WRITE_TENANT/TENANT — _headless_ctx
+    # needs it to write). A dev Test / sanity check has neither RUN_TOKEN nor a target tenant → self-test only, so
+    # it goes green without touching the ledger (the apportion needs real data the dev sandbox doesn't have).
+    tenant = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT")
+    if not os.environ.get("RUN_TOKEN") or not tenant:
+        print("Payroll Engine — handlers:", ", ".join(sorted(HANDLERS)), "· self-test (no target tenant)")
         return 0
     period = (os.environ.get("PAYROLL_PERIOD") or _t.strftime("%Y-%m", _t.gmtime()))[:7]
     res, err = h_payroll_apportion(_headless_ctx(period))

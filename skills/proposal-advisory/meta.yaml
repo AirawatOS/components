@@ -1,0 +1,25 @@
+# A SKILL (kind=skill, INT-0002). Frames a project.proposal into a clear FUNDER-FACING case. HYBRID: the JE and
+# the engines own the facts (site, people, lever, budget, ask); this skill only rewrites the proposal SUMMARY —
+# problem → intervention → ask → why it is a sound investment — grounded ONLY in the proposal's own numbers,
+# changing none and inventing nothing. Confined: broker only. No model ⇒ the existing summary is kept, LOUDLY
+# flagged. Read-modify-write: every other field is preserved. AI phrases; a human authors and an authority approves.
+component_id: ds:airawatdeveloper:skill/proposal-advisory
+kind: skill
+version: 0.1.2
+provider: ds:airawat:developer
+display_name: Proposal Advisory
+entrypoint: run.py
+confinement_min: L1
+# --- skill contract (INT-0002) ---
+domain: welfare
+applies_to_facts: [project.proposal]
+reasoning: hybrid
+triggers: [manual, on-fact-change]
+instructions: SKILL.md
+# --- governed vocabulary ---
+reads: [project.proposal, welfare.capability]
+writes: [project.proposal]
+scopes:
+  - { verb: read,  scope: project.proposal }
+  - { verb: read,  scope: welfare.capability }
+  - { verb: write, scope: project.proposal }

@@ -1,0 +1,158 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Waste Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0a120e;--pan:#0f1c16;--pan2:#0c1712;--edge:#1f3a2c;--ink:#eafef4;--dim:#8fb6a4;--grn:#3ad392;--teal:#2fd0c8;--gold:#e8c24b;--good:#2ecc71;--warn:#e0a13a;--bad:#e05a6b}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+  #app{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+  header{padding:14px 22px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  header .k{font:11px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--grn)}
+  header h1{margin:2px 0 0;font-family:ui-serif,Georgia,serif;font-size:21px;font-weight:600;background:linear-gradient(180deg,#c8f7dd,#3ad392 60%,#1f9c68);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header .sub{font-size:12.5px;color:var(--dim)}
+  header .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{padding:8px 14px;border-radius:9px;border:1px solid var(--grn);background:linear-gradient(180deg,#3ad39222,#3ad39210);color:#c8f7dd;font-size:12.5px;font-weight:650;cursor:pointer}
+  .btn.ghost{border-color:var(--edge);background:var(--pan);color:var(--dim);font-weight:500}
+  .btn:disabled{opacity:.5;cursor:default}
+  .tabs{display:flex;gap:4px;padding:10px 22px 0}
+  .tab{padding:9px 16px;border:1px solid var(--edge);border-bottom:none;border-radius:10px 10px 0 0;background:var(--pan2);color:var(--dim);font-size:13px;font-weight:600;cursor:pointer}
+  .tab.on{background:var(--pan);color:var(--ink);border-color:var(--grn)}
+  #msg{font-size:12px;color:var(--dim);padding:8px 22px 0;min-height:16px}
+  main{flex:1;overflow:auto;padding:16px 22px 26px}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{background:var(--pan);border:1px solid var(--edge);border-radius:13px;padding:13px 18px;min-width:150px}
+  .stat .lab{font:10.5px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .stat .big{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
+  .stat .u{font-size:12px;color:var(--dim);margin-top:1px}
+  h2{font:11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:20px 0 10px}
+  .card{background:var(--pan);border:1px solid var(--edge);border-radius:13px;padding:13px 16px;margin-bottom:10px}
+  .card.rec{border-color:#2a5c44}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .card h3{margin:0 0 3px;font-size:15px}
+  .rec .summ{font-size:13px;color:var(--teal);font-weight:600;margin:2px 0 4px}
+  .rec p{font-size:12.5px;color:var(--dim);line-height:1.5;margin:6px 0}
+  .meta{font-size:11.5px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;margin-top:5px}
+  .meta b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .pill{padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+  .pill.high{background:#3a1620;color:var(--bad);border:1px solid #5c1f2b}
+  .pill.medium{background:#3a2c16;color:var(--warn);border:1px solid #5c451f}
+  .pill.good{background:#12351f;color:var(--good);border:1px solid #1f5c33}
+  .pill.grey{background:#16241d;color:var(--dim);border:1px solid var(--edge)}
+  .wrow{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--edge);border-radius:11px;background:var(--pan);margin-bottom:8px}
+  .wrow .cov{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;width:64px;text-align:right}
+  .wrow .nm{flex:1;min-width:0}
+  .wrow .nm b{font-size:14px}
+  .wrow .nm .d{font-size:11.5px;color:var(--dim);margin-top:1px}
+  .track{height:8px;border-radius:5px;background:#0a1611;border:1px solid var(--edge);overflow:hidden;margin-top:6px}
+  .track > i{display:block;height:100%;border-radius:5px}
+  .hist{display:flex;align-items:flex-end;gap:6px;height:120px;padding:10px 4px 0;border-bottom:1px solid var(--edge)}
+  .hist .b{flex:1;background:linear-gradient(180deg,var(--grn),#1f9c68);border-radius:4px 4px 0 0;min-height:2px;position:relative}
+  .hist .b.lo{background:linear-gradient(180deg,var(--bad),#7a2130)}
+  .hist .b span{position:absolute;top:-16px;left:0;right:0;text-align:center;font-size:10px;color:var(--dim)}
+  .histx{display:flex;gap:6px;padding:5px 4px 0}
+  .histx div{flex:1;text-align:center;font:10px ui-monospace,monospace;color:var(--dim)}
+  .empty{color:var(--dim);font-size:13px;padding:22px;text-align:center;border:1px dashed var(--edge);border-radius:12px}
+  .load{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9;color:var(--dim)}
+</style></head><body>
+<div id="app">
+  <header>
+    <div><div class="k" id="eyebrow">Solid Waste Management</div>
+      <h1>Waste Console</h1>
+      <div class="sub">Are households segregating — and did the truck reach every property?</div></div>
+    <div class="sp">
+      <button class="btn ghost" id="recompute">↻ Recompute this tab</button>
+    </div>
+  </header>
+  <div class="tabs">
+    <div class="tab on" data-tab="seg">Segregation Compliance</div>
+    <div class="tab" data-tab="cov">Collection Coverage</div>
+  </div>
+  <div id="msg"></div>
+  <main id="main"></main>
+</div>
+<div class="load" id="load">loading the waste picture…</div>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let APPID="waste-console", TENANT=null, TAB="seg";
+const num=n=>n==null?"—":Math.round(n).toLocaleString("en-IN"), pct=x=>x==null?"—":(x*100).toFixed(0)+"%";
+async function bridge(p,b){ const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); if(!r.ok) throw new Error(p+" "+r.status); return r.json(); }
+async function q(schema){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:8000}); return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } }
+
+let SEG=[], RECS=[], ALERTS=[], WARDS=0;
+const FLOOR_SEG=0.70, FLOOR_COV=0.85;
+
+function segView(){
+  const vals=SEG.map(s=>s.value).filter(v=>typeof v==="number");
+  const n=vals.length, mean=n?vals.reduce((a,b)=>a+b,0)/n:null;
+  const below=vals.filter(v=>v<FLOOR_SEG).length;
+  // 10-bucket distribution 0..1, buckets under floor tinted red
+  const bins=Array(10).fill(0); vals.forEach(v=>{let i=Math.min(9,Math.floor(v*10));bins[i]++;});
+  const mx=Math.max(1,...bins);
+  const rec=RECS.filter(r=>/segreg|compliance/i.test(r.title+" "+r.summary+" "+(r.produced_by||"")))[0]
+           || RECS.filter(r=>String(r.id).includes("compliance"))[0];
+  let h=`<div class="stats">
+    <div class="stat"><div class="lab">City-mean compliance</div><div class="big">${pct(mean)}</div><div class="u">${num(n)} areas measured</div></div>
+    <div class="stat"><div class="lab">Below ${pct(FLOOR_SEG)} floor</div><div class="big" style="color:var(--bad)">${num(below)}</div><div class="u">${n?pct(below/n):"—"} of areas</div></div>
+    <div class="stat"><div class="lab">Segregation floor</div><div class="big" style="color:var(--dim)">${pct(FLOOR_SEG)}</div><div class="u">policy target</div></div>
+  </div>`;
+  if(!n){ return h+`<div class="empty">No <b>waste.segregation_compliance</b> data yet. Press <b>↻ Recompute</b> after the collection feed is seeded.</div>`; }
+  h+=`<h2>Compliance distribution · ${num(n)} areas</h2><div class="hist">`+
+     bins.map((b,i)=>`<div class="b ${i<7?'lo':''}" style="height:${Math.round(b/mx*100)}%"><span>${b?num(b):''}</span></div>`).join("")+
+     `</div><div class="histx">`+bins.map((b,i)=>`<div>${i*10}${i===9?'–100%':''}</div>`).join("")+`</div>`;
+  h+=`<h2>Recommendation · what to do</h2>`;
+  h+= rec ? `<div class="card rec"><div class="row"><h3>${esc(rec.title||'Recommendation')}</h3><span class="pill grey">score ${num(rec.score)}</span></div>
+      <div class="summ">${esc(rec.summary||'')}</div><p>${esc(rec.rationale||'')}</p>
+      <div class="meta"><span>method <b>${esc(rec.method||'')}</b></span><span>confidence <b>${rec.confidence!=null?rec.confidence:'—'}</b></span><span>by <b>${esc(String(rec.produced_by||'waste-compliance-engine').split('/').pop())}</b></span></div></div>`
+    : `<div class="empty">No compliance recommendation on record. Press <b>↻ Recompute</b>.</div>`;
+  return h;
+}
+function covView(){
+  const A=ALERTS.slice().sort((a,b)=>(b.count||0)-(a.count||0));
+  const missed=A.reduce((s,a)=>s+(a.count||0),0);
+  let h=`<div class="stats">
+    <div class="stat"><div class="lab">Wards below floor</div><div class="big" style="color:${A.length?'var(--warn)':'var(--good)'}">${num(A.length)}</div><div class="u">of ${num(WARDS)} wards</div></div>
+    <div class="stat"><div class="lab">Properties missed</div><div class="big" style="color:var(--bad)">${num(missed)}</div><div class="u">last sweep, low-coverage wards</div></div>
+    <div class="stat"><div class="lab">Coverage floor</div><div class="big" style="color:var(--dim)">${pct(FLOOR_COV)}</div><div class="u">policy target</div></div>
+  </div>`;
+  if(!A.length){ return h+`<div class="empty">${WARDS?`No coverage alerts — every ward with data is at or above the ${pct(FLOOR_COV)} floor. ✓`:`No <b>signal.alert</b> coverage records yet. Press <b>↻ Recompute</b> to scan pickups against ward boundaries.`}</div>`; }
+  h+=`<h2>Wards below the coverage floor · worst first</h2>`;
+  h+= A.map(a=>{
+    const m=/(\d+)%/.exec(a.title||""); const cov=m?parseInt(m[1],10):null;
+    const nm=(a.title||"").split(":")[0];
+    const barcol = a.severity==="high"?"var(--bad)":"var(--warn)";
+    return `<div class="wrow"><div class="cov" style="color:${barcol}">${cov!=null?cov+"%":"—"}</div>
+      <div class="nm"><b>${esc(nm)}</b> <span class="pill ${esc(a.severity||'medium')}">${esc(a.severity||'')}</span>
+        <div class="d">${esc((a.title||"").replace(nm+":","").trim())}</div>
+        <div class="track"><i style="width:${cov!=null?cov:50}%;background:${barcol}"></i></div></div>
+      <div style="text-align:right"><div style="font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--bad)">${num(a.count)}</div><div class="d" style="font-size:10.5px">missed</div></div>
+    </div>`; }).join("");
+  return h;
+}
+function render(){ $("main").innerHTML = TAB==="seg"?segView():covView(); }
+
+async function loadAll(){
+  SEG=await q("waste.segregation_compliance");
+  RECS=(await q("governance.recommendation")).filter(r=>/waste|segreg|compliance/i.test(r.title+" "+r.summary+" "+(r.produced_by||"")+" "+r.id));
+  ALERTS=(await q("signal.alert")).filter(a=>a.kind==="waste.collection_coverage");
+  WARDS=(await q("geo.ward")).length;
+  render();
+}
+$("recompute").onclick=async()=>{
+  const btn=$("recompute"); btn.disabled=true;
+  const verb=TAB==="seg"?"waste-compliance-rank":"collection-coverage-scan";
+  $("msg").textContent="recomputing ("+verb+")…";
+  try{ const r=await bridge("/bridge/"+verb, TAB==="cov"?{coverage_floor:FLOOR_COV,top_k:20}:{});
+    $("msg").textContent="✓ recomputed — "+(TAB==="seg"?"segregation ranked":("coverage scanned: "+(r.alerts!=null?r.alerts+" alerts over "+(r.wards_with_data||0)+" wards":"done")));
+    await loadAll(); }
+  catch(e){ $("msg").textContent="recompute unavailable ("+e.message+") — showing stored results."; }
+  finally{ btn.disabled=false; }
+};
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  TAB=t.dataset.tab; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t)); $("msg").textContent=""; render();
+});
+(async()=>{
+  try{
+    const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({})); APPID=cfg.app_id||APPID; TENANT=cfg.tenant||null;
+    if(TENANT) $("eyebrow").textContent="Solid Waste Management · "+TENANT;
+    await loadAll(); $("load").remove();
+  }catch(e){ $("load").textContent="error: "+e.message; }
+})();
+</script></body></html>

@@ -1,0 +1,32 @@
+# A DRIVER (kind=driver) — HISTORICAL hourly feature backfill at the label-station cells (ADR-0073 M3.6).
+# openaq-archive (M3.5) gave months of historical PM2.5 LABELS, but the live feature drivers write only the
+# latest hour — supervised training needs each label's FEATURES time-aligned to the SAME hour. This driver
+# fetches CAMS reanalysis + ERA5 reanalysis for the whole label window from Open-Meteo's KEYLESS ARCHIVE APIs,
+# for exactly the cells that carry a label, and writes hourly SERIES facts using the same
+# `…/cell/<subject>/series/{h3}/{YYYYMMDDHH}` id + fact shape the cams/pblh drivers already use (so STRICT
+# schema validation passes and pm25-features' lag reader + training mode consume them unchanged):
+#   cell.cams (pm25/pm10/no2/o3/so2) + cell.aod (aerosol_optical_depth) from air-quality-api (CAMS);
+#   cell.boundary_layer (pblh_m) from archive-api (ERA5). Real reanalysis only — a source that errors is
+#   skipped for that cell (never fabricated); zero series written fails loudly. Host subprocess, keyless.
+component_id: ds:airawat:driver/feature-backfill
+kind: driver
+version: 0.2.0   # 0.2.0: label-hour-aware — only cells with ≥MIN_LABELS, each over its OWN label span (not the global window)
+provider: ds:airawat:developer
+display_name: Historical Feature Backfill (CAMS + ERA5 reanalysis)
+entrypoint: run.py
+confinement_min: L2
+reads: [space.aoi, air.sensor_reading]     # air.sensor_reading = which cells carry labels + the label window
+writes: [cell.cams, cell.aod, cell.boundary_layer]
+egress:
+  - { host: air-quality-api.open-meteo.com, rate_per_min: 60, user_agent: "AirawatOS/feature-backfill (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: archive-api.open-meteo.com,     rate_per_min: 60, user_agent: "AirawatOS/feature-backfill (+https://airawat.org; manishsv@gmail.com)" }
+config: [DATE_FROM, DATE_TO, DAYS_BACK, MAX_CELLS, CHUNK_DAYS]
+sources:
+  - { ref: "ds:airawat:ref/source/cams",      host: air-quality-api.open-meteo.com, provides: [cell.cams, cell.aod] }
+  - { ref: "ds:airawat:ref/source/ecmwf-ifs", host: archive-api.open-meteo.com,      provides: [cell.boundary_layer] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: air.sensor_reading }
+  - { verb: write, scope: cell.cams }
+  - { verb: write, scope: cell.aod }
+  - { verb: write, scope: cell.boundary_layer }

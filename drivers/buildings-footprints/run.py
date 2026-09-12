@@ -30,9 +30,22 @@ PROJECT = os.environ.get("GEE_PROJECT", "")
 SA_EMAIL = os.environ.get("GEE_SERVICE_ACCOUNT", "")
 SA_KEY = os.environ.get("GEE_SERVICE_ACCOUNT_KEY", "")
 CONF = float(os.environ.get("CONF", "0.70"))
-CELL_LIMIT = int(os.environ.get("CELL_LIMIT", "250"))
+CELL_LIMIT = int(os.environ.get("CELL_LIMIT", "250"))     # legacy per-cell path (kept for compatibility)
 PER_CELL_CAP = int(os.environ.get("PER_CELL_CAP", "5000"))
 FOOTPRINT_BBOX = os.environ.get("FOOTPRINT_BBOX", "").strip()
+# ── BULK AOI TILE-FETCH (default) ─────────────────────────────────────────────────────────────────
+# Instead of one GEE getInfo per H3 cell (~24k round-trips → API abuse + hours), pull footprints per AOI
+# TILE (a few hundred round-trips). Each tile is queried with a hard `.limit(TILE_CAP)`; if it comes back
+# full it is SUBDIVIDED into 4 and re-queried (adaptive quadtree) so dense areas never lose buildings and no
+# single getInfo exceeds GEE's element limit. Good-citizen pacing: sequential calls, a delay between them,
+# exponential backoff on errors, and a wall-clock BUDGET so a run stops cleanly (RESUME finishes the rest).
+BULK = os.environ.get("BULK", "1") != "0"
+TILE_DEG = float(os.environ.get("TILE_DEG", "0.03"))       # ~3 km initial tiles
+TILE_CAP = int(os.environ.get("TILE_CAP", "2500"))         # getInfo feature cap per tile (well under GEE's ~5000)
+MAX_DEPTH = int(os.environ.get("MAX_DEPTH", "4"))          # quadtree subdivision depth for dense tiles
+TILE_DELAY = float(os.environ.get("TILE_DELAY", "0.5"))    # seconds between GEE calls — polite pacing (~≤120/min)
+RUN_BUDGET_S = int(os.environ.get("RUN_BUDGET_S", "1500")) # stop after this (< the ~1700s run cap); RESUME continues
+BATCH = int(os.environ.get("WRITE_BATCH", "2000"))         # geo.building rows per /v1/write/batch call
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/google-open-buildings"
 DERIVED = ["gee:GOOGLE/Research/open-buildings/v3/polygons", "gee:GOOGLE/Research/open-buildings-temporal/v1"]
@@ -202,50 +215,149 @@ def fp_id(hcell, centroid, area):
     return f"ds:{TENANT}:building/{hcell}/{h}"
 
 
+def _flatten_pts(c):
+    """Yield [x,y] numeric coordinate pairs from ANY GeoJSON coordinate nesting — Polygon OR MultiPolygon
+    (Open Buildings v3 has some MultiPolygon footprints, which nest one level deeper)."""
+    if isinstance(c, (list, tuple)) and len(c) >= 2 and isinstance(c[0], (int, float)) and isinstance(c[1], (int, float)):
+        yield c
+    elif isinstance(c, (list, tuple)):
+        for x in c:
+            yield from _flatten_pts(x)
+
+
+def _facts_from_features(feats, res, aoi_ref, w, s, e, n):
+    """Turn a tile's GEE features into geo.building facts, keeping only footprints whose CENTROID falls in
+    THIS tile's half-open box [w,e)x[s,n) — so a building straddling a tile seam is written exactly once."""
+    import h3
+    out = []
+    for f in feats:
+        g = f.get("geometry") or {}
+        props = f.get("properties") or {}
+        pts = list(_flatten_pts(g.get("coordinates") or []))     # robust to Polygon + MultiPolygon
+        if not pts:
+            continue
+        clo = sum(p[0] for p in pts) / len(pts); cla = sum(p[1] for p in pts) / len(pts)
+        if not (w <= clo < e and s <= cla < n):
+            continue                                              # centroid outside this tile → its owner tile writes it
+        hcell = h3.latlng_to_cell(cla, clo, res)
+        hm = props.get("mean")
+        area = round(float(props["area_in_meters"]), 1) if isinstance(props.get("area_in_meters"), (int, float)) else None
+        conf = round(float(props["confidence"]), 3) if isinstance(props.get("confidence"), (int, float)) else None
+        height_m = round(float(hm), 1) if isinstance(hm, (int, float)) and hm > 0 else None
+        levels = max(1, int(round(height_m / STOREY_M))) if height_m else None
+        centroid = [round(clo, 6), round(cla, 6)]
+        out.append({"schema": "geo.building", "id": fp_id(hcell, centroid, area), "tenant": TENANT,
+                    "geometry": g, "h3_id": hcell, "resolution": res, "centroid": centroid,
+                    "area_m2": area, "height_m": height_m, "levels": levels, "confidence": conf,
+                    "method": "open-buildings-v3", "source_ref": SRC, "layer": "L1", "derived_from": DERIVED,
+                    "source": {"aoi": aoi_ref, "driver": "buildings-footprints", "asset": OB_ASSET},
+                    "prov": {"method": "open-buildings-v3", "source_ref": SRC, "derived_from": DERIVED,
+                             "min_footprint_confidence": CONF, "observed_at": NOW}, "observed_at": NOW})
+    return out
+
+
+def _gee_tile(ee, w, s, e, n):
+    """One PACED GEE getInfo of Open Buildings footprints in a box (+ Temporal height join). Sequential, with a
+    delay before every call and exponential backoff on error — never hammer the API. Returns (features, truncated)."""
+    geom = ee.Geometry.Rectangle([w, s, e, n])
+    fc = (ee.FeatureCollection(OB_ASSET).filterBounds(geom)
+          .filter(ee.Filter.gte("confidence", CONF)).limit(TILE_CAP))
+    try:
+        height = ee.ImageCollection(OB_TEMPORAL).filterBounds(geom).mosaic().select("building_height")
+        fc = height.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=4)
+    except Exception:
+        pass                                                      # Temporal unavailable → height_m stays null
+    for attempt in range(5):
+        try:
+            time.sleep(TILE_DELAY)                                # polite spacing BEFORE every call
+            feats = (fc.getInfo() or {}).get("features") or []
+            return feats, (len(feats) >= TILE_CAP)
+        except Exception as ex:
+            if attempt == 4:
+                print(f"  ⚠ tile [{w:.3f},{s:.3f},{e:.3f},{n:.3f}] getInfo failed ({type(ex).__name__}: {str(ex)[:60]}) — skip", flush=True)
+                return None, False
+            time.sleep(4 * (attempt + 1))                          # backoff — back off HARD when the API pushes back
+
+
+def fetch_tile(ee, w, s, e, n, res, aoi_ref, depth, calls):
+    """Adaptive quadtree: query the tile; if it returns FULL (likely truncated) split into 4 and recurse (up to
+    MAX_DEPTH) so dense areas lose nothing and no getInfo exceeds the element cap. Returns (facts, calls_made)."""
+    feats, truncated = _gee_tile(ee, w, s, e, n)
+    calls += 1
+    if feats is None:
+        return [], calls
+    if truncated and depth < MAX_DEPTH:
+        mx, my = (w + e) / 2.0, (s + n) / 2.0
+        acc = []
+        for (a, b, c, d) in ((w, s, mx, my), (mx, s, e, my), (w, my, mx, n), (mx, my, e, n)):
+            sub, calls = fetch_tile(ee, a, b, c, d, res, aoi_ref, depth + 1, calls)
+            acc += sub
+        return acc, calls
+    return _facts_from_features(feats, res, aoi_ref, w, s, e, n), calls
+
+
+def _tile_done(center_cell):
+    """RESUME: has a prior run already ingested this tile? Tiles are written atomically per run, so if the tile's
+    CENTRE H3 cell has any geo.building the whole tile is done. One cheap filtered registry read (not GEE)."""
+    if os.environ.get("RESUME", "1") == "0":
+        return False
+    try:
+        r = call("/v1/query", {"scope": "geo.building", "filter": {"h3_id": center_cell}, "limit": 1})
+        return bool((r or {}).get("results"))
+    except Exception:
+        return False
+
+
 def main():
     if not TENANT:
         raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant. Refusing to guess.")
+    import math
     aoi, bbox, res, aoi_ref = resolve_aoi()
     ee = init_ee()
-    cells = target_cells(bbox, res)
-    if not cells:
-        raise SystemExit(f"FATAL: no cell.buildings coverage for tenant '{TENANT}' — run buildings-openbuildings first.")
-    done = already_done()
-    todo = [(h, r) for (h, r, _cov) in cells if h not in done]
-    print(f"Open Buildings v3 footprints · AOI {aoi_ref} · {len(cells)} target cells "
-          f"({len(done)} already ingested) → {len(todo)} to fetch (conf≥{CONF}, cap {PER_CELL_CAP}/cell)", flush=True)
-    if not todo:
-        print("  nothing to do — all target cells already have footprints"); return 0
-
-    written = cells_done = empty = 0
-    for i, (hcell, cres) in enumerate(todo):
-        fps = footprints_for_cell(ee, hcell, res)
-        if fps is None:
-            continue                                              # getInfo failed for this cell — skip, don't fabricate
-        if not fps:
-            empty += 1
-        for (geom, centroid, area, conf, height_m) in fps:
-            levels = max(1, int(round(height_m / STOREY_M))) if height_m else None   # schema: integer storeys
-            fact = {
-                "schema": "geo.building", "id": fp_id(hcell, centroid, area), "tenant": TENANT,
-                "geometry": geom, "h3_id": hcell, "resolution": res, "centroid": centroid,
-                "area_m2": area, "height_m": height_m, "levels": levels, "confidence": conf,
-                "method": "open-buildings-v3", "source_ref": SRC, "layer": "L1", "derived_from": DERIVED,
-                "source": {"aoi": aoi_ref, "driver": "buildings-footprints", "asset": OB_ASSET},
-                "prov": {"method": "open-buildings-v3", "source_ref": SRC, "derived_from": DERIVED,
-                         "min_footprint_confidence": CONF, "observed_at": NOW},
-                "observed_at": NOW}
-            call("/v1/write", {"scope": "geo.building", "id": fact["id"], "object": fact,
-                               "valid_time": {"from": NOW}, "asserted_at": NOW})
-            written += 1
-        cells_done += 1
-        if cells_done % 20 == 0 or i == len(todo) - 1:
-            print(f"  …{cells_done}/{len(todo)} cells (wrote {written} footprints, {empty} empty cells)", flush=True)
-
-    if not written:
-        raise SystemExit("FATAL: Open Buildings returned no footprints for any target cell — nothing written (no synthetic fill).")
-    print(f"wrote {written} geo.building footprints across {cells_done} cells from Google Open Buildings v3 (real GEE)")
-    print(f"RESULT: {json.dumps({'source': 'open-buildings-v3', 'footprints': written, 'cells': cells_done, 'empty_cells': empty})}")
+    import h3
+    w0, s0, e0, n0 = bbox
+    if FOOTPRINT_BBOX:
+        fb = [float(v) for v in FOOTPRINT_BBOX.split(",")]
+        w0, s0, e0, n0 = max(w0, fb[0]), max(s0, fb[1]), min(e0, fb[2]), min(n0, fb[3])
+    nx = max(1, int(math.ceil((e0 - w0) / TILE_DEG))); ny = max(1, int(math.ceil((n0 - s0) / TILE_DEG)))
+    tiles = []
+    for iy in range(ny):
+        for ix in range(nx):
+            tiles.append((w0 + ix * TILE_DEG, s0 + iy * TILE_DEG,
+                          min(e0, w0 + (ix + 1) * TILE_DEG), min(n0, s0 + (iy + 1) * TILE_DEG)))
+    print(f"Open Buildings v3 BULK footprints · AOI {aoi_ref} · {nx}x{ny}={len(tiles)} tiles "
+          f"(conf≥{CONF}, cap {TILE_CAP}/tile, delay {TILE_DELAY}s, budget {RUN_BUDGET_S}s)", flush=True)
+    t0 = time.time(); written = tiles_done = skipped = calls = 0
+    batch = []
+    def flush():
+        nonlocal written
+        if not batch:
+            return
+        r = call("/v1/write/batch", {"items": batch, "asserted_at": NOW}) or {}
+        written += int(r.get("written", 0))
+        if r.get("errors"):
+            print("  batch errors:", json.dumps(r["errors"][:2])[:300], flush=True)
+        batch.clear()
+    stopped = False
+    for (w, s, e, n) in tiles:
+        if time.time() - t0 > RUN_BUDGET_S:
+            print(f"  ⏸ budget {RUN_BUDGET_S}s reached — stopping cleanly at {tiles_done}/{len(tiles)} tiles; RESUME finishes the rest", flush=True)
+            stopped = True; break
+        cw, cn = (w + e) / 2.0, (s + n) / 2.0
+        if _tile_done(h3.latlng_to_cell(cn, cw, res)):
+            skipped += 1; continue
+        facts, calls = fetch_tile(ee, w, s, e, n, res, aoi_ref, 0, calls)
+        for fact in facts:
+            batch.append({"scope": "geo.building", "id": fact["id"], "object": fact, "valid_time": {"from": NOW}})
+            if len(batch) >= BATCH:
+                flush()
+        flush()                                                   # flush per tile → each tile is written atomically (clean RESUME)
+        tiles_done += 1
+        if tiles_done % 20 == 0:
+            print(f"  …{tiles_done}/{len(tiles)} tiles · {calls} GEE calls · wrote {written} footprints ({skipped} skipped)", flush=True)
+    print(f"wrote {written} geo.building footprints · {tiles_done} tiles · {calls} GEE calls · {skipped} skipped (RESUME)"
+          + (" · INCOMPLETE (budget) — re-run to finish" if stopped else " · COMPLETE"))
+    print(f"RESULT: {json.dumps({'source': 'open-buildings-v3-bulk', 'footprints': written, 'tiles': tiles_done, 'gee_calls': calls, 'skipped': skipped, 'complete': not stopped})}")
     return 0
 
 

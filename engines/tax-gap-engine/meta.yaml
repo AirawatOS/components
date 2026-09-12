@@ -5,10 +5,20 @@
 # match-preview (weight tuning), gap-scan (the spine). Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/tax-gap-engine
 kind: engine
-version: 0.2.0
+version: 0.2.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Tax Gap Engine
 entrypoint: run.py
+implements:
+  - tax.gap_scan@0.1.0
+  - tax.matchpolicy_get@0.1.0
+  - tax.matchpolicy_set@0.1.0
+verbs:
+  gap-scan: tax.gap_scan@0.1.0
+  matchpolicy-get: tax.matchpolicy_get@0.1.0
+  matchpolicy-set: tax.matchpolicy_set@0.1.0
+verbs_exempt:
+  - match-preview   # stateless scoring preview to tune weights in the config console; reads/writes no governed data
 # reads: the config, the ledger/utility/cadastre/footprint/change layers it triangulates.
 required_schemas: [tax.match_policy, tax.assessment, util.connection, geo.parcel, geo.building, tax.change_signal]
 reads: [tax.match_policy, tax.assessment, util.connection, geo.parcel, geo.building, tax.change_signal]

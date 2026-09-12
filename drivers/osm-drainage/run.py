@@ -13,7 +13,7 @@ tenant/AOI default (a driver runs in the context of exactly one tenant, supplied
 
 Inputs (env): AOI_ID (optional) · TENANT · OVERPASS_URL · OSM_PBF_FILE_ID (optional)
 """
-import json, math, os, sys, time, urllib.request
+import json, math, os, shutil, subprocess, sys, time, urllib.request
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "_common"))
 import ids
@@ -136,6 +136,32 @@ def ways_from_pbf(pbf_path, bbox):
     return h.ways
 
 
+def _clip_to_bbox(src_path, bbox):
+    """If the PBF is large and the `osmium` CLI is present, extract a reference-complete slice for the AOI bbox
+    (with a small pad) BEFORE the expensive locations=True pass. A regional/zone PBF otherwise forces pyosmium to
+    index every node in the country and blows the 180s host-subprocess cap (HTTP 504). osmium extract clips in
+    seconds; complete_ways keeps every node of a way crossing the edge so line geometry stays intact. No-op when
+    the CLI is missing or the file is small. See ADR-0060 / Wave-1."""
+    try:
+        if not shutil.which("osmium") or os.path.getsize(src_path) < 150 * 1024 * 1024:
+            return src_path
+    except Exception:
+        return src_path
+    w, s, e, n = bbox
+    pad = 0.03
+    dst = src_path + ".clip.osm.pbf"
+    box = f"{w-pad},{s-pad},{e+pad},{n+pad}"
+    try:
+        t0 = time.time()
+        subprocess.run(["osmium", "extract", "-b", box, src_path, "-o", dst, "--overwrite", "-s", "complete_ways"],
+                       check=True, capture_output=True, timeout=150)
+        print(f"  clipped PBF to AOI bbox {box} → {os.path.getsize(dst)//1024//1024} MB in {time.time()-t0:.0f}s (osmium extract)", flush=True)
+        return dst
+    except Exception as ex:
+        print(f"  osmium extract clip skipped ({str(ex)[:80]}) — reading full PBF", flush=True)
+        return src_path
+
+
 def fetch_ways_from_asset(pbf_id, bbox):
     import base64, tempfile
     res = call("/v1/file/get", {"id": pbf_id})
@@ -143,13 +169,18 @@ def fetch_ways_from_asset(pbf_id, bbox):
     if not raw:
         raise SystemExit(f"FATAL: PBF asset {pbf_id} is empty / not in the filestore")
     tf = tempfile.NamedTemporaryFile(suffix=".osm.pbf", delete=False)
+    clipped = None
     try:
         tf.write(raw); tf.close()
         print(f"reading waterways from uploaded PBF asset {pbf_id[:20]}… ({len(raw)//1024//1024} MB) via osmium", flush=True)
-        return ways_from_pbf(tf.name, bbox)
+        path = _clip_to_bbox(tf.name, bbox)
+        clipped = path if path != tf.name else None
+        return ways_from_pbf(path, bbox)
     finally:
-        try: os.unlink(tf.name)
-        except Exception: pass
+        for p in (tf.name, clipped):
+            if p:
+                try: os.unlink(p)
+                except Exception: pass
 
 
 def to_feature(el):
