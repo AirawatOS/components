@@ -1,0 +1,25 @@
+# An ENGINE (kind=engine) — puts civic.issue on the MAP. Each civic.issue carries a jurisdiction NAME + a
+# headline/summary but no coordinates; this engine asks the model gateway (/v1/complete) to extract the SPECIFIC
+# locality named in the text (a neighbourhood / road / landmark within the city, or none), then geocodes that
+# locality with a REAL geocoder (Nominatim), egress-gated through the broker and bounded to the city AOI. It writes
+# the resolved point back onto the civic.issue as `geometry` (GeoJSON Point) + place_label + geocode_confidence.
+# NO fabrication: an issue whose text names no locality, or whose locality the geocoder cannot resolve inside the
+# AOI, is left WITHOUT geometry — never given the city centroid or a guessed point. Rate-limited + capped + RESUMES
+# (skips issues already carrying geometry). Powers the categorical "Civic issues" point overlay in City Scan.
+component_id: ds:airawat:engine/news-geocode
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: News Geocoder (civic.issue → map point)
+entrypoint: run.py
+confinement_min: L1
+reads: [civic.issue]
+writes: [civic.issue]
+egress:
+  - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/news-geocode (+https://airawat.org; manishsv@gmail.com)" }
+sources:
+  - { ref: "ds:airawat:ref/source/nominatim", host: nominatim.openstreetmap.org, provides: [civic.issue] }
+config: [CITY_HINT, VIEWBOX, MAX, BATCH, GEOCODER_URL, GEOCODE_SLEEP, RECODE]
+scopes:
+  - { verb: read,  scope: civic.issue }
+  - { verb: write, scope: civic.issue }

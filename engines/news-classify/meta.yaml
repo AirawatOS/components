@@ -1,0 +1,22 @@
+# An ENGINE (kind=engine) — classifies governed news.item into a civic.issue (category incl. law_and_order, severity,
+# responsible agency) and, for actionable issues, opens the decision→task→Inbox chain routed to that agency (ADR-0029:
+# the AI PROPOSES a classified issue + a recommendation; a human ADMITS). All I/O via the broker under the run-token.
+# Uses the model gateway (/v1/complete) for classification — no egress, no key in the engine.
+component_id: ds:airawat:engine/news-classify
+kind: engine
+version: 0.1.2
+provider: ds:airawat:developer
+display_name: News Classifier (news.item → civic.issue + route to agency)
+entrypoint: run.py
+confinement_min: L1
+reads: [news.item, civic.issue]
+writes: [civic.issue, governance.recommendation, platform.case, platform.task, platform.inbox_item]
+config: [MAX, BATCH, AGENCY_MAP, ROUTE_SEVERITIES, ROUTE_CATEGORIES]
+scopes:
+  - { verb: read,  scope: news.item }
+  - { verb: read,  scope: civic.issue }
+  - { verb: write, scope: civic.issue }
+  - { verb: write, scope: governance.recommendation }
+  - { verb: write, scope: platform.case }
+  - { verb: write, scope: platform.task }
+  - { verb: write, scope: platform.inbox_item }

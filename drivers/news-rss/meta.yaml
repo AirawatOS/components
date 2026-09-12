@@ -1,0 +1,20 @@
+# A DRIVER (kind=driver) — real, KEYLESS news ingestion from Google News RSS → news.item (News vertical, slice 1).
+# For each configured jurisdiction query it fetches the Google News RSS search feed (keyless), parses the items,
+# tags each with its jurisdiction + civic topics, and writes news.item. The Personal Agent then ranks these by the
+# user's place + role. Real feeds only — fetch or fail loudly; NO synthetic fabrication, NO tenant default.
+# Runs as a host subprocess (keyless HTTP via the broker) — no runtime profile.
+component_id: ds:airawat:driver/news-rss
+kind: driver
+version: 0.2.0
+provider: ds:airawat:developer
+display_name: News (Google News RSS)
+entrypoint: run.py
+confinement_min: L1
+writes: [news.item]
+egress:
+  - { host: news.google.com, rate_per_min: 60, user_agent: "AirawatOS/news-rss (+https://airawat.org; manishsv@gmail.com)" }
+config: [QUERIES, MAXITEMS, HL, GL, CEID]
+sources:
+  - { ref: "ds:airawat:ref/source/google-news", host: news.google.com, provides: [news.item] }
+scopes:
+  - { verb: write, scope: news.item }

@@ -1,0 +1,18 @@
+# A SOLUTION (kind=solution) — the News vertical as one governed, fan-out install. Installing it into a tenant
+# installs every member: the News reader app + the two real-source ingest drivers + the classifier engine. After
+# install, create the tenant's news schedules (jurisdiction QUERIES) — see run.py / the per-tenant recipe — since
+# each city's search terms differ. Reads/writes are the members' own; the solution grants nothing extra.
+component_id: ds:airawat:solution/news
+kind: solution
+version: 0.3.0
+provider: ds:airawat:developer
+display_name: News
+entrypoint: run.py
+summary: "Jurisdiction- & topic-aware civic news from real sources (Google News RSS + GDELT), governed as news.item and read in the News app."
+members:
+  - ds:airawat:app/news
+  - ds:airawat:driver/news-rss
+  - ds:airawat:driver/news-gdelt
+  - ds:airawatdeveloper:engine/news-classify
+reads: []
+writes: [platform.schedule]    # setup run.py creates the tenant's news-ingest schedules on install

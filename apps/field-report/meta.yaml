@@ -1,0 +1,13 @@
+# An APP (kind=app) — Field Report: ground teams & certified volunteers file civic INCIDENTS (Civic vertical, slice 3).
+# The form posts to /bridge/report-incident, which writes a governed signal.incident obo the user and derives the
+# trust tier (a valid credential.volunteer → certified_volunteer; an ops/ground role → ground_team; else citizen).
+# The report-triage engine then classifies each into a civic.issue and routes actionable ones to the agency's Inbox.
+component_id: ds:airawat:app/field-report
+kind: app
+version: 0.2.0   # 0.2.0: OFFLINE-FIRST (ADR-0082 S2) — WebCrypto Ed25519 device key + credential.device VC, signed IndexedDB outbox, sync via /bridge/offline-relay; service-worker shell cache
+provider: ds:airawat:developer
+display_name: Field Report
+entrypoint: index.html
+icon: 📣
+required_schemas: [signal.incident]
+roles: []
