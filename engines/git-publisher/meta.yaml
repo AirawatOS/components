@@ -1,0 +1,26 @@
+# An ENGINE (kind=engine) — ADR-0083 S2: mirror a developer tenant's PUBLISHED components into the Git repo the
+# tenant controls (dev.git_binding). For each component it fetches the source tar the platform already holds
+# (platform.component_asset → filestore), lays it into the repo working tree per the binding's path_convention,
+# commits with per-developer attribution (message carries component_id + version + source digest), and pushes.
+# The Git credential is a Vault secret (credential_ref on the binding) fetched at run time via the secrets service —
+# the token is NEVER in the engine, the meta, or a log. Egress is broker-gated to the git host. Records last_push
+# back on the binding. No fabrication: a component with no source asset is skipped, not invented.
+component_id: ds:airawatdeveloper:engine/git-publisher
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper
+display_name: Git Publisher (published components → developer's own repo)
+entrypoint: run.py
+confinement_min: L1
+reads: [dev.git_binding, platform.component_asset]
+writes: [dev.git_binding]
+egress:
+  - { host: github.com, rate_per_min: 60 }
+  - { host: gitlab.com, rate_per_min: 60 }
+config: [COMPONENT_ID, GIT_SELFTEST, GIT_SELFTEST_REPO]
+secrets:
+  - { ref_from: dev.git_binding.credential_ref, as: GIT_TOKEN }   # the repo credential — materialised from Vault at run time
+scopes:
+  - { verb: read,  scope: dev.git_binding }
+  - { verb: read,  scope: platform.component_asset }
+  - { verb: write, scope: dev.git_binding }
