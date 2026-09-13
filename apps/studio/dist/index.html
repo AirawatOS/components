@@ -71,6 +71,7 @@
   <span class="ic" id="specsBtn">📐 Specs</span>
   <span class="ic" id="reqSchema">Request schema</span>
   <span class="ic" id="myReqBtn">📥 My Requests</span>
+  <span class="ic" id="gitBtn">⎇ Git</span>
   <span class="ic" id="archBtn" title="See the whole solution as layers of components wired by specs">🗺 Architecture</span>
   <span class="ic" id="composeBtn">Compose → Solution</span>
 </div>
@@ -131,6 +132,7 @@ async function boot(){
   $('guideBtn').onclick=guide;
   $('reqSchema').onclick=requestSchema;
   $('myReqBtn').onclick=myRequests;
+  if($('gitBtn'))$('gitBtn').onclick=gitSettings;
   $('composeBtn').onclick=composeSolution;
   $('archBtn').onclick=toggleArch;
   buildRight();
@@ -531,6 +533,27 @@ async function requestSchema(prefill){prefill=prefill||{};
     const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d,x_kind:prefill.x_kind||d['x-kind']});
     m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};}
 
+async function gitSettings(){
+  const st=await post('/bridge/git-binding',{mode:'get'}).catch(()=>({})); const b=st.binding||{};
+  const m=modal(`<h3>⎇ Developer Settings — Git</h3>
+  <div class="sub">Mirror this tenant's published components into a Git repo you control (ADR-0083). Tokens are stored in Vault — never shown again.</div>
+  <div class="card" style="margin-top:10px"><b>Tenant Git</b> <span class="sub">— tenant admin · one repo for the tenant</span>
+    <div class="row" style="gap:6px;margin-top:6px"><input class="in" id="gRepo" placeholder="https://github.com/owner/repo.git" value="${esc(b.repo_url||'')}" style="flex:2"><input class="in" id="gBranch" placeholder="main" value="${esc(b.default_branch||'main')}" style="flex:0 0 90px"></div>
+    <div class="row" style="gap:6px;margin-top:6px"><input class="in" id="gPath" placeholder="components/{kind}/{name}" value="${esc(b.path_convention||'components/{kind}/{name}')}" style="flex:2"><input class="in" id="gTok" type="password" placeholder="repo token (blank = keep current)" style="flex:1"></div>
+    <div class="row" style="gap:8px;margin-top:8px;align-items:center"><label class="sub"><input type="checkbox" id="gMan" ${b.include_project_manifest!==false?'checked':''}> also commit project manifest</label><span style="margin-left:auto"></span><button class="btn sm" id="gSave">Save binding</button> <button class="btn sm" id="gTest">Test</button> <button class="btn sm good" id="gPush">Push now</button></div>
+    <div class="sub" id="gStat" style="margin-top:6px">${b.last_push?('last push '+esc(b.last_push.at||'')+' · '+((b.last_push.components||[]).length)+' component(s)'):(st.configured?'bound — not pushed yet':'not configured')}</div>
+  </div>
+  <div class="card" style="margin-top:10px"><b>My Git login</b> <span class="sub">— optional · your own token, so your pushes commit as you</span>
+    <div class="row" style="gap:6px;margin-top:6px"><input class="in" id="gMeRepo" placeholder="https://github.com/you/repo.git (blank = tenant repo)" style="flex:2"><input class="in" id="gMeTok" type="password" placeholder="your git token" style="flex:1"></div>
+    <div class="row" style="margin-top:8px;align-items:center"><span class="sub" id="gMeStat">${st.my_git_configured?'your git login is set':'not set'}</span><span style="margin-left:auto"></span><button class="btn sm" id="gMeSave">Save my login</button></div>
+  </div>
+  <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close; const stat=t=>{m.q('#gStat').textContent=t;};
+  m.q('#gSave').onclick=async()=>{stat('saving…');const r=await post('/bridge/git-binding',{mode:'tenant',repo_url:m.q('#gRepo').value.trim(),default_branch:m.q('#gBranch').value.trim()||'main',path_convention:m.q('#gPath').value.trim()||'components/{kind}/{name}',token:m.q('#gTok').value||undefined,include_project_manifest:m.q('#gMan').checked});stat(r.ok?'✓ saved':('⚠ '+(r.error||'error')));};
+  m.q('#gTest').onclick=async()=>{stat('testing…');const r=await post('/bridge/git-push',{test:true});stat(r.triggered?'test run triggered — check runs':('⚠ '+(r.error||'error')));};
+  m.q('#gPush').onclick=async()=>{stat('pushing…');const r=await post('/bridge/git-push',{});stat(r.triggered?'✓ push triggered':('⚠ '+(r.error||'error')));};
+  m.q('#gMeSave').onclick=async()=>{const r=await post('/bridge/git-binding',{mode:'me',repo_url:m.q('#gMeRepo').value.trim(),token:m.q('#gMeTok').value||undefined});m.q('#gMeStat').textContent=r.ok?'✓ your git login is set':('⚠ '+(r.error||'error'));};
+}
 async function myRequests(){
   const m=modal(`<h3>My change requests</h3><div class="sub">Status + the Semantic Administrator's decision & comments.</div><div id="mr" style="margin-top:8px;max-height:56vh;overflow:auto">loading…</div><div style="text-align:right;margin-top:8px"><button class="btn" id="x">Close</button></div>`);
   m.q('#x').onclick=m.close;
