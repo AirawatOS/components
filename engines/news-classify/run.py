@@ -119,10 +119,12 @@ def classify_batch(io, items, topics_vocab, agencies, tenant):
         "place_relevant (true only if the article is actually ABOUT that [place]/its region — false for "
         "national/foreign/other-city news), one_line (<=15-word summary).\n"
         "Judge by MEANING, not keywords. Return ONLY a JSON array, no prose.\n\nITEMS:\n" + lines)
+    # RuntimeError (not SystemExit) so the caller can skip a transiently-failed batch and keep going —
+    # SystemExit is a BaseException that slips past `except Exception` and would kill a background run.
     try:
         content = io.ai([{"role": "user", "content": prompt}], 2500)
     except Exception as e:
-        raise SystemExit(f"FATAL: model gateway unavailable ({e}) — cannot classify (no synthetic fallback).")
+        raise RuntimeError(f"model gateway unavailable ({e})")
     out = {}
     for r in _json_array(content):
         if isinstance(r, dict) and "index" in r:
@@ -169,9 +171,17 @@ def classify(io, tenant, *, reclassify=False, maxn=120, batch=8, agency_map=None
     if not news:
         return {"classified": 0, "retagged": 0, "routed": 0}
     classified = retagged = routed = 0
+    failed = 0
     for b in range(0, len(news), batch):
         chunk = news[b:b + batch]
-        verdicts = classify_batch(io, chunk, topics_vocab, agencies, tenant)
+        try:
+            verdicts = classify_batch(io, chunk, topics_vocab, agencies, tenant)
+        except Exception as e:                             # a transient LLM failure skips THIS batch, never the run
+            failed += 1
+            print(f"  ⚠ batch {b//batch} skipped: {str(e)[:120]}", flush=True)
+            if failed > 20:                                # gateway is down, not a blip — stop (rollup still runs)
+                print("  ✖ too many batch failures — stopping early", flush=True); break
+            continue
         for i, it in enumerate(chunk):
             v = verdicts.get(i) or {}
             cat = v.get("category") if v.get("category") in CATEGORIES else "other"
