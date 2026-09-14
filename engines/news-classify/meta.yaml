@@ -4,17 +4,21 @@
 # Uses the model gateway (/v1/complete) for classification — no egress, no key in the engine.
 component_id: ds:airawat:engine/news-classify
 kind: engine
-version: 0.1.2
+version: 0.2.1
 provider: ds:airawat:developer
-display_name: News Classifier (news.item → civic.issue + route to agency)
+display_name: News Classifier (LLM topics + agency; news.item → civic.issue + route + analytics rollup)
 entrypoint: run.py
 confinement_min: L1
-reads: [news.item, civic.issue]
-writes: [civic.issue, governance.recommendation, platform.case, platform.task, platform.inbox_item]
-config: [MAX, BATCH, AGENCY_MAP, ROUTE_SEVERITIES, ROUTE_CATEGORIES]
+reads: [news.item, news.taxonomy, civic.issue]
+writes: [news.item, news.taxonomy, news.analytics, civic.issue, governance.recommendation, platform.case, platform.task, platform.inbox_item]
+config: [MAX, BATCH, RECLASSIFY, AGENCY_MAP, ROUTE_SEVERITIES, ROUTE_CATEGORIES]
 scopes:
   - { verb: read,  scope: news.item }
+  - { verb: read,  scope: news.taxonomy }
   - { verb: read,  scope: civic.issue }
+  - { verb: write, scope: news.item }        # 0.2.0: LLM re-tags topics + agency + place_relevant onto the item
+  - { verb: write, scope: news.taxonomy }    # 0.2.0: seed the tenant's default categories/agencies if absent
+  - { verb: write, scope: news.analytics }   # 0.2.1: pre-computed category/agency/trend rollup (analytics = backend job)
   - { verb: write, scope: civic.issue }
   - { verb: write, scope: governance.recommendation }
   - { verb: write, scope: platform.case }
