@@ -2,74 +2,151 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>News</title>
 <style>
-  :root{--bg:#0b1420;--panel:#0e1c2a;--edge:#22344a;--ink:#e6edf5;--muted:#b7c6d6;--dim:#8aa0b6;--accent:#38bdf8}
+  :root{--bg:#0b1420;--panel:#0e1c2a;--edge:#22344a;--ink:#e6edf5;--muted:#b7c6d6;--dim:#8aa0b6;--accent:#38bdf8;--accent2:#f59e0b}
   *{box-sizing:border-box}
   body{margin:0;font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
-  .wrap{max-width:820px;margin:0 auto;padding:20px 16px 64px}
+  .wrap{max-width:860px;margin:0 auto;padding:20px 16px 64px}
   h1{font-size:20px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
-  .sub{color:var(--dim);font-size:13px;margin:0 0 16px}
-  .bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 14px}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--edge);margin:0 0 14px}
+  .tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:8px 14px;font-size:14px;cursor:pointer}
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  .flabel{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:2px 0 4px}
+  .bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
   .chip{border:1px solid var(--edge);background:transparent;color:var(--muted);border-radius:999px;
         padding:4px 12px;font-size:12.5px;cursor:pointer;line-height:1.4;white-space:nowrap}
   .chip:hover{border-color:var(--accent);color:var(--ink)}
   .chip.on{background:var(--accent);color:#04121f;border-color:var(--accent);font-weight:600}
+  .chip.ag.on{background:var(--accent2);color:#04121f;border-color:var(--accent2)}
   .item{border:1px solid var(--edge);border-radius:11px;padding:13px 15px;margin:0 0 11px;background:var(--panel)}
   .item .hd{font-weight:600;font-size:15px}
   .item a{color:var(--ink);text-decoration:none}.item a:hover{color:var(--accent)}
   .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:7px;font-size:12px;color:var(--dim)}
   .j{text-transform:capitalize;font-weight:600;color:var(--muted)}
   .tag{background:#13273b;border-radius:5px;padding:1px 8px;font-size:11px;color:var(--accent)}
+  .agtag{background:#3a2c10;border-radius:5px;padding:1px 8px;font-size:11px;color:var(--accent2)}
   .sum{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.5}
   .empty{color:var(--dim);padding:34px 0;text-align:center}
+  .toggle{margin-left:auto;font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer}
+  .more{display:block;margin:6px auto 0;border:1px solid var(--edge);background:var(--panel);color:var(--ink);
+        border-radius:9px;padding:9px 20px;font-size:13.5px;cursor:pointer}
+  .more:hover{border-color:var(--accent)} .more[disabled]{opacity:.5;cursor:default}
+  .card{border:1px solid var(--edge);border-radius:11px;padding:15px 17px;margin:0 0 14px;background:var(--panel)}
+  .card h3{margin:0 0 12px;font-size:14px;color:var(--ink)}
+  .brow{display:grid;grid-template-columns:160px 1fr 40px;align-items:center;gap:10px;margin:5px 0;font-size:12.5px}
+  .brow .nm{color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .brow .track{background:#0a1a29;border-radius:5px;height:16px;overflow:hidden}
+  .brow .fill{height:100%;border-radius:5px;background:var(--accent)}
+  .brow.ag .fill{background:var(--accent2)}
+  .brow .ct{color:var(--dim);text-align:right}
 </style></head>
 <body><div class="wrap">
   <h1><span>📰</span> News</h1>
   <p class="sub" id="sub">Loading…</p>
-  <div class="bar" id="jbar"></div>
-  <div class="bar" id="tbar"></div>
-  <div id="list"></div>
+  <div class="tabs">
+    <button class="tab on" id="tab-feed" onclick="setTab('feed')">Feed</button>
+    <button class="tab" id="tab-analytics" onclick="setTab('analytics')">Analytics</button>
+  </div>
+  <div id="feed">
+    <div class="flabel">Topic</div><div class="bar" id="tbar"></div>
+    <div class="flabel">Agency</div><div class="bar" id="abar"></div>
+    <div class="bar"><label class="toggle"><input type="checkbox" id="placeonly" checked onchange="render()"> Local (this place) only</label></div>
+    <div id="list"></div>
+    <button class="more" id="more" onclick="loadMore()" style="display:none">Load more</button>
+  </div>
+  <div id="analytics" style="display:none"></div>
 </div>
 <script>
-const APPID="news";                                          // MUST match the CERTIFIED short name, not the CID
-let ALL=[], jsel="", tsel="";
+const APPID="news", PAGE=30;
+let ITEMS=[], limit=PAGE, total=null, tsel="", asel="", tab="feed", loading=false;
+const AGLABEL={};
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-async function load(){
+async function q(body){
   const r=await fetch("/bridge/query",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({app_id:APPID,schema:"news.item",filter:{}})});
+     body:JSON.stringify(Object.assign({app_id:APPID},body))});
   if(!r.ok) throw new Error("query "+r.status);
-  const d=await r.json();
-  return (d.results||d.rows||d.items||[]).map(x=>x.object||x);
+  return r.json();
 }
-function chipbar(id,vals,cur,on){
+async function fetchPage(){                                   // INCREMENTAL: only ever fetch `limit` rows, grown on demand
+  loading=true;
+  const d=await q({schema:"news.item",filter:{},limit:limit});
+  ITEMS=(d.results||d.rows||d.items||[]).map(x=>x.object||x);
+  ITEMS.sort((a,b)=>String(b.published_at||"").localeCompare(String(a.published_at||"")));
+  loading=false;
+}
+async function loadMore(){ if(loading) return; limit+=PAGE; await fetchPage(); render(); }
+function setTab(t){tab=t;
+  document.getElementById("feed").style.display=t==="feed"?"":"none";
+  document.getElementById("analytics").style.display=t==="analytics"?"":"none";
+  document.getElementById("tab-feed").classList.toggle("on",t==="feed");
+  document.getElementById("tab-analytics").classList.toggle("on",t==="analytics");
+  if(t==="analytics") renderAnalytics(); else render();
+}
+function chipbar(id,vals,cur,on,cls){
   const el=document.getElementById(id); el.innerHTML="";
-  [["","All"]].concat(vals.map(v=>[v,v])).forEach(([v,lab])=>{
-    const b=document.createElement("button"); b.className="chip"+(v===cur?" on":"");
+  [["","All"]].concat(vals).forEach(pair=>{const v=pair[0],lab=pair[1];
+    const b=document.createElement("button"); b.className="chip "+(cls||"")+(v===cur?" on":"");
     b.textContent=lab; b.onclick=()=>on(v); el.appendChild(b);
   });
 }
+function bars(title,counts,cls){
+  const ents=Object.entries(counts||{}).sort((a,b)=>b[1]-a[1]); if(!ents.length) return "";
+  const max=ents[0][1]||1;
+  return '<div class="card"><h3>'+esc(title)+'</h3>'+ents.map(([k,n])=>
+    '<div class="brow '+(cls||"")+'"><div class="nm">'+esc(k)+'</div>'+
+    '<div class="track"><div class="fill" style="width:'+Math.round(n/max*100)+'%"></div></div>'+
+    '<div class="ct">'+n+'</div></div>').join("")+'</div>';
+}
+function trendCard(trend){
+  const days=(trend||[]).slice(-14); if(days.length<2) return "";
+  const max=Math.max(...days.map(d=>d.count))||1, W=720,H=90,pad=6, step=(W-2*pad)/(days.length-1);
+  const pts=days.map((d,i)=>[pad+i*step, H-pad-(d.count/max)*(H-2*pad)]);
+  const path=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+  return '<div class="card"><h3>Volume — last '+days.length+' days</h3>'+
+    '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="90" role="img" aria-label="daily news volume">'+
+    '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2"/>'+
+    pts.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.5" fill="var(--accent)"/>').join("")+
+    '</svg><div class="row"><span>'+esc(days[0].date)+'</span><span style="margin-left:auto">'+esc(days[days.length-1].date)+'</span></div></div>';
+}
+async function renderAnalytics(){                             // ANALYTICS = backend rollup (news.analytics), NOT client aggregation
+  const el=document.getElementById("analytics"); el.innerHTML='<p class="sub">Loading analytics…</p>';
+  try{
+    const d=await q({schema:"news.analytics",filter:{}});
+    const rec=((d.results||d.rows||d.items||[]).map(x=>x.object||x))[0];
+    if(!rec){el.innerHTML='<p class="empty">No analytics yet — run categorization first.</p>';return;}
+    el.innerHTML='<p class="sub">'+ (rec.total||0)+' local items · updated '+esc((rec.generated_at||"").slice(0,16).replace("T"," "))+'</p>'+
+      bars("By responsible agency",rec.by_agency,"ag")+bars("By civic topic",rec.by_topic)+trendCard(rec.trend);
+  }catch(e){ el.innerHTML='<p class="empty">Could not load analytics ('+esc(e.message||e)+').</p>'; }
+}
 function render(){
-  const jl=[...new Set(ALL.map(o=>o.jurisdiction).filter(Boolean))].sort();
-  const tl=[...new Set(ALL.flatMap(o=>o.topics||[]))].sort();
-  chipbar("jbar",jl,jsel,v=>{jsel=v;render();});
+  ITEMS.forEach(o=>{if(o.agency_key&&o.agency)AGLABEL[o.agency_key]=o.agency;});
+  document.getElementById("sub").textContent=(total!=null?total+" updates total · ":"")+
+    "showing "+Math.min(ITEMS.length,limit)+" · AI-classified into topics + responsible agency";
+  const tl=[...new Set(ITEMS.flatMap(o=>o.topics||[]))].sort().map(v=>[v,v]);
+  const aks=[...new Set(ITEMS.map(o=>o.agency_key).filter(k=>k&&k!=="none"))].sort();
   chipbar("tbar",tl,tsel,v=>{tsel=v;render();});
-  let rows=ALL.filter(o=>(!jsel||o.jurisdiction===jsel)&&(!tsel||(o.topics||[]).includes(tsel)));
-  rows.sort((a,b)=>String(b.published_at||"").localeCompare(String(a.published_at||"")));
+  chipbar("abar",aks.map(k=>[k,AGLABEL[k]||k]),asel,v=>{asel=v;render();},"ag");
+  const placeonly=document.getElementById("placeonly").checked;
+  let rows=ITEMS.filter(o=>(!tsel||(o.topics||[]).includes(tsel))&&(!asel||o.agency_key===asel)&&(!placeonly||o.place_relevant!==false));
   const list=document.getElementById("list");
-  document.getElementById("sub").textContent=ALL.length?
-    (ALL.length+" updates · "+jl.length+" places · "+tl.length+" topics"):"No news yet.";
-  if(!rows.length){list.innerHTML='<p class="empty">No news items match this filter.</p>';return;}
-  list.innerHTML=rows.slice(0,150).map(o=>
+  list.innerHTML=rows.length?rows.map(o=>
     '<div class="item">'+
       '<div class="hd"><a href="'+esc(o.url)+'" target="_blank" rel="noopener">'+esc(o.title)+'</a></div>'+
       '<div class="row"><span class="j">'+esc(o.jurisdiction||"")+'</span>'+
         '<span>'+esc(o.source||"")+'</span><span>'+esc((o.published_at||"").slice(0,10))+'</span>'+
+        (o.agency_key&&o.agency_key!=="none"?'<span class="agtag">'+esc(o.agency||o.agency_key)+'</span>':'')+
         (o.topics||[]).map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div>'+
       (o.summary?'<div class="sum">'+esc(o.summary.slice(0,220))+'</div>':'')+
-    '</div>').join("");
+    '</div>').join(""):'<p class="empty">No items match this filter.</p>';
+  const more=document.getElementById("more");
+  const canMore = total==null ? (ITEMS.length>=limit) : (ITEMS.length<total);
+  more.style.display=canMore?"":"none"; more.disabled=loading;
 }
-load().then(r=>{ALL=r;render();}).catch(e=>{
-  document.getElementById("sub").textContent="";
-  document.getElementById("list").innerHTML='<p class="empty">Could not load news ('+esc(e.message||e)+').</p>';
-});
+(async ()=>{
+  try{ const c=await q({schema:"news.item",filter:{},count:true}); total=c.count; }catch(e){}
+  try{ await fetchPage(); render(); }
+  catch(e){ document.getElementById("sub").textContent="";
+    document.getElementById("list").innerHTML='<p class="empty">Could not load news ('+esc(e.message||e)+').</p>'; }
+})();
 </script>
 </body></html>

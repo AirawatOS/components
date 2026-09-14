@@ -4,12 +4,13 @@
 # role + jurisdiction (ADR-0081).
 component_id: ds:airawat:app/news
 kind: app
-version: 0.1.1
+version: 0.2.1
 provider: ds:airawat:developer
 display_name: News
+description: Jurisdiction- & agency-aware civic news reader over LLM-classified news.item — filter by topic/agency/place, with an analytics tab (backend rollup).
 entrypoint: index.html
 icon: 📰
-required_schemas: [news.item]
+required_schemas: [news.item, news.analytics, news.taxonomy]
 roles: []
 agent_tools:
   - { name: list_updates, kind: read, params: "topic", desc: "Latest news / public-information updates for the user, ranked by their jurisdiction (place) and role (topics). Real sources (Google News, GDELT)." }
