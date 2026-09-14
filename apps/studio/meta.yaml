@@ -3,7 +3,7 @@
 # registry via the host's admin-gated /bridge/save. Editing a subscription hot-reloads the automation.
 component_id: ds:airawat:app/studio    # published by the platform developer (NOT a tenant) — apps are airawat-stewarded; tenant DATA it authors stays ds:<tenant>:…
 kind: app
-version: 0.1.2   # nav: layer-by-kind + clickable spec view + aligned tree; schema-request: complete x-kind envelope + editable AI proposal
+version: 0.1.3   # ADR-0083: ⎇ Git settings panel (tenant repo + per-dev PAT→Vault) live; + 0.1.2 nav/schema-request
 provider: ds:airawat:developer
 display_name: Studio
 icon: 🛠️
