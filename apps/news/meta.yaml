@@ -4,9 +4,10 @@
 # role + jurisdiction (ADR-0081).
 component_id: ds:airawat:app/news
 kind: app
-version: 0.1.1
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: News
+description: Jurisdiction- & agency-aware civic news reader over LLM-classified news.item — filter by topic/agency/place, with an analytics tab (backend rollup).
 entrypoint: index.html
 icon: 📰
 required_schemas: [news.item]
