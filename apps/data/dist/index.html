@@ -27,12 +27,27 @@
   .pager{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--dim);font-size:12px}
   .pbtn{border:1px solid var(--line);background:#161b22;color:var(--ink);border-radius:6px;padding:3px 9px;cursor:pointer}
   .pbtn:disabled{opacity:.4;cursor:default}
+  .tabb{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);font:inherit;padding:6px 10px;cursor:pointer}
+  .tabb.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  .card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px 16px;margin:0 0 16px;max-width:820px}
+  .card h3{margin:0 0 10px;font-size:13px}
+  .btn{border:1px solid var(--line);background:#161b22;color:var(--ink);border-radius:6px;padding:4px 11px;cursor:pointer;font:inherit;font-size:12px}
+  .btn.p{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+  .btn.d{border-color:#f85149;color:#f85149}
+  #net input,#net select,#net textarea{background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 8px;font:inherit}
+  .row2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .off{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:#0f141b}
+  .muted{color:var(--dim);font-size:12px}
 </style>
-<header><h1>📂 Data</h1><span class="who" id="who"></span></header>
-<div class="layout">
+<header><h1>📂 Data</h1>
+  <button class="tabb on" id="tab-browse" onclick="setTab('browse')">Browse</button>
+  <button class="tabb" id="tab-net" onclick="setTab('net')">Network 🔗</button>
+  <span class="who" id="who"></span></header>
+<div id="browse"><div class="layout">
   <div class="list" id="list"></div>
   <div class="detail" id="detail"><div class="empty">Select a dataset to browse the data you have access to.</div></div>
-</div>
+</div></div>
+<div id="net" style="display:none;padding:18px 22px;overflow:auto;height:calc(100vh - 49px)"></div>
 <script>
 // The Data app is a GOVERNED DATA BROWSER: it lists every governed schema that actually has rows in the
 // caller's tenant (from /bridge/data-schemas, which excludes sensitivity=sensitive schemas), grouped by
@@ -64,7 +79,8 @@ function renderList(){
 }
 async function boot(){
   const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
-  fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
+  fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';
+    TENANT=s.tenant||(s.sub||'').split('/')[2]||''; ROLES=s.roles||[];}).catch(()=>{});
   document.getElementById('list').innerHTML='<div class="empty" style="padding:24px">Discovering datasets…</div>';
   const r=await jpost('/bridge/data-schemas',{});
   if(r.ok&&r.j.schemas){ DSET.push(...r.j.schemas); renderList(); }
@@ -112,6 +128,90 @@ async function load(reset){
     <div id="rec"></div>`;
   const m=document.getElementById('more'); if(m)m.onclick=()=>load(false);
   document.querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>showRec(+tr.dataset.i));
+}
+// ---- Data Exchange (ADR-0087 R1): all network ops go through the GENERIC /bridge/gov proxy — this app declares
+//      calls:[network.data_exchange@0.1.0] in its meta; there is NO bespoke host bridge per operation. ----
+let TENANT='', ROLES=[];
+function setTab(t){
+  document.getElementById('browse').style.display = t==='browse'?'':'none';
+  document.getElementById('net').style.display = t==='net'?'':'none';
+  document.getElementById('tab-browse').classList.toggle('on',t==='browse');
+  document.getElementById('tab-net').classList.toggle('on',t==='net');
+  if(t==='net') renderNet();
+}
+async function gov(op,payload){
+  const r=await jpost('/bridge/gov',{interface:'network.data_exchange@0.1.0',op,app_id:APPID,payload:payload||{}});
+  if(!r.ok) return {__err:(r.j&&r.j.error)||('HTTP '+r.status)};
+  return r.j.result||r.j||{};
+}
+function offSlug(s){return (s||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();}
+async function doPublish(){
+  const sch=document.getElementById('pub-sch').value, title=document.getElementById('pub-title').value.trim();
+  if(!sch||!title){alert('pick a dataset and enter a title');return;}
+  const id=`ds:${TENANT}:offering/${offSlug(subject(sch))}`;
+  const res=await gov('publish-offering',{id,title,data_schema:sch,domain:sch.split('.')[0],description:document.getElementById('pub-desc').value.trim(),access_mode:'request'});
+  alert(res.__err? ('Publish failed: '+res.__err) : ('Shared on network: '+((res.offering||{}).id||id))); renderNet();
+}
+async function doRequest(oid){
+  const purpose=prompt('Why do you need this data? (purpose, recorded on the request)','')||'';
+  // NB: component_id is injected by the host from the app's certificate (the app never asserts its own cid).
+  const res=await gov('request',{offering_id:oid,purpose});
+  alert(res.__err? ('Request failed: '+res.__err) : ('Request filed — the owner will decide. '+(res.filed||''))); renderNet();
+}
+// THE READER: once the owner has approved (consumer-bound, offering-scoped grant), read the foreign rows IN
+// PLACE via the aggregator lane — /bridge/query with the provider tenant. The kernel authorizes ONLY this
+// tenant's copy of the app (consumer_tenant binding) and returns the owner's rows without any copy.
+function offTenantSlug(o){ const t=o.tenant||o._prov||''; const m=/^ds:([^:]+):/.exec(t); return m?m[1]:t; }
+async function doBrowse(schema, tenant, title){
+  const P=document.getElementById('shared-preview');
+  P.innerHTML=`<div class="card"><div class="muted">Reading ${esc(schema)} from ${esc(tenant)} in place…</div></div>`;
+  const r=await jpost('/bridge/query',{app_id:APPID,schema,tenant,paginate:true,limit:25});
+  if(!r.ok){ P.innerHTML=`<div class="card"><b>${esc(title)}</b> — cannot read (HTTP ${r.status}). Request access first, then have the owner approve.</div>`; return; }
+  const rows=(r.j.results||[]).map(x=>x.object||x);
+  if(!rows.length){ P.innerHTML=`<div class="card"><b>${esc(title)}</b> — 0 rows (no active grant for your tenant, or the dataset is empty).</div>`; return; }
+  const cols=columns(rows);
+  P.innerHTML=`<div class="card"><b>${esc(title)}</b> <span class="muted">— ${rows.length} rows from <b>${esc(tenant)}</b>, read in place under a signed grant</span>
+    <div style="overflow:auto;margin-top:8px"><table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
+    ${rows.map(o=>`<tr>${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</table></div></div>`;
+  P.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function doDecide(rid,dec){ const res=await gov('decide',{request_id:rid,decision:dec}); alert(res.__err?('Failed: '+res.__err):(dec+' → '+((res.grant||{}).issued||res.decision||'done'))); renderNet(); }
+async function doRetire(oid){ if(!confirm('Remove from network? Others stop discovering it (existing grants stay until revoked).'))return; const res=await gov('retire-offering',{id:oid}); alert(res.__err?('Failed: '+res.__err):'Retired'); renderNet(); }
+async function doRevoke(gid){ if(!confirm('Revoke this access grant? The consumer immediately loses access.'))return; const res=await gov('revoke',{grant_id:gid}); alert(res.__err?('Failed: '+res.__err):'Revoked'); renderNet(); }
+function offProvider(o){ const p=o.provider; return typeof p==='object'&&p ? (p.id||p.tenant||'') : (p||''); }
+function offSchema(o){ return o.data_schema||o.schema_ref||o.schema||''; }
+async function renderNet(){
+  const N=document.getElementById('net'); N.innerHTML='<div class="muted">Loading the network Data Exchange…</div>';
+  const disc=await gov('discover',{}); const offs=(disc.offerings||[]).map(o=>({...o, _prov:offProvider(o), _schema:offSchema(o)}));
+  const mine=offs.filter(o=>o._prov===TENANT||(o._prov||'').includes(':'+TENANT+':')||(o._prov||'').startsWith('ds:'+TENANT)), others=offs.filter(o=>!mine.includes(o));
+  const reqs=((await gov('requests',{tenant:TENANT})).requests)||[];
+  const opts=DSET.map(d=>`<option value="${esc(d.schema)}">${esc(subject(d.schema).replace(/_/g,' '))} (${esc(d.schema)})</option>`).join('');
+  N.innerHTML=`
+   <div id="shared-preview"></div>
+   <div class="card"><h3>📤 Share a dataset on the network</h3>
+     <div class="row2"><select id="pub-sch">${opts||'<option>— no datasets —</option>'}</select>
+       <input id="pub-title" placeholder="Offering title" style="min-width:220px"></div>
+     <div class="row2"><input id="pub-desc" placeholder="Short description (optional)" style="min-width:360px">
+       <button class="btn p" onclick="doPublish()">Share on network</button></div>
+     <div class="muted">Shares by REFERENCE — the data stays in your registry; approved consumers read it in place under a signed grant.</div></div>
+   <div class="card"><h3>🔎 Discover data on the network (${others.length})</h3>
+     ${others.length? others.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="chip">${esc(o._schema)}</span>
+        <div class="muted">from <b>${esc(o._prov)}</b>${o.jurisdiction?(' · '+esc(o.jurisdiction)):''} · ${esc(o.access_mode||o.visibility||'request')}</div>
+        <div class="muted">${esc(o.description||'')}</div>
+        <div class="row2"><button class="btn" onclick="doRequest('${esc(o.id)}')">Request access</button>
+          <button class="btn" onclick="doBrowse('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">Browse shared data</button></div></div>`).join('')
+      : '<div class="muted">No offerings from other participants yet.</div>'}</div>
+   <div class="card"><h3>📥 Requests for MY data (${reqs.length})</h3>
+     ${reqs.length? reqs.map(r=>`<div class="off"><b>${esc(r.requested_by||r.component_id)}</b> requests <span class="chip">${esc((r.reads||[]).join(', ')||r.offering_id||'')}</span>
+        <div class="muted">purpose: ${esc(r.purpose||'—')} · status: <b>${esc(r.status)}</b></div>
+        <div class="row2">${r.status==='pending'?`<button class="btn p" onclick="doDecide('${esc(r.id)}','approve')">Approve</button>
+          <button class="btn d" onclick="doDecide('${esc(r.id)}','reject')">Reject</button>`
+          : (r.grant?`<button class="btn d" onclick="doRevoke('${esc(r.grant)}')">Revoke access</button>`:'')}</div></div>`).join('')
+      : '<div class="muted">No inbound requests.</div>'}</div>
+   <div class="card"><h3>📡 My shared datasets (${mine.length})</h3>
+     ${mine.length? mine.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="chip">${esc(o._schema)}</span> · ${esc(o.status||'active')}
+        <div class="row2"><button class="btn d" onclick="doRetire('${esc(o.id)}')">Retire (stop sharing)</button></div></div>`).join('')
+      : '<div class="muted">You have not shared any datasets yet.</div>'}</div>`;
 }
 boot();
 </script>

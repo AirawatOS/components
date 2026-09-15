@@ -6,7 +6,14 @@
 # (its DATA allow-list) — the datasets it may browse.
 component_id: ds:airawat:app/data
 kind: app
-version: 0.2.1   # 0.2.1: presence-based (fast, parallel, cached) dataset discovery
+version: 0.2.4   # 0.2.4: THE READER — "Browse shared data" reads a granted foreign schema IN PLACE (aggregator lane,
+#        /bridge/query with the provider tenant). Safe because grants are now consumer-bound + offering-scoped
+#        (kernel binds consumer_tenant). Requests no longer assert component_id — the host injects the full cid.
+# 0.2.3: Network tab robustness — normalize offering provider ({id}|string) + schema (schema_ref) shapes
+# 0.2.2: Network tab (Data Exchange) — publish/discover/request/decide/retire/revoke via the
+#        GENERIC /bridge/gov proxy (ADR-0087 R1). The app DECLARES `calls: [network.data_exchange@0.1.0]`; there
+#        is NO bespoke host bridge per operation and NO app-host rebuild for this or future network capabilities.
+# 0.2.1: presence-based (fast, parallel, cached) dataset discovery
 # 0.2.0: DATA BROWSER — lists every governed schema that has rows in the caller's tenant (via /bridge/data-schemas,
 #        which excludes sensitivity=sensitive), grouped by domain, instead of a hardcoded 5-dataset list. The
 #        `data_browser` flag relaxes the app-level read allow-list to any governed schema; the REAL gate is
@@ -19,3 +26,6 @@ bundle: dist
 sandboxed: true
 data_browser: true
 required_schemas: [ref.source]
+# ADR-0058 declared interfaces: the governed capabilities this app calls. The app-host's generic /bridge/gov
+# dispatcher (ADR-0087 R1) verifies this list (fail-closed) before proxying any Data-Exchange op to the network.
+calls: [network.data_exchange@0.1.0]
