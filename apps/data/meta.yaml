@@ -6,7 +6,10 @@
 # (its DATA allow-list) — the datasets it may browse.
 component_id: ds:airawat:app/data
 kind: app
-version: 0.2.3   # 0.2.3: Network tab robustness — normalize offering provider ({id}|string) + schema (schema_ref) shapes
+version: 0.2.4   # 0.2.4: THE READER — "Browse shared data" reads a granted foreign schema IN PLACE (aggregator lane,
+#        /bridge/query with the provider tenant). Safe because grants are now consumer-bound + offering-scoped
+#        (kernel binds consumer_tenant). Requests no longer assert component_id — the host injects the full cid.
+# 0.2.3: Network tab robustness — normalize offering provider ({id}|string) + schema (schema_ref) shapes
 # 0.2.2: Network tab (Data Exchange) — publish/discover/request/decide/retire/revoke via the
 #        GENERIC /bridge/gov proxy (ADR-0087 R1). The app DECLARES `calls: [network.data_exchange@0.1.0]`; there
 #        is NO bespoke host bridge per operation and NO app-host rebuild for this or future network capabilities.

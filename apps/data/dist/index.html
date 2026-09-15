@@ -154,8 +154,26 @@ async function doPublish(){
 }
 async function doRequest(oid){
   const purpose=prompt('Why do you need this data? (purpose, recorded on the request)','')||'';
-  const res=await gov('request',{offering_id:oid,component_id:APPID,purpose});
+  // NB: component_id is injected by the host from the app's certificate (the app never asserts its own cid).
+  const res=await gov('request',{offering_id:oid,purpose});
   alert(res.__err? ('Request failed: '+res.__err) : ('Request filed — the owner will decide. '+(res.filed||''))); renderNet();
+}
+// THE READER: once the owner has approved (consumer-bound, offering-scoped grant), read the foreign rows IN
+// PLACE via the aggregator lane — /bridge/query with the provider tenant. The kernel authorizes ONLY this
+// tenant's copy of the app (consumer_tenant binding) and returns the owner's rows without any copy.
+function offTenantSlug(o){ const t=o.tenant||o._prov||''; const m=/^ds:([^:]+):/.exec(t); return m?m[1]:t; }
+async function doBrowse(schema, tenant, title){
+  const P=document.getElementById('shared-preview');
+  P.innerHTML=`<div class="card"><div class="muted">Reading ${esc(schema)} from ${esc(tenant)} in place…</div></div>`;
+  const r=await jpost('/bridge/query',{app_id:APPID,schema,tenant,paginate:true,limit:25});
+  if(!r.ok){ P.innerHTML=`<div class="card"><b>${esc(title)}</b> — cannot read (HTTP ${r.status}). Request access first, then have the owner approve.</div>`; return; }
+  const rows=(r.j.results||[]).map(x=>x.object||x);
+  if(!rows.length){ P.innerHTML=`<div class="card"><b>${esc(title)}</b> — 0 rows (no active grant for your tenant, or the dataset is empty).</div>`; return; }
+  const cols=columns(rows);
+  P.innerHTML=`<div class="card"><b>${esc(title)}</b> <span class="muted">— ${rows.length} rows from <b>${esc(tenant)}</b>, read in place under a signed grant</span>
+    <div style="overflow:auto;margin-top:8px"><table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
+    ${rows.map(o=>`<tr>${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</table></div></div>`;
+  P.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 async function doDecide(rid,dec){ const res=await gov('decide',{request_id:rid,decision:dec}); alert(res.__err?('Failed: '+res.__err):(dec+' → '+((res.grant||{}).issued||res.decision||'done'))); renderNet(); }
 async function doRetire(oid){ if(!confirm('Remove from network? Others stop discovering it (existing grants stay until revoked).'))return; const res=await gov('retire-offering',{id:oid}); alert(res.__err?('Failed: '+res.__err):'Retired'); renderNet(); }
@@ -169,6 +187,7 @@ async function renderNet(){
   const reqs=((await gov('requests',{tenant:TENANT})).requests)||[];
   const opts=DSET.map(d=>`<option value="${esc(d.schema)}">${esc(subject(d.schema).replace(/_/g,' '))} (${esc(d.schema)})</option>`).join('');
   N.innerHTML=`
+   <div id="shared-preview"></div>
    <div class="card"><h3>📤 Share a dataset on the network</h3>
      <div class="row2"><select id="pub-sch">${opts||'<option>— no datasets —</option>'}</select>
        <input id="pub-title" placeholder="Offering title" style="min-width:220px"></div>
@@ -179,7 +198,8 @@ async function renderNet(){
      ${others.length? others.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="chip">${esc(o._schema)}</span>
         <div class="muted">from <b>${esc(o._prov)}</b>${o.jurisdiction?(' · '+esc(o.jurisdiction)):''} · ${esc(o.access_mode||o.visibility||'request')}</div>
         <div class="muted">${esc(o.description||'')}</div>
-        <div class="row2"><button class="btn" onclick="doRequest('${esc(o.id)}')">Request access</button></div></div>`).join('')
+        <div class="row2"><button class="btn" onclick="doRequest('${esc(o.id)}')">Request access</button>
+          <button class="btn" onclick="doBrowse('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">Browse shared data</button></div></div>`).join('')
       : '<div class="muted">No offerings from other participants yet.</div>'}</div>
    <div class="card"><h3>📥 Requests for MY data (${reqs.length})</h3>
      ${reqs.length? reqs.map(r=>`<div class="off"><b>${esc(r.requested_by||r.component_id)}</b> requests <span class="chip">${esc((r.reads||[]).join(', ')||r.offering_id||'')}</span>
