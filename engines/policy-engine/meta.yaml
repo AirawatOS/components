@@ -3,7 +3,8 @@
 # ITS OWN read grants (no elevated token). Any module calls it via /bridge/policy-resolve or ctx.call.
 component_id: ds:airawatdeveloper:engine/policy-engine
 kind: engine
-version: 0.1.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+version: 0.1.3   # + policy-resolve-legacy handler (ADR-0091 V2): bespoke resolver retained behind the `evaluate` alias
+#        0.1.2: org-classify context provider (ADR-0088-S2): subject→classification facts for the rule-engine
 provider: ds:airawat:developer
 display_name: Policy Engine
 entrypoint: run.py
