@@ -9,17 +9,10 @@ Returns ({domain, employee, context, policies}, None).
 _ADMIN = {"platform.tenant-admin", "platform.steward", "admin"}
 
 
-def h_policy_resolve(ctx):
-    body, claims = ctx["body"], ctx["claims"]
-    domain = body.get("domain")
-    if not domain:
-        return None, "domain required"
-    # PRIVACY: only an admin (e.g. the Policy Console preview) may resolve for ANOTHER employee; staff resolve self.
-    is_admin = bool(set(claims.get("roles", [])) & _ADMIN)
-    target = body.get("employee") if is_admin else None
-    emps = ctx["kfind"]("org.employee")
-    emp = next((e for e in emps if e.get("id") == target), None) if target \
-        else next((e for e in emps if e.get("citizen") == ctx["sub"]), None)
+def _classify(ctx, emp):
+    """Derive an employee's CLASSIFICATION context (rank via posting→position→level, stream, roles, org_unit).
+    Extracted so it can back both policy-resolve AND the org-classify context provider (ADR-0088-S2), so the
+    generic rule-engine can reuse this exact org-tree logic instead of reimplementing it."""
     cx = {"rank": None, "stream": None, "roles": [], "org_unit": (emp or {}).get("org_unit")}
     if emp:
         postings = [p for p in ctx["kfind"]("org.posting") if p.get("employee") == emp.get("id") and p.get("status") != "ended"]
@@ -36,6 +29,38 @@ def h_policy_resolve(ctx):
                 lv = lvl_by_code.get(pos.get("level"))
                 if lv and isinstance(lv.get("rank"), (int, float)):
                     cx["rank"] = max(cx["rank"] or 0, lv["rank"])
+    return cx
+
+
+def _find_emp(ctx, body):
+    is_admin = bool(set(ctx["claims"].get("roles", [])) & _ADMIN)
+    target = body.get("employee") if (is_admin or body.get("employee")) else None
+    emps = ctx["kfind"]("org.employee")
+    return next((e for e in emps if e.get("id") == target), None) if target \
+        else next((e for e in emps if e.get("citizen") == ctx["sub"]), None)
+
+
+def h_org_classify(ctx):
+    """ADR-0088-S2 CONTEXT PROVIDER — subject(employee) → classification facts, for the generic rule-engine's
+    most_specific resolution. Returns {employee, context:{rank,stream,roles,org_unit}}. Same derivation as
+    policy-resolve; called internally by rule-eval via ctx.call."""
+    body = dict(ctx["body"]); body.setdefault("employee", body.get("subject"))
+    emp = _find_emp(ctx, body)
+    return {"employee": (emp or {}).get("id"), "context": _classify(ctx, emp)}, None
+
+
+def h_policy_resolve(ctx):
+    body, claims = ctx["body"], ctx["claims"]
+    domain = body.get("domain")
+    if not domain:
+        return None, "domain required"
+    # PRIVACY: only an admin (e.g. the Policy Console preview) may resolve for ANOTHER employee; staff resolve self.
+    is_admin = bool(set(claims.get("roles", [])) & _ADMIN)
+    target = body.get("employee") if is_admin else None
+    emps = ctx["kfind"]("org.employee")
+    emp = next((e for e in emps if e.get("id") == target), None) if target \
+        else next((e for e in emps if e.get("citizen") == ctx["sub"]), None)
+    cx = _classify(ctx, emp)
 
     def matches(a):
         a = a or {}
@@ -56,7 +81,9 @@ def h_policy_resolve(ctx):
     return {"domain": domain, "employee": (emp or {}).get("id"), "context": cx, "policies": pols}, None
 
 
-HANDLERS = {"policy-resolve": h_policy_resolve}
+# `policy-resolve-legacy` = the bespoke handler retained during the ADR-0091 V2 migration (policy-resolve is now
+# served generically via `evaluate` + adapter); kept for shadow-compare + rollback.
+HANDLERS = {"policy-resolve": h_policy_resolve, "policy-resolve-legacy": h_policy_resolve, "org-classify": h_org_classify}
 
 
 def main():

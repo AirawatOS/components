@@ -5,13 +5,15 @@
 # not code. Host dispatches /bridge/rule-eval → HANDLERS[rule-eval]. Reads rules under the caller's token.
 component_id: ds:airawat:engine/rule-engine
 kind: engine
-version: 0.1.0
+version: 0.3.0   # 0.3.0 (ADR-0091 V2): canonical `evaluate` verb + `ranked` matches; rule-eval kept as legacy alias.
+#        0.2.0 (ADR-0088-S2): most_specific resolution + governance.ruleset descriptor + optional context provider
 provider: ds:airawat:developer
 display_name: Rule Engine
 entrypoint: run.py
 implements:
   - governance.rule_eval@0.1.0
 verbs:
+  evaluate: governance.rule_eval@0.1.0
   rule-eval: governance.rule_eval@0.1.0
 required_schemas: [governance.policy_rule]
 writes: []

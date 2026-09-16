@@ -1,0 +1,18 @@
+# LIFECYCLE ENGINE (kind=engine) — ADR-0091 V3, Lifecycle plane. ONE generic state-machine engine that drives any
+# governed platform.lifecycle declaration: request/decide/status over a domain record. Domain lives in the
+# declaration (states, transitions, guards→evaluate, routing→Inbox, effects→write), not in code. Decides + writes
+# attributed, bitemporal state changes (ADR-0056 decided change-request). Collapses per-domain apply/decide pairs.
+component_id: ds:airawat:engine/lifecycle-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Lifecycle Engine
+entrypoint: run.py
+implements:
+  - platform.lifecycle_run@0.1.0
+verbs:
+  lifecycle-request: platform.lifecycle_run@0.1.0
+  lifecycle-decide: platform.lifecycle_run@0.1.0
+  lifecycle-status: platform.lifecycle_run@0.1.0
+required_schemas: [platform.lifecycle]
+writes: []

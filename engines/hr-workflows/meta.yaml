@@ -4,7 +4,8 @@
 # engine holds the write grants (the HR Desk app is just screens). Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/hr-workflows
 kind: engine
-version: 0.3.1   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+version: 0.3.2   # + leave-context prepare provider + leave-*-legacy aliases (ADR-0091 V3b lifecycle migration)
+#        0.3.1: governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: HR Workflows Engine
 entrypoint: run.py
