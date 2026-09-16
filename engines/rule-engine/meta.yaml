@@ -1,0 +1,17 @@
+# RULE ENGINE (kind=engine) — ADR-0088 lane 1. A GENERIC evaluator: given a `ruleset` + a bag of `facts`, it
+# reads the governed governance.policy_rule records for that ruleset and returns the matching `then` effect(s) + a
+# trace of which rules fired. It DECIDES, never ACTS — a pure function over governed config. Any policy
+# (data-visibility, access classification, scope containment, thresholds, gates) becomes rows an admin edits,
+# not code. Host dispatches /bridge/rule-eval → HANDLERS[rule-eval]. Reads rules under the caller's token.
+component_id: ds:airawat:engine/rule-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Rule Engine
+entrypoint: run.py
+implements:
+  - governance.rule_eval@0.1.0
+verbs:
+  rule-eval: governance.rule_eval@0.1.0
+required_schemas: [governance.policy_rule]
+writes: []
