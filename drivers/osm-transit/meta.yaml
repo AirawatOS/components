@@ -1,0 +1,21 @@
+# A DRIVER (kind=driver) — the PUBLIC-TRANSPORT network from OpenStreetMap/Overpass (ADR-0060 L1). Metro/rail
+# LINES (ways) + stations/halts + bus stops (nodes) written into the existing governed geo.osm_feature schema,
+# distinguished by the `feature` class (as roads use the highway class). Real OSM only; no tenant/AOI default.
+component_id: ds:airawat:driver/osm-transit
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Transit (OpenStreetMap / Overpass)
+entrypoint: run.py
+confinement_min: L1
+reads:
+  - space.aoi
+writes:
+  - geo.osm_feature
+egress:
+  - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-transit (+https://airawat.org; manishsv@gmail.com)" }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: overpass-api.de, provides: [geo.osm_feature] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: geo.osm_feature }
