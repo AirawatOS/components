@@ -38,6 +38,12 @@
   .row2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
   .off{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:#0f141b}
   .muted{color:var(--dim);font-size:12px}
+  .ver{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;margin:8px 0;background:#0f141b}
+  .ver.tomb{border-left-color:#f85149;opacity:.85}
+  .verhd{font-weight:700;font-size:13px;margin-bottom:4px}
+  .difflist{margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
+  .chg{font:12px/1.6 ui-monospace,Menlo,monospace;color:var(--ink)}
+  .chg .del{color:#f85149} .chg .ins{color:var(--good)}
 </style>
 <header><h1>📂 Data</h1>
   <button class="tabb on" id="tab-browse" onclick="setTab('browse')">Browse</button>
@@ -106,10 +112,53 @@ function cell(v){ if(v==null)return ''; if(typeof v==='object'){ if(v.h3)return 
 function showRec(i){
   const o=PAGE[i]; if(!o)return;
   const R=document.getElementById('rec'); if(!R)return;
-  // the FULL record — every field, including arrays/objects the summary table omits (e.g. bbox, space)
-  R.innerHTML=`<div class="lbl">Record — full detail</div>
-    <pre style="background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--ink);white-space:pre;max-height:340px">${esc(JSON.stringify(o,null,2))}</pre>`;
-  R.scrollIntoView({behavior:'smooth',block:'nearest'});
+  R.innerHTML=`<div class="row2" style="margin:14px 0 8px">
+      <button class="tabb on" id="rt-detail">Record</button>
+      <button class="tabb" id="rt-hist">History ⟲</button>
+      <span class="muted" style="margin-left:auto">${esc(o.id||'')}</span></div>
+    <div id="recbody"></div>`;
+  const detail=()=>document.getElementById('recbody').innerHTML=
+    `<pre style="background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--ink);white-space:pre;max-height:340px">${esc(JSON.stringify(o,null,2))}</pre>`;
+  const sel=t=>{document.getElementById('rt-detail').classList.toggle('on',t==='d');document.getElementById('rt-hist').classList.toggle('on',t==='h');};
+  document.getElementById('rt-detail').onclick=()=>{sel('d');detail();};
+  document.getElementById('rt-hist').onclick=()=>{sel('h');renderHistory(o.id);};
+  detail(); R.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+// The BITEMPORAL registry made visible: /bridge/history returns every version of a record with BOTH time axes
+// (valid = true-in-the-world; transaction = when we recorded it), the writing agent (component obo user), and
+// tombstones. We render newest-first and diff each version against the next-older one — so you see who changed
+// what, when, and under which belief. This is the append-only, attributed, tamper-evident audit trail as UI.
+function fmtAgent(a){ if(!a) return '<span class="muted">unknown</span>';
+  const m=/component:\/\/([^ ]+?)(?:@[^ ]*)?\s+obo\s+user:\/\/(.+)/.exec(a);
+  if(m) return `<b>${esc(m[1].split('/').pop())}</b> <span class="muted">on behalf of</span> ${esc(m[2].split('/').pop())}`;
+  return esc(String(a).replace(/^user:\/\//,'').replace(/^component:\/\//,''));
+}
+function trunc(s){ s=(s==null?'':String(s)); return s.length>60?s.slice(0,57)+'…':s; }
+function diffFields(a,b){
+  const skip=new Set(['conforms_to','prov','schema','id','tenant']);
+  if(!a) return '<div class="chg"><span class="ins">created</span></div>';
+  const keys=[...new Set([...Object.keys(a||{}),...Object.keys(b||{})])].filter(k=>!skip.has(k));
+  const rows=[];
+  for(const k of keys){ const av=JSON.stringify(a?.[k]), bv=JSON.stringify(b?.[k]); if(av===bv) continue;
+    rows.push(`<div class="chg"><b>${esc(k)}</b> <span class="del">${esc(trunc(av===undefined?'∅':av))}</span> → <span class="ins">${esc(trunc(bv===undefined?'∅':bv))}</span></div>`); }
+  return rows.length?rows.join(''):'<div class="chg muted">no field changes</div>';
+}
+async function renderHistory(id){
+  const B=document.getElementById('recbody'); if(!B) return;
+  B.innerHTML='<div class="muted" style="padding:8px">Loading version history…</div>';
+  const r=await jpost('/bridge/history',{app_id:APPID,id});
+  if(!r.ok){ B.innerHTML=`<div class="muted" style="padding:8px">could not load history (${r.status||'?'})</div>`; return; }
+  const H=r.j.history||[];
+  if(!H.length){ B.innerHTML='<div class="muted" style="padding:8px">no version history recorded</div>'; return; }
+  B.innerHTML=`<div class="muted" style="margin:2px 0 10px">${H.length} version${H.length>1?'s':''} · newest first · valid = true-in-world, recorded = when the system learned it</div>`+
+    H.map((v,idx)=>{ const older=H[idx+1]; const tt=v.transaction_time||{}, vt=v.valid_time||{};
+      return `<div class="ver${v.retracted?' tomb':''}">
+        <div class="verhd">v${esc(v.version)}${v.retracted?' · <span class="del">retracted (tombstone)</span>':idx===0?' · <span class="ins">current</span>':''}</div>
+        <div class="meta">recorded ${esc(tt.from||'—')}${tt.to?(' → '+esc(tt.to)):''}</div>
+        <div class="meta">valid ${esc(vt.from||'—')}${vt.to?(' → '+esc(vt.to)):''}</div>
+        <div class="meta">by ${fmtAgent(v.wrote_by)}</div>
+        <div class="difflist">${diffFields(older&&older.object, v.object)}</div></div>`;
+    }).join('');
 }
 async function load(reset){
   const D=document.getElementById('detail');
