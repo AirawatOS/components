@@ -204,9 +204,26 @@ def h_expense_decide(ctx):
     return {"decided": decision, "status": ("approved" if decision == "approve" else "rejected"), "finance_txn": finance_txn}, None
 
 
+def h_leave_context(ctx):
+    """ADR-0091 V3 PREPARE/context provider: resolve the caller's employee + their manager's login, so the generic
+    lifecycle-engine can build the hr.leave_request from a bare {leave_type,dates,days} body — the org-tree
+    enrichment that used to be baked into leave-apply now lives here (called via the workflow's `prepare`)."""
+    me = _me(ctx)
+    if not me:
+        return {}, None
+    mgr = next((e for e in ctx["kfind"]("org.employee") if e.get("id") == me.get("manager")), None)
+    return {"employee": me["id"], "applicant_login": ctx["sub"],
+            "manager": (mgr or {}).get("id"), "manager_login": (mgr or {}).get("citizen"),
+            "scope": ({"org_unit": me.get("org_unit")} if me.get("org_unit") else None)}, None
+
+
 HANDLERS = {
     "leave-apply": h_leave_apply,
     "leave-decide": h_leave_decide,
+    "leave-context": h_leave_context,        # ADR-0091 V3 prepare step
+    # ADR-0091 V3b: bespoke handlers RETAINED behind the lifecycle aliases (shadow-compare + non-breaking fallback)
+    "leave-apply-legacy": h_leave_apply,
+    "leave-decide-legacy": h_leave_decide,
     "attendance-mark": h_attendance_mark,
     "expense-apply": h_expense_apply,
     "expense-decide": h_expense_decide,
