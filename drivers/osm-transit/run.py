@@ -16,7 +16,7 @@ query + parser against real data.
 
 Inputs (env): AOI_ID (optional) · TENANT · OVERPASS_URL
 """
-import json, math, os, sys, time, urllib.request
+import json, math, os, shutil, subprocess, sys, time, urllib.request
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "_common"))
 
@@ -128,6 +128,85 @@ def fetch_transit(bbox, direct=False):
     return list(seen.values())
 
 
+_RAILW = {"subway", "light_rail", "rail", "monorail", "tram"}
+
+
+def _clip_to_bbox(src_path, bbox):
+    """osmium-extract a reference-complete AOI slice from a large regional PBF BEFORE the locations=True pass
+    (else pyosmium indexes the whole country and blows the host subprocess cap). No-op if CLI missing / small."""
+    try:
+        if not shutil.which("osmium") or os.path.getsize(src_path) < 150 * 1024 * 1024:
+            return src_path
+    except Exception:
+        return src_path
+    w, s, e, n = bbox; pad = 0.03; dst = src_path + ".clip.osm.pbf"
+    try:
+        t0 = time.time()
+        subprocess.run(["osmium", "extract", "-b", f"{w-pad},{s-pad},{e+pad},{n+pad}", src_path,
+                        "-o", dst, "--overwrite", "-s", "complete_ways"], check=True, capture_output=True, timeout=150)
+        print(f"  clipped PBF to AOI → {os.path.getsize(dst)//1024//1024} MB in {time.time()-t0:.0f}s", flush=True)
+        return dst
+    except Exception as ex:
+        print(f"  osmium clip skipped ({str(ex)[:80]}) — reading full PBF", flush=True); return src_path
+
+
+def transit_from_pbf(pbf_path, bbox):
+    """Extract transit ELEMENTS (railway ways + station/bus-stop nodes) inside the bbox from a local OSM PBF via
+    pyosmium — SAME element shape as the Overpass path so to_feature() is unchanged. The reliable, throttle-free
+    source: the tenant's regional PBF (reused from City Setup) read locally."""
+    import osmium
+    w, s, e, n = bbox; els = []
+    class _H(osmium.SimpleHandler):
+        def __init__(self): super().__init__(); self._c = 0
+        def way(self, way):
+            if way.tags.get("railway") not in _RAILW:
+                return
+            coords = []
+            try:
+                for nd in way.nodes:
+                    if nd.location.valid():
+                        coords.append({"lon": nd.location.lon, "lat": nd.location.lat})
+            except Exception:
+                return
+            if len(coords) < 2 or not any(w <= c["lon"] <= e and s <= c["lat"] <= n for c in coords):
+                return
+            els.append({"type": "way", "id": way.id, "tags": dict(way.tags), "geometry": coords})
+            self._c += 1
+        def node(self, node):
+            t = node.tags
+            is_station = (t.get("railway") in ("station", "halt")) or (t.get("station") == "subway")
+            is_bus = (t.get("highway") == "bus_stop") or (t.get("public_transport") == "platform" and t.get("bus") == "yes")
+            if not (is_station or is_bus):
+                return
+            loc = node.location
+            if not loc.valid() or not (w <= loc.lon <= e and s <= loc.lat <= n):
+                return
+            els.append({"type": "node", "id": node.id, "lon": loc.lon, "lat": loc.lat, "tags": dict(t)})
+    _H().apply_file(pbf_path, locations=True)
+    if not els:
+        raise SystemExit("FATAL: no transit ways/nodes in the PBF for this AOI")
+    return els
+
+
+def fetch_transit_from_asset(pbf_id, bbox):
+    """Pull the uploaded PBF asset from the filestore (via the broker), osmium-extract, read transit elements."""
+    import base64, tempfile
+    raw = base64.b64decode((call("/v1/file/get", {"id": pbf_id}) or {}).get("content_b64") or "")
+    if not raw:
+        raise SystemExit(f"FATAL: PBF asset {pbf_id} is empty / not in the filestore")
+    tf = tempfile.NamedTemporaryFile(suffix=".osm.pbf", delete=False); clipped = None
+    try:
+        tf.write(raw); tf.close()
+        print(f"reading transit from uploaded PBF {pbf_id[:20]}… ({len(raw)//1024//1024} MB) via osmium", flush=True)
+        path = _clip_to_bbox(tf.name, bbox); clipped = path if path != tf.name else None
+        return transit_from_pbf(path, bbox)
+    finally:
+        for p in (tf.name, clipped):
+            if p:
+                try: os.unlink(p)
+                except Exception: pass
+
+
 def _mode(tags):
     """Classify the transit mode for quick filtering/rendering (kept inside tags-derived `feature`)."""
     rw = tags.get("railway")
@@ -175,8 +254,15 @@ def main():
         raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant.")
     aoi, bbox, res, AOI_REF = resolve_aoi()
     print(f"tenant={TENANT} · AOI {AOI_REF} · bbox={bbox} · res={res}", flush=True)
-    els = fetch_transit(bbox)
-    print(f"overpass returned {len(els)} transit elements", flush=True)
+    # SOURCE: the uploaded regional OSM PBF (reliable, throttle-free — reused from City Setup) if the tenant
+    # provided one; else live Overpass (rate-limited at metro scale).
+    pbf_id = os.environ.get("OSM_PBF_FILE_ID", "").strip()
+    if pbf_id:
+        els = fetch_transit_from_asset(pbf_id, bbox)
+        print(f"osmium extracted {len(els)} transit elements from the uploaded PBF", flush=True)
+    else:
+        els = fetch_transit(bbox)
+        print(f"overpass returned {len(els)} transit elements", flush=True)
     written = skipped = 0; classes = {}
     _batch = []
     def _flush():

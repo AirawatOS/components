@@ -5,13 +5,16 @@ component_id: ds:airawat:driver/osm-transit
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer
-display_name: Transit (OpenStreetMap / Overpass)
+display_name: Transit (OpenStreetMap)
 entrypoint: run.py
 confinement_min: L1
 reads:
   - space.aoi
 writes:
   - geo.osm_feature
+config: [OSM_PBF_FILE_ID]              # filestore digest of the uploaded regional OSM PBF (reused from City Setup)
+assets:                               # reuse the SAME PBF the tenant uploaded for osm-roads/osm-facilities
+  - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: true, hint: "Regional OpenStreetMap extract (.osm.pbf). Reused from City Setup so transit reads locally instead of hitting Overpass." }
 egress:
   - { host: overpass-api.de, rate_per_min: 30, user_agent: "AirawatOS/osm-transit (+https://airawat.org; manishsv@gmail.com)" }
 sources:
