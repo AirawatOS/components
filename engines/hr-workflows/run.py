@@ -221,9 +221,11 @@ HANDLERS = {
     "leave-apply": h_leave_apply,
     "leave-decide": h_leave_decide,
     "leave-context": h_leave_context,        # ADR-0091 V3 prepare step
-    # ADR-0091 V3b: bespoke handlers RETAINED behind the lifecycle aliases (shadow-compare + non-breaking fallback)
+    # ADR-0091 V3b/V3c: bespoke handlers RETAINED behind the lifecycle aliases (shadow-compare + non-breaking fallback)
     "leave-apply-legacy": h_leave_apply,
     "leave-decide-legacy": h_leave_decide,
+    "expense-apply-legacy": h_expense_apply,
+    "expense-decide-legacy": h_expense_decide,
     "attendance-mark": h_attendance_mark,
     "expense-apply": h_expense_apply,
     "expense-decide": h_expense_decide,
