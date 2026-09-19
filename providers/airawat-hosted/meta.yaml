@@ -3,10 +3,10 @@
 # → API keys), exactly like a driver's key. The model-gateway routes /v1/embed and /v1/complete to this
 # provider's base_url and reads THIS key from the per-component secret path — the component/agent calling
 # the broker never sees it. The matching intelligence.provider record carries the routing (base_url, models).
-component_id: ds:airawat:provider/airawat-hosted
+component_id: ds:airawatdeveloper:provider/airawat-hosted   # ADR-0094: software stewarded by the developer participant (runtime intelligence.provider record + Vault key still reference the old id — active LLM, no re-key)
 kind: provider
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Airawat Hosted (kimi-k3 + bge-m3)
 secrets:
   - name: AIRAWAT_LLM_KEY

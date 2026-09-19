@@ -4,7 +4,7 @@
 Skills this Expert brings. Installing the Expert FANS OUT to install these Skills; each runs on its own token
 + trigger, keeping the inbox stocked with grounded, contestable flood advisories for a human authority."""
 
-SKILLS = ["ds:airawat:skill/flood-advisory"]
+SKILLS = ["ds:airawatdeveloper:skill/flood-advisory"]
 
 
 def main():

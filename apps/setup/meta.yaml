@@ -4,13 +4,14 @@
 # through the existing governed bridges (/bridge/install · /bridge/secret · /bridge/run · /bridge/schedule ·
 # /bridge/query for readiness probes). Domain-agnostic: air / flood / heat / property-tax all set up here, the
 # same way. Replaces per-domain setup apps (City Setup, air-admin). Host-served SPA; all I/O via the bridge.
-component_id: ds:airawat:app/setup
+component_id: ds:airawatdeveloper:app/setup   # ADR-0094: software stewarded by the developer participant (not airawat)
 kind: app
-version: 0.1.1   # 0.1.1: secret step supports multiple components (one key → many drivers) + asset-step note
-provider: ds:airawat:developer
+version: 0.1.2   # 0.1.2: re-home airawat→airawatdeveloper; entrypoint declared; single-line required_schemas (minimal-parser); drop bare tenant-admin role
+provider: ds:airawatdeveloper:developer
 display_name: Setup
+entrypoint: index.html
+bundle: dist
+sandboxed: true
 icon: "🧰"
-roles: [tenant-admin, platform.tenant-admin]
-required_schemas: [platform.setup, platform.schedule, space.aoi, cell.buildings, cell.roads,
-                   demographics.population, geo.terrain, air.sensor_reading, air.feature_matrix,
-                   air.model, air.quality]
+roles: [platform.tenant-admin]
+required_schemas: [platform.setup, platform.schedule, space.aoi, cell.buildings, cell.roads, demographics.population, geo.terrain, air.sensor_reading, air.feature_matrix, air.model, air.quality]

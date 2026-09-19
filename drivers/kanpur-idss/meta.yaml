@@ -3,10 +3,10 @@
 # POINTS. The broker performs the login (username/password from Vault) + caches and injects the bearer
 # token per this driver's egress AUTH PROFILE — this code never sees the credentials or the token. Kanpur-
 # specific (iDSS is deployed only in Kanpur), so this is the real-data source for the air-quality vertical.
-component_id: ds:airawat:driver/kanpur-idss
+component_id: ds:airawatdeveloper:driver/kanpur-idss   # ADR-0094: software stewarded by the developer participant (not airawat)
 kind: driver
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Kanpur iDSS Sensors
 entrypoint: run.py
 confinement_min: L1

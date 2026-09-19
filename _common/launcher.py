@@ -4,7 +4,7 @@
 Given a component directory + a confined run token + env, it EITHER runs the component IN-PROCESS (no
 `runtime.profile` declared — the current reference default) OR PLACES it in its runtime CONTAINER:
 
-  1. resolve  `runtime.profile` → the runtime component `ds:airawat:runtime/<profile>`
+  1. resolve  `runtime.profile` → the runtime component `ds:airawatdeveloper:runtime/<profile>`
   2. enforce  the runtime's CERTIFICATE at POINT OF USE (ADR-0051) — refuse an uncertified/unverified runtime
   3. inject   declared secrets, materialised from Vault via the secrets service (never logged)
   4. run      `docker run` the certified runtime image with the code mounted READ-ONLY at /drivers, broker as
@@ -107,6 +107,21 @@ def _dir_digest(d):
     return "sha2-256:" + hashlib.sha256(canon).hexdigest()
 
 
+def _runtime_source_file_id(cid, network_url=None):
+    """ADR-0095 R2: the `source_file_id` of a runtime's certified meta/source tar in the filestore, from the
+    network Store listing (set at publish). Uses /v1/store/resolve (resolve-by-id) because /v1/store BROWSE hides
+    kind=runtime from non-operators. None ⇒ not filestore-delivered (baked/local)."""
+    try:
+        req = urllib.request.Request((network_url or NETWORK_URL) + "/v1/store/resolve",
+            data=json.dumps({"component_id": cid}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        r = json.loads(urllib.request.urlopen(req, timeout=15).read())
+        l = r.get("listing") or r
+        return l.get("source_file_id") or None
+    except Exception:
+        return None
+
+
 def _fetch_and_verify(cid, source_file_id, cert, filestore_url=None):
     """UNIVERSAL DELIVERY point-of-use gate: pull a component's SOURCE tar.gz from the content-addressed
     filestore and VERIFY its dir-digest == the certificate's evidence_digest BEFORE it may run. Returns the
@@ -146,6 +161,55 @@ def _local_image_id(image):
         return r.stdout.strip() if r.returncode == 0 else None
     except Exception:
         return None
+
+
+def _runtime_manifest_meta(cid, profile, cert):
+    """Resolve a runtime's certified meta dir (on-disk under COMPONENTS/runtimes/<profile>, else materialised
+    from the filestore + digest-verified), returning (runtime_dir, rmeta) — or (None, {}) on a miss."""
+    runtime_dir = os.path.join(COMPONENTS, "runtimes", profile)
+    if not os.path.isfile(os.path.join(runtime_dir, "meta.yaml")):
+        sfid = _runtime_source_file_id(cid)
+        got = _fetch_and_verify(cid, sfid, cert) if sfid else None
+        if not got:
+            return None, {}
+        runtime_dir = got
+    return runtime_dir, _read_meta(runtime_dir)
+
+
+def attest_runtimes(node=None, network_url=None):
+    """ADR-0095 R3 / ADR-0086 (advisory): report to the Network which certified runtime IMAGES this node
+    holds (host-integrity). For each kind=runtime listing: resolve+verify its certified meta, compare the
+    LOCAL docker image .Id to the certified image_digest (and the on-disk source to the cert digest), and
+    POST /v1/runtime/attest. Best-effort; never raises (called on the runtime-manager boot)."""
+    import socket
+    node = node or os.environ.get("NODE_ID") or socket.gethostname()
+    net = network_url or NETWORK_URL
+    tok = os.environ.get("RUNTIME_ATTEST_INTERNAL", "airawat-attest-internal")
+    try:
+        r = urllib.request.urlopen(net + "/v1/store?kind=runtime", timeout=15)
+        listings = (json.loads(r.read() or b"{}") or {}).get("listings", [])
+    except Exception as e:
+        print(f"[attest] could not list runtimes from {net}: {e}")
+        return
+    for l in listings:
+        cid = l.get("component_id") or ""
+        profile = cid.split("/")[-1]
+        try:
+            cert = _resolve_cert(cid, net)
+            runtime_dir, rmeta = _runtime_manifest_meta(cid, profile, cert)
+            image = (rmeta or {}).get("image", "")
+            want = (rmeta or {}).get("image_digest", "")
+            have = _local_image_id(image) if image else None
+            dir_ok = bool(cert and cert.get("evidence_digest") and runtime_dir
+                          and _dir_digest(runtime_dir) == cert["evidence_digest"])
+            match = bool(have and want and have == want and dir_ok)
+            _post(net + "/v1/runtime/attest",
+                  {"runtime_id": cid, "version": l.get("version"), "node": node, "image": image,
+                   "local_image_id": have or "", "certified_image_digest": want, "match": match},
+                  {"X-Internal-Token": tok})
+            print(f"[attest] {profile}: match={match} image={'present' if have else 'absent'} src_ok={dir_ok}")
+        except Exception as e:
+            print(f"[attest] {profile}: {e}")
 
 
 def _materialize(tenant, component, name):
@@ -189,14 +253,23 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
         return p.returncode, (p.stdout or "") + (p.stderr or "")
 
     # CONTAINER PLACEMENT ------------------------------------------------------------------------------
-    runtime_id = f"ds:airawat:runtime/{profile}"
+    runtime_id = f"ds:airawatdeveloper:runtime/{profile}"
     cert = _resolve_cert(runtime_id)
     if not cert or not (cert.get("conformance") or {}).get("verified"):
         return 87, (f"REFUSED (ADR-0051 point-of-use): runtime {runtime_id} is not certified — "
                     f"cannot place {label or component_dir}. Certify the runtime first.")
     runtime_dir = os.path.join(COMPONENTS, "runtimes", profile)
     if not os.path.isfile(os.path.join(runtime_dir, "meta.yaml")):
-        return 87, f"REFUSED: runtime profile '{profile}' has no local definition (components/runtimes/{profile})"
+        # ADR-0095 R2: an UNBAKED runtime — materialise its certified META/source from the filestore + digest-verify
+        # (the cert was resolved + verified just above). The IMAGE stays in the registry; only the runtime source
+        # rides the filestore, so the runtime-manager image can ship services-only too. Falls through to the same
+        # ENFORCE_IMAGE gate below (which re-checks _dir_digest == cert AND local image .Id == certified image_digest).
+        _sfid = _runtime_source_file_id(runtime_id)
+        _got = _fetch_and_verify(runtime_id, _sfid, cert) if _sfid else None
+        if not _got:
+            return 87, (f"REFUSED: runtime profile '{profile}' is not on disk and could not be materialised from "
+                        f"the filestore (no source_file_id or digest mismatch) — publish its source, then retry.")
+        runtime_dir = _got
     rmeta = _read_meta(runtime_dir)
     image = rmeta.get("image")
     if ENFORCE_IMAGE:

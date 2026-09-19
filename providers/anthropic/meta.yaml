@@ -5,10 +5,10 @@
 # per-component secret path — the component/agent calling the broker never sees it. The matching
 # intelligence.provider record carries the routing (base_url, protocol, models + their task). Studio's
 # code-generation asks the gateway for task=code and is routed HERE — no model name is hard-coded anywhere.
-component_id: ds:airawat:provider/anthropic
+component_id: ds:airawatdeveloper:provider/anthropic   # ADR-0094: software stewarded by the developer participant
 kind: provider
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Anthropic (Claude)
 description: >-
   Makes Anthropic's Claude models available to the platform through the model-gateway. It is a

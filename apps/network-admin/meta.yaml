@@ -1,10 +1,10 @@
 # Network Admin (kind=app) — the STANDARDS BODY's console (AirawatNetwork). Review + decide change-requests
 # (roles today; packs/schemas next) and browse the canonical catalogs. Scoped to `steward`: only the network
 # authority sees it, never a tenant admin. NOT a system app — it is installed onto the network's own surface.
-component_id: ds:airawat:app/network-admin
+component_id: ds:airawatdeveloper:app/network-admin
 kind: app
-version: 0.1.1
-provider: ds:airawat:developer
+version: 0.1.2
+provider: ds:airawatdeveloper:developer
 display_name: Network Admin
 entrypoint: index.html
 bundle: dist

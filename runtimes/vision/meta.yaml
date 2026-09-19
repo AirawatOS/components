@@ -3,10 +3,10 @@
 # adds the vision-specific libraries. Components declare `runtime.profile: vision`. Kept separate from
 # modeling for the same blast-radius reason media/ is separate: ultralytics+opencv are ~250MB that only
 # vision components need.
-component_id:   ds:airawat:runtime/vision              # a CERTIFIABLE component (kind=runtime)
+component_id:   ds:airawatdeveloper:runtime/vision              # a CERTIFIABLE component (kind=runtime)
 kind:           runtime
 version:        0.1.0
-provider:       ds:airawat:developer
+provider:       ds:airawatdeveloper:developer
 implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058)
 runtime_id:     vision
 profile:        vision

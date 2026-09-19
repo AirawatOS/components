@@ -2,10 +2,10 @@
 # carries the domain identity + persona and a pinned list of member SKILLS; installing it fans out to install
 # its Skills. The Expert does not reason — its Skills do (Facts × Rules → cited governance.recommendation).
 # AI recommends; a human authority decides (decision-router → inbox → governance.decision).
-component_id: ds:airawat:agent/flood-expert
+component_id: ds:airawatdeveloper:agent/flood-expert   # ADR-0094: software stewarded by the developer participant (not airawat, the Network Admin)
 kind: agent
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Flood Expert
 entrypoint: run.py
 summary: >-
@@ -17,6 +17,6 @@ persona: >-
   approved flood-response rules, cites its sources, states clearly that risk is a forecast, and proposes —
   never decides.
 skills:
-  - ds:airawat:skill/flood-advisory
+  - ds:airawatdeveloper:skill/flood-advisory
 reads: []
 writes: []

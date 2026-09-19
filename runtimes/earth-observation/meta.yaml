@@ -1,10 +1,10 @@
 # A RUNTIME PROFILE (ADR-0030 clean-room, ported from AirOS specs/11). A shared, per-profile container that
 # bundles a coherent library set; DRIVERS declare `runtime.profile: earth-observation` and are MOUNTED in —
 # they never ship their own image. One image runs every EO driver (GEE/raster/satellite). GEE lives here.
-component_id:   ds:airawat:runtime/earth-observation   # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
+component_id:   ds:airawatdeveloper:runtime/earth-observation   # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
 kind:           runtime
 version:        0.1.0
-provider:       ds:airawat:developer
+provider:       ds:airawatdeveloper:developer
 implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058) it satisfies
 runtime_id:     earth-observation
 profile:        earth-observation

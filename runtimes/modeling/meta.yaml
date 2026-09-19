@@ -1,10 +1,10 @@
 # A RUNTIME PROFILE (ADR-0030). The ML / MODELING stack (torch + classical ML) — for PREDICTIVE engines
 # (air-quality forecast, PM2.5 fusion, risk models). Kept OUT of the coordinator (torch is heavy). Drivers
 # declare `runtime.profile: modeling`.
-component_id:   ds:airawat:runtime/modeling            # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
+component_id:   ds:airawatdeveloper:runtime/modeling            # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
 kind:           runtime
 version:        0.1.0
-provider:       ds:airawat:developer
+provider:       ds:airawatdeveloper:developer
 implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058) it satisfies
 runtime_id:     modeling
 profile:        modeling

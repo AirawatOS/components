@@ -9,10 +9,10 @@
 #     and forces RE-CERTIFICATION of every driver pinned to it — unrelated, working components.
 # A profile keeps the blast radius to components that ask for it. The VMS recorder, the HLS packager and
 # the detection engine will all want this same toolchain.
-component_id:   ds:airawat:runtime/media           # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
+component_id:   ds:airawatdeveloper:runtime/media           # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
 kind:           runtime
 version:        0.1.0
-provider:       ds:airawat:developer
+provider:       ds:airawatdeveloper:developer
 implements:     platform.runtime_invoke@0.1.0      # the governed placement interface (ADR-0058)
 runtime_id:     media
 profile:        media

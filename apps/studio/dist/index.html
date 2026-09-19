@@ -414,14 +414,21 @@ async function renameProject(){
 function briefPrompt(p){const b=p.brief||{};const j=a=>((a||[]).join(', ')||'—');
   return `Design the solution for "${p.title}". Goal: ${p.goal||'—'}. Users: ${j(b.users)}. Real-world things: ${j(b.entities)}. Data sources: ${j(b.data_sources)}. Decisions to answer: ${j(b.decisions)}. Triggers: ${j(b.triggers)}. Reuse existing components + specs first; propose the LAYERED component graph — drivers for the data sources (domain), engines/skills for the decisions (intelligence), an app for the users (interaction) — and flag any missing specs.`;}
 function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind===kind);
-  const m=modal(`<h3>Add ${kind==='agent'?'AI Expert':pretty(kind)}</h3><div class="sub">Reuse an existing one (recommended) or create a new one to build.</div>
+  const isAgent=(kind==='agent'); const skills=isAgent?(MARKET.components||[]).filter(c=>c.kind==='skill'):[];
+  // AI Experts (kind=agent) are BUNDLES of Skills (INT-0002) — pick the member Skills the Expert brings; they
+  // fan out on install. Software is authored under the airawatdeveloper vendor namespace (ADR-0094).
+  const sklPick=isAgent?`<label class="sub" style="margin-top:8px">Member Skills <span class="sub">(the reasoners this Expert bundles — fan out on install)</span></label>
+    <div id="skl" style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px;margin:4px 0 8px">${skills.length?skills.map(c=>`<label class="row" style="gap:6px;align-items:center;font-size:13px"><input type="checkbox" data-skl="${esc(c.component_id)}"> ${esc(nameOf(c))}${c.certified?' ✓':''}</label>`).join(''):'<span class="sub">No Skills published yet — build Skills first, or pin them later by editing meta.yaml.</span>'}</div>`:'';
+  const m=modal(`<h3>Add ${isAgent?'AI Expert':pretty(kind)}</h3><div class="sub">Reuse an existing one (recommended) or create a new one to build.${isAgent?' An AI Expert is a domain-identity bundle of Skills — it does not reason itself; its Skills do.':''}</div>
     <label class="sub" style="margin-top:8px">Reuse existing</label><select class="in" id="ex"><option value="">— choose —</option>${comps.map(c=>`<option value="${esc(c.component_id)}">${esc(nameOf(c))}${c.certified?' ✓':''}</option>`).join('')}</select>
     <div style="text-align:right"><button class="btn primary sm" id="addex">Add (reuse)</button></div><hr style="border-color:var(--line)">
-    <label class="sub">New — id <span class="sub">(published under the airawat vendor namespace)</span></label><input class="in" id="nn" placeholder="ds:airawat:${kind}/my-thing" value="ds:airawat:${kind}/">
+    ${sklPick}<label class="sub">New — id <span class="sub">(published under the airawatdeveloper vendor namespace)</span></label><input class="in" id="nn" placeholder="ds:airawatdeveloper:${kind}/my-thing" value="ds:airawatdeveloper:${kind}/">
     <div style="text-align:right"><button class="btn" id="x">Cancel</button> <button class="btn" id="addnew">Add + scaffold</button></div>`);
   m.q('#x').onclick=m.close;
   m.q('#addex').onclick=async()=>{const ref=m.q('#ex').value;if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'existing',status:'published',layer:KIND_LAYER[kind]||'domain'});await save(SEL);m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;tree();configureComponent(ref);};
-  m.q('#addnew').onclick=async()=>{const ref=m.q('#nn').value.trim();if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'new',status:'draft',layer:KIND_LAYER[kind]||'domain'});await save(SEL);await post('/bridge/component-scaffold',{component:ref,kind});delete FILES[ref];m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;OPENK['c:'+ref]=true;tree();};}
+  m.q('#addnew').onclick=async()=>{const ref=m.q('#nn').value.trim();if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'new',status:'draft',layer:KIND_LAYER[kind]||'domain'});await save(SEL);
+    const sk=isAgent&&m.q('#skl')?[...m.q('#skl').querySelectorAll('[data-skl]:checked')].map(x=>x.dataset.skl):undefined;
+    await post('/bridge/component-scaffold',{component:ref,kind,skills:sk});delete FILES[ref];m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;OPENK['c:'+ref]=true;tree();};}
 // ---------- CONFIG-vs-BUILD: configure an EXISTING platform component (install · keys · schedule) ----------
 function egressHosts(meta){const out=[];const re=/host:\s*([^\s,}'"]+)/g;let m;while((m=re.exec(meta||'')))out.push(m[1]);return [...new Set(out)];}
 async function configureComponent(ref){

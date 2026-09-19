@@ -4,7 +4,7 @@ do (each: Facts × Rules → cited governance.recommendation). This entrypoint i
 Skills this Expert brings. Installing the Expert FANS OUT to install these Skills; each Skill then runs on its
 own token + trigger, keeping the inbox full of grounded, contestable recommendations for a human authority."""
 
-SKILLS = ["ds:airawat:skill/air-quality-advisory"]
+SKILLS = ["ds:airawatdeveloper:skill/air-quality-advisory"]
 
 
 def main():
