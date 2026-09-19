@@ -57,6 +57,7 @@ def _resolve(v, vars):
         if v.startswith("$payload."): return (vars.get("payload") or {}).get(v[9:])
         if v.startswith("$record."):  return (vars.get("record") or {}).get(v[8:])
         if v.startswith("$subject."): return (vars.get("subject") or {}).get(v[9:])  # id of an earlier `as:`-named write in this transition
+        if v.startswith("$scope."):   return ((vars.get("record") or {}).get("scope") or {}).get(v[7:])  # a value denormalised onto the case at start (incl. named subject ids)
     return v
 
 
@@ -77,6 +78,16 @@ def _authorized(tr, rec, ctx):
     if tr.get("role") and tr["role"] not in roles:
         return False, f"role '{tr['role']}' required for '{tr.get('name')}'"
     return True, None
+
+
+def _approver(route, scope, tenant):
+    """Who receives the routed task: a user named by a scope field (route.to_field), or a static role (route.role)."""
+    route = route or {}
+    if route.get("to_field") and (scope or {}).get(route["to_field"]):
+        return scope[route["to_field"]]
+    if route.get("role"):
+        return f"role://{tenant}/{route['role']}"
+    return None
 
 
 def _state(rec):
@@ -143,7 +154,7 @@ def _actions_for(ctx, decl, state, workflow, case):
     that calls lifecycle-decide with the right transition. Keeps the Inbox generic across every workflow."""
     acts = []
     for t in decl.get("transitions", []):
-        if t.get("from") == state and (t.get("role") or t.get("actor_field")):
+        if t.get("from") == state and (t.get("role") or t.get("actor_field") or (t.get("authorize") or {}).get("any")):
             # platform.inbox_item.actions items are JSON strings (matches the bespoke Inbox convention)
             acts.append(_json.dumps({"label": (t.get("label") or t["name"].title()),
                                      "verb": "lifecycle-decide", "style": t.get("style") or "pri",
@@ -183,9 +194,8 @@ def h_request(ctx):
     if decl.get("record_schema") == "platform.case":         # ADR-0097: multi-record CASE spine (project/funding/justice)
         cid = f"ds:{tenant}:case/{workflow.replace('.', '-')}-{_u.uuid4().hex[:8]}"
         subjects = []                                        # start-transition effects WRITE the domain records as subjects
-        _run_effects(ctx, tr.get("effects"),
-                     {"payload": payload, "case": cid, "sub": sub, "tenant": tenant, "now": now, "record": None},
-                     subjects=subjects)
+        vars = {"payload": payload, "case": cid, "sub": sub, "tenant": tenant, "now": now, "record": None}
+        _run_effects(ctx, tr.get("effects"), vars, subjects=subjects)
         _cf = set()                                          # auto-denormalise the routing/auth fields the declaration uses onto the case
         for _t in decl.get("transitions", []):
             _rf = (_t.get("route") or {}).get("to_field")
@@ -195,11 +205,12 @@ def h_request(ctx):
                 if _cl.get("actor_field"): _cf.add(_cl["actor_field"])
         route = tr.get("route") or {}
         scope = {k: payload.get(k) for k in _cf if payload.get(k) is not None}   # platform.case is strict: routing/auth fields live in its freeform `scope`
+        scope.update(vars.get("subject") or {})              # `as:`-named subject ids → reachable by later transitions via $scope.<name>
         crec = {"schema": "platform.case", "id": cid, "tenant": tenant, "workflow": workflow,
                 "status": _case_status(decl, tr["to"]), "current_step": tr["to"],
                 "opened_by": sub, "opened_at": now, "updated_at": now, "subjects": subjects, "scope": scope,
                 "title": route.get("title") or str(payload.get("name") or payload.get("title") or workflow)}
-        approver = scope.get(route.get("to_field")) if route.get("to_field") else None
+        approver = _approver(route, scope, tenant)           # a user (route.to_field) or a static role (route.role)
         if approver:
             iid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}-{cid.rsplit('/', 1)[-1]}"
             ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
@@ -260,21 +271,37 @@ def h_decide(ctx):
     else:
         updated = {**rec, "status": tr["to"]}
     updated.update(_resolve(tr.get("stamp") or {}, vars))
-    _run_effects(ctx, tr.get("effects"), {**vars, "record": updated})
+    subj = None
+    if rec.get("schema") == "platform.case":                    # records written by this transition also join the case (complete audit envelope)
+        subj = updated.setdefault("subjects", rec.get("subjects") or [])
+    _run_effects(ctx, tr.get("effects"), {**vars, "record": updated}, subjects=subj)
     ctx["kwrite"](case, updated)
     # close the open task for this case + notify (generic Inbox hygiene; task found by ref, not stored on the record)
     for t in ctx["kfind"]("platform.inbox_item"):
         if t.get("ref") == case and t.get("kind") == "task" and t.get("status") != "done":
             ctx["kwrite"](t["id"], {**t, "status": "done"})
+    scope = updated.get("scope") or {}
+    # CHAIN (ADR-0097 task lane): if this transition routes onward AND the new state has actions, hand the next
+    # actor (a user via route.to_field or a static route.role) an actionable task; else notify.
+    route = tr.get("route") or {}
+    nxt = _approver(route, scope, tenant)
+    acts = _actions_for(ctx, decl, tr["to"], workflow, case)
+    routed_to = None
+    if nxt and acts:
+        tid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}-{tr['to']}-{case.rsplit('/', 1)[-1]}"
+        ctx["kwrite"](tid, {"schema": "platform.inbox_item", "id": tid, "tenant": tenant, "actor": nxt,
+                            "title": route.get("title") or f"{workflow}: {tr['to']} — action required", "ref": case,
+                            "kind": "task", "status": "unread", "created_at": now, "actions": acts})
+        routed_to = nxt
     notify = tr.get("notify") or {}
     _nf = notify.get("to_field")
-    who = (rec.get(_nf) if rec.get(_nf) is not None else (rec.get("scope") or {}).get(_nf)) if _nf else None
-    if who:
+    who = _approver(notify, {**scope, **({_nf: rec.get(_nf)} if _nf and rec.get(_nf) is not None else {})}, tenant)
+    if who and who != routed_to:
         nid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}res-{case.rsplit('/', 1)[-1]}"
         ctx["kwrite"](nid, {"schema": "platform.inbox_item", "id": nid, "tenant": tenant, "actor": who,
                             "title": f"{workflow}: {tr['to']}", "ref": case, "kind": "notification",
                             "status": "unread", "created_at": now})
-    return {"case": case, "workflow": workflow, "transition": tname, "status": tr["to"]}, None
+    return {"case": case, "workflow": workflow, "transition": tname, "status": tr["to"], "routed_to": routed_to}, None
 
 
 def h_status(ctx):
