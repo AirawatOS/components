@@ -48,10 +48,12 @@ def _resolve(v, vars):
     if isinstance(v, dict):  return {k: _resolve(x, vars) for k, x in v.items()}
     if isinstance(v, list):  return [_resolve(x, vars) for x in v]
     if isinstance(v, str):
-        if v == "$case":   return vars.get("case")
-        if v == "$sub":    return vars.get("sub")
-        if v == "$tenant": return vars.get("tenant")
-        if v == "$now":    return vars.get("now")
+        if v == "$case":    return vars.get("case")
+        if v == "$sub":     return vars.get("sub")
+        if v == "$tenant":  return vars.get("tenant")
+        if v == "$now":     return vars.get("now")
+        if v == "$payload": return vars.get("payload")           # whole submit form → pass through to a compute {call}
+        if v == "$record":  return vars.get("record")
         if v.startswith("$payload."): return (vars.get("payload") or {}).get(v[9:])
         if v.startswith("$record."):  return (vars.get("record") or {}).get(v[8:])
         if v.startswith("$subject."): return (vars.get("subject") or {}).get(v[9:])  # id of an earlier `as:`-named write in this transition
@@ -113,6 +115,9 @@ def _run_effects(ctx, effects, vars, subjects=None):
                       "ok" if not _cerr else "ERR " + str(_cerr)[:100]), flush=True)
                 if isinstance(_cres, dict) and c.get("link_field") and _cres.get(c["link_field"]) and vars.get("record") is not None:
                     vars["record"][c.get("into", "effect_ref")] = _cres[c["link_field"]]
+                if isinstance(_cres, dict) and c.get("subjects") and subjects is not None:  # a compute call that produced records → add their ids as case subjects
+                    for _sf in c["subjects"]:
+                        if _cres.get(_sf): subjects.append(_cres[_sf])
             except Exception as _e:
                 print("[lifecycle] effect call failed: %s" % str(_e)[:120], flush=True)
         elif eff.get("update_subject"):

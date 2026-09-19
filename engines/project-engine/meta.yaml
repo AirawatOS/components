@@ -5,7 +5,7 @@
 # `project` — the project is the roll-up axis (also by owning org_unit). Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/project-engine
 kind: engine
-version: 0.4.3   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
+version: 0.4.5   # + governed verbs (implements:/verbs:) via tools/verb_conformance.py
 provider: ds:airawat:developer
 display_name: Project Engine
 entrypoint: run.py

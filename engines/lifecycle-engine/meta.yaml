@@ -4,7 +4,7 @@
 # attributed, bitemporal state changes (ADR-0056 decided change-request). Collapses per-domain apply/decide pairs.
 component_id: ds:airawatdeveloper:engine/lifecycle-engine
 kind: engine
-version: 0.1.11
+version: 0.1.12
 provider: ds:airawat:developer
 display_name: Lifecycle Engine
 entrypoint: run.py

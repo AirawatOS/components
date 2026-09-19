@@ -358,7 +358,90 @@ def h_allocation_list(ctx):
     return {"allocations": rows}, None
 
 
+# --- ADR-0097 convergence: COMPUTE handlers the generic lifecycle-engine composes via {call} -----------------
+# The generic engine now owns the FSM + platform.case + routing + authorization + governance.decision; these two
+# handlers are the DOMAIN COMPUTE it can't express in a declaration (version numbering, outlay sum, budget commit,
+# baseline supersede). They are invoked as effect-calls, NOT as first-class governed lifecycle verbs.
+def h_proposal_prepare(ctx):
+    """Submit-side compute: upsert the project entity + write a new versioned proposal baseline (status=submitted),
+    and RETURN their ids (→ the case subjects). No Inbox routing — the generic engine routes via route.to_field."""
+    d = ctx["body"].get("data") or ctx["body"]
+    tenant, sub = ctx["tenant"], ctx["sub"]
+    code = d.get("code")
+    if not code:
+        return None, "project code required"
+    outcomes, outputs = d.get("outcomes") or [], d.get("outputs") or []
+    if not outcomes:
+        return None, "a proposal needs at least one OUTCOME (the why)"
+    if not outputs:
+        return None, "a proposal needs at least one OUTPUT (the how)"
+    outlay = d.get("outlay") or []
+    total = _sum_outlay(outlay)
+    pid = f"ds:{tenant}:project/{code}"
+    now = _now()
+    existing = ctx["kget"](pid) or {}
+    ctx["kwrite"](pid, {"schema": "project.project", "id": pid, "tenant": tenant, "code": code,
+        "name": d.get("name") or existing.get("name") or code, "org_unit": d.get("org_unit") or existing.get("org_unit"),
+        "objective": d.get("objective") or (outcomes[0].get("statement") if outcomes else None),
+        "sponsor": d.get("sponsor") or existing.get("sponsor"),
+        "start_date": d.get("start_date") or existing.get("start_date"), "end_date": d.get("end_date") or existing.get("end_date"),
+        "status": "submitted", "baseline_version": existing.get("baseline_version"),
+        "currency": d.get("currency") or existing.get("currency") or "INR", "created_at": existing.get("created_at") or now})
+    version = _next_version(ctx, pid)
+    prid = f"ds:{tenant}:project/proposal/{code}--v{version}"
+    prop_rec = {"schema": "project.proposal", "id": prid, "tenant": tenant, "project": pid,
+        "version": version, "status": "submitted", "title": d.get("title") or f"{code} proposal v{version}",
+        "summary": d.get("summary"), "outcomes": outcomes, "outputs": outputs,
+        "milestones": d.get("milestones") or [], "deliverables": d.get("deliverables") or [], "outlay": outlay,
+        "total_outlay": total, "currency": d.get("currency") or "INR", "submitted_by": sub, "submitted_at": now,
+        "supersedes": (existing.get("baseline_version") if d.get("adjust") else None), "created_at": now}
+    for k in ("answers", "evidence", "site", "intervention", "ask"):
+        if d.get(k) is not None:
+            prop_rec[k] = d[k]
+    ctx["kwrite"](prid, prop_rec)
+    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total,
+            "sponsor": d.get("sponsor") or existing.get("sponsor")}, None
+
+
+def h_proposal_commit(ctx):
+    """Approve-side compute: supersede the prior in-force baseline, activate the project, commit the budget (outlay →
+    finance.budget). Invoked as a {call} effect from the approve transition — the generic engine already wrote the
+    governance.decision. Resolves the project + its submitted proposal from the case's subjects."""
+    body, tenant = ctx["body"], ctx["tenant"]
+    crec = ctx["kget"](body.get("case")) if body.get("case") else None
+    proj = prop = None
+    for sid in (crec or {}).get("subjects") or []:
+        r = ctx["kget"](sid) if isinstance(sid, str) else None
+        if not r:
+            continue
+        if r.get("schema") == "project.project":
+            proj = r
+        elif r.get("schema") == "project.proposal" and r.get("status") == "submitted":
+            prop = r
+    if not proj or not prop:
+        return None, "case has no submitted project.proposal subject"
+    pid, now = proj["id"], _now()
+    props = _proposals_for(ctx, pid)
+    if proj.get("baseline_version"):
+        prior = next((p for p in props if p.get("version") == proj["baseline_version"]), None)
+        if prior and prior["id"] != prop["id"]:
+            ctx["kwrite"](prior["id"], {**prior, "status": "superseded"})
+    ctx["kwrite"](prop["id"], {**prop, "status": "approved", "approved_at": now})
+    ctx["kwrite"](pid, {**proj, "status": "active", "baseline_version": prop["version"]})
+    bcode = body.get("budget_code") or f"{proj['code']}-budget"
+    bid = f"ds:{tenant}:finance/budget/{bcode}"
+    prior_bud = ctx["kget"](bid) or {}
+    ctx["kwrite"](bid, {"schema": "finance.budget", "id": bid, "tenant": tenant, "code": bcode,
+        "name": f"{proj.get('name', proj['code'])} budget", "fiscal_year": body.get("fiscal_year") or now[:4],
+        "account": body.get("account") or prior_bud.get("account"), "org_unit": proj.get("org_unit"), "project": pid,
+        "allocated": prop.get("total_outlay") or 0, "committed": prior_bud.get("committed", 0) or 0,
+        "spent": prior_bud.get("spent", 0) or 0, "currency": prop.get("currency") or "INR", "status": "active",
+        "created_at": prior_bud.get("created_at") or now})
+    return {"project": pid, "budget": bid, "version": prop["version"], "allocated": prop.get("total_outlay"), "status": "active"}, None
+
+
 HANDLERS = {"proposal-submit": h_proposal_submit, "proposal-save": h_proposal_save, "proposal-decide": h_proposal_decide,
+            "proposal-prepare": h_proposal_prepare, "proposal-commit": h_proposal_commit,
             "project-rollup": h_project_rollup, "project-review": h_project_review,
             "project-evaluate": h_project_evaluate, "project-adjust": h_project_adjust,
             "allocation-set": h_allocation_set, "allocation-list": h_allocation_list}
