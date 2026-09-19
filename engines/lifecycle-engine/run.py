@@ -126,6 +126,11 @@ def _run_effects(ctx, effects, vars, subjects=None):
                 srec = ctx["kget"](sid)
                 if srec:
                     srec.update(_resolve(us.get("patch") or {}, vars)); ctx["kwrite"](sid, srec)
+        elif eff.get("update"):                                    # patch an EXISTING record referenced by id (not a case subject) — e.g. flip a tax.candidate
+            up = eff["update"]; rid = _resolve(up.get("ref"), vars)
+            rrec = ctx["kget"](rid) if rid else None
+            if rrec:
+                rrec.update(_resolve(up.get("patch") or {}, vars)); ctx["kwrite"](rid, rrec)
 
 
 def _actions_for(ctx, decl, state, workflow, case):
@@ -241,14 +246,16 @@ def h_decide(ctx):
     if not ok:
         return None, reason
     now = _now()
+    vars = {"record": rec, "payload": body.get("payload") or {}, "case": case, "sub": sub, "tenant": tenant, "now": now}
     # `updated` is the CASE row: a platform.case in spine mode (coarse status + fine current_step), or the domain
-    # record in single-record mode. Effects (write subjects / compose engines / patch subjects) run generically.
+    # record in single-record mode. `stamp` (templated) lets the declaration record fields the SCHEMA allows
+    # (e.g. hr.leave stamps decided_by/decided_at; campaign stamps outcome/ground_truth) — the engine never guesses.
     if rec.get("schema") == "platform.case":
         updated = {**rec, "status": _case_status(decl, tr["to"]), "current_step": tr["to"], "updated_at": now}
     else:
-        updated = {**rec, "status": tr["to"], "decided_by": sub, "decided_at": now}
-    _run_effects(ctx, tr.get("effects"),
-                 {"record": updated, "payload": body.get("payload") or {}, "case": case, "sub": sub, "tenant": tenant, "now": now})
+        updated = {**rec, "status": tr["to"]}
+    updated.update(_resolve(tr.get("stamp") or {}, vars))
+    _run_effects(ctx, tr.get("effects"), {**vars, "record": updated})
     ctx["kwrite"](case, updated)
     # close the open task for this case + notify (generic Inbox hygiene; task found by ref, not stored on the record)
     for t in ctx["kfind"]("platform.inbox_item"):
