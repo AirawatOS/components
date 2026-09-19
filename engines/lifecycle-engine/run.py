@@ -42,6 +42,92 @@ def _guard_ok(ctx, tr, facts):
     return True, None
 
 
+def _resolve(v, vars):
+    """ADR-0097 case-spine: templating. $payload.x / $record.x / $case / $sub / $tenant / $now → values from `vars`.
+    Recurses into dicts/lists so an effect's `write` template can be built from the request payload + case."""
+    if isinstance(v, dict):  return {k: _resolve(x, vars) for k, x in v.items()}
+    if isinstance(v, list):  return [_resolve(x, vars) for x in v]
+    if isinstance(v, str):
+        if v == "$case":   return vars.get("case")
+        if v == "$sub":    return vars.get("sub")
+        if v == "$tenant": return vars.get("tenant")
+        if v == "$now":    return vars.get("now")
+        if v.startswith("$payload."): return (vars.get("payload") or {}).get(v[9:])
+        if v.startswith("$record."):  return (vars.get("record") or {}).get(v[8:])
+        if v.startswith("$subject."): return (vars.get("subject") or {}).get(v[9:])  # id of an earlier `as:`-named write in this transition
+    return v
+
+
+def _authorized(tr, rec, ctx):
+    """Transition authorization. OR-form (ADR-0097): authorize:{any:[{actor_field},{role}]} — ANY clause passes.
+    Legacy AND-form: actor_field (rec[field]==caller) AND role (claim). Returns (ok, reason)."""
+    sub = ctx["sub"]; roles = ctx["claims"].get("roles", []) or []
+    _fv = lambda f: rec.get(f) if rec.get(f) is not None else (rec.get("scope") or {}).get(f)  # spine: actor fields live in case.scope
+    az = tr.get("authorize")
+    if az and az.get("any"):
+        for cl in az["any"]:
+            if cl.get("actor_field") and _fv(cl["actor_field"]) == sub: return True, None
+            if cl.get("role") and cl["role"] in roles: return True, None
+        return False, "not authorized — needs " + " or ".join(
+            (c.get("actor_field") or ("role " + str(c.get("role")))) for c in az["any"])
+    if tr.get("actor_field") and _fv(tr["actor_field"]) != sub:
+        return False, f"only {tr['actor_field']} may apply '{tr.get('name')}'"
+    if tr.get("role") and tr["role"] not in roles:
+        return False, f"role '{tr['role']}' required for '{tr.get('name')}'"
+    return True, None
+
+
+def _state(rec):
+    """The FINE workflow state. In spine mode it lives in `current_step` (case.status is a coarse enum);
+    in single-record mode it IS the record's `status`."""
+    return rec.get("current_step") if rec.get("schema") == "platform.case" else rec.get("status")
+
+
+def _case_status(decl, state):
+    """Map a fine workflow state to platform.case's coarse status enum: terminal (no outgoing transition) → closed, else open."""
+    froms = {t.get("from") for t in decl.get("transitions", [])}
+    return "closed" if state not in froms else "open"
+
+
+def _run_effects(ctx, effects, vars, subjects=None):
+    """Apply a transition's effects with templating (ADR-0091 E1 + ADR-0097):
+      {write: <tmpl>}                → write a new record (collected as a case SUBJECT if `subjects` given)
+      {call: {engine,verb,args,...}} → COMPOSE another certified engine; link a result field onto vars['record']
+      {update_subject: {schema,patch}} → patch the case's subject record of that schema (spine mode)."""
+    tenant, case, now = vars["tenant"], vars["case"], vars["now"]
+    for eff in (effects or []):
+        if not isinstance(eff, dict): continue
+        if eff.get("write"):
+            w = _resolve(dict(eff["write"]), vars)
+            _as = w.pop("as", None)                                     # optional: name this record so a later effect can link to its id via $subject.<name>
+            wid = w.get("id") or f"ds:{tenant}:{str(w.get('schema','platform.note')).replace('.', '/')}/{_u.uuid4().hex[:8]}"
+            w.update({"id": wid, "tenant": tenant})  # inject only id+tenant; case.subjects[] is the canonical link. created_at/ref are per-schema — the declaration adds them where the (possibly strict) schema allows
+            ctx["kwrite"](wid, w)
+            if _as: vars.setdefault("subject", {})[_as] = wid
+            if subjects is not None: subjects.append(wid)          # platform.case.subjects[] is a list of id strings
+        elif eff.get("call"):
+            c = eff["call"]; _args = _resolve(dict(c.get("args") or {}), vars)
+            try:
+                _cres, _cerr = ctx["call"](c.get("engine"), c.get("verb"), dict(_args, case=case))
+                print("[lifecycle] effect call %s @ %s: %s" % (c.get("verb"), c.get("engine"),
+                      "ok" if not _cerr else "ERR " + str(_cerr)[:100]), flush=True)
+                if isinstance(_cres, dict) and c.get("link_field") and _cres.get(c["link_field"]) and vars.get("record") is not None:
+                    vars["record"][c.get("into", "effect_ref")] = _cres[c["link_field"]]
+            except Exception as _e:
+                print("[lifecycle] effect call failed: %s" % str(_e)[:120], flush=True)
+        elif eff.get("update_subject"):
+            us = eff["update_subject"]; subs = (vars.get("record") or {}).get("subjects") or []
+            sid = None                                             # subjects are id strings — resolve the one whose record matches the target schema
+            for s in subs:
+                _s = s if isinstance(s, str) else (s.get("id") if isinstance(s, dict) else None)
+                _sr = ctx["kget"](_s) if _s else None
+                if _sr and _sr.get("schema") == us.get("schema"): sid = _s; break
+            if sid:
+                srec = ctx["kget"](sid)
+                if srec:
+                    srec.update(_resolve(us.get("patch") or {}, vars)); ctx["kwrite"](sid, srec)
+
+
 def _actions_for(ctx, decl, state, workflow, case):
     """Synthesize Inbox actions for the tasks available FROM a state — each onward transition becomes a button
     that calls lifecycle-decide with the right transition. Keeps the Inbox generic across every workflow."""
@@ -83,7 +169,37 @@ def h_request(ctx):
     ok, reason = _guard_ok(ctx, tr, payload)
     if not ok:
         return None, reason
-    now = _now(); cid = f"ds:{tenant}:{decl['record_schema'].replace('.', '/')}/{_u.uuid4().hex[:8]}"
+    now = _now()
+    if decl.get("record_schema") == "platform.case":         # ADR-0097: multi-record CASE spine (project/funding/justice)
+        cid = f"ds:{tenant}:case/{workflow.replace('.', '-')}-{_u.uuid4().hex[:8]}"
+        subjects = []                                        # start-transition effects WRITE the domain records as subjects
+        _run_effects(ctx, tr.get("effects"),
+                     {"payload": payload, "case": cid, "sub": sub, "tenant": tenant, "now": now, "record": None},
+                     subjects=subjects)
+        _cf = set()                                          # auto-denormalise the routing/auth fields the declaration uses onto the case
+        for _t in decl.get("transitions", []):
+            _rf = (_t.get("route") or {}).get("to_field")
+            if _rf: _cf.add(_rf)
+            if _t.get("actor_field"): _cf.add(_t["actor_field"])
+            for _cl in (_t.get("authorize") or {}).get("any", []):
+                if _cl.get("actor_field"): _cf.add(_cl["actor_field"])
+        route = tr.get("route") or {}
+        scope = {k: payload.get(k) for k in _cf if payload.get(k) is not None}   # platform.case is strict: routing/auth fields live in its freeform `scope`
+        crec = {"schema": "platform.case", "id": cid, "tenant": tenant, "workflow": workflow,
+                "status": _case_status(decl, tr["to"]), "current_step": tr["to"],
+                "opened_by": sub, "opened_at": now, "updated_at": now, "subjects": subjects, "scope": scope,
+                "title": route.get("title") or str(payload.get("name") or payload.get("title") or workflow)}
+        approver = scope.get(route.get("to_field")) if route.get("to_field") else None
+        if approver:
+            iid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}-{cid.rsplit('/', 1)[-1]}"
+            ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
+                                "title": route.get("title") or f"{workflow}: action required", "ref": cid,
+                                "kind": "task", "status": "unread", "created_at": now,
+                                "actions": _actions_for(ctx, decl, tr["to"], workflow, cid)})
+        ctx["kwrite"](cid, crec)
+        return {"case": cid, "workflow": workflow, "status": tr["to"], "case_status": crec["status"], "routed_to": approver,
+                "subjects": subjects}, None
+    cid = f"ds:{tenant}:{decl['record_schema'].replace('.', '/')}/{_u.uuid4().hex[:8]}"
     rec = {**payload, "schema": decl["record_schema"], "id": cid, "tenant": tenant,
            "status": tr["to"], "applicant_login": payload.get("applicant_login") or sub, "created_at": now}
     route = tr.get("route") or {}
@@ -112,56 +228,35 @@ def h_decide(ctx):
     rec = ctx["kget"](case)
     if not rec:
         return None, "case not found"
-    cur = rec.get("status")
+    cur = _state(rec)                                        # fine state: current_step (spine) or status (single-record)
     tr = next((t for t in decl.get("transitions", []) if t.get("name") == tname), None)
     if not tr:
         return None, f"unknown transition '{tname}'"
     if tr.get("from") != cur:
         return None, f"illegal transition '{tname}' from state '{cur}' (needs '{tr.get('from')}')"
-    # authorization: actor_field (e.g. the record's manager_login must equal the caller) and/or a role claim
-    if tr.get("actor_field") and rec.get(tr["actor_field"]) != sub:
-        return None, f"only {tr['actor_field']} may apply '{tname}'"
-    if tr.get("role") and tr["role"] not in (ctx["claims"].get("roles", []) or []):
-        return None, f"role '{tr['role']}' required for '{tname}'"
+    okz, why = _authorized(tr, rec, ctx)                     # ADR-0097: OR-auth ({any:[...]}) or legacy actor_field+role
+    if not okz:
+        return None, why
     ok, reason = _guard_ok(ctx, tr, dict(rec, **(body.get("payload") or {})))
     if not ok:
         return None, reason
     now = _now()
-    # write only conventional lifecycle fields the domain record schemas already carry (status/decided_by/decided_at);
-    # richer case metadata (transition name, history) belongs on a separate case record — a follow-up, not the
-    # domain record (which is additionalProperties:false).
-    updated = {**rec, "status": tr["to"], "decided_by": sub, "decided_at": now}
-    # effects: {"write": <record template>} — additive, generic (composing engines via {"call":...} is future work)
-    for eff in (tr.get("effects") or []):
-        if isinstance(eff, dict) and eff.get("write"):
-            w = dict(eff["write"]); wid = w.get("id") or f"ds:{tenant}:{w.get('schema','platform/note').replace('.', '/')}/{_u.uuid4().hex[:8]}"
-            w.update({"id": wid, "tenant": tenant, "ref": case, "created_at": now})
-            ctx["kwrite"](wid, w)
-        elif isinstance(eff, dict) and eff.get("call"):
-            # ADR-0097 C1 / ADR-0091 E1: a transition EFFECT may COMPOSE another certified engine (e.g. approve →
-            # finance settle) — not just write a record. Result field can be linked back onto the case (`into`).
-            c = eff["call"]
-            def _tmpl(v):                                     # resolve $record.<field> from the case record, $case = case id
-                if isinstance(v, str) and v.startswith("$record."): return updated.get(v[8:])
-                if v == "$case": return case
-                return v
-            _args = {k: _tmpl(v) for k, v in (c.get("args") or {}).items()}
-            try:
-                _cres, _cerr = ctx["call"](c.get("engine"), c.get("verb"),
-                                           dict(_args, case=case, **(body.get("payload") or {})))
-                print("[lifecycle] effect call %s @ %s: %s" % (c.get("verb"), c.get("engine"),
-                      "ok" if not _cerr else "ERR " + str(_cerr)[:100]), flush=True)
-                if isinstance(_cres, dict) and c.get("link_field") and _cres.get(c["link_field"]):
-                    updated[c.get("into", "effect_ref")] = _cres[c["link_field"]]
-            except Exception as _e:
-                print("[lifecycle] effect call failed: %s" % str(_e)[:120], flush=True)
+    # `updated` is the CASE row: a platform.case in spine mode (coarse status + fine current_step), or the domain
+    # record in single-record mode. Effects (write subjects / compose engines / patch subjects) run generically.
+    if rec.get("schema") == "platform.case":
+        updated = {**rec, "status": _case_status(decl, tr["to"]), "current_step": tr["to"], "updated_at": now}
+    else:
+        updated = {**rec, "status": tr["to"], "decided_by": sub, "decided_at": now}
+    _run_effects(ctx, tr.get("effects"),
+                 {"record": updated, "payload": body.get("payload") or {}, "case": case, "sub": sub, "tenant": tenant, "now": now})
     ctx["kwrite"](case, updated)
     # close the open task for this case + notify (generic Inbox hygiene; task found by ref, not stored on the record)
     for t in ctx["kfind"]("platform.inbox_item"):
         if t.get("ref") == case and t.get("kind") == "task" and t.get("status") != "done":
             ctx["kwrite"](t["id"], {**t, "status": "done"})
     notify = tr.get("notify") or {}
-    who = rec.get(notify.get("to_field")) if notify.get("to_field") else None
+    _nf = notify.get("to_field")
+    who = (rec.get(_nf) if rec.get(_nf) is not None else (rec.get("scope") or {}).get(_nf)) if _nf else None
     if who:
         nid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}res-{case.rsplit('/', 1)[-1]}"
         ctx["kwrite"](nid, {"schema": "platform.inbox_item", "id": nid, "tenant": tenant, "actor": who,
@@ -179,7 +274,7 @@ def h_status(ctx):
     if not rec:
         return None, "case not found"
     tasks = [i for i in ctx["kfind"]("platform.inbox_item") if i.get("ref") == case]
-    return {"case": case, "status": rec.get("status"), "record": rec,
+    return {"case": case, "status": _state(rec), "case_status": rec.get("status"), "record": rec,
             "tasks": [{"id": t["id"], "actor": t.get("actor"), "kind": t.get("kind"), "status": t.get("status")} for t in tasks]}, None
 
 
