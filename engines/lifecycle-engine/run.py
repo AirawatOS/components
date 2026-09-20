@@ -461,12 +461,66 @@ def h_withdraw(ctx):
     return {"case": case, "workflow": workflow, "status": "withdrawn"}, None
 
 
+def h_service_advance(ctx):
+    """ADR-0097 service-interpreter, ported OUT of app_host (`_advance_service_workflow`) into this certified engine.
+    Given a just-completed task on a service CASE and the resolved offering, read the offering's DECLARED
+    `fulfillment.workflow` (an ordered list of {step, role, task, issues}) and either open the NEXT step's task +
+    inbox in the next role's queue, or close the case when the last step is done. All the workflow LOGIC + the
+    registry writes happen here (attributed to this engine obo the completing officer — the engine IS the workflow).
+
+    Two things a clean-room engine legitimately CANNOT do (ADR-0030: no arbitrary network) are RETURNED as
+    instructions for the host transport to execute: `issue` (mint a Verifiable Credential on an issues-step — a
+    /v1/credentials/issue network call) and `txn` (sync the citizen's My-Requests tracker — a network call). The
+    host resolves the offering (network) and feeds it in as `body.offering`. Returns {no_workflow:true} for a
+    single-step service (the host then flat-closes the case)."""
+    body = ctx["body"]
+    task = body.get("task") or {}
+    case = body.get("case") or {}
+    off = body.get("offering") or {}
+    provider = case.get("tenant"); sid = case.get("service")
+    wf = (off.get("fulfillment") or {}).get("workflow") or []
+    if not wf:
+        return {"no_workflow": True}, None
+    cur = task.get("workflow_step")
+    idx = next((i for i, s in enumerate(wf) if s.get("step") == cur), -1)
+    num = case["id"].rsplit("-", 1)[-1]
+    now = _now()
+    # ISSUE instruction: if the completed step declares `issues: <type>`, hand the host a fully-formed credential
+    # to mint (the engine reads the citizen's submission from the registry and packs the claims).
+    issue = None
+    done = wf[idx] if 0 <= idx < len(wf) else None
+    if done and done.get("issues"):
+        subm = ctx["kget"](f"ds:{provider}:civic/submission/{sid}-{num}") or {}
+        issue = {"issuer_tenant": provider, "holder": case.get("opened_by"), "type": done["issues"],
+                 "title": off.get("title") or done["issues"], "claims": (subm.get("data") or {}),
+                 "subject_ref": case["id"]}
+    nxt = wf[idx + 1] if 0 <= idx < len(wf) - 1 else None
+    if nxt:
+        role = nxt.get("role"); step = nxt.get("step")
+        ntid = f"ds:{provider}:task/{sid}-{num}-{step}"
+        ctx["kwrite"](ntid, {"schema": "platform.task", "id": ntid, "tenant": provider, "case": case["id"],
+                             "title": nxt.get("task") or step, "verb": "review", "assignee": f"role://{provider}/{role}",
+                             "status": "open", "created_at": now, "workflow_step": step, "scope": case.get("scope")})
+        nibx = f"ds:{provider}:platform/inbox_item/{sid}-{num}-{step}"
+        ctx["kwrite"](nibx, {"schema": "platform.inbox_item", "id": nibx, "tenant": provider,
+                             "actor": f"role://{provider}/{role}", "title": f"{off.get('title') or sid}: {step}",
+                             "body": nxt.get("task") or "", "ref": ntid, "kind": "task", "status": "unread",
+                             "created_at": now, "scope": case.get("scope")})
+        ctx["kwrite"](case["id"], {**case, "current_step": step, "updated_at": now})
+        return {"advanced_to": step, "routed_to": role,
+                **({"issue": issue} if issue else {}), "txn": {"status": "in_progress", "step": step}}, None
+    ctx["kwrite"](case["id"], {**case, "status": "closed", "current_step": "resolved", "closed_at": now})
+    return {"case_closed": True, "advanced_to": "resolved",
+            **({"issue": issue} if issue else {}), "txn": {"status": "resolved", "step": "resolved"}}, None
+
+
 # ADR-0091/0097 canonical Lifecycle verbs are the BARE names (request/decide/update/withdraw/status); the
 # namespaced `lifecycle-*` keys are retained so the pre-#263 bridge verbs keep resolving during migration.
 HANDLERS = {
     "request": h_request, "decide": h_decide, "status": h_status, "update": h_update, "withdraw": h_withdraw,
     "lifecycle-request": h_request, "lifecycle-decide": h_decide, "lifecycle-status": h_status,
     "lifecycle-update": h_update, "lifecycle-withdraw": h_withdraw,
+    "service-advance": h_service_advance,   # ADR-0097: the ported service-request workflow interpreter
 }
 
 
