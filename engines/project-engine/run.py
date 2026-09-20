@@ -364,43 +364,54 @@ def h_allocation_list(ctx):
 # baseline supersede). They are invoked as effect-calls, NOT as first-class governed lifecycle verbs.
 def h_proposal_prepare(ctx):
     """Submit-side compute: upsert the project entity + write a new versioned proposal baseline (status=submitted),
-    and RETURN their ids (→ the case subjects). No Inbox routing — the generic engine routes via route.to_field."""
+    and RETURN their ids (→ the case subjects) + the sponsor (→ case scope for routing). No Inbox routing — the
+    generic engine routes via route.to_field. Accepts either a FLAT data dict or the app's nested
+    {project:{…}, proposal:{…}} shape (so the verb_alias can forward the app body unchanged)."""
     d = ctx["body"].get("data") or ctx["body"]
+    pj = d.get("project") if isinstance(d.get("project"), dict) else {}
+    pr = d.get("proposal") if isinstance(d.get("proposal"), dict) else {}
+    def g(k, dflt=None):                                       # look in proposal, then project, then the flat body
+        for src in (pr, pj, d):
+            if src.get(k) is not None:
+                return src.get(k)
+        return dflt
     tenant, sub = ctx["tenant"], ctx["sub"]
-    code = d.get("code")
+    code = pj.get("code") or d.get("code")
     if not code:
         return None, "project code required"
-    outcomes, outputs = d.get("outcomes") or [], d.get("outputs") or []
+    outcomes, outputs = g("outcomes") or [], g("outputs") or []
     if not outcomes:
         return None, "a proposal needs at least one OUTCOME (the why)"
     if not outputs:
         return None, "a proposal needs at least one OUTPUT (the how)"
-    outlay = d.get("outlay") or []
+    outlay = g("outlay") or []
     total = _sum_outlay(outlay)
     pid = f"ds:{tenant}:project/{code}"
-    now = _now()
+    now = _now(); cur = g("currency") or "INR"
     existing = ctx["kget"](pid) or {}
-    ctx["kwrite"](pid, {"schema": "project.project", "id": pid, "tenant": tenant, "code": code,
-        "name": d.get("name") or existing.get("name") or code, "org_unit": d.get("org_unit") or existing.get("org_unit"),
-        "objective": d.get("objective") or (outcomes[0].get("statement") if outcomes else None),
-        "sponsor": d.get("sponsor") or existing.get("sponsor"),
-        "start_date": d.get("start_date") or existing.get("start_date"), "end_date": d.get("end_date") or existing.get("end_date"),
+    sponsor = pj.get("sponsor") or d.get("sponsor") or existing.get("sponsor")
+    proj_rec = {"schema": "project.project", "id": pid, "tenant": tenant, "code": code,
+        "name": pj.get("name") or d.get("name") or existing.get("name") or code,
+        "org_unit": pj.get("org_unit") or d.get("org_unit") or existing.get("org_unit"),
+        "objective": pj.get("objective") or d.get("objective") or (outcomes[0].get("statement") if outcomes else None),
+        "sponsor": sponsor,
+        "start_date": pj.get("start_date") or existing.get("start_date"), "end_date": pj.get("end_date") or existing.get("end_date"),
         "status": "submitted", "baseline_version": existing.get("baseline_version"),
-        "currency": d.get("currency") or existing.get("currency") or "INR", "created_at": existing.get("created_at") or now})
+        "currency": pj.get("currency") or cur or existing.get("currency"), "created_at": existing.get("created_at") or now}
+    ctx["kwrite"](pid, {k: v for k, v in proj_rec.items() if v is not None})   # optional fields are absent-not-null (strict schema)
     version = _next_version(ctx, pid)
     prid = f"ds:{tenant}:project/proposal/{code}--v{version}"
     prop_rec = {"schema": "project.proposal", "id": prid, "tenant": tenant, "project": pid,
-        "version": version, "status": "submitted", "title": d.get("title") or f"{code} proposal v{version}",
-        "summary": d.get("summary"), "outcomes": outcomes, "outputs": outputs,
-        "milestones": d.get("milestones") or [], "deliverables": d.get("deliverables") or [], "outlay": outlay,
-        "total_outlay": total, "currency": d.get("currency") or "INR", "submitted_by": sub, "submitted_at": now,
+        "version": version, "status": "submitted", "title": g("title") or f"{code} proposal v{version}",
+        "summary": g("summary"), "outcomes": outcomes, "outputs": outputs,
+        "milestones": g("milestones") or [], "deliverables": g("deliverables") or [], "outlay": outlay,
+        "total_outlay": total, "currency": cur, "submitted_by": sub, "submitted_at": now,
         "supersedes": (existing.get("baseline_version") if d.get("adjust") else None), "created_at": now}
     for k in ("answers", "evidence", "site", "intervention", "ask"):
-        if d.get(k) is not None:
-            prop_rec[k] = d[k]
-    ctx["kwrite"](prid, prop_rec)
-    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total,
-            "sponsor": d.get("sponsor") or existing.get("sponsor")}, None
+        if g(k) is not None:
+            prop_rec[k] = g(k)
+    ctx["kwrite"](prid, {k: v for k, v in prop_rec.items() if v is not None})
+    return {"project": pid, "proposal": prid, "version": version, "total_outlay": total, "sponsor": sponsor}, None
 
 
 def h_proposal_commit(ctx):
@@ -420,13 +431,25 @@ def h_proposal_commit(ctx):
             prop = r
     if not proj or not prop:
         return None, "case has no submitted project.proposal subject"
-    pid, now = proj["id"], _now()
+    pid, now, sub = proj["id"], _now(), ctx["sub"]
+    decision = body.get("decision", "approve")
+    # DECIDED CHANGE-REQUEST (ADR-0056): record the governance.decision either way (the generic engine owns the
+    # case FSM + stamp; this compute writes the domain decision record + applies the domain effects).
+    did = f"ds:{tenant}:governance/decision/proj-{proj['code']}-v{prop['version']}"
+    ctx["kwrite"](did, {"schema": "governance.decision", "id": did, "tenant": tenant, "case": pid, "task": prop["id"],
+        "outcome": "approved" if decision == "approve" else "rejected", "authority": sub, "decided_at": now,
+        "rationale": body.get("rationale") or f"{decision} project {proj['code']} baseline v{prop['version']}",
+        "subjects": [pid], "considered": [prop["id"]], "evidence_manifest": [prop["id"]]})
+    if decision == "reject":
+        ctx["kwrite"](prop["id"], {**prop, "status": "rejected", "decision": did, "reason": body.get("rationale")})
+        ctx["kwrite"](pid, {**proj, "status": "rejected"})
+        return {"project": pid, "version": prop["version"], "decision": did, "status": "rejected"}, None
     props = _proposals_for(ctx, pid)
     if proj.get("baseline_version"):
         prior = next((p for p in props if p.get("version") == proj["baseline_version"]), None)
         if prior and prior["id"] != prop["id"]:
             ctx["kwrite"](prior["id"], {**prior, "status": "superseded"})
-    ctx["kwrite"](prop["id"], {**prop, "status": "approved", "approved_at": now})
+    ctx["kwrite"](prop["id"], {**prop, "status": "approved", "decision": did, "approved_at": now})
     ctx["kwrite"](pid, {**proj, "status": "active", "baseline_version": prop["version"]})
     bcode = body.get("budget_code") or f"{proj['code']}-budget"
     bid = f"ds:{tenant}:finance/budget/{bcode}"
