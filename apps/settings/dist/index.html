@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --surface:#fff; --surface-2:#eef0f6; --ink:#1a1c2b; --muted:#5c5f75; --line:#e2e4ee;
+    --accent:#4f46e5; --ok:#0f766e; --warn:#b45309; --radius:12px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0f1018; --surface:#181a26; --surface-2:#20222f; --ink:#e8eaf6; --muted:#a3a6bd; --line:#2a2d3d;
+    --accent:#8b8bf0; --ok:#4fd1c5; --warn:#f0a53e;
+  }}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;min-height:100%}
+  .rail{width:210px;flex:none;background:var(--surface);border-right:1px solid var(--line);padding:18px 12px}
+  .rail h1{font-size:15px;letter-spacing:.02em;margin:4px 10px 16px;display:flex;align-items:center;gap:8px}
+  .navbtn{display:block;width:100%;text-align:left;border:0;background:none;color:var(--ink);font:inherit;
+    padding:9px 12px;border-radius:9px;cursor:pointer;margin-bottom:2px}
+  .navbtn:hover{background:var(--surface-2)} .navbtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-weight:600}
+  main{flex:1;padding:28px 34px;max-width:900px}
+  h2{font-size:22px;margin:0 0 4px} .sub{color:var(--muted);margin:0 0 22px;font-size:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:4px 0;margin:0 0 18px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:14px;padding:13px 18px;border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .row .lbl{flex:1;min-width:0} .row .lbl b{display:block;font-weight:600} .row .lbl small{color:var(--muted)}
+  .grp{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:26px 0 8px 4px}
+  .kind{font-size:11px;font-weight:700;padding:.15em .5em;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .kind.secret{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+  .kind.value{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+  .kind.asset{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+  input,select{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:170px}
+  button.act{font:inherit;font-weight:600;padding:7px 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+  button.act.ghost{background:var(--surface-2);color:var(--ink)}
+  .dot{width:9px;height:9px;border-radius:50%;background:#c3c6d4;flex:none} .dot.set{background:var(--ok)}
+  .comp{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+  .comp>summary{padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;font-weight:600;list-style:none}
+  .comp>summary::-webkit-details-marker{display:none}
+  .comp>summary .cnt{margin-left:auto;color:var(--muted);font-weight:400;font-size:13px}
+  .empty{color:var(--muted);padding:20px;text-align:center}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;
+    padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;font-weight:600}
+  .toast.show{opacity:1}
+  .banner{background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);
+    color:var(--ink);padding:10px 14px;border-radius:9px;font-size:13.5px;margin-bottom:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="rail">
+    <h1>⚙️ Settings</h1>
+    <button class="navbtn on" data-tab="personal">Personal</button>
+    <button class="navbtn" data-tab="admin">Administration</button>
+  </nav>
+  <main>
+    <section id="personal">
+      <h2>Personal</h2>
+      <p class="sub">Your own preferences on this device &amp; account.</p>
+      <div class="card">
+        <div class="row"><div class="lbl"><b>Theme</b><small>Light, dark, or follow the system.</small></div>
+          <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+        <div class="row"><div class="lbl"><b>Language</b><small>Interface language.</small></div>
+          <select id="lang"><option value="en">English</option><option value="hi">हिन्दी</option></select></div>
+      </div>
+    </section>
+
+    <section id="admin" hidden>
+      <h2>Administration</h2>
+      <p class="sub">Configure every installed component in one place — secrets go to the Vault, values are governed, files are bound. <em>(ADR-0092)</em></p>
+      <div id="admin-body"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const API = (p, b) => fetch('/bridge/'+p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600); }
+
+// --- tabs ---
+document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.navbtn').forEach(x=>x.classList.toggle('on', x===b));
+  $('#personal').hidden = b.dataset.tab!=='personal';
+  $('#admin').hidden = b.dataset.tab!=='admin';
+  if(b.dataset.tab==='admin') loadAdmin();
+});
+
+// --- Personal ---
+$('#theme').onchange = e => { API('set-theme',{theme:e.target.value}).then(()=>toast('Theme saved')); try{document.documentElement.setAttribute('data-theme',e.target.value)}catch(_){} };
+$('#lang').onchange  = e => API('set-locale',{locale:e.target.value}).then(()=>toast('Language saved'));
+
+// --- Admin: unified config contract ---
+let loaded=false;
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fieldRow(cid, f){
+  const row=document.createElement('div'); row.className='row';
+  const k=f.kind||'value';
+  let control='';
+  if(k==='secret'){
+    control = `<span class="dot ${f.set?'set':''}" title="${f.set?'set':'not set'}"></span>
+               <input type="password" placeholder="${f.set?'•••••• (update)':'enter secret'}" data-c="${esc(cid)}" data-k="secret" data-n="${esc(f.name)}">
+               <button class="act">Save</button>`;
+  } else if(k==='asset'){
+    control = `<span class="dot ${f.set?'set':''}"></span><span style="color:var(--muted);font-size:13px">${f.set?('bound: '+esc(f.filename||'')):'not bound'}</span>
+               <button class="act ghost" disabled title="upload via the file flow">Upload…</button>`;
+  } else {
+    if(f.options && f.options.length){
+      control = `<select data-c="${esc(cid)}" data-k="value" data-n="${esc(f.name)}">`+
+        (f.options.map(o=>`<option ${String(o)===String(f.value)?'selected':''}>${esc(o)}</option>`).join(''))+`</select><button class="act">Save</button>`;
+    } else {
+      control = `<input type="text" value="${esc(f.value==null?'':f.value)}" placeholder="${esc(f.default||'')}" data-c="${esc(cid)}" data-k="value" data-n="${esc(f.name)}"><button class="act">Save</button>`;
+    }
+  }
+  row.innerHTML = `<span class="kind ${k}">${k}</span><div class="lbl"><b>${esc(f.label||f.name)}</b><small>${esc(f.name)}</small></div>${control}`;
+  const btn=row.querySelector('button.act:not([disabled])');
+  if(btn) btn.onclick=()=>{
+    const ctl=row.querySelector('[data-n]'); if(!ctl) return;
+    const val = ctl.value;
+    API('settings-set',{component:cid, kind:ctl.dataset.k, name:ctl.dataset.n, value:val}).then(r=>{
+      if(r&&r.ok){ toast('Saved → '+(r.stored||'ok')); if(ctl.type==='password') ctl.value=''; loaded=false; }
+      else toast((r&&r.error)||'save failed');
+    });
+  };
+  return row;
+}
+function loadAdmin(){
+  if(loaded) return; loaded=true;
+  const body=$('#admin-body'); body.innerHTML='<div class="empty">Loading…</div>';
+  API('settings',{}).then(res=>{
+    if(res && res.error){ body.innerHTML=`<div class="banner">${esc(res.error)} — you need a tenant-admin role.</div>`; return; }
+    const comps=(res&&res.components)||[];
+    if(!comps.length){ body.innerHTML='<div class="empty">No configurable components installed yet.</div>'; return; }
+    const byCat={}; comps.forEach(c=>{ (byCat[c.category]=byCat[c.category]||[]).push(c); });
+    body.innerHTML='';
+    Object.keys(byCat).sort().forEach(cat=>{
+      const h=document.createElement('div'); h.className='grp'; h.textContent=cat; body.appendChild(h);
+      byCat[cat].forEach(c=>{
+        const d=document.createElement('details'); d.className='comp';
+        d.innerHTML=`<summary>${esc(c.name)}<span class="cnt">${c.fields.length} setting${c.fields.length!==1?'s':''} · ${esc(c.kind)}</span></summary>`;
+        c.fields.forEach(f=> d.appendChild(fieldRow(c.component, f)));
+        body.appendChild(d);
+      });
+    });
+  }).catch(()=>{ body.innerHTML='<div class="banner">Could not load settings.</div>'; });
+}
+</script>
+</body>
+</html>
