@@ -1,0 +1,17 @@
+# KNOWLEDGE ENGINE (kind=engine) — the grounded-RAG brain, extracted from app_host (_bridge_expert_chat +
+# _bridge_retrieve). expert-chat assembles grounding (the Expert's recommendations + in-domain governance rules +
+# cited knowledge + the tenant's own live domain data) and prompts the model; knowledge-retrieve is embed+cosine
+# semantic search over the tenant's knowledge.embedding → verifiable citations. Reads AS THE USER (tenant-scoped),
+# reasons via host-held ctx capabilities (embed + model gateway). Reads (dynamic, user-scoped, not declared as
+# grants): governance.recommendation/rule, knowledge.document/chunk/embedding, risk.flood, demographics.population.
+component_id: ds:airawatdeveloper:engine/knowledge-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Knowledge Engine
+entrypoint: run.py
+verbs:
+  expert-chat: knowledge.expert_chat@0.1.0
+  knowledge-retrieve: knowledge.retrieve@0.1.0
+required_schemas: []
+writes: []
