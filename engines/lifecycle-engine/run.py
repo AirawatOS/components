@@ -514,13 +514,69 @@ def h_service_advance(ctx):
             **({"issue": issue} if issue else {}), "txn": {"status": "resolved", "step": "resolved"}}, None
 
 
+def h_service_open(ctx):
+    """ADR-0097 companion to service-advance — the case-OPENING interpreter, ported out of app_host's `_provider_fulfil`
+    (the reference BPP). Given an offering + the citizen's submission + pre-materialised scope, interpret the offering's
+    `fulfillment.workflow` to shape the service CASE, the civic.submission, and the FIRST workflow task + its inbox item
+    routed to the first role. Pure interpretation: NO network, NO writes.
+
+    Why it returns a WRITE-SET instead of writing (unlike service-advance): the open path persists under the PROVIDER's
+    authority (a cross-tenant write into the provider tenant, on behalf of a citizen who is NOT in it) — an identity a
+    clean-room engine legitimately cannot assume. So the engine owns the workflow LOGIC (which records, first step,
+    role, titles) and hands the host a list of {id, object} to persist with the provider token."""
+    body = ctx["body"]
+    off = body.get("offering") or {}
+    message = dict(body.get("message") or {})
+    citizen_sub = body.get("citizen_sub") or ""
+    csc = body.get("scope")                                   # host pre-materialised against the provider org tree (transport)
+    provider = off.get("tenant"); sid = off.get("service_id")
+    sol = off.get("solution"); now = _now()
+    num = _u.uuid4().hex[:6].upper()
+    case_id = f"ds:{provider}:case/{sid}-{num}"               # PROVIDER-assigned case reference (its own numbering)
+    writes = [{"id": case_id, "object": {
+        "schema": "platform.case", "id": case_id, "tenant": provider, "status": "open",
+        "title": (off.get("title") or sid) + " — application " + num, "opened_at": now,
+        "opened_by": citizen_sub, "current_step": "received", "service": sid,
+        "subjects": [off.get("id")] + (message.get("_verified_credentials") or []),   # + reused VCs as evidence
+        "scope": csc, "workflow": sol}}]                      # the CERTIFIED solution fulfilling this case
+    submission_id = None
+    if message.get("form"):                                   # persist the citizen's STRUCTURED submission (→ VC claims later)
+        submission_id = f"ds:{provider}:civic/submission/{sid}-{num}"
+        writes.append({"id": submission_id, "object": {"schema": "civic.submission", "id": submission_id,
+            "tenant": provider, "case": case_id, "service": sid, "holder": citizen_sub,
+            "data": message.get("form"), "submitted_at": now}})
+    # TRIGGER THE WORKFLOW: the first declared step becomes a task in the assigned ROLE's inbox (service-type → workflow
+    # → role-inbox routing). Falls back to a single-step {assign_role, first_task} shorthand.
+    routed_to = None; ff = off.get("fulfillment") or {}
+    wf = ff.get("workflow") or []
+    first = wf[0] if wf else ({"role": ff.get("assign_role"), "task": ff.get("first_task"), "step": "triage"}
+                              if ff.get("assign_role") else None)
+    if first and first.get("role"):
+        role = first["role"]; step = first.get("step") or "triage"
+        task_id = f"ds:{provider}:task/{sid}-{num}-{step}"
+        writes.append({"id": task_id, "object": {"schema": "platform.task", "id": task_id, "tenant": provider,
+            "case": case_id, "title": first.get("task") or ("Process " + (off.get("title") or sid)),
+            "verb": "review", "assignee": f"role://{provider}/{role}", "status": "open",
+            "created_at": now, "workflow_step": step, "scope": csc}})
+        ibx_id = f"ds:{provider}:platform/inbox_item/{sid}-{num}-{step}"
+        writes.append({"id": ibx_id, "object": {"schema": "platform.inbox_item", "id": ibx_id, "tenant": provider,
+            "actor": f"role://{provider}/{role}", "title": f"New {off.get('title') or sid} · {num}",
+            "body": (message.get("description") or "")[:280], "ref": task_id, "kind": "task",
+            "status": "unread", "created_at": now, "scope": csc}})
+        routed_to = role
+    return {"writes": writes, "case": case_id, "reference": f"{sid.upper()}-{num}", "status": "received",
+            "fulfilled_by": sol, "submission_id": submission_id,
+            **({"routed_to": routed_to} if routed_to else {})}, None
+
+
 # ADR-0091/0097 canonical Lifecycle verbs are the BARE names (request/decide/update/withdraw/status); the
 # namespaced `lifecycle-*` keys are retained so the pre-#263 bridge verbs keep resolving during migration.
 HANDLERS = {
     "request": h_request, "decide": h_decide, "status": h_status, "update": h_update, "withdraw": h_withdraw,
     "lifecycle-request": h_request, "lifecycle-decide": h_decide, "lifecycle-status": h_status,
     "lifecycle-update": h_update, "lifecycle-withdraw": h_withdraw,
-    "service-advance": h_service_advance,   # ADR-0097: the ported service-request workflow interpreter
+    "service-advance": h_service_advance,   # ADR-0097: the ported service-request workflow interpreter (advance)
+    "service-open": h_service_open,         # ADR-0097: the ported service-request case opener (first step)
 }
 
 
