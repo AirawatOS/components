@@ -54,7 +54,11 @@
     color:var(--ink);padding:10px 14px;border-radius:9px;font-size:13.5px;margin-bottom:18px}
   /* master-detail */
   .console{display:flex;gap:18px;align-items:flex-start}
-  .col-list{width:300px;flex:none}
+  .col-list{width:300px;flex:none;max-height:calc(100vh - 210px);overflow-y:auto;padding-right:4px}
+  .col-list.full{width:100%;max-width:680px}
+  .loadmore{display:block;width:100%;margin:8px 0 2px;padding:9px;border:1px dashed var(--line);border-radius:10px;
+    background:none;color:var(--muted);font:inherit;cursor:pointer}
+  .loadmore:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line));color:var(--accent)}
   .col-detail{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;min-height:340px}
   .it{padding:11px 13px;border:1px solid var(--line);border-radius:10px;margin-bottom:7px;cursor:pointer;background:var(--surface)}
   .it:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
@@ -100,7 +104,7 @@
       <h2>Administration</h2>
       <p class="sub">Every installed component in one place — set its keys, link its data files, review its data sources, schedule its runs, and audit its external calls.</p>
       <div id="miss-banner"></div>
-      <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="renderList()">
+      <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="resetAndRender()">
       <div id="admin-body"><div class="empty">Loading…</div></div>
     </section>
   </main>
@@ -145,6 +149,8 @@ $('#lang').onchange  = e => API('set-locale',{locale:e.target.value}).then(()=>t
 
 // ============ Administration: the single component console ============
 let loaded=false, ALL=[], CONTRACT={}, SEL=null;
+const PAGE=12; let SHOWN=PAGE;
+function resetAndRender(){ SHOWN=PAGE; renderList(); }
 
 async function loadAdmin(){
   if(loaded) return; loaded=true;
@@ -170,24 +176,37 @@ function renderList(){
   const comps = q ? ALL.filter(c=>(c.name+' '+c.component+' '+c.kind+' '+c.category).toLowerCase().includes(q)) : ALL;
   if(!comps.length){ body.innerHTML='<div class="empty">'+(ALL.length?'No components match “'+esc(q)+'”.':'No configurable components installed yet.')+'</div>'; return; }
   const byCat={}; comps.forEach(c=>{ (byCat[c.category||'Other']=byCat[c.category||'Other']||[]).push(c); });
-  const list=document.createElement('div'); list.className='col-list';
-  Object.keys(byCat).sort().forEach(cat=>{
-    const h=document.createElement('div'); h.className='grp'; h.textContent=cat+' · '+byCat[cat].length; list.appendChild(h);
-    byCat[cat].forEach(c=>{
+  const list=document.createElement('div'); list.className='col-list'+(SEL?'':' full');
+  // paginate across the (category-ordered) flat list — render only SHOWN cards, with a Load-more button
+  let shown=0; const total=comps.length;
+  for(const cat of Object.keys(byCat).sort()){
+    if(shown>=SHOWN) break;
+    let headed=false;
+    for(const c of byCat[cat]){
+      if(shown>=SHOWN) break;
+      if(!headed){ const h=document.createElement('div'); h.className='grp'; h.textContent=cat+' · '+byCat[cat].length; list.appendChild(h); headed=true; }
       const miss=(c.fields||[]).filter(f=>f.kind==='secret'&&!f.set).length;
       const nset=(c.fields||[]).length;
       const el=document.createElement('div'); el.className='it'+(SEL&&SEL.component===c.component?' sel':'');
       el.innerHTML=`<div class="nm">${esc(c.name)}</div><div class="mt"><span class="pill">${esc(c.kind)}</span>`
         +`<span class="pill">${nset} setting${nset!==1?'s':''}</span>`+(miss?`<span class="pill miss">${miss} key${miss!==1?'s':''} missing</span>`:'')+`</div>`;
-      el.onclick=()=>{ SEL=c; renderList(); renderDetail(c); };
-      list.appendChild(el);
-    });
-  });
-  const detail=document.createElement('div'); detail.className='col-detail'; detail.id='detail';
-  detail.innerHTML='<div class="empty">Select a component to configure it.</div>';
-  const console=document.createElement('div'); console.className='console';
-  console.appendChild(list); console.appendChild(detail);
-  body.innerHTML=''; body.appendChild(console);
+      el.onclick=()=>{ SEL=c; renderList(); };
+      list.appendChild(el); shown++;
+    }
+  }
+  if(shown<total){
+    const more=document.createElement('button'); more.className='loadmore';
+    more.textContent='Load more ('+(total-shown)+' more)';
+    more.onclick=()=>{ SHOWN+=PAGE; renderList(); };
+    list.appendChild(more);
+  }
+  const consoleEl=document.createElement('div'); consoleEl.className='console';
+  consoleEl.appendChild(list);
+  if(SEL){                                                 // detail pane ONLY when something is selected
+    const detail=document.createElement('div'); detail.className='col-detail'; detail.id='detail';
+    consoleEl.appendChild(detail);
+  }
+  body.innerHTML=''; body.appendChild(consoleEl);
   if(SEL){ const still=ALL.find(c=>c.component===SEL.component); if(still) renderDetail(still); }
 }
 
