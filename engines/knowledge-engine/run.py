@@ -16,8 +16,28 @@ make it governed data).
 import json as _json, time as _t
 from collections import Counter as _Counter
 
-# Which live domain schemas the Expert should summarise, by domain token in its id (flood-expert → "flood").
-DOMAIN_DATA = {"flood": ["risk.flood"], "water": ["risk.flood"]}
+# Which live domain schemas the Expert summarises, by domain token in its id (flood-expert → "flood"). GOVERNED-first:
+# read a ref.codelist/knowledge-domain-data whose items are "domain=schema" pairs; fall back to this default.
+DEFAULT_DOMAIN_DATA = {"flood": ["risk.flood"], "water": ["risk.flood"]}
+
+
+def _domain_map(ctx):
+    try:
+        for oid in (f"ds:{ctx.get('tenant')}:ref/codelist/knowledge-domain-data",
+                    "ds:airawat:ref/codelist/knowledge-domain-data"):
+            r = ctx["http"]("POST", ctx["kernel_url"] + "/v1/registry/resolve", {"id": oid}, ctx.get("token"))
+            rs = (r or {}).get("results", [])
+            items = (rs[0]["object"] if rs else {}).get("items")
+            if isinstance(items, list) and items:
+                m = {}
+                for it in items:
+                    if isinstance(it, str) and "=" in it:
+                        d, s = it.split("=", 1); m.setdefault(d.strip(), []).append(s.strip())
+                if m:
+                    return m
+    except Exception:
+        pass
+    return DEFAULT_DOMAIN_DATA
 
 
 def _read(ctx, schema, limit):
@@ -129,10 +149,11 @@ def h_expert_chat(ctx):
         for i, c in enumerate(kn, 1):
             ct = c.get("citation") or {}
             ctxl.append(f"[{i}] ({ct.get('title')}, {(ct.get('locator') or {}).get('label')}) {(c.get('text') or '')[:500]}")
-    # ---- LIVE DATA grounding: the tenant's OWN current facts for this domain ----
+    # ---- LIVE DATA grounding: the tenant's OWN current facts for this domain (governed domain→schema map) ----
     data_lines = []
+    _ddata = _domain_map(ctx)
     for _t0 in _dom:
-        for _sch in DOMAIN_DATA.get(_t0, []):
+        for _sch in _ddata.get(_t0, []):
             rows = _read(ctx, _sch, 20000)
             if rows and _sch == "risk.flood":
                 data_lines.append(_flood_summary(ctx, rows))

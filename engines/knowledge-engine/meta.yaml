@@ -6,7 +6,7 @@
 # grants): governance.recommendation/rule, knowledge.document/chunk/embedding, risk.flood, demographics.population.
 component_id: ds:airawatdeveloper:engine/knowledge-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Knowledge Engine
 entrypoint: run.py
