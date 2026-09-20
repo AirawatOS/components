@@ -87,6 +87,7 @@
     <h1><span class="txt">⚙️ Settings</span><button class="railtoggle" id="railtoggle" title="Collapse sidebar" aria-label="Collapse sidebar">«</button></h1>
     <button class="navbtn on" data-tab="personal" title="Personal"><span class="ic">👤</span><span class="txt">Personal</span></button>
     <button class="navbtn" data-tab="admin" title="Administration"><span class="ic">🛠️</span><span class="txt">Administration</span></button>
+    <button class="navbtn" data-tab="supply" title="Supply chain"><span class="ic">🛡️</span><span class="txt">Supply chain</span></button>
   </nav>
   <main>
     <section id="personal">
@@ -106,6 +107,14 @@
       <div id="miss-banner"></div>
       <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="resetAndRender()">
       <div id="admin-body"><div class="empty">Loading…</div></div>
+    </section>
+
+    <section id="supply" hidden>
+      <h2>Supply chain</h2>
+      <p class="sub">Does the code running on this host still match what the marketplace certified? Each installed component's on-disk source is digest-compared to its published certificate — drift means it was hot-patched or delivered out of band.</p>
+      <div class="keyrow" style="margin-bottom:14px"><button class="act" id="drift-refresh">↻ Re-scan</button><span id="drift-sum" class="m2"></span></div>
+      <div id="drift-banner"></div>
+      <div id="supply-body"><div class="empty">Loading…</div></div>
     </section>
   </main>
 </div>
@@ -140,7 +149,9 @@ document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.navbtn').forEach(x=>x.classList.toggle('on', x===b));
   $('#personal').hidden = b.dataset.tab!=='personal';
   $('#admin').hidden = b.dataset.tab!=='admin';
+  $('#supply').hidden = b.dataset.tab!=='supply';
   if(b.dataset.tab==='admin') loadAdmin();
+  if(b.dataset.tab==='supply') loadSupply();
 });
 
 // --- Personal ---
@@ -395,6 +406,48 @@ function renderLog(c){
       <td class="${si.c}" title="${esc(si.hint)}">${esc(si.t)}${si.hint&&si.t!=='—'?' · '+esc(si.hint):''}</td></tr>`;}).join('')+'</table></div>'
     +(CUR?'<button class="act ghost" id="more" style="margin-top:10px">Load more</button>':'<div class="m2" style="margin-top:8px">— end —</div>');
   const m=$('#more'); if(m)m.onclick=()=>loadMoreLog(c);
+}
+
+// ============ Supply chain: drift audit (/bridge/component-drift) ============
+let supplyLoaded=false;
+const DRIFT_META={
+  drift:       {cls:'bad',  ic:'⚠️', hint:'running code ≠ certified — hot-patched or delivered out of band'},
+  unverifiable:{cls:'warn2',ic:'❔', hint:'published but no certified digest to compare against'},
+  unpublished: {cls:'m2',   ic:'•',  hint:'source is local-only — not in the marketplace'},
+  ok:          {cls:'ok2',  ic:'✓',  hint:'matches its certified digest'},
+};
+$('#drift-refresh').onclick=()=>{ supplyLoaded=false; loadSupply(); };
+async function loadSupply(){
+  if(supplyLoaded) return; supplyLoaded=true;
+  const body=$('#supply-body'); body.innerHTML='<div class="empty">Scanning components…</div>';
+  let rep;
+  try{ rep=await API('component-drift',{}); }catch(e){ supplyLoaded=false; body.innerHTML='<div class="banner">Could not run the drift scan.</div>'; return; }
+  if(rep && rep.error){ supplyLoaded=false; body.innerHTML=`<div class="banner">${esc(rep.error)} — you need a tenant-admin role.</div>`; return; }
+  renderSupply(rep||{});
+}
+function renderSupply(rep){
+  const rows=rep.components||[], sum=rep.summary||{};
+  const order=['drift','unverifiable','unpublished','ok'];
+  $('#drift-sum').innerHTML = rep.count!=null
+    ? order.filter(k=>sum[k]).map(k=>`<span class="${DRIFT_META[k].cls}" style="font-weight:600">${sum[k]} ${k}</span>`).join(' <span class="m2">·</span> ')+` <span class="m2">of ${rep.count} on-host</span>`
+    : '';
+  const nDrift=sum.drift||0;
+  $('#drift-banner').innerHTML = nDrift
+    ? `<div class="banner" style="background:color-mix(in srgb,var(--danger) 12%,transparent);border-color:color-mix(in srgb,var(--danger) 35%,transparent)">⚠️ <b>${nDrift}</b> component${nDrift!==1?'s are':' is'} running code that no longer matches its certified marketplace version. Re-publish from the current source (bumping the version) to reconcile.</div>`
+    : (rows.length?`<div class="banner" style="background:color-mix(in srgb,var(--ok) 12%,transparent);border-color:color-mix(in srgb,var(--ok) 35%,transparent)">✓ Every published component on this host matches its certified marketplace version.</div>`:'');
+  const body=$('#supply-body');
+  if(!rows.length){ body.innerHTML='<div class="empty">No components found on this host.</div>'; return; }
+  body.innerHTML='<div style="overflow-x:auto"><table><tr><th>Component</th><th>Kind</th><th>Where</th><th>Host ver</th><th>Store ver</th><th>Status</th></tr>'+
+    rows.map(r=>{ const M=DRIFT_META[r.status]||DRIFT_META.ok;
+      const verClash = r.status==='drift' && r.same_version;
+      const sv = esc(r.store_version||'—')+(verClash?' <span class="bad" title="same version, different code — an immutability violation">≠</span>':'');
+      return `<tr>
+        <td style="font-family:inherit">${esc((r.component_id||'').split('/').pop())}<div class="m2" style="font-size:10px">${esc(r.component_id)}</div></td>
+        <td>${esc(r.kind||'')}</td><td>${esc(r.where||'')}</td>
+        <td>${esc(r.host_version||'—')}</td><td>${sv}</td>
+        <td class="${M.cls}" title="${esc(M.hint)}">${M.ic} ${esc(r.status)}</td></tr>`;
+    }).join('')+'</table></div>'
+    +'<div class="m2" style="font-size:12px;margin-top:10px">Digest: canonical sha2-256 over the component source, compared to the marketplace certificate’s evidence digest.</div>';
 }
 </script>
 </body>
