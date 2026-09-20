@@ -69,6 +69,7 @@
     <section id="admin" hidden>
       <h2>Administration</h2>
       <p class="sub">Configure every installed component in one place — API keys stay secret, settings are saved, and data files are linked.</p>
+      <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="renderAdmin()">
       <div id="admin-body"><div class="empty">Loading…</div></div>
     </section>
   </main>
@@ -93,8 +94,40 @@ $('#theme').onchange = e => { API('set-theme',{theme:e.target.value}).then(()=>t
 $('#lang').onchange  = e => API('set-locale',{locale:e.target.value}).then(()=>toast('Language saved'));
 
 // --- Admin: unified config contract ---
-let loaded=false;
+let loaded=false, ALL=[];
+function renderAdmin(){
+  const body=$('#admin-body'); const q=($('#filter')?$('#filter').value:'').trim().toLowerCase();
+  const comps = q ? ALL.filter(c=>(c.name+' '+c.component+' '+c.kind).toLowerCase().includes(q)) : ALL;
+  if(!comps.length){ body.innerHTML='<div class="empty">'+(ALL.length?'No components match “'+esc(q)+'”.':'No configurable components installed yet.')+'</div>'; return; }
+  const byCat={}; comps.forEach(c=>{ (byCat[c.category]=byCat[c.category]||[]).push(c); });
+  body.innerHTML='';
+  Object.keys(byCat).sort().forEach(cat=>{
+    const h=document.createElement('div'); h.className='grp'; h.textContent=cat+' · '+byCat[cat].length; body.appendChild(h);
+    byCat[cat].forEach(c=>{
+      const d=document.createElement('details'); d.className='comp'; if(q) d.open=true;
+      d.innerHTML=`<summary>${esc(c.name)}<span class="cnt">${c.fields.length} setting${c.fields.length!==1?'s':''} · ${esc(c.kind)}</span></summary>`;
+      c.fields.forEach(f=> d.appendChild(fieldRow(c.component, f)));
+      body.appendChild(d);
+    });
+  });
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function blobToB64(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.readAsDataURL(blob); }); }
+async function uploadAsset(cid, name, populates, file, statusEl){
+  statusEl.textContent='starting…';
+  const init = await API('asset',{action:'init', component:cid, asset:name});
+  if(!init || !init.upload_id){ statusEl.textContent='upload failed'; toast('upload init failed'); return; }
+  const CH=512*1024; let sent=0;
+  for(let off=0; off<file.size; off+=CH){
+    const b64 = await blobToB64(file.slice(off, off+CH));
+    await API('asset',{action:'chunk', upload_id:init.upload_id, data_b64:b64});
+    sent += Math.min(CH, file.size-off); statusEl.textContent = 'uploading '+Math.round(100*sent/Math.max(file.size,1))+'%';
+  }
+  const fin = await API('asset',{action:'finish', upload_id:init.upload_id, populates:populates,
+                                 filename:file.name, content_type:file.type||'application/octet-stream'});
+  if(fin && fin.file_id){ statusEl.textContent='bound: '+file.name; toast('Uploaded'+(fin.run_started?' — re-running':'')); loaded=false; }
+  else { statusEl.textContent='upload failed'; toast((fin&&fin.error)||'upload failed'); }
+}
 function fieldRow(cid, f){
   const row=document.createElement('div'); row.className='row';
   const k=f.kind||'value';
@@ -104,8 +137,8 @@ function fieldRow(cid, f){
                <input type="password" placeholder="${f.set?'•••••• (update)':'enter secret'}" data-c="${esc(cid)}" data-k="secret" data-n="${esc(f.name)}">
                <button class="act">Save</button>`;
   } else if(k==='asset'){
-    control = `<span class="dot ${f.set?'set':''}"></span><span style="color:var(--muted);font-size:13px">${f.set?('bound: '+esc(f.filename||'')):'not bound'}</span>
-               <button class="act ghost" disabled title="upload via the file flow">Upload…</button>`;
+    control = `<span class="dot ${f.set?'set':''}"></span><span class="astat" style="color:var(--muted);font-size:13px;min-width:120px">${f.set?('bound: '+esc(f.filename||'')):'not bound'}</span>
+               <input type="file" hidden><button class="act ghost up">${f.set?'Replace…':'Upload…'}</button>`;
   } else {
     if(f.options && f.options.length){
       control = `<select data-c="${esc(cid)}" data-k="value" data-n="${esc(f.name)}">`+
@@ -115,11 +148,16 @@ function fieldRow(cid, f){
     }
   }
   row.innerHTML = `<span class="kind ${k}">${k}</span><div class="lbl"><b>${esc(f.label||f.name)}</b><small>${esc(f.name)}</small></div>${control}`;
-  const btn=row.querySelector('button.act:not([disabled])');
+  if(k==='asset'){
+    const up=row.querySelector('button.up'), inp=row.querySelector('input[type=file]'), st=row.querySelector('.astat');
+    up.onclick=()=>inp.click();
+    inp.onchange=()=>{ if(inp.files[0]) uploadAsset(cid, f.name, f.populates, inp.files[0], st); };
+    return row;
+  }
+  const btn=row.querySelector('button.act');
   if(btn) btn.onclick=()=>{
     const ctl=row.querySelector('[data-n]'); if(!ctl) return;
-    const val = ctl.value;
-    API('settings-set',{component:cid, kind:ctl.dataset.k, name:ctl.dataset.n, value:val}).then(r=>{
+    API('settings-set',{component:cid, kind:ctl.dataset.k, name:ctl.dataset.n, value:ctl.value}).then(r=>{
       if(r&&r.ok){ toast('Saved → '+(r.stored||'ok')); if(ctl.type==='password') ctl.value=''; loaded=false; }
       else toast((r&&r.error)||'save failed');
     });
@@ -130,21 +168,10 @@ function loadAdmin(){
   if(loaded) return; loaded=true;
   const body=$('#admin-body'); body.innerHTML='<div class="empty">Loading…</div>';
   API('settings',{}).then(res=>{
-    if(res && res.error){ body.innerHTML=`<div class="banner">${esc(res.error)} — you need a tenant-admin role.</div>`; return; }
-    const comps=(res&&res.components)||[];
-    if(!comps.length){ body.innerHTML='<div class="empty">No configurable components installed yet.</div>'; return; }
-    const byCat={}; comps.forEach(c=>{ (byCat[c.category]=byCat[c.category]||[]).push(c); });
-    body.innerHTML='';
-    Object.keys(byCat).sort().forEach(cat=>{
-      const h=document.createElement('div'); h.className='grp'; h.textContent=cat; body.appendChild(h);
-      byCat[cat].forEach(c=>{
-        const d=document.createElement('details'); d.className='comp';
-        d.innerHTML=`<summary>${esc(c.name)}<span class="cnt">${c.fields.length} setting${c.fields.length!==1?'s':''} · ${esc(c.kind)}</span></summary>`;
-        c.fields.forEach(f=> d.appendChild(fieldRow(c.component, f)));
-        body.appendChild(d);
-      });
-    });
-  }).catch(()=>{ body.innerHTML='<div class="banner">Could not load settings.</div>'; });
+    if(res && res.error){ loaded=false; body.innerHTML=`<div class="banner">${esc(res.error)} — you need a tenant-admin role.</div>`; return; }
+    ALL=(res&&res.components)||[];
+    renderAdmin();
+  }).catch(()=>{ loaded=false; body.innerHTML='<div class="banner">Could not load settings.</div>'; });
 }
 </script>
 </body>
