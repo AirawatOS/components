@@ -25,20 +25,36 @@ def _wf(ctx, workflow):
                  if d.get("workflow") == workflow and d.get("enabled", True)), None)
 
 
+class EffectError(Exception):
+    """A `required` effect ({call ...,"required":true}) failed — the transition MUST abort (no write persists)."""
+
+
 def _guard_ok(ctx, tr, facts):
-    """A transition guard is a Decision-plane evaluate over a governed ruleset. Blocks only on an explicit
-    deny (decision.allow == False); no ruleset / no match ⇒ allowed. Returns (ok, reason)."""
+    """A transition guard blocks the transition when it denies. Two forms (either or both):
+      guard.ruleset  → a Decision-plane `evaluate` over a governed ruleset (blocks on decision.allow == False).
+      guard.compute  → {engine,verb}: call a domain engine that returns {allow, reason} — blocks on allow==False
+                       or a hard error. This lets a domain enforce logic the rule-engine can't express (e.g. an
+                       expense approval-limit that needs the approver's policy). Returns (ok, reason)."""
     g = tr.get("guard") or {}
     rs = g.get("ruleset")
-    if not rs:
-        return True, None
-    try:
-        res, err = ctx["call"](RULE_ENGINE, "evaluate", {"ruleset": rs, "facts": facts, "mode": g.get("mode") or "first"})
-        dec = (res or {}).get("decision") if not err else None
-        if isinstance(dec, dict) and dec.get("allow") is False:
-            return False, dec.get("reason") or f"blocked by {rs}"
-    except Exception as e:
-        return False, "guard error: " + str(e)[:100]
+    if rs:
+        try:
+            res, err = ctx["call"](RULE_ENGINE, "evaluate", {"ruleset": rs, "facts": facts, "mode": g.get("mode") or "first"})
+            dec = (res or {}).get("decision") if not err else None
+            if isinstance(dec, dict) and dec.get("allow") is False:
+                return False, dec.get("reason") or f"blocked by {rs}"
+        except Exception as e:
+            return False, "guard error: " + str(e)[:100]
+    comp = g.get("compute")
+    if comp and comp.get("engine") and comp.get("verb") and ctx.get("call"):
+        try:
+            res, err = ctx["call"](comp["engine"], comp["verb"], dict(facts))
+            if err:
+                return False, err if isinstance(err, str) else "guard failed"
+            if isinstance(res, dict) and res.get("allow") is False:
+                return False, res.get("reason") or "blocked by guard"
+        except Exception as e:
+            return False, "guard error: " + str(e)[:100]
     return True, None
 
 
@@ -148,12 +164,18 @@ def _run_effects(ctx, effects, vars, subjects=None):
                 _cres, _cerr = ctx["call"](c.get("engine"), c.get("verb"), dict(_args, case=case))
                 print("[lifecycle] effect call %s @ %s: %s" % (c.get("verb"), c.get("engine"),
                       "ok" if not _cerr else "ERR " + str(_cerr)[:100]), flush=True)
+                if _cerr and c.get("required"):                # a REQUIRED effect (e.g. finance settlement) must succeed → abort the transition
+                    raise EffectError(_cerr if isinstance(_cerr, str) else "required effect failed")
                 if isinstance(_cres, dict) and c.get("link_field") and _cres.get(c["link_field"]) and vars.get("record") is not None:
                     vars["record"][c.get("into", "effect_ref")] = _cres[c["link_field"]]
                 if isinstance(_cres, dict) and c.get("subjects") and subjects is not None:  # a compute call that produced records → add their ids as case subjects
                     for _sf in c["subjects"]:
                         if _cres.get(_sf): subjects.append(_cres[_sf])
+            except EffectError:
+                raise
             except Exception as _e:
+                if c.get("required"):
+                    raise EffectError("required effect error: " + str(_e)[:120])
                 print("[lifecycle] effect call failed: %s" % str(_e)[:120], flush=True)
         elif eff.get("update_subject"):
             us = eff["update_subject"]; subs = (vars.get("record") or {}).get("subjects") or []

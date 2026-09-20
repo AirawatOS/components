@@ -149,6 +149,41 @@ def h_attendance_mark(ctx):
             "status": rec.get("status")}, None
 
 
+def h_expense_prepare(ctx):
+    """#263 compute-provider: resolve the domain context the generic lifecycle-engine needs to open an
+    hr.expense case (employee/manager/org_unit) + validate the amount. Pure; the platform.lifecycle `prepare`
+    hook merges these so the generic record matches the bespoke h_expense_apply path."""
+    body, sub = ctx["body"], ctx["sub"]
+    if not isinstance(body.get("amount"), (int, float)) or body["amount"] <= 0:
+        return None, "a positive amount is required"
+    me = _me(ctx)
+    if not me:
+        return None, "no employee record is linked to your login"
+    mgr = next((e for e in ctx["kfind"]("org.employee") if e.get("id") == me.get("manager")), None)
+    out = {"applicant_login": sub, "employee": me["id"], "manager": (mgr or {}).get("id"),
+           "manager_login": (mgr or {}).get("citizen"), "currency": body.get("currency", "INR")}
+    if me.get("org_unit"):
+        out["scope"] = {"org_unit": me.get("org_unit")}
+    return out, None
+
+
+def h_expense_check(ctx):
+    """#263 approve-time GUARD for hr.expense (generic lifecycle-engine guard.compute): a budget must be chosen
+    and the deciding manager's approval_limit (policy engine) must cover the amount. Returns {allow, reason}.
+    Pure — the finance settlement itself is a separate required effect."""
+    body = ctx["body"]                                          # = dict(claim record, **decide payload)
+    amount = body.get("amount") or 0
+    if not (body.get("budget")):
+        return {"allow": False, "reason": "select a budget to charge this expense to"}, None
+    pres, perr = ctx["call"](POLICY_ENG, "policy-resolve", {"domain": "expense"})
+    pols = (pres or {}).get("policies", []) if not perr else []
+    limit = next(((p.get("rules") or {}).get("approval_limit") for p in pols
+                  if (p.get("rules") or {}).get("approval_limit") is not None), None)
+    if limit is not None and amount > limit:
+        return {"allow": False, "reason": f"amount {amount} exceeds your approval limit of {limit} — needs higher approval"}, None
+    return {"allow": True}, None
+
+
 def h_expense_apply(ctx):
     body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
     if not isinstance(body.get("amount"), (int, float)) or body["amount"] <= 0:
@@ -236,6 +271,7 @@ HANDLERS = {
     # #263: compute-provider for the generic lifecycle path + retained bespoke handlers under the `-legacy`
     # names the app-host ENGINE_VERBS/verb_alias fallback expects (non-breaking migration onto lifecycle.*).
     "leave-prepare": h_leave_prepare, "leave-context": h_leave_prepare,   # leave-context = prior-art name for the same compute-provider
+    "expense-prepare": h_expense_prepare, "expense-check": h_expense_check,  # #263: hr.expense compute-provider + approve guard
     "leave-apply-legacy": h_leave_apply,
     "leave-decide-legacy": h_leave_decide,
     "expense-apply-legacy": h_expense_apply,
