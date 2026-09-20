@@ -15,11 +15,21 @@
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   .wrap{display:flex;min-height:100%}
-  .rail{width:210px;flex:none;background:var(--surface);border-right:1px solid var(--line);padding:18px 12px}
-  .rail h1{font-size:15px;letter-spacing:.02em;margin:4px 10px 16px;display:flex;align-items:center;gap:8px}
-  .navbtn{display:block;width:100%;text-align:left;border:0;background:none;color:var(--ink);font:inherit;
-    padding:9px 12px;border-radius:9px;cursor:pointer;margin-bottom:2px}
+  .rail{width:210px;flex:none;background:var(--surface);border-right:1px solid var(--line);padding:18px 12px;transition:width .18s ease}
+  .rail h1{font-size:15px;letter-spacing:.02em;margin:4px 6px 10px;display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden}
+  .rail h1 .txt{transition:opacity .12s}
+  .railtoggle{margin-left:auto;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 6px;border-radius:8px;line-height:1}
+  .railtoggle:hover{background:var(--surface-2);color:var(--ink)}
+  .navbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;color:var(--ink);font:inherit;
+    padding:9px 12px;border-radius:9px;cursor:pointer;margin-bottom:2px;white-space:nowrap;overflow:hidden}
+  .navbtn .ic{flex:none;width:20px;text-align:center;font-size:15px}
+  .navbtn .txt{transition:opacity .12s}
   .navbtn:hover{background:var(--surface-2)} .navbtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-weight:600}
+  /* collapsed rail: icon-only strip */
+  .wrap.rail-collapsed .rail{width:56px;padding-left:8px;padding-right:8px}
+  .wrap.rail-collapsed .rail h1 .txt,.wrap.rail-collapsed .navbtn .txt{opacity:0;width:0;pointer-events:none}
+  .wrap.rail-collapsed .navbtn{justify-content:center;padding:9px 0}
+  .wrap.rail-collapsed .navbtn .ic{width:auto}
   main{flex:1;padding:28px 34px;max-width:1040px}
   h2{font-size:22px;margin:0 0 4px} .sub{color:var(--muted);margin:0 0 22px;font-size:14px}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:4px 0;margin:0 0 18px;overflow:hidden}
@@ -70,9 +80,9 @@
 <body>
 <div class="wrap">
   <nav class="rail">
-    <h1>⚙️ Settings</h1>
-    <button class="navbtn on" data-tab="personal">Personal</button>
-    <button class="navbtn" data-tab="admin">Administration</button>
+    <h1><span class="txt">⚙️ Settings</span><button class="railtoggle" id="railtoggle" title="Collapse sidebar" aria-label="Collapse sidebar">«</button></h1>
+    <button class="navbtn on" data-tab="personal" title="Personal"><span class="ic">👤</span><span class="txt">Personal</span></button>
+    <button class="navbtn" data-tab="admin" title="Administration"><span class="ic">🛠️</span><span class="txt">Administration</span></button>
   </nav>
   <main>
     <section id="personal">
@@ -106,6 +116,20 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 function tidy(s){ return esc(String(s||'').replace('T',' ').replace('Z','')); }
 
 let APPID=null;
+
+// --- collapsible rail (state remembered per browser) ---
+const wrap=document.querySelector('.wrap'), railBtn=$('#railtoggle');
+function applyRail(collapsed){
+  wrap.classList.toggle('rail-collapsed', collapsed);
+  railBtn.textContent = collapsed ? '»' : '«';
+  railBtn.title = railBtn.ariaLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+}
+try{ applyRail(localStorage.getItem('settings.rail')==='collapsed'); }catch(_){}
+railBtn.onclick = e => { e.stopPropagation();
+  const collapsed = !wrap.classList.contains('rail-collapsed');
+  applyRail(collapsed);
+  try{ localStorage.setItem('settings.rail', collapsed?'collapsed':'open'); }catch(_){}
+};
 
 // --- tabs (Personal / Administration) ---
 document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
