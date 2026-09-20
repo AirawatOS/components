@@ -1,6 +1,6 @@
 component_id: ds:airawatdeveloper:app/settings
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawatdeveloper:developer
 display_name: Settings
 entrypoint: index.html
