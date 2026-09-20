@@ -1,0 +1,15 @@
+# AUTHORING ENGINE (kind=engine) — the AI build/design advisors, extracted from app_host (_bridge_solution_expert
+# + _bridge_service_expert). Ground a model prompt in the live governed catalog (marketplace + schemas + roles +
+# credential types + the current project) and PROPOSE a component graph / service spec; the human enacts. Returns a
+# spec/actions, never writes to disk (Studio's solution-generate + project-* orchestration stays host-side).
+component_id: ds:airawatdeveloper:engine/authoring-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Authoring Engine
+entrypoint: run.py
+verbs:
+  solution-expert: authoring.solution_expert@0.1.0
+  service-expert: authoring.service_expert@0.1.0
+required_schemas: []
+writes: []
