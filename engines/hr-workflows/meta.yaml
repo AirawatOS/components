@@ -4,7 +4,7 @@
 # engine holds the write grants (the HR Desk app is just screens). Editable + versioned in Studio like any component.
 component_id: ds:airawatdeveloper:engine/hr-workflows
 kind: engine
-version: 0.3.2   # +leave-prepare compute-provider + *-legacy fallbacks (#263 generic lifecycle)
+version: 0.3.3   # reconcile drift: republish current source (baked 0.3.2 != certified 0.3.2); no code change
 provider: ds:airawat:developer
 display_name: HR Workflows Engine
 entrypoint: run.py
