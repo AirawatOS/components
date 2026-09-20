@@ -10,5 +10,5 @@ display_name: Intake Engine
 entrypoint: run.py
 verbs:
   intake-process: intake.process@0.1.0
-required_schemas: [signal.incident, platform.case, ref.codelist]
+required_schemas: [signal.incident, platform.case]   # writes these; the intake codelist (ref.codelist) is an optional best-effort read
 writes: []
