@@ -1,0 +1,14 @@
+# INTAKE ENGINE (kind=engine) — the channel-neutral civic-intake brain, extracted from app_host's _intake_core.
+# Classifies a citizen message (model gateway) → routes (service_request → service enquiry case; grievance → signal
+# .incident) → returns a WRITE-SET + reply for the host to persist under the tenant service identity (channels are
+# unauthenticated). No per-channel code, no secrets — the SMS/WhatsApp adapters stay host-side as thin transport.
+component_id: ds:airawatdeveloper:engine/intake-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Intake Engine
+entrypoint: run.py
+verbs:
+  intake-process: intake.process@0.1.0
+required_schemas: [signal.incident, platform.case, ref.codelist]
+writes: []
