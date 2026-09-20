@@ -4,15 +4,24 @@
 # attributed, bitemporal state changes (ADR-0056 decided change-request). Collapses per-domain apply/decide pairs.
 component_id: ds:airawatdeveloper:engine/lifecycle-engine
 kind: engine
-version: 0.1.15
+version: 0.1.16
 provider: ds:airawat:developer
 display_name: Lifecycle Engine
 entrypoint: run.py
+# #263: the FIVE canonical Lifecycle-plane verbs (ADR-0091 V3 / ADR-0097), governed as lifecycle.* interfaces.
+# platform.lifecycle_run@0.1.0 kept for back-compat with any pre-#263 binding.
 implements:
+  - lifecycle.request@0.1.0
+  - lifecycle.decide@0.1.0
+  - lifecycle.update@0.1.0
+  - lifecycle.withdraw@0.1.0
+  - lifecycle.status@0.1.0
   - platform.lifecycle_run@0.1.0
 verbs:
-  lifecycle-request: platform.lifecycle_run@0.1.0
-  lifecycle-decide: platform.lifecycle_run@0.1.0
-  lifecycle-status: platform.lifecycle_run@0.1.0
+  lifecycle-request: lifecycle.request@0.1.0
+  lifecycle-decide: lifecycle.decide@0.1.0
+  lifecycle-update: lifecycle.update@0.1.0
+  lifecycle-withdraw: lifecycle.withdraw@0.1.0
+  lifecycle-status: lifecycle.status@0.1.0
 required_schemas: [platform.lifecycle]
 writes: []

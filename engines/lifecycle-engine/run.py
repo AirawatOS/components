@@ -206,11 +206,13 @@ def h_request(ctx):
     if prep.get("engine") and prep.get("verb") and ctx.get("call"):
         try:
             pres, perr = ctx["call"](prep["engine"], prep["verb"], dict(payload))
-            if not perr and isinstance(pres, dict):
-                for k, v in pres.items():
-                    payload.setdefault(k, v)                  # provider fills gaps; explicit body wins
         except Exception as e:
             return None, "prepare failed: " + str(e)[:120]
+        if perr:                                              # a prepare error (e.g. no employee, balance exceeded) BLOCKS — don't write a partial record
+            return None, perr if isinstance(perr, str) else "prepare failed"
+        if isinstance(pres, dict):
+            for k, v in pres.items():
+                payload.setdefault(k, v)                       # provider fills gaps; explicit body wins
     ok, reason = _guard_ok(ctx, tr, payload)
     if not ok:
         return None, reason
@@ -343,7 +345,89 @@ def h_status(ctx):
             "tasks": [{"id": t["id"], "actor": t.get("actor"), "kind": t.get("kind"), "status": t.get("status")} for t in tasks]}, None
 
 
-HANDLERS = {"lifecycle-request": h_request, "lifecycle-decide": h_decide, "lifecycle-status": h_status}
+def h_update(ctx):
+    """UPDATE (ADR-0091/0097 Lifecycle verb): patch an in-flight case's record WITHOUT a state transition —
+    the 'complete/edit a task node's data' operation. Applies body.patch (or payload) to the case/domain record,
+    keeps the state, re-stamps updated_at. Only the opener or a current open-task holder (or a tenant admin) may
+    update. The declaration's optional `updatable:[fields]` allow-list narrows what may change; protected
+    structural fields (schema/id/status/current_step/…) are never patchable."""
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    workflow, case = body.get("workflow"), body.get("case")
+    patch = dict(body.get("patch") or body.get("payload") or {})
+    if not (workflow and case):
+        return None, "workflow + case required"
+    decl = _wf(ctx, workflow)
+    if not decl:
+        return None, f"no platform.lifecycle for '{workflow}'"
+    rec = ctx["kget"](case)
+    if not rec:
+        return None, "case not found"
+    roles = ctx["claims"].get("roles", []) or []
+    opener = rec.get("opened_by") or rec.get("applicant_login") or (rec.get("scope") or {}).get("applicant_login")
+    has_task = any(t.get("ref") == case and t.get("actor") == sub and t.get("status") != "done"
+                   for t in ctx["kfind"]("platform.inbox_item"))
+    if not (opener == sub or has_task or "platform.tenant-admin" in roles or "tenant_admin" in roles):
+        return None, "only the requester or a current task-holder may update this case"
+    PROTECTED = {"schema", "id", "tenant", "status", "current_step", "workflow", "opened_by", "opened_at", "subjects", "scope"}
+    allow = set(decl.get("updatable") or [])
+    patch = {k: v for k, v in patch.items() if k not in PROTECTED and (not allow or k in allow)}
+    if not patch:
+        return None, "no updatable fields in patch"
+    now = _now()
+    updated = {**rec, **patch}
+    if rec.get("schema") == "platform.case":
+        updated["updated_at"] = now
+    ctx["kwrite"](case, updated)
+    return {"case": case, "workflow": workflow, "status": _state(updated), "updated": sorted(patch)}, None
+
+
+def h_withdraw(ctx):
+    """WITHDRAW (ADR-0091/0097 Lifecycle verb): terminate a case — set a terminal 'withdrawn' state, close open
+    tasks, stamp who/when. Generic across workflows (no transition need be declared); if the declaration names a
+    transition to 'withdrawn' (or named 'withdraw') its authorize/stamp/effects are honored. Only the opener, a
+    role authorized on that transition, or a tenant admin may withdraw."""
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    workflow, case = body.get("workflow"), body.get("case")
+    if not (workflow and case):
+        return None, "workflow + case required"
+    decl = _wf(ctx, workflow)
+    if not decl:
+        return None, f"no platform.lifecycle for '{workflow}'"
+    rec = ctx["kget"](case)
+    if not rec:
+        return None, "case not found"
+    roles = ctx["claims"].get("roles", []) or []
+    opener = rec.get("opened_by") or rec.get("applicant_login") or (rec.get("scope") or {}).get("applicant_login")
+    wtr = next((t for t in decl.get("transitions", []) if t.get("name") == "withdraw" or t.get("to") == "withdrawn"), None)
+    allowed = (opener == sub) or ("platform.tenant-admin" in roles) or ("tenant_admin" in roles)
+    if not allowed and wtr:
+        allowed = _authorized(wtr, rec, ctx)[0]
+    if not allowed:
+        return None, "only the requester (or an authorized role) may withdraw this case"
+    now = _now()
+    vars = {"record": rec, "payload": body.get("payload") or {}, "case": case, "sub": sub, "tenant": tenant, "now": now}
+    if rec.get("schema") == "platform.case":
+        updated = {**rec, "status": "closed", "current_step": "withdrawn", "updated_at": now}
+    else:
+        updated = {**rec, "status": "withdrawn"}
+    updated.update(_resolve((wtr or {}).get("stamp") or {"withdrawn_by": "$sub", "withdrawn_at": "$now"}, vars))
+    if wtr and wtr.get("effects"):
+        subj = updated.setdefault("subjects", rec.get("subjects") or []) if rec.get("schema") == "platform.case" else None
+        _run_effects(ctx, wtr.get("effects"), {**vars, "record": updated}, subjects=subj)
+    ctx["kwrite"](case, updated)
+    for t in ctx["kfind"]("platform.inbox_item"):
+        if t.get("ref") == case and t.get("kind") == "task" and t.get("status") != "done":
+            ctx["kwrite"](t["id"], {**t, "status": "done"})
+    return {"case": case, "workflow": workflow, "status": "withdrawn"}, None
+
+
+# ADR-0091/0097 canonical Lifecycle verbs are the BARE names (request/decide/update/withdraw/status); the
+# namespaced `lifecycle-*` keys are retained so the pre-#263 bridge verbs keep resolving during migration.
+HANDLERS = {
+    "request": h_request, "decide": h_decide, "status": h_status, "update": h_update, "withdraw": h_withdraw,
+    "lifecycle-request": h_request, "lifecycle-decide": h_decide, "lifecycle-status": h_status,
+    "lifecycle-update": h_update, "lifecycle-withdraw": h_withdraw,
+}
 
 
 def main():

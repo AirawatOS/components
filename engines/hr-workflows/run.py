@@ -51,6 +51,29 @@ def _leave_balance(ctx, ltype, applicant_login):
             "available": max(0, ent - taken - pending)}
 
 
+def h_leave_prepare(ctx):
+    """#263 compute-provider (ADR-0097): resolve the domain context the GENERIC lifecycle-engine needs to open an
+    hr.leave case — the caller's employee, their manager (+login) for routing, org_unit for scope — and enforce the
+    leave-balance guard. Pure (no writes); the platform.lifecycle `prepare` hook merges the returned fields into the
+    payload so the generic engine builds a record identical to the bespoke h_leave_apply path."""
+    body, sub = ctx["body"], ctx["sub"]
+    me = _me(ctx)
+    if not me:
+        return None, "no employee record is linked to your login — ask your admin to set your Login user in Org Setup"
+    mgr = next((e for e in ctx["kfind"]("org.employee") if e.get("id") == me.get("manager")), None)
+    mgr_login = (mgr or {}).get("citizen")
+    ltype, reqd = body.get("leave_type", "casual"), body.get("days") or 0
+    bal = _leave_balance(ctx, ltype, sub)                       # policy-driven balance guard (same as bespoke apply)
+    if bal and reqd > bal["available"]:
+        return None, (f"only {bal['available']} day(s) of {ltype} leave available "
+                      f"(accrued {bal['accrued']} - taken {bal['taken']} - pending {bal['pending']}); requested {reqd}")
+    out = {"applicant_login": sub, "employee": me["id"], "manager": (mgr or {}).get("id"),
+           "manager_login": mgr_login, "leave_type": ltype}
+    if me.get("org_unit"):
+        out["scope"] = {"org_unit": me.get("org_unit")}
+    return out, None
+
+
 def h_leave_apply(ctx):
     body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
     me = _me(ctx)
@@ -210,6 +233,13 @@ HANDLERS = {
     "attendance-mark": h_attendance_mark,
     "expense-apply": h_expense_apply,
     "expense-decide": h_expense_decide,
+    # #263: compute-provider for the generic lifecycle path + retained bespoke handlers under the `-legacy`
+    # names the app-host ENGINE_VERBS/verb_alias fallback expects (non-breaking migration onto lifecycle.*).
+    "leave-prepare": h_leave_prepare, "leave-context": h_leave_prepare,   # leave-context = prior-art name for the same compute-provider
+    "leave-apply-legacy": h_leave_apply,
+    "leave-decide-legacy": h_leave_decide,
+    "expense-apply-legacy": h_expense_apply,
+    "expense-decide-legacy": h_expense_decide,
 }
 
 
