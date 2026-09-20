@@ -12,7 +12,7 @@ Run inside a container on the target stack's network. Targets are env-configurab
   FS=http://airawat-local-filestore:8095 IDN=http://airawat-local-identity:8093
   DIR=<engine dir>  CID=<component_id>  VERSION=<x.y.z>  PUBLISHER_USER=devrick PUBLISHER_TENANT=airawatdeveloper
 """
-import os, io, json, time, tarfile, hashlib, urllib.request as U, urllib.error
+import os, io, re, json, time, tarfile, hashlib, urllib.request as U, urllib.error
 
 NET = os.environ.get("NET", "http://airawat-local-network:8090").rstrip("/")
 KRN = os.environ.get("KRN", "http://airawat-local-kernel:8080").rstrip("/")
@@ -61,13 +61,32 @@ def tar_gz(d):
     return buf.getvalue()
 
 
+def _meta_field(meta_yaml, field, default=""):
+    import re
+    m = re.search(r"(?m)^%s:\s*(\S+)" % field, meta_yaml)
+    return m.group(1) if m else default
+
+
+def _meta_members(meta_yaml):
+    """Extract a YAML `members:` list (lines `  - <id>`) without a yaml dep — needed for solution publishes."""
+    out, in_members = [], False
+    for ln in meta_yaml.splitlines():
+        if re.match(r"^members:\s*$", ln): in_members = True; continue
+        if in_members:
+            m = re.match(r"^\s+-\s+(\S+)", ln)
+            if m: out.append(m.group(1))
+            elif ln.strip() and not ln.startswith(" "): break
+    return out
+
+
 def main():
+    import re as _re
     files, meta_yaml = read_files(DIR)
-    ver = VERSION
-    if not ver:
-        import re
-        m = re.search(r"(?m)^version:\s*(\S+)", meta_yaml); ver = m.group(1) if m else "0.1.0"
-    print(f"publishing {CID}@{ver}  from {DIR}  ({len(files)} files)  → {NET}")
+    kind = os.environ.get("KIND") or _meta_field(meta_yaml, "kind", "engine")
+    ver = VERSION or _meta_field(meta_yaml, "version", "0.1.0")
+    members = _meta_members(meta_yaml) if kind == "solution" else None
+    print(f"publishing {CID}@{ver}  kind={kind}  from {DIR}  ({len(files)} files)"
+          + (f"  members={len(members)}" if members else "") + f"  → {NET}")
 
     tok = (call("POST", f"{IDN}/login", {"username": PUB_USER, "tenant": PUB_TENANT})[0] or {}).get("access_token")
     if not tok:
@@ -75,7 +94,7 @@ def main():
 
     # 1) certify (conformance + signed digest)
     cert, e = call("POST", f"{NET}/v1/certify",
-                   {"subject_id": CID, "subject_kind": "engine", "meta_yaml": meta_yaml, "files": files}, tok)
+                   {"subject_id": CID, "subject_kind": kind, "meta_yaml": meta_yaml, "files": files}, tok)
     if e:
         print(f"  certify: FAILED {e}")
     else:
@@ -89,9 +108,9 @@ def main():
     print(f"  filestore: {'ok '+str(fid)[:20] if fid else 'FAILED '+str(e)}")
 
     # 2) store/publish (marketplace listing; needs the cert)
-    pub, e = call("POST", f"{NET}/v1/store/publish",
-                  {"component_id": CID, "kind": "engine", "version": ver,
-                   "provider": PUB_TENANT, "source_file_id": fid or ""}, tok)
+    pbody = {"component_id": CID, "kind": kind, "version": ver, "provider": PUB_TENANT, "source_file_id": fid or ""}
+    if members: pbody["members"] = members
+    pub, e = call("POST", f"{NET}/v1/store/publish", pbody, tok)
     print(f"  store/publish: {'ok' if not e else 'FAILED '+e}")
 
     # 3b) component_asset (SOURCE_ASSET) — the record the app-host materialises from (ADR-0093 1a path)
