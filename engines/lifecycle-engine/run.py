@@ -230,13 +230,17 @@ def h_request(ctx):
     # (e.g. resolve the caller's employee + manager) so the generic engine builds the record from a bare body.
     prep = decl.get("prepare") or {}
     if prep.get("engine") and prep.get("verb") and ctx.get("call"):
+        _pbody = dict(payload)
+        _pbody.update(prep.get("args") or {})                  # static declared config for the compute-provider (e.g. copy_fields), keyed distinctly from form fields
         try:
-            pres, perr = ctx["call"](prep["engine"], prep["verb"], dict(payload))
+            pres, perr = ctx["call"](prep["engine"], prep["verb"], _pbody)
         except Exception as e:
             return None, "prepare failed: " + str(e)[:120]
         if perr:                                              # a prepare error (e.g. no employee, balance exceeded) BLOCKS — don't write a partial record
             return None, perr if isinstance(perr, str) else "prepare failed"
         if isinstance(pres, dict):
+            for _dk in (pres.pop("__drop__", None) or []):     # transient inputs prepare consumed (e.g. officer→assignee) — not persisted
+                payload.pop(_dk, None)
             for k, v in pres.items():
                 payload.setdefault(k, v)                       # provider fills gaps; explicit body wins
     ok, reason = _guard_ok(ctx, tr, payload)
@@ -280,6 +284,11 @@ def h_request(ctx):
     _of = decl.get("opener_field")
     if _of and rec.get(_of) is None:
         rec[_of] = sub
+    # run the start transition's effects (e.g. update a related record, {call} a compute) — same as spine mode
+    try:
+        _run_effects(ctx, tr.get("effects"), {"payload": payload, "record": rec, "case": cid, "sub": sub, "tenant": tenant, "now": now})
+    except EffectError as _e:
+        return None, str(_e)
     route = tr.get("route") or {}
     approver = _approver(route, rec, tenant)                 # user (route.to_field on the record) or static role (route.role)
     if approver:
