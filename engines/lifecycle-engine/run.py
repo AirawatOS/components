@@ -168,6 +168,10 @@ def _run_effects(ctx, effects, vars, subjects=None):
                     raise EffectError(_cerr if isinstance(_cerr, str) else "required effect failed")
                 if isinstance(_cres, dict) and c.get("link_field") and _cres.get(c["link_field"]) and vars.get("record") is not None:
                     vars["record"][c.get("into", "effect_ref")] = _cres[c["link_field"]]
+                if isinstance(_cres, dict) and isinstance(c.get("link"), dict) and vars.get("record") is not None:
+                    for _rk, _fk in c["link"].items():         # link: {result_key: record_key,...} — copy MANY compute results onto the record
+                        if _cres.get(_rk) is not None:
+                            vars["record"][_fk] = _cres[_rk]
                 if isinstance(_cres, dict) and c.get("subjects") and subjects is not None:  # a compute call that produced records → add their ids as case subjects
                     for _sf in c["subjects"]:
                         if _cres.get(_sf): subjects.append(_cres[_sf])
@@ -269,8 +273,13 @@ def h_request(ctx):
         return {"case": cid, "workflow": workflow, "status": tr["to"], "case_status": crec["status"], "routed_to": approver,
                 "subjects": subjects}, None
     cid = f"ds:{tenant}:{decl['record_schema'].replace('.', '/')}/{_u.uuid4().hex[:8]}"
-    rec = {**payload, "schema": decl["record_schema"], "id": cid, "tenant": tenant,
-           "status": tr["to"], "applicant_login": payload.get("applicant_login") or sub, "created_at": now}
+    rec = {**payload, "schema": decl["record_schema"], "id": cid, "tenant": tenant, "status": tr["to"], "created_at": now}
+    # opener attribution is domain-specific: a declaration names the field (e.g. applicant_login / assigned_by) and
+    # the engine stamps it with the caller. No hardcoded `applicant_login` (that broke strict non-hr schemas). hr.*
+    # declarations also get it via their prepare compute, so this only fills a gap.
+    _of = decl.get("opener_field")
+    if _of and rec.get(_of) is None:
+        rec[_of] = sub
     route = tr.get("route") or {}
     approver = _approver(route, rec, tenant)                 # user (route.to_field on the record) or static role (route.role)
     if approver:
