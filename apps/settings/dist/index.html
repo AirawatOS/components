@@ -6,11 +6,11 @@
 <style>
   :root{
     --bg:#f5f6fa; --surface:#fff; --surface-2:#eef0f6; --ink:#1a1c2b; --muted:#5c5f75; --line:#e2e4ee;
-    --accent:#4f46e5; --ok:#0f766e; --warn:#b45309; --radius:12px;
+    --accent:#4f46e5; --ok:#0f766e; --warn:#b45309; --danger:#b91c1c; --radius:12px;
   }
   @media (prefers-color-scheme:dark){:root{
     --bg:#0f1018; --surface:#181a26; --surface-2:#20222f; --ink:#e8eaf6; --muted:#a3a6bd; --line:#2a2d3d;
-    --accent:#8b8bf0; --ok:#4fd1c5; --warn:#f0a53e;
+    --accent:#8b8bf0; --ok:#4fd1c5; --warn:#f0a53e; --danger:#f0787a;
   }}
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -20,31 +20,51 @@
   .navbtn{display:block;width:100%;text-align:left;border:0;background:none;color:var(--ink);font:inherit;
     padding:9px 12px;border-radius:9px;cursor:pointer;margin-bottom:2px}
   .navbtn:hover{background:var(--surface-2)} .navbtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-weight:600}
-  main{flex:1;padding:28px 34px;max-width:900px}
+  main{flex:1;padding:28px 34px;max-width:1040px}
   h2{font-size:22px;margin:0 0 4px} .sub{color:var(--muted);margin:0 0 22px;font-size:14px}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:4px 0;margin:0 0 18px;overflow:hidden}
   .row{display:flex;align-items:center;gap:14px;padding:13px 18px;border-top:1px solid var(--line)}
   .row:first-child{border-top:0}
   .row .lbl{flex:1;min-width:0} .row .lbl b{display:block;font-weight:600} .row .lbl small{color:var(--muted)}
-  .grp{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:26px 0 8px 4px}
+  .grp{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:22px 0 8px 4px}
   .kind{font-size:11px;font-weight:700;padding:.15em .5em;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
   .kind.secret{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
   .kind.value{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
   .kind.asset{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
-  input,select{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:170px}
+  input,select{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:150px}
   button.act{font:inherit;font-weight:600;padding:7px 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
   button.act.ghost{background:var(--surface-2);color:var(--ink)}
+  button.act:disabled{opacity:.5;cursor:default}
   .dot{width:9px;height:9px;border-radius:50%;background:#c3c6d4;flex:none} .dot.set{background:var(--ok)}
-  .comp{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
-  .comp>summary{padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;font-weight:600;list-style:none}
-  .comp>summary::-webkit-details-marker{display:none}
-  .comp>summary .cnt{margin-left:auto;color:var(--muted);font-weight:400;font-size:13px}
   .empty{color:var(--muted);padding:20px;text-align:center}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;
     padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;font-weight:600}
-  .toast.show{opacity:1}
+  .toast.show{opacity:1} .toast.err{background:var(--danger)}
   .banner{background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);
     color:var(--ink);padding:10px 14px;border-radius:9px;font-size:13.5px;margin-bottom:18px}
+  /* master-detail */
+  .console{display:flex;gap:18px;align-items:flex-start}
+  .col-list{width:300px;flex:none}
+  .col-detail{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;min-height:340px}
+  .it{padding:11px 13px;border:1px solid var(--line);border-radius:10px;margin-bottom:7px;cursor:pointer;background:var(--surface)}
+  .it:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .it.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+  .it .nm{font-weight:600;font-size:13.5px} .it .mt{color:var(--muted);font-size:11px;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+  .pill{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .pill.miss{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+  .tabs{display:flex;gap:4px;margin:2px 0 16px;flex-wrap:wrap}
+  .tab{padding:6px 13px;border:1px solid var(--line);border-radius:9px;cursor:pointer;color:var(--muted);font-size:13px;background:none}
+  .tab.on{background:var(--surface-2);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+  .lbl2{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px}
+  .chip{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px;margin:0 6px 6px 0;font-family:ui-monospace,Menlo,monospace}
+  .cid{color:var(--muted);font-size:11px;font-family:ui-monospace,Menlo,monospace;word-break:break-all;margin:2px 0 14px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+  th{color:var(--muted);text-align:left;font-weight:600;padding:5px 8px;border-bottom:1px solid var(--line)}
+  td{padding:5px 8px;border-bottom:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+  .ok2{color:var(--ok)} .bad{color:var(--danger)} .warn2{color:var(--warn)} .m2{color:var(--muted)}
+  .keyrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+  .src{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 12px;background:var(--bg)}
+  a{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -68,8 +88,9 @@
 
     <section id="admin" hidden>
       <h2>Administration</h2>
-      <p class="sub">Configure every installed component in one place — API keys stay secret, settings are saved, and data files are linked.</p>
-      <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="renderAdmin()">
+      <p class="sub">Every installed component in one place — set its keys, link its data files, review its data sources, schedule its runs, and audit its external calls.</p>
+      <div id="miss-banner"></div>
+      <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="renderList()">
       <div id="admin-body"><div class="empty">Loading…</div></div>
     </section>
   </main>
@@ -79,9 +100,14 @@
 <script>
 const $ = s => document.querySelector(s);
 const API = (p, b) => fetch('/bridge/'+p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600); }
+const GET = p => fetch(p).then(r=>r.ok?r.json():{});
+function toast(msg,err){ const t=$('#toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); setTimeout(()=>t.className='toast',1800); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function tidy(s){ return esc(String(s||'').replace('T',' ').replace('Z','')); }
 
-// --- tabs ---
+let APPID=null;
+
+// --- tabs (Personal / Administration) ---
 document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.navbtn').forEach(x=>x.classList.toggle('on', x===b));
   $('#personal').hidden = b.dataset.tab!=='personal';
@@ -93,30 +119,102 @@ document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
 $('#theme').onchange = e => { API('set-theme',{theme:e.target.value}).then(()=>toast('Theme saved')); try{document.documentElement.setAttribute('data-theme',e.target.value)}catch(_){} };
 $('#lang').onchange  = e => API('set-locale',{locale:e.target.value}).then(()=>toast('Language saved'));
 
-// --- Admin: unified config contract ---
-let loaded=false, ALL=[];
-function renderAdmin(){
+// ============ Administration: the single component console ============
+let loaded=false, ALL=[], CONTRACT={}, SEL=null;
+
+async function loadAdmin(){
+  if(loaded) return; loaded=true;
+  const body=$('#admin-body'); body.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    if(APPID==null){ try{ APPID=(await GET('./config.json')).app_id||''; }catch(_){ APPID=''; } }
+    const res = await API('settings',{});
+    if(res && res.error){ loaded=false; body.innerHTML=`<div class="banner">${esc(res.error)} — you need a tenant-admin role.</div>`; return; }
+    ALL=(res&&res.components)||[];
+    renderList();
+  }catch(e){ loaded=false; body.innerHTML='<div class="banner">Could not load settings.</div>'; }
+}
+
+function missingCount(){ let n=0; ALL.forEach(c=>(c.fields||[]).forEach(f=>{ if((f.kind==='secret')&&!f.set) n++; })); return n; }
+
+function renderList(){
   const body=$('#admin-body'); const q=($('#filter')?$('#filter').value:'').trim().toLowerCase();
-  const comps = q ? ALL.filter(c=>(c.name+' '+c.component+' '+c.kind).toLowerCase().includes(q)) : ALL;
+  // missing-keys banner (the old Connections checklist headline)
+  const miss=missingCount();
+  $('#miss-banner').innerHTML = miss
+    ? `<div class="banner">🔑 <b>${miss}</b> API key${miss!==1?'s are':' is'} still missing across your components. Open a component below and set its keys to bring it online.</div>`
+    : '';
+  const comps = q ? ALL.filter(c=>(c.name+' '+c.component+' '+c.kind+' '+c.category).toLowerCase().includes(q)) : ALL;
   if(!comps.length){ body.innerHTML='<div class="empty">'+(ALL.length?'No components match “'+esc(q)+'”.':'No configurable components installed yet.')+'</div>'; return; }
-  const byCat={}; comps.forEach(c=>{ (byCat[c.category]=byCat[c.category]||[]).push(c); });
-  body.innerHTML='';
+  const byCat={}; comps.forEach(c=>{ (byCat[c.category||'Other']=byCat[c.category||'Other']||[]).push(c); });
+  const list=document.createElement('div'); list.className='col-list';
   Object.keys(byCat).sort().forEach(cat=>{
-    const h=document.createElement('div'); h.className='grp'; h.textContent=cat+' · '+byCat[cat].length; body.appendChild(h);
+    const h=document.createElement('div'); h.className='grp'; h.textContent=cat+' · '+byCat[cat].length; list.appendChild(h);
     byCat[cat].forEach(c=>{
-      const d=document.createElement('details'); d.className='comp'; if(q) d.open=true;
-      d.innerHTML=`<summary>${esc(c.name)}<span class="cnt">${c.fields.length} setting${c.fields.length!==1?'s':''} · ${esc(c.kind)}</span></summary>`;
-      c.fields.forEach(f=> d.appendChild(fieldRow(c.component, f)));
-      body.appendChild(d);
+      const miss=(c.fields||[]).filter(f=>f.kind==='secret'&&!f.set).length;
+      const nset=(c.fields||[]).length;
+      const el=document.createElement('div'); el.className='it'+(SEL&&SEL.component===c.component?' sel':'');
+      el.innerHTML=`<div class="nm">${esc(c.name)}</div><div class="mt"><span class="pill">${esc(c.kind)}</span>`
+        +`<span class="pill">${nset} setting${nset!==1?'s':''}</span>`+(miss?`<span class="pill miss">${miss} key${miss!==1?'s':''} missing</span>`:'')+`</div>`;
+      el.onclick=()=>{ SEL=c; renderList(); renderDetail(c); };
+      list.appendChild(el);
     });
   });
+  const detail=document.createElement('div'); detail.className='col-detail'; detail.id='detail';
+  detail.innerHTML='<div class="empty">Select a component to configure it.</div>';
+  const console=document.createElement('div'); console.className='console';
+  console.appendChild(list); console.appendChild(detail);
+  body.innerHTML=''; body.appendChild(console);
+  if(SEL){ const still=ALL.find(c=>c.component===SEL.component); if(still) renderDetail(still); }
 }
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function renderDetail(c){
+  const D=$('#detail'); if(!D) return;
+  if(!CONTRACT[c.component]){                               // fetch contract + attribution on demand (one bridge)
+    try{ CONTRACT[c.component] = await API('settings',{component:c.component}) || {}; }catch(_){ CONTRACT[c.component]={}; }
+  }
+  const ct=CONTRACT[c.component]||{};
+  D.innerHTML=`<div style="font-weight:600;font-size:16px">${esc(c.name)} <span class="pill">${esc(c.kind)}</span></div>
+    <div class="cid">${esc(c.component)}</div>
+    <div class="tabs">
+      <button class="tab on" data-t="configure">Configure</button>
+      <button class="tab" data-t="sources">Sources &amp; Attribution</button>
+      <button class="tab" data-t="schedule">Schedule</button>
+      <button class="tab" data-t="logs">External calls</button>
+    </div>
+    <div id="pane"></div>`;
+  D.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{
+    D.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===el));
+    paint(el.dataset.t, c, ct);
+  });
+  paint('configure', c, ct);
+}
+
+function paint(t, c, ct){
+  const P=$('#pane'); if(!P) return;
+  if(t==='configure') return paintConfigure(P, c, ct);
+  if(t==='sources')   return paintSources(P, ct);
+  if(t==='schedule')  return paintSchedule(P, c);
+  if(t==='logs')      return paintLogs(P, c);
+}
+
+// ---- Configure tab (ADR-0092 kind-routed contract: secret→Vault, value→governed, asset→filestore) ----
+function paintConfigure(P, c, ct){
+  P.innerHTML='';
+  if(ct.reads&&ct.reads.length){ P.insertAdjacentHTML('beforeend',`<div class="lbl2">Reads</div><div>${chips(ct.reads)}</div>`); }
+  if(ct.writes&&ct.writes.length){ P.insertAdjacentHTML('beforeend',`<div class="lbl2">Writes</div><div>${chips(ct.writes)}</div>`); }
+  P.insertAdjacentHTML('beforeend',`<div class="lbl2">Settings</div>`);
+  if(!(c.fields||[]).length){ P.insertAdjacentHTML('beforeend','<div class="m2">No configurable settings.</div>'); return; }
+  const card=document.createElement('div'); card.className='card';
+  c.fields.forEach(f=> card.appendChild(fieldRow(c.component, f)));
+  P.appendChild(card);
+}
+function chips(a){ return (a&&a.length)?a.map(x=>`<span class="chip">${esc(typeof x==='object'?(x.host||JSON.stringify(x)):x)}</span>`).join(''):'<span class="m2">none</span>'; }
+
 function blobToB64(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.readAsDataURL(blob); }); }
 async function uploadAsset(cid, name, populates, file, statusEl){
   statusEl.textContent='starting…';
   const init = await API('asset',{action:'init', component:cid, asset:name});
-  if(!init || !init.upload_id){ statusEl.textContent='upload failed'; toast('upload init failed'); return; }
+  if(!init || !init.upload_id){ statusEl.textContent='upload failed'; toast('upload init failed',1); return; }
   const CH=512*1024; let sent=0;
   for(let off=0; off<file.size; off+=CH){
     const b64 = await blobToB64(file.slice(off, off+CH));
@@ -125,8 +223,8 @@ async function uploadAsset(cid, name, populates, file, statusEl){
   }
   const fin = await API('asset',{action:'finish', upload_id:init.upload_id, populates:populates,
                                  filename:file.name, content_type:file.type||'application/octet-stream'});
-  if(fin && fin.file_id){ statusEl.textContent='bound: '+file.name; toast('Uploaded'+(fin.run_started?' — re-running':'')); loaded=false; }
-  else { statusEl.textContent='upload failed'; toast((fin&&fin.error)||'upload failed'); }
+  if(fin && fin.file_id){ statusEl.textContent='bound: '+file.name; toast('Uploaded'+(fin.run_started?' — re-running':'')); loaded=false; loadAdmin(); }
+  else { statusEl.textContent='upload failed'; toast((fin&&fin.error)||'upload failed',1); }
 }
 function fieldRow(cid, f){
   const row=document.createElement('div'); row.className='row';
@@ -137,7 +235,7 @@ function fieldRow(cid, f){
                <input type="password" placeholder="${f.set?'•••••• (update)':'enter secret'}" data-c="${esc(cid)}" data-k="secret" data-n="${esc(f.name)}">
                <button class="act">Save</button>`;
   } else if(k==='asset'){
-    control = `<span class="dot ${f.set?'set':''}"></span><span class="astat" style="color:var(--muted);font-size:13px;min-width:120px">${f.set?('bound: '+esc(f.filename||'')):'not bound'}</span>
+    control = `<span class="dot ${f.set?'set':''}"></span><span class="astat m2" style="min-width:120px">${f.set?('bound: '+esc(f.filename||'')):'not bound'}</span>
                <input type="file" hidden><button class="act ghost up">${f.set?'Replace…':'Upload…'}</button>`;
   } else {
     if(f.options && f.options.length){
@@ -158,20 +256,102 @@ function fieldRow(cid, f){
   if(btn) btn.onclick=()=>{
     const ctl=row.querySelector('[data-n]'); if(!ctl) return;
     API('settings-set',{component:cid, kind:ctl.dataset.k, name:ctl.dataset.n, value:ctl.value}).then(r=>{
-      if(r&&r.ok){ toast('Saved → '+(r.stored||'ok')); if(ctl.type==='password') ctl.value=''; loaded=false; }
-      else toast((r&&r.error)||'save failed');
+      if(r&&r.ok){ toast('Saved → '+(r.stored||'ok')); if(ctl.type==='password') ctl.value=''; loaded=false; loadAdmin(); }
+      else toast((r&&r.error)||'save failed',1);
     });
   };
   return row;
 }
-function loadAdmin(){
-  if(loaded) return; loaded=true;
-  const body=$('#admin-body'); body.innerHTML='<div class="empty">Loading…</div>';
-  API('settings',{}).then(res=>{
-    if(res && res.error){ loaded=false; body.innerHTML=`<div class="banner">${esc(res.error)} — you need a tenant-admin role.</div>`; return; }
-    ALL=(res&&res.components)||[];
-    renderAdmin();
-  }).catch(()=>{ loaded=false; body.innerHTML='<div class="banner">Could not load settings.</div>'; });
+
+// ---- Sources & Attribution ----
+function paintSources(P, ct){
+  const srcs=(ct&&ct.sources)||[];
+  if(!srcs.length){ P.innerHTML='<div class="m2">This component declares no external data sources — nothing to attribute.</div>'; return; }
+  const lk=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${t} ↗</a>`:'';
+  P.innerHTML=srcs.map(s=>{const lic=s.license||{};
+    const rl=s.rate_limit?[s.rate_limit.per_min?s.rate_limit.per_min+'/min':'',s.rate_limit.per_hour?s.rate_limit.per_hour+'/hr':''].filter(Boolean).join(' · '):'';
+    return `<div class="src"><div style="font-weight:600">${esc(s.name||s.source_id||'')}${s.provider?` <span class="m2" style="font-weight:400">· ${esc(s.provider)}</span>`:''}</div>
+      <div style="margin:8px 0">${esc(s.attribution||'')}</div>
+      <div class="keyrow" style="gap:14px">${lic.id?`<span class="chip">${esc(lic.id)}</span>`:''}${lk(lic.url,'licence')}${lk(s.terms_url,'terms')}${lk(s.url,'source')}</div>
+      <div class="m2" style="font-size:12px;margin-top:6px">${rl?('rate limit '+esc(rl)+' · '):''}${s.user_agent?('UA '+esc(s.user_agent)):''}</div></div>`;
+  }).join('')+`<div class="m2" style="font-size:12px">Resolved by the platform from each fact's source — the same credits appear wherever this data is shown.</div>`;
+}
+
+// ---- Schedule (run now / cron / recent runs) ----
+async function paintSchedule(P, c){
+  P.innerHTML=`<div class="lbl2">Run</div>
+    <div class="keyrow"><button class="act" id="runnow">▶ Run now</button>
+      <span class="m2">manually trigger one run — same confined path a schedule uses</span></div>
+    <div class="lbl2">Schedules (cron)</div><div id="scheds"><div class="m2">loading…</div></div>
+    <div class="keyrow" style="margin-top:8px">
+      <select id="cronpreset" style="min-width:150px"><option value="">preset…</option>
+        <option value="*/15 * * * *">every 15 min</option><option value="0 * * * *">hourly</option>
+        <option value="0 2 * * *">daily 02:00</option><option value="0 3 * * 1">weekly Mon 03:00</option></select>
+      <input id="cronval" placeholder="min hour dom mon dow  (e.g. 0 2 * * *)" style="flex:1">
+      <button class="act" id="addsched">+ Add</button></div>
+    <div class="lbl2">Recent runs</div><div id="runs"><div class="m2">—</div></div>`;
+  $('#runnow').onclick=async()=>{ const b=$('#runnow'); b.disabled=true; b.textContent='running…';
+    const r=await API('run',{component:c.component}); b.disabled=false; b.textContent='▶ Run now';
+    toast(r&&!r.error?('run '+(r.status||'done')):(r.error||'run failed'), r&&r.error?1:0); loadRuns(c); };
+  $('#cronpreset').onchange=e=>{ if(e.target.value) $('#cronval').value=e.target.value; };
+  $('#addsched').onclick=async()=>{ const cron=$('#cronval').value.trim(); if(!cron) return toast('enter a cron expression',1);
+    const r=await API('schedule',{component:c.component,cron,enabled:true});
+    if(r&&!r.error){ toast('schedule added'); $('#cronval').value=''; $('#cronpreset').value=''; loadSchedule(c); } else toast((r&&r.error)||'failed',1); };
+  loadSchedule(c);
+}
+async function loadSchedule(c){
+  const S=$('#scheds'); if(!S) return;
+  try{
+    const d=await GET('/bridge/schedules?component='+encodeURIComponent(c.component));
+    const rows=d.schedules||[];
+    S.innerHTML=rows.length?('<table><tr><th>cron</th><th>enabled</th><th>last run</th><th>status</th><th>next run</th><th></th></tr>'+
+      rows.map(s=>`<tr><td>${esc(s.cron)}</td><td class="${s.enabled!==false?'ok2':'m2'}">${s.enabled!==false?'on':'off'}</td>
+        <td>${tidy(s.last_run||'—')}</td><td class="${s.last_status==='ok'?'ok2':(s.last_status?'warn2':'m2')}">${esc(s.last_status||'—')}</td>
+        <td>${tidy(s.next_run||'—')}</td><td><button class="act ghost" data-tog="${esc(s.id)}">${s.enabled!==false?'Disable':'Enable'}</button></td></tr>`).join('')+'</table>')
+      :'<span class="m2">no schedules — this component only runs manually or on an event</span>';
+    S.querySelectorAll('[data-tog]').forEach(b=>b.onclick=async()=>{
+      const s=rows.find(x=>x.id===b.dataset.tog);
+      const r=await API('schedule',{id:s.id,component:s.component,cron:s.cron,enabled:!(s.enabled!==false),overlap:s.overlap});
+      r&&!r.error?(toast('schedule updated'),loadSchedule(c)):toast((r&&r.error)||'failed',1);});
+  }catch(e){ S.innerHTML='<span class="m2">scheduler unavailable</span>'; }
+  loadRuns(c);
+}
+async function loadRuns(c){
+  const R=$('#runs'); if(!R) return;
+  try{ const d=await GET('/bridge/runs?component='+encodeURIComponent(c.component)+'&limit=10'); const rs=d.runs||[];
+    R.innerHTML=rs.length?('<table><tr><th>when</th><th>trigger</th><th>status</th></tr>'+
+      rs.map(r=>`<tr><td>${tidy(r.at)}</td><td>${esc(r.reason||'')}</td><td class="${r.status==='ok'?'ok2':'warn2'}" title="${esc(r.log||r.detail||'')}">${esc(r.status)}</td></tr>`).join('')+'</table>')
+      :'<span class="m2">no runs yet</span>';
+  }catch(e){ R.innerHTML='<span class="m2">—</span>'; }
+}
+
+// ---- External-call log (prov.egress) ----
+let LOG=[], CUR=null, LOGFOR=null;
+function statusInfo(s){ s=String(s==null?'':s);
+  if(/^2\d\d$/.test(s))return{t:s,c:'ok2',hint:'ok'};
+  if(s==='401'||s==='403')return{t:s,c:'bad',hint:'key rejected — rotate it'};
+  if(s==='404')return{t:s,c:'warn2',hint:'endpoint not found'};
+  if(/^5\d\d$/.test(s))return{t:s,c:'warn2',hint:'upstream error — retry later'};
+  if(s.startsWith('unreachable'))return{t:'unreachable',c:'m2',hint:'network / DNS'};
+  return{t:s||'—',c:'m2',hint:''}; }
+async function paintLogs(P, c){
+  P.innerHTML='<div class="lbl2">External-call log</div><div id="log"><div class="m2">loading…</div></div>';
+  if(LOGFOR!==c.component){ LOG=[]; CUR=null; LOGFOR=c.component; }
+  await loadMoreLog(c);
+}
+async function loadMoreLog(c){
+  const r=await API('query',{app_id:APPID,schema:'prov.egress',filter:{component:c.component},paginate:true,limit:25,cursor:CUR});
+  LOG=LOG.concat(r.results||[]); CUR=r.next_cursor||null; renderLog(c);
+}
+function renderLog(c){
+  const L=$('#log'); if(!L) return;
+  if(!LOG.length){ L.innerHTML='<span class="m2">no external calls recorded</span>'; return; }
+  L.innerHTML='<div style="overflow-x:auto"><table><tr><th>when</th><th>host</th><th>path</th><th>secret</th><th>outcome</th><th>upstream</th></tr>'+
+    LOG.map(e=>{const si=statusInfo(e.upstream_status);return `<tr><td>${tidy(e.at)}</td><td>${esc(e.host||'')}</td><td>${esc(e.path||'')}</td>
+      <td>${esc(e.secret||'')}</td><td class="${e.outcome==='allowed'?'ok2':'bad'}">${esc(e.outcome)}${e.reason?' ('+esc(e.reason)+')':''}</td>
+      <td class="${si.c}" title="${esc(si.hint)}">${esc(si.t)}${si.hint&&si.t!=='—'?' · '+esc(si.hint):''}</td></tr>`;}).join('')+'</table></div>'
+    +(CUR?'<button class="act ghost" id="more" style="margin-top:10px">Load more</button>':'<div class="m2" style="margin-top:8px">— end —</div>');
+  const m=$('#more'); if(m)m.onclick=()=>loadMoreLog(c);
 }
 </script>
 </body>

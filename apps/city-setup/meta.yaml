@@ -12,6 +12,7 @@ bundle: dist
 sandboxed: true
 required_schemas: []
 system: false          # domain app — installed via the urban pack, not forced on every tenant
+developer_default: true # …but on a DEVELOPER tenant's starter shelf, so devs can run a city baseline out of the box
 roles: [platform.tenant-admin]
 egress:
   - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-setup (+https://airawat.org; manishsv@gmail.com)" }

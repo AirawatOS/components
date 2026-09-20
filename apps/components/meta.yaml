@@ -10,3 +10,4 @@ icon: 🧩
 entrypoint: index.html
 required_schemas: [prov.egress]
 sandboxed: true
+deprecated: true       # ADR-0092: folded into Settings ▸ Administration (Configure/Sources/Schedule/External-calls). Hidden from the desktop; kept certified for back-compat.

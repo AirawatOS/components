@@ -11,4 +11,5 @@ icon: 📚
 entrypoint: index.html
 bundle: dist
 sandboxed: true
+developer_default: true # on a DEVELOPER tenant's starter shelf (was the hardcoded _DEV_APPS list, now declarative)
 required_schemas: [knowledge.document, knowledge.version, knowledge.chunk, governance.rule]

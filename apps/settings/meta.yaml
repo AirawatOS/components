@@ -1,11 +1,12 @@
 component_id: ds:airawatdeveloper:app/settings
 kind: app
-version: 0.1.2
+version: 0.1.3
 provider: ds:airawatdeveloper:developer
 display_name: Settings
 entrypoint: index.html
 bundle: dist
 sandboxed: true
 public: false
-required_schemas: [platform.component_config]
+required_schemas: [platform.component_config, prov.egress]
 roles: [platform.tenant-admin]
+system: true           # ADR-0092: the tenant's single config console — on every tenant, undeletable (replaces the CORE Connections + Components apps). Tenant-admin gated via `roles`.

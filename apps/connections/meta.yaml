@@ -13,3 +13,4 @@ sandboxed: true
 required_schemas: []
 system: true           # CORE: Admin · Storefront · Connections
 roles: [platform.tenant-admin]
+deprecated: true       # ADR-0092: the keys-checklist is now the missing-keys banner + per-component Configure tab in Settings ▸ Administration. Hidden from the desktop; kept certified for back-compat.
