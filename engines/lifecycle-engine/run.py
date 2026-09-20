@@ -90,6 +90,30 @@ def _approver(route, scope, tenant):
     return None
 
 
+def _materialize_scope(ctx, scope):
+    """Fill the *_path ancestor chains (walk the node's `parent` link) so the Inbox's read-free containment check
+    (org-rbac-engine.grant_covers) works: a grant on any ancestor of the item's node covers it. org_unit/area only
+    (jurisdiction paths need the network resolver — declare area_path explicitly for those)."""
+    if not isinstance(scope, dict) or not scope:
+        return scope
+    out = dict(scope)
+    for dim in ("org_unit", "area"):
+        node = scope.get(dim)
+        if node and not scope.get(dim + "_path"):
+            chain, seen, cur = [], set(), node
+            while cur and cur not in seen:
+                seen.add(cur); chain.append(cur); cur = (ctx["kget"](cur) or {}).get("parent")
+            out[dim + "_path"] = chain
+    return out
+
+
+def _task_scope(ctx, route, vars):
+    """A routed task's MATERIALISED scope (ADR-0028 RBAC) — resolved from route.scope (e.g. {area:'$payload.ward'}),
+    then ancestor-materialised. The Inbox shows a scoped task only to role-holders whose grant COVERS it."""
+    sc = (route or {}).get("scope")
+    return {"scope": _materialize_scope(ctx, _resolve(sc, vars))} if sc else {}
+
+
 def _state(rec):
     """The FINE workflow state. In spine mode it lives in `current_step` (case.status is a coarse enum);
     in single-record mode it IS the record's `status`."""
@@ -216,7 +240,7 @@ def h_request(ctx):
             ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
                                 "title": route.get("title") or f"{workflow}: action required", "ref": cid,
                                 "kind": "task", "status": "unread", "created_at": now,
-                                "actions": _actions_for(ctx, decl, tr["to"], workflow, cid)})
+                                "actions": _actions_for(ctx, decl, tr["to"], workflow, cid), **_task_scope(ctx, route, vars)})
         ctx["kwrite"](cid, crec)
         return {"case": cid, "workflow": workflow, "status": tr["to"], "case_status": crec["status"], "routed_to": approver,
                 "subjects": subjects}, None
@@ -224,13 +248,14 @@ def h_request(ctx):
     rec = {**payload, "schema": decl["record_schema"], "id": cid, "tenant": tenant,
            "status": tr["to"], "applicant_login": payload.get("applicant_login") or sub, "created_at": now}
     route = tr.get("route") or {}
-    approver = rec.get(route.get("to_field")) if route.get("to_field") else None
+    approver = _approver(route, rec, tenant)                 # user (route.to_field on the record) or static role (route.role)
     if approver:
         iid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}-{cid.rsplit('/', 1)[-1]}"
         ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
                             "title": route.get("title") or f"{workflow}: action required", "ref": cid,
                             "kind": "task", "status": "unread", "created_at": now,
-                            "actions": _actions_for(ctx, decl, tr["to"], workflow, cid)})
+                            "actions": _actions_for(ctx, decl, tr["to"], workflow, cid),
+                            **_task_scope(ctx, route, {"payload": payload, "record": rec, "case": cid, "sub": sub, "tenant": tenant, "now": now})})
     ctx["kwrite"](cid, rec)
     return {"case": cid, "workflow": workflow, "status": rec["status"], "routed_to": approver}, None
 
@@ -291,7 +316,8 @@ def h_decide(ctx):
         tid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}-{tr['to']}-{case.rsplit('/', 1)[-1]}"
         ctx["kwrite"](tid, {"schema": "platform.inbox_item", "id": tid, "tenant": tenant, "actor": nxt,
                             "title": route.get("title") or f"{workflow}: {tr['to']} — action required", "ref": case,
-                            "kind": "task", "status": "unread", "created_at": now, "actions": acts})
+                            "kind": "task", "status": "unread", "created_at": now, "actions": acts,
+                            **_task_scope(ctx, route, {**vars, "record": updated})})
         routed_to = nxt
     notify = tr.get("notify") or {}
     _nf = notify.get("to_field")
@@ -300,7 +326,7 @@ def h_decide(ctx):
         nid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.', '-')}res-{case.rsplit('/', 1)[-1]}"
         ctx["kwrite"](nid, {"schema": "platform.inbox_item", "id": nid, "tenant": tenant, "actor": who,
                             "title": f"{workflow}: {tr['to']}", "ref": case, "kind": "notification",
-                            "status": "unread", "created_at": now})
+                            "status": "unread", "created_at": now, **_task_scope(ctx, notify, {**vars, "record": updated})})
     return {"case": case, "workflow": workflow, "transition": tname, "status": tr["to"], "routed_to": routed_to}, None
 
 
