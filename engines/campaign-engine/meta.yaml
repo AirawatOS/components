@@ -4,7 +4,7 @@
 # campaign-progress. Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/campaign-engine
 kind: engine
-version: 0.1.2   # #263: assign-prepare + verify-decide compute-providers for the generic assign→verify lifecycle
+version: 0.1.3   # ADR-0100 C2: config-driven verify-decide + copy_fields passthrough (decoupled from tax); republish over drifted 0.1.2
 provider: ds:airawat:developer
 display_name: Campaign Engine
 entrypoint: run.py
