@@ -356,6 +356,13 @@
         }
         row.appendChild(acts);
       }
+      if (label === "Sent" && (s.status === "offered" || s.status === "accepted")) {
+        var sacts = document.createElement("div"); sacts.style.cssText = "margin-top:8px";
+        var wb = mkbtn("Withdraw", false, null);
+        wb.onclick = function () { withdrawShare(s, wb, m); };
+        sacts.appendChild(wb);
+        row.appendChild(sacts);
+      }
       wrap.appendChild(row);
     });
     return wrap;
@@ -364,6 +371,21 @@
     var b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.onclick = fn;
     if (primary) b.style.cssText = "background:var(--accent,#2563eb);color:#fff";
     return b;
+  }
+
+  function withdrawShare(s, btn, m) {
+    if (!btn._armed) {                                     // two-click confirm (no blocking dialog)
+      btn._armed = true; btn.textContent = "Confirm?";
+      setTimeout(function () { if (btn._armed) { btn._armed = false; btn.textContent = "Withdraw"; } }, 2500);
+      return;
+    }
+    AOS.post("/bridge/file-share/withdraw", { app_id: AOS.appId, share_id: s.id }).then(function (res) {
+      if (res && res.error) { AOS.toast(res.error); return; }
+      AOS.toast(res.was === "accepted"
+        ? "Withdrawn — note: " + s.to_tenant + " already accepted a copy"
+        : "Withdrawn — " + s.to_tenant + " can no longer access it");
+      m.close(); openShares();
+    }).catch(function () { AOS.toast("Could not withdraw"); });
   }
 
   async function decideShare(shareId, decision, m) {
