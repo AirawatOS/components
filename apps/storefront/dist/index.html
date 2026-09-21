@@ -129,12 +129,14 @@ function detail(c){
     ${egress.length?`<div class="sec">Network egress</div><div>${tags(egress,'e')}</div>`:''}
     ${scopes.length?`<div class="sec">Capabilities (scopes)</div><div>${tags(scopes,'w')}</div>`:''}
     ${secrets.length?`<div class="sec">Keys required</div><div>${tags(secrets,'')}</div><div class="prov" style="margin-top:4px">Set in the Components app (Settings → API keys) after install.</div>`:''}
+    <div class="sec">Documentation</div><div id="mktdocs" class="prov">loading…</div>
     <div class="sec">Provenance</div>
     <div class="kv2"><div class="k2">Certificate</div><div class="cid" style="margin:0">${esc((c.certificate&&(c.certificate.id||c.certificate))||'—')}</div>
       <div class="k2">Visibility</div><div>${esc(c.visibility||'public')}</div></div>
     <div class="row" style="margin-top:18px"><span>${priceLabel(c.pricing)}</span></div>
   </div>`;
   document.body.appendChild(ov);
+  loadMktDocs(c.component_id);                                  // ADR-0102 S3: packaged docs + Docs Assistant, before you install
   ov.querySelector('#xc').onclick=()=>ov.remove();
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const btn=document.createElement('button');
@@ -142,6 +144,40 @@ function detail(c){
   btn.disabled=installed||!installable;
   if(installable&&!installed) btn.onclick=()=>{install('component',c.component_id,btn);};
   ov.querySelector('.row:last-child').appendChild(btn);
+}
+// ADR-0102 S3: render a component's PACKAGED documentation (+ inline Docs Assistant) inside the Marketplace
+// detail modal, so a buyer can read the docs and ask questions BEFORE installing.
+async function loadMktDocs(cid){
+  const box=document.getElementById('mktdocs'); if(!box) return;
+  let man={pages:[]};
+  try{ man=await fetch('/bridge/component-docs?component='+encodeURIComponent(cid)+'&format=json').then(r=>r.json()); }catch(_){}
+  const pages=man.pages||[];
+  if(!pages.length){ box.innerHTML='<span style="color:var(--dim)">No documentation yet — the developer adds it in Studio (📝 Docs).</span>'; return; }
+  box.innerHTML='<style>#mdbody h1{font-size:1.15rem;margin:.3em 0}#mdbody h2{font-size:1rem;margin:.8em 0 .3em}#mdbody h3{font-size:.95rem}#mdbody pre{overflow:auto;background:rgba(127,127,127,.12);padding:8px;border-radius:6px}#mdbody code{background:rgba(127,127,127,.15);padding:.05em .3em;border-radius:3px}#mdbody table{border-collapse:collapse}#mdbody td,#mdbody th{border:1px solid var(--line,#333);padding:4px 7px}#mdnav .tagm.on{outline:1px solid var(--dim)}</style>'
+    +'<div id="mdnav" style="margin-bottom:6px"></div><div id="mdbody" style="line-height:1.55;max-height:340px;overflow:auto"></div>'
+    +'<div style="display:flex;gap:6px;margin-top:8px"><input id="mdq" placeholder="Ask about this component…" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--line,#333);background:transparent;color:inherit"><button id="mda" class="btn" style="padding:6px 10px">Ask</button></div><div id="mdans" style="margin-top:6px;color:var(--dim)"></div>';
+  const nav=document.getElementById('mdnav');
+  nav.innerHTML=pages.map(p=>`<span class="tagm" data-slug="${esc(p.slug)}" style="cursor:pointer">${esc(p.title||p.slug)}</span>`).join(' ');
+  async function show(slug){
+    nav.querySelectorAll('[data-slug]').forEach(el=>el.classList.toggle('on',el.dataset.slug===slug));
+    try{
+      const md=await fetch('/bridge/component-docs?component='+encodeURIComponent(cid)+'&page='+encodeURIComponent(slug)+'&format=md').then(r=>r.text());
+      const r=await fetch('/bridge/doc-render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({markdown:md})}).then(r=>r.json());
+      document.getElementById('mdbody').innerHTML=(r&&r.html)||'';
+    }catch(_){ document.getElementById('mdbody').textContent='(could not load)'; }
+  }
+  nav.querySelectorAll('[data-slug]').forEach(el=>el.onclick=()=>show(el.dataset.slug));
+  show(pages[0].slug);
+  const ask=async()=>{
+    const q=(document.getElementById('mdq').value||'').trim(); if(!q)return;
+    const a=document.getElementById('mdans'); a.textContent='thinking…';
+    try{
+      const r=await fetch('/bridge/doc-ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:cid,question:q})}).then(r=>r.json());
+      a.innerHTML=esc(r.answer||r.error||'').replace(/\n/g,'<br>')+((r.sources&&r.sources.length)?'<div style="margin-top:4px;font-size:12px">Sources: '+r.sources.map(s=>esc(s.slug)).join(', ')+'</div>':'');
+    }catch(_){ a.textContent='the assistant is unavailable right now.'; }
+  };
+  document.getElementById('mda').onclick=ask;
+  document.getElementById('mdq').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
 }
 function solCard(s){
   const el=document.createElement('div'); el.className='card';
