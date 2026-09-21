@@ -44,6 +44,7 @@
     <span class="fx-spacer"></span>
     <button class="btn" id="fx-up">⬆︎ Upload</button>
     <button class="btn" id="fx-newfolder">➕ New folder</button>
+    <button class="btn" id="fx-shares">📤 Shares</button>
     <button class="btn" id="fx-refresh" aria-label="Refresh">🔄</button>
     <input type="file" id="fx-file" multiple hidden>
   </div>
@@ -158,6 +159,7 @@
     var acts = document.createElement("div"); acts.className = "fx-acts";
     if (!isFolder(r)) {
       acts.appendChild(actBtn("⬇︎", "Download", function () { window.location.href = fileUrl(r); }));
+      acts.appendChild(actBtn("📤", "Share with another tenant", function () { shareFile(r); }));
       var star = actBtn(r.starred ? "★" : "☆", "Star", function () { toggleStar(r); });
       star.className = "fx-star" + (r.starred ? " on" : "");
       acts.appendChild(star);
@@ -275,6 +277,105 @@
     await refresh();
   }
 
+  // ---- cross-tenant share (ADR-0085 S2) ----
+  function shareFile(r) {
+    AOS.form("Share “" + r.name + "”", [
+      { id: "to_tenant", label: "Recipient tenant", type: "text", required: true },
+      { id: "purpose", label: "Purpose (optional)", type: "text" }
+    ], {
+      submitLabel: "Send offer",
+      onSubmit: async function (v) {
+        var to = (v.to_tenant || "").trim().toLowerCase();
+        if (!to) return;
+        try {
+          var res = await AOS.post("/bridge/file-share", { app_id: AOS.appId, to_tenant: to, file_ids: [r.file_id], purpose: v.purpose || "" });
+          if (res && res.error) { AOS.toast("Share failed: " + res.error); return; }
+          AOS.toast("Offered to " + to + " — awaiting their admin’s acceptance");
+        } catch (e) { AOS.toast("Share failed"); }
+      }
+    });
+  }
+
+  function fxModal(title) {
+    var ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:60";
+    var box = document.createElement("div");
+    box.style.cssText = "background:var(--bg,#fff);color:var(--txt,inherit);max-width:640px;width:92%;max-height:80vh;overflow:auto;border-radius:12px;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.3)";
+    var h = document.createElement("div"); h.style.cssText = "display:flex;align-items:center;margin-bottom:12px";
+    var t = document.createElement("h2"); t.style.cssText = "margin:0;font-size:18px;flex:1"; t.textContent = title;
+    var x = document.createElement("button"); x.className = "btn"; x.textContent = "✕"; x.onclick = function () { document.body.removeChild(ov); };
+    h.appendChild(t); h.appendChild(x); box.appendChild(h);
+    var body = document.createElement("div"); box.appendChild(body);
+    ov.appendChild(box); ov.addEventListener("click", function (e) { if (e.target === ov) document.body.removeChild(ov); });
+    document.body.appendChild(ov);
+    return { body: body, close: function () { if (ov.parentNode) document.body.removeChild(ov); } };
+  }
+
+  async function openShares() {
+    var m = fxModal("📤 Shared files");
+    m.body.innerHTML = '<p style="color:var(--muted,#888)">Loading…</p>';
+    var data;
+    try { data = await AOS.get("/bridge/file-shares"); }
+    catch (e) { m.body.innerHTML = '<p>Could not load shares.</p>'; return; }
+    var shares = data.shares || [], me = data.me, isAdmin = data.is_admin;
+    var incoming = shares.filter(function (s) { return s.to_tenant === me; });
+    var outgoing = shares.filter(function (s) { return s.from_tenant === me; });
+    m.body.innerHTML = "";
+    m.body.appendChild(shareSection("Received", incoming, me, isAdmin, m));
+    m.body.appendChild(shareSection("Sent", outgoing, me, isAdmin, m));
+  }
+
+  function shareSection(label, list, me, isAdmin, m) {
+    var wrap = document.createElement("div"); wrap.style.marginBottom = "16px";
+    var h = document.createElement("h3"); h.style.cssText = "font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#888);margin:8px 0"; h.textContent = label;
+    wrap.appendChild(h);
+    if (!list.length) { var e = document.createElement("p"); e.style.cssText = "color:var(--muted,#888);font-size:13px;margin:4px 0"; e.textContent = "Nothing here."; wrap.appendChild(e); return wrap; }
+    list.forEach(function (s) {
+      var row = document.createElement("div");
+      row.style.cssText = "border:1px solid var(--border,#e2e2e2);border-radius:8px;padding:10px 12px;margin-bottom:8px";
+      var who = (label === "Received") ? ("from " + s.from_tenant) : ("to " + s.to_tenant);
+      var names = (s.files || []).map(function (f) { return f.name; }).join(", ");
+      var head = document.createElement("div"); head.style.cssText = "display:flex;align-items:center;gap:8px";
+      var badge = document.createElement("span");
+      var color = s.status === "accepted" ? "#1a7f37" : s.status === "declined" ? "#c0392b" : "#b08900";
+      badge.style.cssText = "font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;color:#fff;background:" + color;
+      badge.textContent = s.status;
+      var title = document.createElement("div"); title.style.flex = "1";
+      title.innerHTML = "<strong>" + esc(names || "(files)") + "</strong> <span style='color:var(--muted,#888)'>" + esc(who) + "</span>";
+      head.appendChild(title); head.appendChild(badge); row.appendChild(head);
+      if (s.purpose) { var p = document.createElement("div"); p.style.cssText = "font-size:12px;color:var(--muted,#888);margin-top:4px"; p.textContent = "“" + s.purpose + "”"; row.appendChild(p); }
+      if (label === "Received" && s.status === "offered") {
+        var acts = document.createElement("div"); acts.style.cssText = "margin-top:8px;display:flex;gap:8px";
+        if (isAdmin) {
+          acts.appendChild(mkbtn("Accept", true, function () { decideShare(s.id, "accept", m); }));
+          acts.appendChild(mkbtn("Decline", false, function () { decideShare(s.id, "decline", m); }));
+        } else {
+          var note = document.createElement("span"); note.style.cssText = "font-size:12px;color:var(--muted,#888)";
+          note.textContent = "A tenant admin must accept this.";
+          acts.appendChild(note);
+        }
+        row.appendChild(acts);
+      }
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+  function mkbtn(label, primary, fn) {
+    var b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.onclick = fn;
+    if (primary) b.style.cssText = "background:var(--accent,#2563eb);color:#fff";
+    return b;
+  }
+
+  async function decideShare(shareId, decision, m) {
+    try {
+      var res = await AOS.post("/bridge/file-share/decide", { app_id: AOS.appId, share_id: shareId, decision: decision });
+      if (res && res.error) { AOS.toast(res.error); return; }
+      if (decision === "accept") { AOS.toast("Accepted — " + (res.received || 0) + " file(s) saved to “/Shared with me”"); await refresh(); }
+      else AOS.toast("Declined");
+      m.close(); openShares();
+    } catch (e) { AOS.toast("Could not " + decision); }
+  }
+
   // ---- drag & drop ----
   function wireDrop() {
     var d = document.getElementById("fx-drop");
@@ -290,6 +391,7 @@
     ME.sub = s.sub || "";
     document.getElementById("fx-up").onclick = pickFiles;
     document.getElementById("fx-newfolder").onclick = newFolder;
+    document.getElementById("fx-shares").onclick = openShares;
     document.getElementById("fx-refresh").onclick = refresh;
     document.getElementById("fx-file").onchange = onFiles;
     wireDrop();
