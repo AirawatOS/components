@@ -1,0 +1,27 @@
+# File Explorer — the Airawat "Files" app (kind=app). PART OF THE BASE-OS "Basic Apps" SUITE.
+# A personal file manager: every signed-in user uploads, organises (virtual folders), downloads, renames and
+# removes their OWN files. Bytes live in the content-addressed filestore (upload via /bridge/file-upload,
+# download via /bridge/file?id=…); the folder tree + file metadata are governed `platform.file` records that
+# point at those blobs by file_id (the filestore itself is flat + immutable — it keeps no names or folders).
+#
+# `personal: true` is the workspace-runtime flag (app_host): SELF-SERVICE (any signed-in tenant user may write,
+# no audience role) + OWNER-SCOPED (the host stamps + forces owner==sub on every read and write, so a user only
+# ever sees their own files). Same runtime Docs/Sheets/Slides/Mail use.
+component_id: ds:airawat:app/file-explorer
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Files
+icon: 📁
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+personal: true
+required_schemas: [platform.file]
+writes: [platform.file]
+roles: []          # personal app → available to every signed-in user (no audience role required)
+
+default_install: true   # part of the base-OS default suite every tenant receives (the "Basic Apps" solution)
+# ADR-0081: this app's App-Agent tools — the personal agent discovers + delegates to these
+agent_tools:
+  - {name: list_files, kind: read, desc: List your files and folders}

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Files</title>
+<link rel="stylesheet" href="/shared/aos.css">
+<style>
+  /* App-specific only — tokens, base components + themes come from aos.css */
+  .fx-wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+  .fx-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .fx-bar .fx-spacer { flex: 1; }
+  .fx-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 14px; margin-bottom: 12px; }
+  .fx-crumbs a { color: var(--accent, #2563eb); cursor: pointer; text-decoration: none; }
+  .fx-crumbs a:hover { text-decoration: underline; }
+  .fx-crumbs .sep { color: var(--muted, #888); }
+  .fx-list { border: 1px solid var(--border, #e2e2e2); border-radius: 10px; overflow: hidden; }
+  .fx-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--border, #eee); }
+  .fx-row:first-child { border-top: none; }
+  .fx-row:hover { background: var(--surface-2, rgba(0,0,0,.03)); }
+  .fx-ico { font-size: 20px; width: 24px; text-align: center; flex: none; }
+  .fx-name { flex: 1; min-width: 0; }
+  .fx-name .n { font-weight: 500; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fx-name .n.file { cursor: default; font-weight: 400; }
+  .fx-name a.n { color: var(--accent, #2563eb); }
+  .fx-meta { color: var(--muted, #888); font-size: 12px; font-variant-numeric: tabular-nums; flex: none; min-width: 88px; text-align: right; }
+  .fx-acts { display: flex; gap: 2px; flex: none; }
+  .fx-acts button { background: none; border: none; cursor: pointer; font-size: 15px; padding: 4px 6px; border-radius: 6px; color: var(--muted, #777); }
+  .fx-acts button:hover { background: var(--surface-3, rgba(0,0,0,.06)); color: var(--txt, inherit); }
+  .fx-acts button.danger:hover { color: #c0392b; }
+  .fx-empty { text-align: center; color: var(--muted, #888); padding: 48px 16px; }
+  .fx-empty .big { font-size: 40px; margin-bottom: 8px; }
+  .fx-star.on { color: #e0a800; }
+  .fx-drop { border: 2px dashed transparent; border-radius: 12px; transition: border-color .15s, background .15s; }
+  .fx-drop.over { border-color: var(--accent, #2563eb); background: var(--surface-2, rgba(37,99,235,.05)); }
+  .fx-note { color: var(--muted, #888); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<a href="#main" class="aos-skip">Skip to content</a>
+<main id="main" class="fx-wrap">
+  <div class="fx-bar">
+    <h1 style="margin:0;font-size:22px">📁 Files</h1>
+    <span class="fx-spacer"></span>
+    <button class="btn" id="fx-up">⬆︎ Upload</button>
+    <button class="btn" id="fx-newfolder">➕ New folder</button>
+    <button class="btn" id="fx-refresh" aria-label="Refresh">🔄</button>
+    <input type="file" id="fx-file" multiple hidden>
+  </div>
+  <div class="fx-crumbs" id="fx-crumbs"></div>
+  <div class="fx-drop" id="fx-drop">
+    <div class="fx-list" id="fx-list"></div>
+  </div>
+  <p class="fx-note">Files are private to you. Bytes are stored once (content-addressed) in the platform filestore; this list is your governed <code>platform.file</code> index.</p>
+</main>
+
+<script src="/shared/i18n.js"></script>
+<script src="/shared/aos.js"></script>
+<script>
+(function () {
+  var ME = { tenant: "", sub: "" };
+  var ALL = [];         // all non-archived platform.file records (owner-scoped by the host)
+  var CWD = "/";        // current folder path
+
+  // ---- path helpers ----
+  function join(dir, name) { return dir === "/" ? "/" + name : dir + "/" + name; }
+  function parentOf(dir) { if (dir === "/") return "/"; var p = dir.slice(0, dir.lastIndexOf("/")); return p || "/"; }
+  function segs(dir) { return dir === "/" ? [] : dir.slice(1).split("/"); }
+
+  function ns() {
+    var t = (ME.tenant || "t").toString().replace(/^ds:/, "").split(":")[0].toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    return t || "t";
+  }
+  function newId() { return "ds:" + ns() + ":file/" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function nowIso() { return new Date().toISOString(); }
+
+  function fmtSize(b) {
+    if (b == null) return "";
+    if (b < 1024) return b + " B";
+    var u = ["KB", "MB", "GB", "TB"], i = -1;
+    do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+    return b.toFixed(b < 10 ? 1 : 0) + " " + u[i];
+  }
+  function fmtDate(s) { if (!s) return ""; try { return new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); } catch (e) { return ""; } }
+  function esc(s) { return AOS.esc ? AOS.esc(s) : String(s == null ? "" : s); }
+
+  function isFolder(r) { return (r.kind || "file") === "folder"; }
+
+  // ---- data ----
+  async function refresh() {
+    try {
+      var rows = await AOS.query("platform.file", {});
+      ALL = (rows || []).filter(function (r) { return !r.archived; });
+    } catch (e) { ALL = []; AOS.toast && AOS.toast("Could not load files"); }
+    // if CWD no longer exists (folder deleted), climb to a valid ancestor
+    while (CWD !== "/" && !folderExists(CWD)) CWD = parentOf(CWD);
+    render();
+  }
+  function folderExists(path) {
+    if (path === "/") return true;
+    var name = path.slice(path.lastIndexOf("/") + 1), par = parentOf(path);
+    return ALL.some(function (r) { return isFolder(r) && (r.folder || "/") === par && r.name === name; });
+  }
+  function childrenOf(dir) {
+    var here = ALL.filter(function (r) { return (r.folder || "/") === dir; });
+    here.sort(function (a, b) {
+      var fa = isFolder(a), fb = isFolder(b);
+      if (fa !== fb) return fa ? -1 : 1;                 // folders first
+      return (a.name || "").localeCompare(b.name || "");
+    });
+    return here;
+  }
+
+  // ---- render ----
+  function render() {
+    renderCrumbs();
+    var list = document.getElementById("fx-list");
+    list.innerHTML = "";
+    var kids = childrenOf(CWD);
+    if (!kids.length) {
+      list.innerHTML = '<div class="fx-empty"><div class="big">📂</div>This folder is empty.<br>Upload a file or create a folder to get started.</div>';
+      return;
+    }
+    kids.forEach(function (r) { list.appendChild(rowEl(r)); });
+  }
+
+  function renderCrumbs() {
+    var c = document.getElementById("fx-crumbs");
+    c.innerHTML = "";
+    var root = document.createElement("a"); root.textContent = "🏠 Home"; root.onclick = function () { CWD = "/"; render(); };
+    c.appendChild(root);
+    var path = "";
+    segs(CWD).forEach(function (s) {
+      path = path + "/" + s;
+      var sep = document.createElement("span"); sep.className = "sep"; sep.textContent = "›"; c.appendChild(sep);
+      var a = document.createElement("a"); a.textContent = s; var target = path;
+      a.onclick = function () { CWD = target; render(); };
+      c.appendChild(a);
+    });
+  }
+
+  function rowEl(r) {
+    var row = document.createElement("div"); row.className = "fx-row";
+    var ico = document.createElement("div"); ico.className = "fx-ico"; ico.textContent = isFolder(r) ? "📁" : fileIcon(r);
+    var nameWrap = document.createElement("div"); nameWrap.className = "fx-name";
+    if (isFolder(r)) {
+      var fn = document.createElement("div"); fn.className = "n"; fn.textContent = r.name;
+      fn.onclick = function () { CWD = join(CWD, r.name); render(); };
+      nameWrap.appendChild(fn);
+    } else {
+      var a = document.createElement("a"); a.className = "n file"; a.textContent = r.name;
+      a.href = fileUrl(r); a.setAttribute("download", r.name);
+      nameWrap.appendChild(a);
+    }
+    var meta = document.createElement("div"); meta.className = "fx-meta";
+    meta.textContent = isFolder(r) ? "" : (fmtSize(r.size_bytes) + " · " + fmtDate(r.updated_at || r.created_at));
+
+    var acts = document.createElement("div"); acts.className = "fx-acts";
+    if (!isFolder(r)) {
+      acts.appendChild(actBtn("⬇︎", "Download", function () { window.location.href = fileUrl(r); }));
+      var star = actBtn(r.starred ? "★" : "☆", "Star", function () { toggleStar(r); });
+      star.className = "fx-star" + (r.starred ? " on" : "");
+      acts.appendChild(star);
+    }
+    acts.appendChild(actBtn("✏︎", "Rename", function () { rename(r); }));
+    var del = actBtn("🗑", "Delete", function () { confirmDelete(r, del); });
+    del.className = "danger"; acts.appendChild(del);
+
+    row.appendChild(ico); row.appendChild(nameWrap); row.appendChild(meta); row.appendChild(acts);
+    return row;
+  }
+  function actBtn(txt, label, fn) {
+    var b = document.createElement("button"); b.textContent = txt; b.title = label; b.setAttribute("aria-label", label); b.onclick = fn; return b;
+  }
+  function fileIcon(r) {
+    var t = (r.content_type || "").toLowerCase(), n = (r.name || "").toLowerCase();
+    if (t.indexOf("image") === 0) return "🖼";
+    if (t.indexOf("video") === 0) return "🎬";
+    if (t.indexOf("audio") === 0) return "🎵";
+    if (t.indexOf("pdf") >= 0 || n.endsWith(".pdf")) return "📕";
+    if (t.indexOf("zip") >= 0 || t.indexOf("gzip") >= 0 || /\.(zip|tar|gz|tgz)$/.test(n)) return "🗜";
+    if (/\.(csv|xlsx?|numbers)$/.test(n) || t.indexOf("sheet") >= 0) return "📊";
+    if (/\.(js|py|html?|json|yaml|yml|css|ts|md)$/.test(n)) return "📃";
+    return "📄";
+  }
+  function fileUrl(r) {
+    return "/bridge/file?id=" + encodeURIComponent(r.file_id || "") +
+           "&name=" + encodeURIComponent(r.name || "file") +
+           "&type=" + encodeURIComponent(r.content_type || "");
+  }
+
+  // ---- actions ----
+  function pickFiles() { document.getElementById("fx-file").click(); }
+  async function onFiles(ev) {
+    var files = ev.target ? ev.target.files : ev;
+    if (!files || !files.length) return;
+    var ok = 0;
+    for (var i = 0; i < files.length; i++) {
+      try { await uploadOne(files[i]); ok++; }
+      catch (e) { AOS.toast && AOS.toast("Upload failed: " + (files[i].name || "")); }
+    }
+    document.getElementById("fx-file").value = "";
+    if (ok) AOS.toast && AOS.toast(ok + " file" + (ok > 1 ? "s" : "") + " uploaded");
+    await refresh();
+  }
+  async function uploadOne(f) {
+    var ctype = f.type || "application/octet-stream";
+    var q = "?name=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(ctype);
+    var res = await fetch("/bridge/file-upload" + q, { method: "POST", headers: { "X-Upload-Type": ctype }, body: f });
+    if (!res.ok) throw new Error("upload " + res.status);
+    var up = await res.json();                              // {file_id, filename, content_type, size}
+    await AOS.save({
+      schema: "platform.file", id: newId(), kind: "file",
+      name: f.name, folder: CWD, file_id: up.file_id,
+      content_type: up.content_type || ctype, size_bytes: up.size,
+      created_at: nowIso(), updated_at: nowIso()
+    });
+  }
+
+  function newFolder() {
+    AOS.form("New folder", [{ id: "name", label: "Folder name", type: "text", required: true }], {
+      submitLabel: "Create",
+      onSubmit: async function (v) {
+        var name = (v.name || "").trim().replace(/[\/]/g, "-");
+        if (!name) return;
+        if (childrenOf(CWD).some(function (r) { return isFolder(r) && r.name === name; })) { AOS.toast && AOS.toast("A folder with that name already exists"); return; }
+        await AOS.save({ schema: "platform.file", id: newId(), kind: "folder", name: name, folder: CWD, created_at: nowIso(), updated_at: nowIso() });
+        await refresh();
+      }
+    });
+  }
+
+  function rename(r) {
+    AOS.form("Rename", [{ id: "name", label: "Name", type: "text", required: true, value: r.name }], {
+      submitLabel: "Save",
+      onSubmit: async function (v) {
+        var name = (v.name || "").trim().replace(/[\/]/g, "-");
+        if (!name || name === r.name) return;
+        var oldPath = isFolder(r) ? join(r.folder || "/", r.name) : null;
+        await AOS.save(Object.assign({}, r, { name: name, updated_at: nowIso() }));
+        // if a folder was renamed, re-parent its descendants (folder path is stored as a string on each child)
+        if (oldPath) {
+          var newPath = join(r.folder || "/", name);
+          var moves = ALL.filter(function (x) { return x.id !== r.id && ((x.folder || "/") === oldPath || (x.folder || "/").indexOf(oldPath + "/") === 0); });
+          for (var i = 0; i < moves.length; i++) {
+            var m = moves[i];
+            await AOS.save(Object.assign({}, m, { folder: (m.folder || "/").replace(oldPath, newPath), updated_at: nowIso() }));
+          }
+        }
+        await refresh();
+      }
+    });
+  }
+
+  // two-click inline confirm — avoids a blocking window.confirm dialog
+  function confirmDelete(r, btn) {
+    if (btn._armed) { doDelete(r); return; }
+    btn._armed = true; btn.textContent = "✓?"; btn.title = "Click again to confirm delete";
+    setTimeout(function () { if (btn._armed) { btn._armed = false; btn.textContent = "🗑"; btn.title = "Delete"; } }, 2500);
+  }
+  async function doDelete(r) {
+    // soft-delete (blob is immutable + content-addressed; we hide the pointer). A folder also hides its contents.
+    var kill = [r];
+    if (isFolder(r)) {
+      var path = join(r.folder || "/", r.name);
+      kill = kill.concat(ALL.filter(function (x) { return (x.folder || "/") === path || (x.folder || "/").indexOf(path + "/") === 0; }));
+    }
+    for (var i = 0; i < kill.length; i++) await AOS.save(Object.assign({}, kill[i], { archived: true, updated_at: nowIso() }));
+    AOS.toast && AOS.toast((isFolder(r) ? "Folder" : "File") + " deleted");
+    await refresh();
+  }
+
+  async function toggleStar(r) {
+    await AOS.save(Object.assign({}, r, { starred: !r.starred, updated_at: nowIso() }));
+    await refresh();
+  }
+
+  // ---- drag & drop ----
+  function wireDrop() {
+    var d = document.getElementById("fx-drop");
+    ["dragenter", "dragover"].forEach(function (ev) { d.addEventListener(ev, function (e) { e.preventDefault(); d.classList.add("over"); }); });
+    ["dragleave", "drop"].forEach(function (ev) { d.addEventListener(ev, function (e) { e.preventDefault(); d.classList.remove("over"); }); });
+    d.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) onFiles(e.dataTransfer.files); });
+  }
+
+  // ---- boot ----
+  AOS.boot(function (ctx) {
+    var s = (ctx && ctx.session) || {};
+    ME.tenant = AOS.tenant || s.tenant || "";
+    ME.sub = s.sub || "";
+    document.getElementById("fx-up").onclick = pickFiles;
+    document.getElementById("fx-newfolder").onclick = newFolder;
+    document.getElementById("fx-refresh").onclick = refresh;
+    document.getElementById("fx-file").onchange = onFiles;
+    wireDrop();
+    refresh();
+  });
+})();
+</script>
+</body>
+</html>

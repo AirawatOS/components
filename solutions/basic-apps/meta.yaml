@@ -1,0 +1,19 @@
+# A SOLUTION (kind=solution, INT-0003 / ADR-0035) — "Basic Apps": the base-OS utility bundle every tenant
+# receives. Like a desktop OS shipping a file manager, these are the always-there utilities, distinct from the
+# Workspace office suite (Docs/Sheets/Slides/Mail/Chat) and the domain solutions (City Baseline, Air, …).
+#
+# DELIVERY: each member app self-declares `default_install: true` in its own meta, so the app-host shelves it
+# on EVERY tenant at login (see _ensure_workspace_suite) — no per-tenant install step. This manifest is the
+# governed grouping: it names the bundle, lists its members, and gives the Marketplace a single coherent entry.
+# To add an app to Basic Apps: add it here AND set default_install in that app's meta.
+component_id: ds:airawat:solution/basic-apps
+kind: solution
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Basic Apps
+entrypoint: run.py
+summary: "The base-OS utility apps every tenant gets by default — starting with File Explorer, a personal file manager for uploading, organising and downloading your files."
+members:
+  - ds:airawat:app/file-explorer         # Files — personal file manager (upload / folders / download)
+reads: []
+writes: []
