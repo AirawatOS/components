@@ -279,8 +279,8 @@
 
   // ---- cross-tenant share (ADR-0085 S2) ----
   function shareFile(r) {
-    AOS.form("Share “" + r.name + "”", [
-      { id: "to_tenant", label: "Recipient tenant", type: "text", required: true },
+    AOS.form("Send “" + r.name + "” to another organisation", [
+      { id: "to_tenant", label: "Recipient organisation code (tenant)", type: "text", required: true },
       { id: "purpose", label: "Purpose (optional)", type: "text" }
     ], {
       submitLabel: "Send offer",
@@ -312,14 +312,14 @@
   }
 
   async function openShares() {
-    var m = fxModal("📤 Shared files");
-    m.body.innerHTML = '<p style="color:var(--muted,#888)">Loading…</p>';
+    var m = fxModal("📤 Organisation file shares");
+    m.body.innerHTML = '<p style="color:var(--muted,#888);font-size:13px;margin:0 0 10px">Files handed between organisations (tenants). A recipient organisation’s admin accepts an incoming offer. <em>Sharing with a specific person is coming separately.</em></p><p style="color:var(--muted,#888)">Loading…</p>';
     var data;
     try { data = await AOS.get("/bridge/file-shares"); }
     catch (e) { m.body.innerHTML = '<p>Could not load shares.</p>'; return; }
-    var shares = data.shares || [], me = data.me, isAdmin = data.is_admin;
+    var shares = data.shares || [], me = data.me, meSub = data.me_sub, isAdmin = data.is_admin;
     var incoming = shares.filter(function (s) { return s.to_tenant === me; });
-    var outgoing = shares.filter(function (s) { return s.from_tenant === me; });
+    var outgoing = shares.filter(function (s) { return s.from_tenant === me && s.offered_by === meSub; });  // only shares YOU sent
     m.body.innerHTML = "";
     m.body.appendChild(shareSection("Received", incoming, me, isAdmin, m));
     m.body.appendChild(shareSection("Sent", outgoing, me, isAdmin, m));
