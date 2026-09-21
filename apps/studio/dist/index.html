@@ -188,6 +188,7 @@ function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';co
   if(isApp)build.push(['♿ Accessibility (WCAG)',()=>a11yPanel(ref)]);  // runtime WCAG 2.2 AA audit of the live app
   const items = existing
     ? [['⚙ Configure  (install · keys · schedule)',()=>configureComponent(ref)],
+       ['📝 Docs…  (view / edit packaged documentation)',()=>docsPanel(ref)],
        ['Open meta.yaml (read-only)',()=>openFile(ref,'meta.yaml')]]
     : build;
   items.push(['Remove from project',async()=>{SEL.members=SEL.members.filter(x=>x.ref!==ref);await save(SEL);delete FILES[ref];TABS=TABS.filter(t=>t.ref!==ref);renderTabs();renderEdit();tree();}]);
