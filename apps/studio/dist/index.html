@@ -180,6 +180,7 @@ function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';co
     ['Open meta.yaml',()=>openFile(ref,'meta.yaml')],
     [isApp?'Preview':'Test',()=>isApp?window.open('/bridge/component-preview?component='+encodeURIComponent(ref),'_blank'):testComp(ref)],
     ['Publish',()=>publishComp(ref)],
+    ['📝 Docs…  (edit packaged documentation)',()=>docsPanel(ref)],
     ['📤 Submit for review',()=>submitForReview(ref)],
     ['✨ Generate code (AI)',()=>{openFile(ref, m.kind==='app'?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}],
   ];
@@ -263,6 +264,7 @@ function jumpToLine(ln){
 function renderEdit(){
   const E=$('edit');
   if(!ACTIVE){E.innerHTML='<div class="welcome" id="welcome">Open a file from the explorer, or right-click a component.</div>';return;}
+  if(ACTIVE.path&&ACTIVE.path.indexOf('docs/')===0&&ACTIVE.path.endsWith('.md'))return renderDocEdit();
   const t=ACTIVE, isCode=t.path==='run.py', m=memberFor(t.ref);
   E.innerHTML=`<div class="edtoolbar"><span class="sub">${esc(t.ref)} / ${esc(t.path)}</span>
       ${isCode?'<button class="btn sm" id="genBtn">✨ Generate with AI</button>':''}
@@ -293,7 +295,52 @@ function renderEdit(){
   if($('pvBtn'))$('pvBtn').onclick=()=>window.open('/bridge/component-preview?component='+encodeURIComponent(t.ref),'_blank');
   if($('genBtn'))$('genBtn').onclick=()=>generateInto(t);
 }
-async function saveActive(){const t=ACTIVE;if(!t)return;await post('/bridge/component-save',{component:t.ref,path:t.path,content:t.content});t.dirty=false;FILES[t.ref][t.path]=t.content;renderTabs();bottom('✓ saved '+t.path);}
+async function saveActive(){const t=ACTIVE;if(!t)return;if(t.path.indexOf('docs/')===0&&t.path.endsWith('.md'))return saveDoc();await post('/bridge/component-save',{component:t.ref,path:t.path,content:t.content});t.dirty=false;FILES[t.ref][t.path]=t.content;renderTabs();bottom('✓ saved '+t.path);}
+// ---------- DOCS (ADR-0102 S2): a component's PACKAGED docs/ edited natively in Studio ----------
+function renderDocEdit(){
+  const E=$('edit'), t=ACTIVE, slug=t.path.slice(5,-3);
+  E.innerHTML=`<style>#dprev h1{font-size:1.5rem;margin:.2em 0 .5em}#dprev h2{font-size:1.2rem;margin:1.1em 0 .4em}#dprev h3{font-size:1.05rem}#dprev pre{background:var(--panel,#0e141b);padding:10px 12px;border-radius:8px;overflow:auto}#dprev code{background:var(--panel,#0e141b);padding:.1em .35em;border-radius:4px}#dprev table{border-collapse:collapse}#dprev th,#dprev td{border:1px solid var(--line);padding:5px 9px}#dprev blockquote{border-left:3px solid var(--acc,#3fb970);margin:1em 0;padding:.2em 1em;color:var(--sub,#9aa7b2)}</style>
+    <div class="edtoolbar"><span class="sub">📝 ${esc(t.ref)} / docs/${esc(slug)}.md</span>
+      <span style="margin-left:auto"></span>
+      <button class="btn sm" id="dRev">Check vs code</button>
+      <button class="btn sm good" id="dPub">Publish docs</button>
+      <button class="btn sm primary" id="dSave">Save</button></div>
+    <div style="flex:1;display:flex;min-height:0">
+      <textarea class="code" id="dmd" spellcheck="false" wrap="soft" style="flex:1;border:0;resize:none;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65">${esc(t.content)}</textarea>
+      <div id="dprev" style="flex:1;overflow:auto;padding:14px 18px;border-left:1px solid var(--line);background:var(--bg)"></div>
+    </div>`;
+  const ta=$('dmd');
+  ta.oninput=()=>{t.content=ta.value;if(!t.dirty){t.dirty=true;renderTabs();}clearTimeout(window._dp);window._dp=setTimeout(previewDoc,300);};
+  ta.onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();saveDoc();}};
+  $('dSave').onclick=saveDoc; $('dRev').onclick=()=>reviewDoc(t.ref); $('dPub').onclick=()=>publishDocs(t.ref);
+  previewDoc();
+}
+async function previewDoc(){const t=ACTIVE;if(!t)return;const r=await post('/bridge/doc-render',{markdown:(($('dmd')||{}).value)||t.content});if($('dprev'))$('dprev').innerHTML=(r&&r.html)||'';}
+async function saveDoc(){const t=ACTIVE;const slug=t.path.slice(5,-3);const r=await post('/bridge/doc-save',{component:t.ref,page:slug,markdown:t.content});if(r.saved){t.dirty=false;FILES[t.ref]=FILES[t.ref]||{};FILES[t.ref][t.path]=t.content;renderTabs();bottom('✓ saved docs/'+slug+'.md — click “Publish docs” to make it live');}else bottom('✗ '+(r.error||'save failed'));}
+async function reviewDoc(ref){bottom('Checking docs vs meta.yaml …');const r=await post('/bridge/doc-review',{component:ref});let s=r.note||'';if(r.coverage!=null)s+='   Coverage: '+r.coverage+'%';if(r.undocumented&&Object.keys(r.undocumented).length){s+='\n\nDeclared in meta.yaml but NOT mentioned in the docs:';for(const k in r.undocumented)s+='\n  • '+k+': '+r.undocumented[k].join(', ');}bottom(s);}
+async function publishDocs(ref){bottom('Publishing docs for '+ref+' …');const r=await post('/bridge/doc-publish',{component:ref});if(r.published)bottom('✓ docs packaged into the component bundle + live (no image rebuild).');else bottom('✗ '+(r.error||'publish failed'));}
+async function docsPanel(ref){
+  const j=await fetch('/bridge/component-docs?component='+encodeURIComponent(ref)+'&format=json').then(r=>r.json()).catch(()=>({pages:[]}));
+  const pages=j.pages||[];
+  const list=pages.length?pages.map(p=>`<div class="drow" data-slug="${esc(p.slug)}" style="padding:8px 10px;border-radius:7px;cursor:pointer">📄 ${esc(p.title||p.slug)} <span class="sub">${esc(p.slug)}.md</span></div>`).join(''):'<div class="sub" style="padding:8px">No docs yet — create the first page.</div>';
+  const m=modal(`<h3>📝 Documentation</h3>
+    <div class="sub">Docs travel WITH the component (packaged in <code>docs/</code>). Edit &amp; preview here, then Publish.</div>
+    <div style="margin:10px 0;max-height:300px;overflow:auto" id="drows">${list}</div>
+    <div style="text-align:right"><button class="btn" id="dnew">＋ New page</button> <button class="btn primary" id="dx">Close</button></div>`);
+  m.q('#dx').onclick=m.close;
+  m.q('#dnew').onclick=()=>{const s=(prompt('New page slug (e.g. 02-configuration):')||'').trim();if(!s)return;if(!/^[a-z0-9][a-z0-9._-]*$/.test(s)){alert('slug must be lowercase letters, digits, - . _');return;}m.close();openDoc(ref,s,'# '+s.replace(/[-_]/g,' ')+'\n\n');};
+  m.q('#drows').querySelectorAll('.drow').forEach(el=>el.onclick=()=>{m.close();openDoc(ref,el.dataset.slug);});
+}
+async function openDoc(ref,slug,initial){
+  VIEW='files';
+  let md=initial;
+  if(md===undefined)md=await fetch('/bridge/component-docs?component='+encodeURIComponent(ref)+'&page='+encodeURIComponent(slug)+'&format=md').then(r=>r.text()).catch(()=>'# '+slug+'\n');
+  const path='docs/'+slug+'.md';
+  FILES[ref]=FILES[ref]||{}; FILES[ref][path]=md;
+  let t=TABS.find(x=>x.ref===ref&&x.path===path);
+  if(!t){t={ref,path,content:md,dirty:(initial!==undefined)};TABS.push(t);}else t.content=md;
+  ACTIVE=t; renderTabs(); renderEdit();
+}
 function generateInto(t){
   const kind=(memberFor(t.ref)||{}).kind||'component';
   const m=modal(`<h3>✨ Generate with AI</h3>
