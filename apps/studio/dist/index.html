@@ -307,7 +307,7 @@ function renderDocEdit(){
       <button class="btn sm good" id="dPub">Publish docs</button>
       <button class="btn sm primary" id="dSave">Save</button></div>
     <div style="flex:1;display:flex;min-height:0">
-      <textarea class="code" id="dmd" spellcheck="false" wrap="soft" style="flex:1;border:0;resize:none;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65">${esc(t.content)}</textarea>
+      <textarea id="dmd" spellcheck="false" wrap="soft" style="flex:1;border:0;resize:none;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;background:var(--bg,#0b0f14);color:var(--txt,#e7edf2);white-space:pre-wrap;outline:none">${esc(t.content)}</textarea>
       <div id="dprev" style="flex:1;overflow:auto;padding:14px 18px;border-left:1px solid var(--line);background:var(--bg)"></div>
     </div>`;
   const ta=$('dmd');
