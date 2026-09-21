@@ -234,6 +234,7 @@ async function renderDetail(c){
       <button class="tab" data-t="sources">Sources &amp; Attribution</button>
       <button class="tab" data-t="schedule">Schedule</button>
       <button class="tab" data-t="logs">External calls</button>
+      <button class="tab" data-t="docs">Documentation</button>
     </div>
     <div id="pane"></div>`;
   D.querySelectorAll('.tab').forEach(el=>el.onclick=()=>{
@@ -249,6 +250,51 @@ function paint(t, c, ct){
   if(t==='sources')   return paintSources(P, ct);
   if(t==='schedule')  return paintSchedule(P, c);
   if(t==='logs')      return paintLogs(P, c);
+  if(t==='docs')      return paintDocs(P, c);
+}
+
+// ---- Documentation tab (ADR-0102 S3): render the component's PACKAGED docs + an inline Docs Assistant ----
+async function paintDocs(P, c){
+  const cid=c.component;
+  P.innerHTML='<div class="m2">loading documentation…</div>';
+  let man={pages:[]};
+  try{ man=await fetch('/bridge/component-docs?component='+encodeURIComponent(cid)+'&format=json').then(r=>r.json()); }catch(_){}
+  const pages=man.pages||[];
+  if(!pages.length){
+    P.innerHTML='<div class="m2">No documentation yet.<br>Developers add docs in <b>Studio</b> → right-click the component → <b>📝 Docs…</b> — they ship packaged with the component.</div>';
+    return;
+  }
+  P.innerHTML=`<style>#docbody h1{font-size:1.35rem;margin:.2em 0 .5em}#docbody h2{font-size:1.1rem;margin:1.1em 0 .4em}#docbody h3{font-size:1rem}#docbody pre{background:var(--card,#f5f7f9);padding:10px 12px;border-radius:8px;overflow:auto}#docbody code{background:var(--card,#f5f7f9);padding:.1em .35em;border-radius:4px}#docbody table{border-collapse:collapse}#docbody th,#docbody td{border:1px solid var(--line,#ddd);padding:5px 9px}#docbody blockquote{border-left:3px solid var(--accent,#3fb970);margin:1em 0;padding:.2em 1em;color:var(--dim,#777)}#docnav .docp.on{background:var(--card,#eef);font-weight:600}</style>
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div id="docnav" style="min-width:150px;font-size:13px"></div>
+      <div style="flex:1;min-width:0">
+        <div id="docbody"></div>
+        <div class="card" style="margin-top:14px">
+          <div class="lbl2">Ask the documentation</div>
+          <div style="display:flex;gap:8px;margin-top:4px"><input id="docq" placeholder="e.g. what does this read and write?" style="flex:1"><button class="btn" id="docask">Ask</button></div>
+          <div id="docans" class="m2" style="margin-top:8px"></div>
+        </div>
+      </div></div>`;
+  const nav=P.querySelector('#docnav');
+  nav.innerHTML=pages.map(p=>`<div class="docp" data-slug="${esc(p.slug)}" style="padding:5px 8px;border-radius:6px;cursor:pointer">${esc(p.title||p.slug)}</div>`).join('');
+  async function show(slug){
+    nav.querySelectorAll('.docp').forEach(el=>el.classList.toggle('on',el.dataset.slug===slug));
+    const md=await fetch('/bridge/component-docs?component='+encodeURIComponent(cid)+'&page='+encodeURIComponent(slug)+'&format=md').then(r=>r.text()).catch(()=>'');
+    const r=await fetch('/bridge/doc-render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({markdown:md})}).then(r=>r.json()).catch(()=>({}));
+    P.querySelector('#docbody').innerHTML=(r&&r.html)||'<div class="m2">(could not render)</div>';
+  }
+  nav.querySelectorAll('.docp').forEach(el=>el.onclick=()=>show(el.dataset.slug));
+  show(pages[0].slug);
+  const ask=async()=>{
+    const q=(P.querySelector('#docq').value||'').trim(); if(!q)return;
+    const ans=P.querySelector('#docans'); ans.textContent='thinking…';
+    try{
+      const r=await fetch('/bridge/doc-ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:cid,question:q})}).then(r=>r.json());
+      ans.innerHTML=esc(r.answer||r.error||'').replace(/\n/g,'<br>')+((r.sources&&r.sources.length)?'<div class="m2" style="margin-top:6px">Sources: '+r.sources.map(s=>esc(s.slug)).join(', ')+'</div>':'');
+    }catch(_){ ans.textContent='the assistant is unavailable right now.'; }
+  };
+  P.querySelector('#docask').onclick=ask;
+  P.querySelector('#docq').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
 }
 
 // ---- Configure tab (ADR-0092 kind-routed contract: secret→Vault, value→governed, asset→filestore) ----
