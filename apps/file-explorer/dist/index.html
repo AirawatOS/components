@@ -57,7 +57,7 @@
 <script src="/shared/aos.js"></script>
 <script>
 (function () {
-  var ME = { tenant: "", sub: "" };
+  var ME = { tenant: "", sub: "", isAdmin: false };   // org→org transfer is an admin action (user→user sharing = ADR-0103, later)
   var ALL = [];         // all non-archived platform.file records (owner-scoped by the host)
   var CWD = "/";        // current folder path
 
@@ -157,7 +157,7 @@
     var acts = document.createElement("div"); acts.className = "fx-acts";
     if (!isFolder(r)) {
       acts.appendChild(actBtn("⬇︎", "Download", function () { window.location.href = fileUrl(r); }));
-      acts.appendChild(actBtn("📤", "Share with another tenant", function () { shareFile(r); }));
+      if (ME.isAdmin) acts.appendChild(actBtn("📤", "Send to another organisation", function () { shareFile(r); }));
       var star = actBtn(r.starred ? "★" : "☆", "Star", function () { toggleStar(r); });
       star.className = "fx-star" + (r.starred ? " on" : "");
       acts.appendChild(star);
@@ -409,9 +409,14 @@
     var s = (ctx && ctx.session) || {};
     ME.tenant = AOS.tenant || s.tenant || "";
     ME.sub = s.sub || "";
+    ME.isAdmin = (s.roles || []).some(function (r) { return r === "platform.tenant-admin" || r === "platform.steward" || r === "admin"; });
     document.getElementById("fx-up").onclick = pickFiles;
     document.getElementById("fx-newfolder").onclick = newFolder;
-    document.getElementById("fx-shares").onclick = openShares;
+    // Organisation-to-organisation transfers are an admin action; regular users get a clean Files app until
+    // per-person sharing (ADR-0103) ships.
+    var sharesBtn = document.getElementById("fx-shares");
+    if (ME.isAdmin) { sharesBtn.onclick = openShares; sharesBtn.textContent = "📤 Org transfers"; }
+    else { sharesBtn.style.display = "none"; }
     document.getElementById("fx-refresh").onclick = refresh;
     document.getElementById("fx-file").onchange = onFiles;
     wireDrop();
