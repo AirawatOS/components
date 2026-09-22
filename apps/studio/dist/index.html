@@ -93,9 +93,12 @@ const KINDLABEL={app:'Apps',driver:'Drivers',engine:'Engines',skill:'Skills',age
 const KINDS=['app','driver','engine','skill','agent','pipeline'];
 const nameOf=o=>o.title||pretty((o.component_id||o.ref||'').split('/').pop());
 // ---- ADR-0055 LAYERS: a solution is layered components that talk through specs (Studio DX Slice 1) ----
-const LAYERS=['interaction','governance','intelligence','domain','platform','network'];
-const LAYER_NAME={interaction:'Interaction',governance:'Governance',intelligence:'Intelligence',domain:'Domain',platform:'Platform',network:'Network'};
-const LAYER_HINT={interaction:'apps people use',governance:'decisions & workflows',intelligence:'engines, skills & AI experts',domain:'data acquisition → facts',platform:'shared plumbing',network:'the shared specs everything speaks'};
+// Task-language nav (keeps the ADR-0055 layer KEYS internally; only the labels/hints/order change). Order:
+// Apps → Data In → Logic & AI → Rules & Automation → Contracts → Advanced.
+const LAYERS=['interaction','domain','intelligence','governance','network','platform'];
+const LAYER_NAME={interaction:'Apps & Screens',domain:'Data In',intelligence:'Logic & AI',governance:'Rules & Automation',network:'Contracts',platform:'Advanced'};
+const LAYER_HINT={interaction:'screens people use',domain:'bring outside data in as governed facts',intelligence:'engines, skills & AI experts that compute',governance:'workflows, event→action automations & decisions',network:'the shared specs every component speaks',platform:'pipelines & lower-level plumbing'};
+const LAYER_ICON={interaction:'📱',domain:'🔌',intelligence:'🧠',governance:'⚖️',network:'🔗',platform:'⚙️'};
 const KIND_LAYER={app:'interaction',solution:'interaction',engine:'intelligence',skill:'intelligence',agent:'intelligence',expert:'intelligence',driver:'domain',pipeline:'platform',workflow:'governance',subscription:'governance',decision:'governance'};
 const LAYER_KINDS={interaction:['app'],intelligence:['engine','skill','agent'],domain:['driver'],platform:['pipeline'],governance:[],network:[]};
 function schemaLayer(n){const d=(n||'').split('.')[0];return ({network:'network',ref:'network',platform:'platform',governance:'governance',viz:'interaction',studio:'platform'})[d]||'domain';}
@@ -143,8 +146,8 @@ function tree(){
   const byLayer={}; (SEL.members||[]).forEach(m=>{const ly=layerOf(m);(byLayer[ly]=byLayer[ly]||[]).push(m);});
   let html='<div class="sub" style="padding:5px 8px 3px">Your solution, by layer — <b>components that talk through specs</b></div>';
   LAYERS.forEach(ly=>{
-    const mem=byLayer[ly]||[]; const open=OPENK['ly:'+ly]!==false;   // layers open by default
-    html+=`<div class="node lyr" data-lfolder="${ly}" style="padding-left:6px" title="right-click to add to this layer"><span class="tw">${open?'▾':'▸'}</span><b>${esc(LAYER_NAME[ly])}</b> <span class="sub">· ${esc(LAYER_HINT[ly])} (${mem.length})</span></div>`;
+    const mem=byLayer[ly]||[]; const open=(OPENK['ly:'+ly]===undefined)?(ly!=='platform'):(OPENK['ly:'+ly]!==false);   // open by default; Advanced collapsed
+    html+=`<div class="node lyr" data-lfolder="${ly}" style="padding-left:6px" title="right-click to add to this group"><span class="tw">${open?'▾':'▸'}</span>${LAYER_ICON[ly]||''} <b>${esc(LAYER_NAME[ly])}</b> <span class="sub">· ${esc(LAYER_HINT[ly])} (${mem.length})</span></div>`;
     if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 26px">— empty —</div>`;
       mem.forEach((m)=>{const key='c:'+m.ref; const co=OPENK[key]; const spec=(m.kind==='schema'||m.kind==='interface');
         html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${spec?'view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${spec?'📐':'📦'}</span><span class="nm">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
@@ -168,9 +171,10 @@ function menu(x,y,items){document.querySelectorAll('.menu').forEach(m=>m.remove(
   items.forEach(([label,fn])=>{const d=document.createElement('div');d.textContent=label;d.onclick=()=>{m.remove();fn();};m.appendChild(d);});
   document.body.appendChild(m);setTimeout(()=>document.addEventListener('click',()=>m.remove(),{once:true}),0);}
 function ctxKind(kind,e){menu(e.clientX,e.clientY,[['＋ New '+ (kind==='agent'?'AI Expert':pretty(kind)),()=>addComponent(kind)]]);}
-function ctxLayer(layer,e){const items=(LAYER_KINDS[layer]||[]).map(k=>['＋ New '+(k==='agent'?'AI Expert':pretty(k)),()=>addComponent(k)]);
-  if(layer==='network'||layer==='domain')items.push(['📐 Browse / add a spec…',specsBrowser]);
-  if(!items.length)items.push(['— configured on the platform, not built here —',()=>{}]);
+function ctxLayer(layer,e){const items=(LAYER_KINDS[layer]||[]).map(k=>['＋ New '+(k==='agent'?'AI Expert':k==='pipeline'?'Pipeline (chained stages)':pretty(k)),()=>addComponent(k)]);
+  if(layer==='domain'||layer==='network'||layer==='governance')items.push(['📐 Browse specs…',specsBrowser]);
+  if(layer==='governance')items.push(['ⓘ How automations work',()=>bottom('An automation is an engine reacting to a governed event. Open an engine in Logic & AI → edit its meta.yaml → add a "subscribes:" block ({on: <schema>, action: <verb>}); the platform wires the subscription at install (ADR-0104). Workflows & roles are authored as governed specs — use Browse specs.')]);
+  if(!items.length)items.push(['— add these by publishing a governed spec (Browse specs) —',()=>{}]);
   menu(e.clientX,e.clientY,items);}
 function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';const existing=m.origin==='existing';
   // CONFIG-vs-BUILD fork: an EXISTING platform component is CONFIGURED (install · keys · schedule), a NEW
