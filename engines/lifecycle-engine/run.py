@@ -659,6 +659,7 @@ def _advance_graph(ctx, decl, case_id):
     tenant = case["tenant"]; workflow = decl["workflow"]; now = _now()
     st = _gstate(case); done = set(st.get("done") or []); openn = set(st.get("open") or [])
     waiting = set(st.get("waiting") or []); decisions = dict(st.get("decisions") or {}); routed = []
+    remote = dict((case.get("scope") or {}).get("_remote") or {})   # ADR-0097 W2: per-node federated-leg refs
     changed = True
     while changed:
         changed = False
@@ -668,7 +669,18 @@ def _advance_graph(ctx, decl, case_id):
                 continue
             if not _gready(n, done, decisions):
                 continue
-            if kind in ("task", "decision"):
+            ful = n.get("fulfilment")
+            if kind == "task" and isinstance(ful, dict) and ctx.get("federate"):
+                # ADR-0097 W2: a federated node — open the leg in the PROVIDER tenant (host-held capability), then PARK.
+                scope0 = {k: v for k, v in (case.get("scope") or {}).items() if not str(k).startswith("_")}
+                fr = ctx["federate"](ful.get("provider"), ful.get("workflow") or ful.get("offering"),
+                                     (n.get("route") or {}).get("title") or nid, scope0, case_id) or {}
+                remote[nid] = {"provider": ful.get("provider"), "remote_case": fr.get("remote_case"),
+                               "transaction_id": fr.get("transaction_id"), "status": fr.get("status") or "open",
+                               **({"error": fr["error"]} if fr.get("error") else {})}
+                waiting.add(nid); routed.append({"node": nid, "federated_to": ful.get("provider"), "remote_case": fr.get("remote_case")})
+                changed = True
+            elif kind in ("task", "decision"):
                 who = _g_route(ctx, n, case, workflow, now); openn.add(nid)
                 if who: routed.append({"node": nid, "to": who})
                 changed = True
@@ -683,11 +695,37 @@ def _advance_graph(ctx, decl, case_id):
                 _g_register_timer(ctx, n, case, now); waiting.add(nid); changed = True
     scope = dict(case.get("scope") or {})
     scope["_graph"] = {"done": sorted(done), "open": sorted(openn), "waiting": sorted(waiting), "decisions": decisions}
+    if remote: scope["_remote"] = remote
     live = bool(openn or waiting)
     ctx["kwrite"](case_id, {**case, "scope": scope,
                             "current_step": (sorted(openn)[0] if openn else ("waiting" if waiting else "closed")),
                             "status": "open" if live else "closed", "updated_at": now})
     return routed
+
+def _reconcile_federated(ctx, decl, case_id):
+    """ADR-0097 W2: poll each WAITING federated leg; when its provider sub-case closes, complete the node + advance.
+    No push callback exists (the transport is same-host cross-tenant), so the parent reconciles on status/tick."""
+    if not ctx.get("remote_status"):
+        return False
+    case = ctx["kget"](case_id)
+    if not case:
+        return False
+    scope = dict(case.get("scope") or {}); g = dict(scope.get("_graph") or {}); remote = dict(scope.get("_remote") or {})
+    advanced = False
+    for nid in list(g.get("waiting") or []):
+        r = remote.get(nid)
+        if not r or not r.get("remote_case") or r.get("status") == "closed":
+            continue
+        rs = ctx["remote_status"](r.get("provider"), r.get("remote_case")) or {}
+        if rs.get("status") in ("closed", "resolved", "cancelled"):
+            r["status"] = "closed"; r["outcome"] = rs.get("outcome")
+            g["waiting"] = [x for x in g.get("waiting", []) if x != nid]; g.setdefault("done", []).append(nid)
+            remote[nid] = r; advanced = True
+    if advanced:
+        scope["_graph"] = g; scope["_remote"] = remote
+        ctx["kwrite"](case_id, {**case, "scope": scope})
+        _advance_graph(ctx, decl, case_id)
+    return advanced
 
 def h_graph_request(ctx, decl):
     body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
@@ -768,6 +806,8 @@ def h_graph_decide(ctx, decl):
 def h_graph_status(ctx, decl):
     case = ctx["kget"](ctx["body"].get("case"))
     if not case: return None, "case not found"
+    if _reconcile_federated(ctx, decl, case["id"]):      # ADR-0097 W2: resolve any completed federated legs first
+        case = ctx["kget"](case["id"])
     tasks = [i for i in ctx["kfind"]("platform.inbox_item") if i.get("ref") == case["id"]]
     return {"case": case["id"], "status": case.get("status"), "step": case.get("current_step"),
             "graph": _gstate(case), "record": case,
@@ -779,6 +819,8 @@ def h_tick(ctx):
     if not case: return {"tick": "no-case"}, None
     decl = _gwf(ctx, case.get("workflow"))
     if not decl: return {"tick": "no-graph-decl"}, None
+    if _reconcile_federated(ctx, decl, case["id"]):      # ADR-0097 W2: a tick also reconciles federated legs
+        case = ctx["kget"](case["id"])
     nid = body.get("node"); node = _gnode(decl, nid); st = _gstate(case)
     if node and node.get("kind") == "timer" and nid in (st.get("waiting") or []):
         scope = dict(case.get("scope") or {}); g = dict(scope.get("_graph") or {})

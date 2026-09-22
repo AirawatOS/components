@@ -5,9 +5,12 @@
 # ADR-0097 W1: ALSO interprets a `platform.workflow` GRAPH (typed nodes task|decision|effect|gateway|timer over the
 # platform.case spine) — a strict superset of the FSM. The same five verbs auto-detect a graph decl and drive it;
 # a timer/SLA node schedules a `tick` wake-up (platform.schedule). Node-state lives in the case's freeform scope._graph.
+# ADR-0097 W2: a task node with `fulfilment:{provider,workflow}` is a FEDERATED leg — via the host `federate`
+# capability it opens its case in the PROVIDER tenant (driven by the SAME engine under provider authority), parks as
+# waiting with a scope._remote ref, and reconciles (host `remote_status`) when the provider closes its sub-case.
 component_id: ds:airawatdeveloper:engine/lifecycle-engine
 kind: engine
-version: 0.1.19
+version: 0.1.20
 provider: ds:airawat:developer
 display_name: Lifecycle Engine
 entrypoint: run.py
