@@ -192,6 +192,7 @@ function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';co
        ['📝 Docs…  (view / edit packaged documentation)',()=>docsPanel(ref)],
        ['Open meta.yaml (read-only)',()=>openFile(ref,'meta.yaml')]]
     : build;
+  items.unshift(['🔍 Open  (overview · configure · test)',()=>componentPanel(ref)]);   // S3: the unified per-component surface, first
   items.push(['Remove from project',async()=>{SEL.members=SEL.members.filter(x=>x.ref!==ref);await save(SEL);delete FILES[ref];TABS=TABS.filter(t=>t.ref!==ref);renderTabs();renderEdit();tree();}]);
   menu(e.clientX,e.clientY,items);}
 // ---------- TABS + EDITOR ----------
@@ -480,6 +481,41 @@ function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind
     await post('/bridge/component-scaffold',{component:ref,kind,skills:sk});delete FILES[ref];m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;OPENK['c:'+ref]=true;tree();};}
 // ---------- CONFIG-vs-BUILD: configure an EXISTING platform component (install · keys · schedule) ----------
 function egressHosts(meta){const out=[];const re=/host:\s*([^\s,}'"]+)/g;let m;while((m=re.exec(meta||'')))out.push(m[1]);return [...new Set(out)];}
+// S3: the ONE per-component surface — Overview (contract) + an adaptive action bar. Replaces the divergent
+// build-vs-configure right-click menus; Configure/Edit/Test/Publish route to the existing action functions.
+async function componentPanel(ref){
+  const m0=memberFor(ref)||{}, existing=m0.origin==='existing', isApp=m0.kind==='app', short=ref.split('/').pop();
+  const p=modal(`<div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">🔍 ${esc(pretty(short))}</h3>
+      <span class="k">${esc(m0.kind||'')}</span>${existing?'<span class="k" title="a reused platform component">reused</span>':'<span class="k" title="you build this in this project">yours to build</span>'}${m0.status?` <span class="sub">· ${esc(m0.status)}</span>`:''}</div>
+    <div class="cid">${esc(ref)}</div>
+    <div id="cpbody" style="margin-top:8px">reading the component…</div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Close</button></div>`);
+  p.q('#x').onclick=p.close;
+  let dec=DECLARED[ref], fs=FILES[ref];
+  if(!dec||!fs){try{const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};dec=DECLARED[ref]=r.declared||{};}catch(e){dec=dec||{};fs=fs||{};}}
+  dec=dec||{}; fs=fs||{};
+  const meta=fs['meta.yaml']||'', secrets=metaList(meta,'secrets'), hosts=egressHosts(meta);
+  const chip=x=>`<code style="display:inline-block;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:1px 6px;margin:1px;font-size:11px">${esc(String(x))}</code>`;
+  const chips=a=>(a&&a.length)?a.map(chip).join(' '):'<span class="sub">—</span>';
+  const rows=[['Reads',chips(dec.reads)],['Writes',chips(dec.writes)]];
+  const verbs=Object.keys(dec.verbs||{}); if(verbs.length)rows.push(['Actions (verbs)',chips(verbs)]);
+  if((dec.subscribes||[]).length)rows.push(['⚡ Reacts to',dec.subscribes.map(s=>chip((s.on||'')+' → '+(s.action||s.handler||''))).join(' ')]);
+  const hooks=Object.entries(dec.lifecycle||{}); if(hooks.length)rows.push(['⟳ Lifecycle',hooks.map(([k,v])=>chip(k+': '+v)).join(' ')]);
+  if(secrets.length)rows.push(['🔑 Secrets',chips(secrets)]);
+  if(hosts.length)rows.push(['🌐 Calls out to',chips(hosts)]);
+  let body=`<div class="card"><b>What it does</b><div class="sub" style="margin-top:2px">${existing?'A reused platform component — you install &amp; configure it and can test it; you don’t edit its code.':'A component you build here — edit its code, test it, then publish.'}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px"><tbody>${rows.map(([k,v])=>`<tr><td style="color:#8b949e;padding:3px 10px 3px 0;vertical-align:top;white-space:nowrap">${k}</td><td style="padding:3px 0">${v}</td></tr>`).join('')}</tbody></table></div>`;
+  const act=[];
+  if(existing) act.push(['⚙ Configure',()=>{p.close();configureComponent(ref);}]);
+  else { act.push(['✎ Edit code',()=>{p.close();openFile(ref,isApp?'dist/index.html':'run.py');}]);
+         act.push(['✨ Generate (AI)',()=>{p.close();openFile(ref,isApp?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}]); }
+  act.push([isApp?'▶ Preview':'▶ Test',()=>{p.close();isApp?window.open('/bridge/component-preview?component='+encodeURIComponent(ref),'_blank'):testComp(ref);}]);
+  if(!existing) act.push(['⬆ Publish',()=>{p.close();publishComp(ref);}]);
+  act.push(['📝 Docs',()=>{p.close();docsPanel(ref);}]);
+  body+=`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${act.map((a,i)=>`<button class="btn ${i===0?'primary':''}" data-act="${i}">${esc(a[0])}</button>`).join('')}</div>`;
+  p.q('#cpbody').innerHTML=body;
+  p.q('#cpbody').querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>act[+b.dataset.act][1]());
+}
 async function configureComponent(ref){
   const m=modal(`<h3>⚙ Configure ${esc(pretty(ref.split('/').pop()))}</h3>
     <div class="sub">This is an <b>existing platform component</b> — you don't build it, you <b>install it into your city and give it what it needs to run</b>. Configuration ≠ code.</div>
@@ -834,7 +870,7 @@ async function renderArch(){
   E.innerHTML=`<div class="edtoolbar"><b>🗺 Solution architecture</b> <span class="sub">— ${order.length} nodes · ${bands.length} layers · <span style="color:#2f81f7">▬ writes</span> · <span style="color:#8b949e">┈ reads</span> · <span style="color:#d29922">┈ events</span> · <span style="color:#3fb950">⟳ lifecycle</span> · 📐 spec</span><span style="margin-left:auto"></span><button class="btn sm" id="filesBtn">📄 Files</button></div>
     <div style="flex:1;overflow:auto;background:var(--bg)">${bands.length?svg:'<div class="welcome">No components yet.<br><span class="sub">Right-click a layer in the explorer to add one, or ask the Solution Expert.</span></div>'}</div>`;
   $('filesBtn').onclick=()=>{VIEW='files';renderEdit();};
-  E.querySelectorAll('.anode').forEach(g=>{const ref=g.dataset.ref;const m=ref&&memberFor(ref);if(m&&m.kind!=='schema'&&m.kind!=='interface')g.style.cursor='pointer',g.onclick=()=>openFile(ref,m.kind==='app'?'dist/index.html':'run.py');});
+  E.querySelectorAll('.anode').forEach(g=>{const ref=g.dataset.ref;const m=ref&&memberFor(ref);if(m&&m.kind!=='schema'&&m.kind!=='interface')g.style.cursor='pointer',g.onclick=()=>componentPanel(ref);});   // S3: node → unified panel
 }
 boot();
 </script>
