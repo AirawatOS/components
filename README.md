@@ -47,7 +47,8 @@ Analyses + Signal landed**. Its guarantees, all checked live:
   registry-stored output validates against `intelligence.analysis`, and a method-less Analysis is
   rejected (INT-METHOD-001).
 - **Never decides (INT-REC-001):** the engine only *offers* a Recommendation; an **Authority** admits
-  it into a Decision (`POST /v1/decisions`) with a signed receipt.
+  it into a Decision (via the governed `/bridge/decide` path → `governance.decision`) with a signed
+  receipt. (The old `POST /v1/decisions` kernel endpoint was retired — see PLAT-0004.)
 
 `meta.yaml` is the component's **host manifest** (platform-spec PLAT-HOST-008): `kind: engine`,
 `entrypoint: run.py`, `confinement_min: L1`, `reads`/`writes`, and the matching broker `scopes`. The
