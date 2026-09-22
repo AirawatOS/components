@@ -182,6 +182,7 @@ function ctxLayer(layer,e){const items=(LAYER_KINDS[layer]||[]).map(k=>['＋ New
     if(!eng.length){bottom('An automation attaches to a component that reacts — add an Engine in 🧠 Logic & AI first, then ＋ Automation on it.');return;}
     if(eng.length===1)return addAutomation(eng[0].ref);
     menu(e.clientX,e.clientY,eng.map(x=>['⚡ on '+nameOf(x),()=>addAutomation(x.ref)]));}]);
+  if(layer==='governance')items.push(['🧩 Design a step-by-step workflow…  (Service Studio)',()=>{bottom('Step-by-step service workflows — e.g. trade licence or complaints: an ordered list of role-routed steps + the intake form — are designed in Service Studio, then the generic declarative-service solution runs them (open a case → route each step to a role’s Inbox → advance). Opening Service Studio…');try{window.open('/apps/service-studio/','_blank');}catch(e){}}]);
   if(!items.length)items.push(['— add these by publishing a governed spec (Browse specs) —',()=>{}]);
   menu(e.clientX,e.clientY,items);}
 function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';const existing=m.origin==='existing';
