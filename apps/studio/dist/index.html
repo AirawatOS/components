@@ -108,13 +108,13 @@ function metaList(meta,key){if(!meta)return[];let m=meta.match(new RegExp('^'+ke
   m=meta.match(new RegExp('^'+key+':\\s*\\n((?:[ \\t]*-[ \\t]*.+\\n?)+)','m'));if(m)return m[1].split('\n').map(l=>l.replace(/^[ \t]*-[ \t]*/,'').trim().replace(/['"]/g,'')).filter(Boolean);return[];}
 const asList=v=>Array.isArray(v)?v:(v?String(v).split(/[,\s]+/).filter(Boolean):[]);
 async function wiringFor(m){if(m._wire)return m._wire;let reads=asList(m.reads),writes=asList(m.writes);
-  if(!reads.length&&!writes.length&&m.kind!=='schema'&&m.kind!=='interface'){try{let fs=FILES[m.ref];if(!fs){const r=await post('/bridge/component-read',{component:m.ref});fs=FILES[m.ref]=r.files||{};}const meta=fs['meta.yaml']||'';reads=metaList(meta,'reads');writes=metaList(meta,'writes');}catch(e){}}
+  if(!reads.length&&!writes.length&&m.kind!=='schema'&&m.kind!=='interface'){try{let fs=FILES[m.ref];if(!fs){const r=await post('/bridge/component-read',{component:m.ref});fs=FILES[m.ref]=r.files||{};DECLARED[m.ref]=r.declared||{};}const meta=fs['meta.yaml']||'';reads=metaList(meta,'reads');writes=metaList(meta,'writes');}catch(e){}}
   m._wire={reads,writes};return m._wire;}
 async function q(schema){try{return (await fetch('/bridge/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:'studio',schema})}).then(r=>r.json())).results||[];}catch(e){return[];}}
 async function save(obj){return fetch('/bridge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:obj.id,object:obj})}).then(r=>r.json());}
 async function post(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
-let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},TABS=[],ACTIVE=null,TENANT='kmc',VIEW='files';
+let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},DECLARED={},TABS=[],ACTIVE=null,TENANT='kmc',VIEW='files';
 
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;}catch(e){}  // build in the DEVELOPER's own tenant
@@ -485,7 +485,7 @@ async function configureComponent(ref){
     <div id="cfg" style="margin-top:10px">reading the component…</div>
     <div style="text-align:right;margin-top:10px"><button class="btn" id="x">Close</button></div>`);
   m.q('#x').onclick=m.close;
-  let fs=FILES[ref]; if(!fs){try{const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};}catch(e){fs={};}}
+  let fs=FILES[ref],dec=DECLARED[ref]; if(!fs||!dec){try{const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};dec=DECLARED[ref]=r.declared||{};}catch(e){fs=fs||{};dec=dec||{};}}
   const meta=fs['meta.yaml']||'';
   const secrets=metaList(meta,'secrets'), config=metaList(meta,'config'), hosts=egressHosts(meta);
   const isDriver=(memberFor(ref)||{}).kind==='driver'||/^\s*kind:\s*driver/m.test(meta);
@@ -498,6 +498,12 @@ async function configureComponent(ref){
     <div class="row" style="gap:6px;margin-top:4px"><select class="in" id="cron" style="margin:0"><option value="">— manual —</option><option value="0 */6 * * *">every 6 hours</option><option value="0 2 * * *">daily · 2am</option><option value="0 3 * * 0">weekly</option></select><button class="btn sm" id="setcron">Set schedule</button> <span class="sub" id="crons"></span></div></div>`;
   if(config.length) h+=`<div class="card"><b>Also needs config</b><div class="sub">${config.map(esc).join(', ')} — set these in the <b>City Setup / Connections</b> app (asset upload or area-of-interest).</div></div>`;
   if(hosts.length) h+=`<div class="sub" style="margin-top:6px">🌐 Calls out to: ${hosts.map(esc).join(', ')}</div>`;
+  // ADR-0104 S6 — read-only view of the component's declared lifecycle hooks + data-event subscriptions.
+  const hooks=(dec&&dec.lifecycle)?Object.entries(dec.lifecycle):[], subs=(dec&&dec.subscribes)||[];
+  if(hooks.length) h+=`<div class="card"><b>⟳ Lifecycle hooks</b><div class="sub">Handlers the platform calls automatically when this component is installed, its config changes, or it is removed (ADR-0104).</div>`+
+    hooks.map(([k,v])=>`<div class="row" style="gap:6px;margin-top:3px;align-items:center"><span class="sub" style="flex:0 0 130px">${esc(k)}</span><code>${esc(v)}</code></div>`).join('')+`</div>`;
+  if(subs.length) h+=`<div class="card"><b>⚡ Subscribes — data events</b><div class="sub">When a matching record is written, the platform auto-fires this component's reaction (the subscription is wired at install).</div>`+
+    subs.map(s=>`<div class="row" style="gap:6px;margin-top:3px;align-items:center"><code>${esc(s.on||'')}</code>${s.where?` <span class="sub">where ${esc(JSON.stringify(s.where))}</span>`:''} <span class="sub">→</span> <code>${esc(s.action||s.handler||'')}</code></div>`).join('')+`</div>`;
   m.q('#cfg').innerHTML=h;
   m.q('#inst').onclick=async()=>{m.q('#insts').textContent='installing…';let r={};try{r=await post('/bridge/install',{id:ref});}catch(e){}
     m.q('#insts').textContent=(r.installed||r.run_token||r.ok||r.component)?'✓ installed':('✗ '+(r.error||'failed'));
@@ -786,12 +792,20 @@ async function renderArch(){
   E.innerHTML='<div class="welcome">Drawing the architecture…</div>';
   const members=(SEL.members||[]);
   await Promise.all(members.map(m=>(m.kind==='schema'||m.kind==='interface')?null:wiringFor(m)));
+  // ADR-0104 S6: ensure each component's declared lifecycle/subscribes are loaded (wiringFor skips the fetch
+  // when reads/writes are preset, so pull any still-missing ones here).
+  await Promise.all(members.map(async m=>{if(m.kind==='schema'||m.kind==='interface'||DECLARED[m.ref])return;
+    try{const r=await post('/bridge/component-read',{component:m.ref});FILES[m.ref]=r.files||FILES[m.ref];DECLARED[m.ref]=r.declared||{};}catch(e){DECLARED[m.ref]={};}}));
   const nodes={},order=[];const addNode=(id,o)=>{if(!nodes[id]){nodes[id]=Object.assign({id},o);order.push(id);}return nodes[id];};
   members.forEach(m=>{const spec=(m.kind==='schema'||m.kind==='interface');addNode(m.ref,{label:nameOf(m),kind:m.kind,layer:layerOf(m),type:spec?'spec':'component',status:m.status,ref:m.ref});});
   const edges=[];
   members.forEach(m=>{if(m.kind==='schema'||m.kind==='interface')return;const w=m._wire||{reads:[],writes:[]};
     w.writes.forEach(s=>{const id='spec:'+s;if(!nodes[s]&&!nodes[id])addNode(id,{label:s,kind:'schema',layer:schemaLayer(s),type:'spec',ghost:true});edges.push({from:m.ref,to:nodes[s]?s:id,kind:'write'});});
     w.reads.forEach(s=>{const id='spec:'+s;if(!nodes[s]&&!nodes[id])addNode(id,{label:s,kind:'schema',layer:schemaLayer(s),type:'spec',ghost:true});edges.push({from:nodes[s]?s:id,to:m.ref,kind:'read'});});});
+  // ADR-0104 S6: subscribes → an EVENT edge from the watched schema to the reacting component.
+  members.forEach(m=>{if(m.kind==='schema'||m.kind==='interface')return;const subs=(DECLARED[m.ref]||{}).subscribes||[];
+    subs.forEach(s=>{const on=s.on;if(!on)return;const id='spec:'+on;if(!nodes[on]&&!nodes[id])addNode(id,{label:on,kind:'schema',layer:schemaLayer(on),type:'spec',ghost:true});
+      edges.push({from:nodes[on]?on:id,to:m.ref,kind:'event',label:s.action||s.handler||''});});});
   const W=Math.max((E.clientWidth||900)-24,600),NW=168,NH=46,GAP=26,BANDPAD=30;
   const cols=Math.max(1,Math.floor((W-40)/(NW+GAP)));let y=14;const bands=[];
   LAYERS.forEach(ly=>{const ns=order.map(id=>nodes[id]).filter(n=>n.layer===ly);if(!ns.length)return;
@@ -802,16 +816,21 @@ async function renderArch(){
   const pth=(a,b)=>{const x1=a.x+a.w/2,y1=a.y+a.h,x2=b.x+b.w/2,y2=b.y,my=(y1+y2)/2;return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;};
   let svg=`<svg width="${W}" height="${H}" style="display:block"><defs>
     <marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
-    <marker id="arwW" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f81f7"/></marker></defs>`;
+    <marker id="arwW" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f81f7"/></marker>
+    <marker id="arwE" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#d29922"/></marker></defs>`;
   bands.forEach((b,i)=>{svg+=`<rect x="6" y="${b.y}" width="${W-12}" height="${b.h-8}" rx="10" fill="${i%2?'#0f141a':'#12181f'}" stroke="#21262d"/><text x="18" y="${b.y+16}" fill="#8b949e" font-size="11" font-weight="700">${esc(LAYER_NAME[b.ly].toUpperCase())} <tspan fill="#586069">· ${esc(LAYER_HINT[b.ly])}</tspan></text>`;});
-  edges.forEach(e=>{const a=nodes[e.from],b=nodes[e.to];if(!a||!b||a.x==null||b.x==null)return;const wr=e.kind==='write';
-    svg+=`<path d="${pth(a,b)}" fill="none" stroke="${wr?'#2f81f7':'#8b949e'}" stroke-width="1.4" ${wr?'':'stroke-dasharray="4 3"'} marker-end="url(#${wr?'arwW':'arw'})" opacity="0.72"/>`;});
+  edges.forEach(e=>{const a=nodes[e.from],b=nodes[e.to];if(!a||!b||a.x==null||b.x==null)return;
+    const st=e.kind==='write'?'#2f81f7':(e.kind==='event'?'#d29922':'#8b949e'),mk=e.kind==='write'?'arwW':(e.kind==='event'?'arwE':'arw');
+    svg+=`<path d="${pth(a,b)}" fill="none" stroke="${st}" stroke-width="1.4" ${e.kind==='write'?'':'stroke-dasharray="4 3"'} marker-end="url(#${mk})" opacity="0.72"/>`;});
   order.forEach(id=>{const n=nodes[id];if(n.x==null)return;const isSpec=n.type==='spec';
+    const hk=Object.keys((DECLARED[n.ref]||{}).lifecycle||{}).length;   // ADR-0104 S6: lifecycle-hook count badge
     svg+=`<g class="anode" data-ref="${esc(n.ref||'')}"><rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="9" fill="${isSpec?(n.ghost?'#161b22':'#1b2430'):'#1b222c'}" stroke="${isSpec?'#30475e':'#2f81f7'}" stroke-width="1.3"/>
       <text x="${n.x+10}" y="${n.y+19}" fill="#e6edf3" font-size="12" font-weight="600">${esc((n.label||'').slice(0,20))}</text>
-      <text x="${n.x+10}" y="${n.y+35}" fill="#8b949e" font-size="10">${isSpec?'📐 ':''}${esc(n.kind)}${n.status&&!isSpec?' · '+esc(n.status):''}${n.ghost?' · referenced':''}</text></g>`;});
+      <text x="${n.x+10}" y="${n.y+35}" fill="#8b949e" font-size="10">${isSpec?'📐 ':''}${esc(n.kind)}${n.status&&!isSpec?' · '+esc(n.status):''}${n.ghost?' · referenced':''}</text>`+
+      (hk?`<g><title>${hk} lifecycle hook${hk>1?'s':''}</title><rect x="${n.x+n.w-30}" y="${n.y+6}" width="24" height="15" rx="7" fill="#132a13" stroke="#2ea043"/><text x="${n.x+n.w-18}" y="${n.y+17}" fill="#3fb950" font-size="9" text-anchor="middle" font-weight="700">⟳${hk}</text></g>`:'')+
+      `</g>`;});
   svg+='</svg>';
-  E.innerHTML=`<div class="edtoolbar"><b>🗺 Solution architecture</b> <span class="sub">— ${order.length} nodes · ${bands.length} layers · <span style="color:#2f81f7">▬ writes</span> · <span style="color:#8b949e">┈ reads</span> · 📐 spec</span><span style="margin-left:auto"></span><button class="btn sm" id="filesBtn">📄 Files</button></div>
+  E.innerHTML=`<div class="edtoolbar"><b>🗺 Solution architecture</b> <span class="sub">— ${order.length} nodes · ${bands.length} layers · <span style="color:#2f81f7">▬ writes</span> · <span style="color:#8b949e">┈ reads</span> · <span style="color:#d29922">┈ events</span> · <span style="color:#3fb950">⟳ lifecycle</span> · 📐 spec</span><span style="margin-left:auto"></span><button class="btn sm" id="filesBtn">📄 Files</button></div>
     <div style="flex:1;overflow:auto;background:var(--bg)">${bands.length?svg:'<div class="welcome">No components yet.<br><span class="sub">Right-click a layer in the explorer to add one, or ask the Solution Expert.</span></div>'}</div>`;
   $('filesBtn').onclick=()=>{VIEW='files';renderEdit();};
   E.querySelectorAll('.anode').forEach(g=>{const ref=g.dataset.ref;const m=ref&&memberFor(ref);if(m&&m.kind!=='schema'&&m.kind!=='interface')g.style.cursor='pointer',g.onclick=()=>openFile(ref,m.kind==='app'?'dist/index.html':'run.py');});
