@@ -55,6 +55,15 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .legend span{display:inline-flex;align-items:center;gap:5px} .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
 .empty{color:var(--muted);padding:14px 2px} footer{margin-top:20px;color:var(--muted);font-size:11.5px}
 .attrib{background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:2px 8px;font-weight:600;font-size:11px}
+.topos{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.topo{flex:1 1 320px;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;background:var(--card2,rgba(127,127,127,.05))}
+.topo.on{border-left:3px solid var(--gov)} .topo.off{border-left:3px solid var(--partner)}
+.topo .tt{font-weight:600;margin-bottom:6px} .topo .tag{font-size:11px;padding:1px 7px;border-radius:20px;background:rgba(127,127,127,.16);margin-left:6px;font-weight:500}
+.topo.on .tag{color:var(--gov)} .topo.off .tag{color:var(--partner)}
+.path{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0}
+.node{font-size:12px;padding:3px 9px;border-radius:7px;background:rgba(127,127,127,.14)}
+.arw{opacity:.55}
+.nums{font-size:12px;color:var(--dim,#8a8f98);margin-top:6px}
 </style></head><body>
 <div class="wrap">
   <header>
@@ -67,6 +76,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <script>
 const cr = n => (n==null?"–":"₹"+Number(n).toLocaleString("en-IN",{maximumFractionDigits:2})+"cr");
 const STAGES=["approved","allocated","released","committed","paid","expended"];
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function load(){
   let d;
   try{ const r=await fetch("/bridge/hrt-summary",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:"{}"});
@@ -75,22 +85,44 @@ async function load(){
   document.getElementById("who").textContent = d.tenant ? ("· "+d.tenant) : "";
   const env=d.envelope||{}, al=d.allocation||{}, ex=d.execution||{}, os=d.outstanding||{}, rev=d.revenue||{};
   const bs=env.by_source||{}; const et=env.total||0;
+  const mod=bs.by_modality||{}; const onB=mod.on_budget||0, offB=mod.off_budget||0, uncB=mod.unclassified||0;
   const pct=v=> et? (100*v/et):0;
   let h="";
   // KPI row
   h+='<div class="grid">';
-  h+='<div class="kpi"><div class="l">Resource envelope</div><div class="v">'+cr(et)+'</div>'
+  h+='<div class="kpi"><div class="l">Resource envelope · budget modality</div><div class="v">'+cr(et)+'</div>'
     +'<div class="bars">'
-    +'<i style="width:'+pct(bs.government||0)+'%;background:var(--gov)"></i>'
-    +'<i style="width:'+pct(bs.grant||0)+'%;background:var(--grant)"></i>'
-    +'<i style="width:'+pct(bs.partner||0)+'%;background:var(--partner)"></i></div>'
-    +'<div class="legend"><span><i class="sw" style="background:var(--gov)"></i>Govt '+cr(bs.government||0)+'</span>'
-    +'<span><i class="sw" style="background:var(--grant)"></i>Grant '+cr(bs.grant||0)+'</span>'
-    +(bs.partner?'<span><i class="sw" style="background:var(--partner)"></i>Partner '+cr(bs.partner)+'</span>':'')+'</div></div>';
+    +'<i style="width:'+pct(onB)+'%;background:var(--gov)"></i>'
+    +'<i style="width:'+pct(offB)+'%;background:var(--partner)"></i>'
+    +'<i style="width:'+pct(uncB)+'%;background:#8a8f98"></i></div>'
+    +'<div class="legend"><span><i class="sw" style="background:var(--gov)"></i>On-budget '+cr(onB)+'</span>'
+    +'<span><i class="sw" style="background:var(--partner)"></i>Off-budget '+cr(offB)+'</span>'
+    +(uncB?'<span><i class="sw" style="background:#8a8f98"></i>Unclassified '+cr(uncB)+'</span>':'')+'</div></div>';
   h+='<div class="kpi"><div class="l">Allocated</div><div class="v">'+cr(al.allocated)+'</div><div class="d">committed rev '+cr(rev.committed)+' · realized '+cr(rev.realized)+'</div></div>';
   h+='<div class="kpi '+(ex.rate_pct>=90?"good":"")+'"><div class="l">Execution rate</div><div class="v">'+(ex.rate_pct==null?"–":ex.rate_pct+"%")+'</div><div class="d">'+cr(ex.spent)+' of '+cr(ex.allocated)+' spent</div></div>';
   h+='<div class="kpi '+((os.outstanding||0)>0?"warn":"good")+'"><div class="l">Outstanding (unliquidated)</div><div class="v">'+cr(os.outstanding)+'</div><div class="d">'+cr(os.disbursed)+' disbursed · '+cr(os.liquidated)+' liquidated · '+(os.count||0)+' open</div></div>';
   h+='</div>';
+  // Fund sources — the governed donor topology (on/off-budget), by funder
+  const funders=bs.by_funder||[]; const cat=bs.catalog||[];
+  if(funders.length){
+    h+='<div class="card"><h2>Fund sources — donor topology</h2>'
+      +'<div class="h">Where the money comes from and how it reaches the ground: <b>on-budget</b> (Development Partner → Sector Ministry → Region) vs <b>off-budget</b> (Development Partner → Implementing Partner).</div>';
+    h+='<div class="topos">';
+    funders.forEach(f=>{ const off=(f.budget_modality==='off_budget');
+      const path = off ? ['Development Partner', f.funder, 'Implementing Partner']
+                       : ['Development Partner', f.funder, 'Sector Ministry', 'Region'];
+      h+='<div class="topo '+(off?'off':'on')+'"><div class="tt">'+esc(f.funder)+' <span class="tag">'+(off?'Off-budget':'On-budget')+'</span></div>'
+        +'<div class="path">'+path.map((n,i)=>'<span class="node">'+esc(n)+'</span>'+(i<path.length-1?'<span class="arw">→</span>':'')).join('')+'</div>'
+        +'<div class="nums">approved '+cr(f.approved)+' · released '+cr(f.released)+' · expended '+cr(f.expended)+'</div></div>'; });
+    h+='</div>';
+    h+='<table><thead><tr><th>Funder</th><th>Type</th><th>Modality</th><th class="num">Approved</th><th class="num">Released</th><th class="num">Expended</th></tr></thead><tbody>';
+    funders.forEach(f=>{ h+='<tr><td>'+esc(f.funder)+'</td><td class="sub">'+esc((f.funder_type||'').replace(/_/g,' '))+'</td>'
+      +'<td><span class="pill '+(f.budget_modality==='off_budget'?'p-out':'p-part')+'">'+esc((f.budget_modality||'—').replace(/_/g,'-'))+'</span></td>'
+      +'<td class="num">'+cr(f.approved)+'</td><td class="num">'+cr(f.released)+'</td><td class="num">'+cr(f.expended)+'</td></tr>'; });
+    h+='</tbody></table>';
+    h+='<div class="h" style="margin-top:8px">Verification &amp; reporting against services delivered is overseen by the <b>Programme Manager</b> (finance.programme-manager) at the sector ministry.</div>';
+    h+='</div>';
+  }
   // fund-flow ladder(s) with bottleneck
   (d.bottlenecks||[]).forEach(f=>{
     const st=f.stages||{}; const max=Math.max(1,...STAGES.map(s=>st[s]||0));

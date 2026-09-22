@@ -330,15 +330,21 @@ function rFlow(){
   }).join('');
   document.getElementById('main').innerHTML=`<div class="head"><h2>Fund flow</h2><span class="sub">approved → allocated → released → committed → paid → expended</span><div class="right"><button class="btn pri" onclick='stampStage()'>＋ Record stage</button></div></div>`+body;
 }
-function stampStage(){
+async function stampStage(){
+  let fs=[]; try{ const r=await api('/bridge/fund-sources',{app_id:APP}); fs=(r&&r.fund_sources)||[]; }catch(e){}
+  const fsOpts=[{value:'',label:'— none —'}].concat(fs.map(s=>({value:s.id,
+     label:(s.funder||s.name||s.id.split('/').pop())+' · '+String(s.budget_modality||'').replace('_','-')})));
   AOS.form('Record a fund-flow stage',[
     {id:'project',label:'Project',value:(FF[0]&&FF[0].project)||'',placeholder:'ds:kmc:project/…',required:true},
+    {id:'fund_source',label:'Fund source (donor)',type:'select',options:fsOpts,value:(FF[0]&&FF[0].fund_source)||''},
     {id:'channel',label:'Channel',type:'select',options:['government','grant','partner'],value:(FF[0]&&FF[0].channel)||'government'},
     {id:'stage',label:'Stage reached',type:'select',options:STAGES,value:'released'},
     {id:'amount',label:'Amount (₹cr)',type:'number',required:true},
     {id:'add',label:'Mode',type:'select',options:[{value:'',label:'Set total at this stage'},{value:'1',label:'Add to existing'}],value:''}
   ],{onSave:async v=>{
-     const r=await api('/bridge/flow-stamp',{app_id:APP,project:v.project,channel:v.channel,stage:v.stage,amount:Number(v.amount),add:!!v.add});
+     const body={app_id:APP,project:v.project,channel:v.channel,stage:v.stage,amount:Number(v.amount),add:!!v.add};
+     if(v.fund_source) body.fund_source=v.fund_source;
+     const r=await api('/bridge/flow-stamp',body);
      if(r.error)return r; await reload(); render(); toast('Stage recorded: '+v.stage+(r.bottleneck?(' · bottleneck '+r.bottleneck):'')); return r;
   }});
 }

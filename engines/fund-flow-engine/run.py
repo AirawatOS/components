@@ -46,15 +46,26 @@ def _acct(ctx, want_type, name_hint=None, override=None):
     return next((a["id"] for a in sorted(accts, key=lambda z: z.get("code", "")) if a.get("type") == want_type), None)
 
 
+# ---- governed fund source (donor topology + on/off-budget) ----------------------------------------
+FUNDER_TYPES = ["development_partner", "government", "own_revenue", "ngo", "private", "other"]
+MODALITIES = ["on_budget", "off_budget"]
+
+
+def _fs_id(ctx, key):
+    return f"ds:{ctx['tenant']}:finance/fund_source/{_slug(key)}"
+
+
 # ---- multi-stage fund-flow -------------------------------------------------------------------------
 def _flow_id(ctx, project, channel):
     return f"ds:{ctx['tenant']}:finance/fund_flow/{_slug(project)}-{channel}"
 
 
-def _stamp(ctx, project, channel, stage, amount, by, add=False):
+def _stamp(ctx, project, channel, stage, amount, by, add=False, fund_source=None):
     fid = _flow_id(ctx, project, channel)
     ff = ctx["kget"](fid) or {"schema": "finance.fund_flow", "id": fid, "tenant": ctx["tenant"],
                               "channel": channel, "project": project, "history": [], "created_at": _now()}
+    if fund_source:
+        ff["fund_source"] = fund_source                     # the governed finance.fund_source this flow draws on
     cur = float(ff.get(stage) or 0)
     ff[stage] = round(cur + float(amount), 2) if add else round(float(amount), 2)
     ff.setdefault("history", []).append({"stage": stage, "amount": float(amount), "at": _now(), "by": by})
@@ -77,7 +88,7 @@ def h_flow_stamp(ctx):
     b = ctx["body"]; project = b.get("project"); stage = b.get("stage"); amount = b.get("amount")
     if not project or stage not in STAGES or not isinstance(amount, (int, float)):
         return {"error": f"project + stage∈{STAGES} + numeric amount required"}, None
-    ff = _stamp(ctx, project, b.get("channel") or "government", stage, amount, ctx.get("sub"), add=bool(b.get("add")))
+    ff = _stamp(ctx, project, b.get("channel") or "government", stage, amount, ctx.get("sub"), add=bool(b.get("add")), fund_source=b.get("fund_source"))
     return {"fund_flow": ff["id"], "current_stage": ff.get("current_stage"), "bottleneck": ff.get("bottleneck"),
             "stages": {s: ff.get(s, 0) for s in STAGES}}, None
 
@@ -117,13 +128,13 @@ def h_advance_disburse(ctx):
     adv = {"schema": "finance.advance", "id": aid, "tenant": tenant, "amount": round(float(amount), 2),
            "to_party": b.get("to"), "purpose": b.get("purpose"), "memo": b.get("memo"), "project": b.get("project"),
            "program": b.get("program"), "budget": b.get("budget"), "source": b.get("source"),
-           "source_kind": b.get("source_kind"), "channel": b.get("channel"), "advance_account": adv_acct,
+           "source_kind": b.get("source_kind"), "channel": b.get("channel"), "fund_source": b.get("fund_source"), "advance_account": adv_acct,
            "disbursed_at": _now(), "disbursed_by": sub, "disbursement_txn": res.get("posted"),
            "utilized": 0.0, "liquidated": 0.0, "outstanding": round(float(amount), 2), "status": "disbursed",
            "liquidations": [], "created_at": _now(), "observed_at": _now()}
     ctx["kwrite"](aid, {k: v for k, v in adv.items() if v is not None})
     if b.get("project"):                                         # a disbursement is money 'released' down the ladder
-        _stamp(ctx, b.get("project"), b.get("channel") or "government", "released", amount, sub, add=True)
+        _stamp(ctx, b.get("project"), b.get("channel") or "government", "released", amount, sub, add=True, fund_source=b.get("fund_source"))
     return {"advance": aid, "amount": adv["amount"], "outstanding": adv["outstanding"],
             "status": "disbursed", "transaction": res.get("posted")}, None
 
@@ -188,6 +199,41 @@ def h_advance_outstanding(ctx):
             "count": len(items), "advances": items}, None
 
 
+# ---- governed fund-source catalog (the two donor topologies, as data) -----------------------------
+def h_fund_source(ctx):
+    """Upsert a governed finance.fund_source — the explicit 'fund source': funder + funder_type +
+    budget_modality (on/off-budget) + recipient_type. Makes the donor topologies data:
+      DP → Sector Ministry → Region  (on_budget)   ·   DP → Implementing Partner  (off_budget).
+    Attributed component://fund-flow-engine so it satisfies the data-plane writer rule."""
+    b = ctx["body"]; ft = b.get("funder_type"); bm = b.get("budget_modality")
+    if ft not in FUNDER_TYPES or bm not in MODALITIES:
+        return {"error": f"funder_type∈{FUNDER_TYPES} + budget_modality∈{MODALITIES} required"}, None
+    key = b.get("id") or b.get("name") or b.get("funder")
+    if not key:
+        return {"error": "id, name or funder required"}, None
+    fid = key if str(key).startswith("ds:") else _fs_id(ctx, key)
+    prev = ctx["kget"](fid) or {}
+    rec = {"schema": "finance.fund_source", "id": fid, "tenant": ctx["tenant"],
+           "name": b.get("name") or prev.get("name") or b.get("funder"),
+           "funder": b.get("funder") or prev.get("funder"), "funder_type": ft, "budget_modality": bm,
+           "recipient_type": b.get("recipient_type") or prev.get("recipient_type"),
+           "programme": b.get("programme") or prev.get("programme"),
+           "currency": b.get("currency") or prev.get("currency"),
+           "external_ref": b.get("external_ref") or prev.get("external_ref"),
+           "steward_role": b.get("steward_role") or prev.get("steward_role") or "finance.programme-manager",
+           "created_at": prev.get("created_at") or _now(), "observed_at": _now()}
+    ctx["kwrite"](fid, {k: v for k, v in rec.items() if v is not None})
+    return {"fund_source": fid, "funder_type": ft, "budget_modality": bm}, None
+
+
+def h_fund_sources(ctx):
+    """List the governed fund sources in this tenant — the catalog the console + flows/advances reference."""
+    rows = ctx["kfind"]("finance.fund_source")
+    return {"fund_sources": [{k: r.get(k) for k in ("id", "name", "funder", "funder_type", "budget_modality",
+            "recipient_type", "programme", "currency", "external_ref", "steward_role")} for r in rows],
+            "count": len(rows)}, None
+
+
 # ---- HRT watchtower: the four core indicators in one read ------------------------------------------
 def h_hrt_summary(ctx):
     """Assemble the four HRT indicators + fund-flow bottlenecks + the outstanding-advance watch-list from this
@@ -199,12 +245,35 @@ def h_hrt_summary(ctx):
     alloc = SUM(budgets, "allocated"); spent = SUM(budgets, "spent"); committed = SUM(budgets, "committed")
     crev = SUM(budgets, "committed_revenue"); rrev = SUM(budgets, "realized_revenue")
     stage_tot = {s: round(sum(float(f.get(s) or 0) for f in flows), 2) for s in STAGES}
-    # Indicator 1 — envelope by source (best-effort until a governed funding.source taxonomy exists):
-    #   grant = revenue committed by funders; government/partner = approved amounts on gov/partner-channel flows.
-    gov = round(sum(float(f.get("approved") or 0) for f in flows if f.get("channel") == "government"), 2)
-    partner = round(sum(float(f.get("approved") or 0) for f in flows if f.get("channel") == "partner"), 2)
-    by_source = {"government": gov or round(max(alloc - crev, 0), 2), "grant": crev, "partner": partner}
-    env_total = round(sum(by_source.values()), 2)
+    # Indicator 1 — envelope by GOVERNED fund source (finance.fund_source): funder + on/off-budget topology.
+    sources = ctx["kfind"]("finance.fund_source"); by_id = {s["id"]: s for s in sources}
+    def _src_of(rec):                                       # the fund_source a flow/advance draws on (or None)
+        return by_id.get(rec.get("fund_source")) if rec.get("fund_source") else None
+    _CH_FUNDER = {"government": "Government", "partner": "Development Partner", "grant": "Grant"}
+    _CH_FTYPE = {"partner": "development_partner", "grant": "development_partner", "government": "government"}
+    by_modality = {"on_budget": 0.0, "off_budget": 0.0, "unclassified": 0.0}
+    by_funder, by_ftype = {}, {}
+    for f in flows:                                         # envelope = 'approved' at the top of each flow
+        amt = float(f.get("approved") or 0)
+        if amt <= 0.005:
+            continue
+        s = _src_of(f); mod = (s or {}).get("budget_modality") or "unclassified"
+        by_modality[mod] = round(by_modality.get(mod, 0.0) + amt, 2)
+        funder = (s or {}).get("funder") or _CH_FUNDER.get(f.get("channel"), "Unclassified")
+        ftype = (s or {}).get("funder_type") or _CH_FTYPE.get(f.get("channel"), "government")
+        bf = by_funder.setdefault(funder, {"funder": funder, "funder_type": ftype, "budget_modality": (s or {}).get("budget_modality"),
+                                           "fund_source": (s or {}).get("id"), "recipient_type": (s or {}).get("recipient_type"),
+                                           "approved": 0.0, "released": 0.0, "expended": 0.0})
+        bf["approved"] = round(bf["approved"] + amt, 2)
+        bf["released"] = round(bf["released"] + float(f.get("released") or 0), 2)
+        bf["expended"] = round(bf["expended"] + float(f.get("expended") or 0), 2)
+        by_ftype[ftype] = round(by_ftype.get(ftype, 0.0) + amt, 2)
+    env_total = round(by_modality["on_budget"] + by_modality["off_budget"] + by_modality["unclassified"], 2) or round(max(alloc - crev, 0) + crev, 2)
+    by_source = {"by_modality": {k: v for k, v in by_modality.items() if v > 0.005 or k != "unclassified"},
+                 "by_funder_type": by_ftype,
+                 "by_funder": sorted(by_funder.values(), key=lambda z: -z["approved"]),
+                 "catalog": [{k: s.get(k) for k in ("id", "name", "funder", "funder_type", "budget_modality",
+                              "recipient_type", "programme", "steward_role")} for s in sources]}
     out = [a for a in advances if round(float(a.get("outstanding") or 0), 2) > 0.005]
     watch = [{"advance": a["id"], "to_party": a.get("to_party"), "project": a.get("project"),
               "amount": a.get("amount"), "liquidated": a.get("liquidated"), "outstanding": a.get("outstanding"),
@@ -229,6 +298,7 @@ HANDLERS = {
     "advance-disburse": h_advance_disburse, "advance-liquidate": h_advance_liquidate,
     "advance-reconcile": h_advance_reconcile, "advance-outstanding": h_advance_outstanding,
     "flow-stamp": h_flow_stamp, "flow-status": h_flow_status, "hrt-summary": h_hrt_summary,
+    "fund-source": h_fund_source, "fund-sources": h_fund_sources,
 }
 
 

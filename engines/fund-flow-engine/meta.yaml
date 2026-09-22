@@ -30,7 +30,9 @@ verbs:
   advance-outstanding: finance.advance_outstanding@0.1.0
 verbs_exempt:
   - hrt-summary      # HRT watchtower read (report assembly) — not an advance/flow action
+  - fund-source      # upsert a governed finance.fund_source (donor funding line) — catalog authoring
+  - fund-sources     # list the governed fund sources (catalog read)
 
-required_schemas: [finance.account, finance.advance, finance.fund_flow, finance.budget, finance.transaction]
-reads: [finance.account, finance.advance, finance.fund_flow, finance.budget, finance.transaction]
-writes: [finance.advance, finance.fund_flow]
+required_schemas: [finance.account, finance.advance, finance.fund_flow, finance.fund_source, finance.budget, finance.transaction]
+reads: [finance.account, finance.advance, finance.fund_flow, finance.fund_source, finance.budget, finance.transaction]
+writes: [finance.advance, finance.fund_flow, finance.fund_source]
