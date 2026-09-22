@@ -178,7 +178,10 @@ function menu(x,y,items){document.querySelectorAll('.menu').forEach(m=>m.remove(
 function ctxKind(kind,e){menu(e.clientX,e.clientY,[['＋ New '+ (kind==='agent'?'AI Expert':pretty(kind)),()=>addComponent(kind)]]);}
 function ctxLayer(layer,e){const items=(LAYER_KINDS[layer]||[]).map(k=>['＋ New '+(k==='agent'?'AI Expert':k==='pipeline'?'Pipeline (chained stages)':pretty(k)),()=>addComponent(k)]);
   if(layer==='domain'||layer==='network'||layer==='governance')items.push(['📐 Browse specs…',specsBrowser]);
-  if(layer==='governance')items.push(['ⓘ How automations work',()=>bottom('An automation is an engine reacting to a governed event. Open an engine in Logic & AI → edit its meta.yaml → add a "subscribes:" block ({on: <schema>, action: <verb>}); the platform wires the subscription at install (ADR-0104). Workflows & roles are authored as governed specs — use Browse specs.')]);
+  if(layer==='governance')items.push(['⚡ ＋ Automation  (when X → do Y)',()=>{const eng=((SEL&&SEL.members)||[]).filter(x=>['engine','skill','pipeline'].includes(x.kind)&&x.origin!=='existing');
+    if(!eng.length){bottom('An automation attaches to a component that reacts — add an Engine in 🧠 Logic & AI first, then ＋ Automation on it.');return;}
+    if(eng.length===1)return addAutomation(eng[0].ref);
+    menu(e.clientX,e.clientY,eng.map(x=>['⚡ on '+nameOf(x),()=>addAutomation(x.ref)]));}]);
   if(!items.length)items.push(['— add these by publishing a governed spec (Browse specs) —',()=>{}]);
   menu(e.clientX,e.clientY,items);}
 function ctxComp(ref,e){const m=memberFor(ref)||{};const isApp=m.kind==='app';const existing=m.origin==='existing';
@@ -490,6 +493,43 @@ function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind
     await post('/bridge/component-scaffold',{component:ref,kind,skills:sk});delete FILES[ref];m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;OPENK['c:'+ref]=true;tree();};}
 // ---------- CONFIG-vs-BUILD: configure an EXISTING platform component (install · keys · schedule) ----------
 function egressHosts(meta){const out=[];const re=/host:\s*([^\s,}'"]+)/g;let m;while((m=re.exec(meta||'')))out.push(m[1]);return [...new Set(out)];}
+// S5: author an ADR-0104 automation — append a `subscribes:` entry to a reacting component's meta.yaml.
+// A subscription lives ON the engine/skill (not a standalone governance object); the platform auto-wires the
+// governed platform.subscription at install. This is the honest home for "＋ Automation".
+function addSubMeta(meta,on,action,where){
+  const w=where&&where.trim()?`\n    where: ${where.trim()}`:'';
+  const item=`  - on: ${on}\n    action: ${action}${w}`;
+  if(/^subscribes:[ \t]*$/m.test(meta)) return meta.replace(/^(subscribes:[ \t]*)$/m,`$1\n${item}`);   // prepend as first item
+  return meta.replace(/\s*$/,'')+`\n\n# ADR-0104 — event→action automation (auto-wired at install)\nsubscribes:\n${item}\n`;
+}
+async function addAutomation(ref){
+  const m0=memberFor(ref)||{};
+  if(m0.kind && !['engine','skill','pipeline'].includes(m0.kind)){bottom('Automations attach to a component that reacts (an engine/skill in 🧠 Logic & AI).');return;}
+  let fs=FILES[ref]; if(!fs){try{const r=await post('/bridge/component-read',{component:ref});fs=FILES[ref]=r.files||{};DECLARED[ref]=r.declared||{};}catch(e){fs={};}}
+  const meta=fs['meta.yaml']; if(meta===undefined){bottom('No editable meta.yaml for this component (is it yours to build?).');return;}
+  let schemas=[],ifaces=[];
+  try{schemas=((await post('/bridge/schemas',{})).schemas||[]).map(s=>s.schema_id||s.id||s.schema||s.name).filter(Boolean);}catch(e){}
+  try{ifaces=((await post('/bridge/interfaces',{})).interfaces||[]).map(i=>i.interface_id||i.id).filter(Boolean);}catch(e){}
+  const dl=(id,a)=>`<datalist id="${id}">${[...new Set(a)].sort().map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
+  const p=modal(`<h3>⚡ New automation — ${esc(pretty(ref.split('/').pop()))}</h3>
+    <div class="sub">When a governed record is written, this component reacts. It's saved as a <code>subscribes:</code> line in its meta; the platform wires the subscription automatically at install (ADR-0104).</div>
+    <div class="row" style="gap:8px;margin-top:12px;align-items:center"><label style="flex:0 0 64px">When</label><input class="in" id="aOn" list="aOnL" placeholder="a schema is written — e.g. governance.recommendation" style="flex:1;margin:0">${dl('aOnL',schemas)}</div>
+    <div class="row" style="gap:8px;margin-top:6px;align-items:center"><label style="flex:0 0 64px">→ run</label><input class="in" id="aAct" list="aActL" placeholder="a governed verb — e.g. decision.route" style="flex:1;margin:0">${dl('aActL',ifaces)}</div>
+    <div class="row" style="gap:8px;margin-top:6px;align-items:center"><label style="flex:0 0 64px">only if</label><input class="in" id="aWhere" placeholder="optional filter — e.g. {severity: high}" style="flex:1;margin:0"></div>
+    <div id="aMsg" class="sub" style="margin-top:8px"></div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Cancel</button> <button class="btn primary" id="ok">Add automation</button></div>`);
+  p.q('#x').onclick=p.close;
+  p.q('#ok').onclick=async()=>{
+    const on=p.q('#aOn').value.trim(), act=p.q('#aAct').value.trim(), where=p.q('#aWhere').value.trim();
+    if(!on||!act){p.q('#aMsg').innerHTML='<span style="color:var(--err)">Pick both a schema and a verb.</span>';return;}
+    p.q('#aMsg').textContent='saving…';
+    const newMeta=addSubMeta(meta,on,act,where);
+    try{await post('/bridge/component-save',{component:ref,path:'meta.yaml',content:newMeta});}catch(e){p.q('#aMsg').innerHTML='<span style="color:var(--err)">save failed</span>';return;}
+    FILES[ref]['meta.yaml']=newMeta; delete DECLARED[ref]; p.close();
+    bottom('✓ Automation added: when '+on+' → '+act+'. Next: ▶ Test, then ⬆ Publish this component — installing the solution wires the subscription (ADR-0104).');
+    tree();
+  };
+}
 // S3: the ONE per-component surface — Overview (contract) + an adaptive action bar. Replaces the divergent
 // build-vs-configure right-click menus; Configure/Edit/Test/Publish route to the existing action functions.
 async function componentPanel(ref){
@@ -519,6 +559,7 @@ async function componentPanel(ref){
   else { act.push(['✎ Edit code',()=>{p.close();openFile(ref,isApp?'dist/index.html':'run.py');}]);
          act.push(['✨ Generate (AI)',()=>{p.close();openFile(ref,isApp?'dist/index.html':'run.py');expandAI();aiSay('user','Generate the code for '+ref);aiSend('Generate the run.py for '+ref+' — describe what it should do in one line and I will draft it.');}]); }
   act.push([isApp?'▶ Preview':'▶ Test',()=>{p.close();isApp?window.open('/bridge/component-preview?component='+encodeURIComponent(ref),'_blank'):testComp(ref);}]);
+  if(!existing && (m0.kind==='engine'||m0.kind==='skill'||m0.kind==='pipeline')) act.push(['⚡ Add automation',()=>{p.close();addAutomation(ref);}]);   // S5: author a subscribes:
   if(!existing) act.push(['⬆ Publish',()=>{p.close();publishComp(ref);}]);
   act.push(['📝 Docs',()=>{p.close();docsPanel(ref);}]);
   body+=`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${act.map((a,i)=>`<button class="btn ${i===0?'primary':''}" data-act="${i}">${esc(a[0])}</button>`).join('')}</div>`;
