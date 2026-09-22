@@ -219,6 +219,9 @@ def h_request(ctx):
     workflow = body.get("workflow"); payload = dict(body.get("payload") or {})
     if not workflow:
         return None, "workflow required"
+    _g = _gwf(ctx, workflow)                                  # ADR-0097 W1: a platform.workflow GRAPH wins over the legacy FSM
+    if _g:
+        return h_graph_request(ctx, _g)
     decl = _wf(ctx, workflow)
     if not decl:
         return None, f"no platform.lifecycle for '{workflow}'"
@@ -310,6 +313,9 @@ def h_decide(ctx):
     workflow, case, tname = body.get("workflow"), body.get("case"), body.get("transition")
     if not (workflow and case and tname):
         return None, "workflow + case + transition required"
+    _g = _gwf(ctx, workflow)                                  # ADR-0097 W1: graph decide (needs `node`)
+    if _g:
+        return h_graph_decide(ctx, _g)
     decl = _wf(ctx, workflow)
     if not decl:
         return None, f"no platform.lifecycle for '{workflow}'"
@@ -380,6 +386,9 @@ def h_status(ctx):
     rec = ctx["kget"](case)
     if not rec:
         return None, "case not found"
+    if (rec.get("scope") or {}).get("_graph") is not None:   # ADR-0097 W1: a graph case → graph status projection
+        _g = _gwf(ctx, rec.get("workflow"))
+        if _g: return h_graph_status(ctx, _g)
     tasks = [i for i in ctx["kfind"]("platform.inbox_item") if i.get("ref") == case]
     return {"case": case, "status": _state(rec), "case_status": rec.get("status"), "record": rec,
             "tasks": [{"id": t["id"], "actor": t.get("actor"), "kind": t.get("kind"), "status": t.get("status")} for t in tasks]}, None
@@ -396,6 +405,9 @@ def h_update(ctx):
     patch = dict(body.get("patch") or body.get("payload") or {})
     if not (workflow and case):
         return None, "workflow + case required"
+    _g = _gwf(ctx, workflow)                                  # ADR-0097 W1: graph update completes a task node
+    if _g:
+        return h_graph_update(ctx, _g)
     decl = _wf(ctx, workflow)
     if not decl:
         return None, f"no platform.lifecycle for '{workflow}'"
@@ -569,6 +581,214 @@ def h_service_open(ctx):
             **({"routed_to": routed_to} if routed_to else {})}, None
 
 
+# ================= ADR-0097 W1 — the unified WORKFLOW GRAPH interpreter =============================
+# `platform.workflow`: typed nodes (task|decision|effect|gateway|timer) over the platform.case spine.
+# Edges = `after` deps (+ a decision node's `transitions`). ONE engine — a strict SUPERSET of the FSM above:
+# it reuses _run_effects / _authorized / _approver / _task_scope. Per-case node-state lives in the case's
+# FREEFORM `scope._graph = {done:[], open:[], waiting:[], decisions:{node:transition}}` (no schema change).
+# request → open a case + materialise ready nodes; update → complete a task node → unblock; decide → pick a
+# decision transition → branch; effect/gateway auto-run; timer registers a platform.schedule wake-up (W1b tick).
+
+def _gwf(ctx, workflow):
+    return next((d for d in ctx["kfind"]("platform.workflow")
+                 if d.get("workflow") == workflow and d.get("enabled", True)), None)
+
+def _gnode(decl, nid):
+    return next((n for n in (decl.get("nodes") or []) if n.get("id") == nid), None)
+
+def _gdep_done(dep, done, decisions):
+    if ":" in str(dep):                                        # "node:transition" → satisfied only if that branch was taken
+        nid, tr = str(dep).split(":", 1); return decisions.get(nid) == tr
+    return dep in done
+
+def _gready(node, done, decisions):
+    return all(_gdep_done(d, done, decisions) for d in (node.get("after") or []))
+
+def _gstate(case):
+    return dict((case.get("scope") or {}).get("_graph") or {"done": [], "open": [], "waiting": [], "decisions": {}})
+
+def _g_actions(node, workflow, case_id):
+    nid = node["id"]
+    if node.get("kind") == "decision":
+        return [_json.dumps({"label": (t.get("label") or t["name"].title()), "verb": "decide",
+                             "style": t.get("style") or "pri",
+                             "args": {"workflow": workflow, "case": case_id, "node": nid, "transition": t["name"]}})
+                for t in (node.get("transitions") or [])]
+    return [_json.dumps({"label": (node.get("label") or "Complete"), "verb": "update", "style": "pri",
+                         "args": {"workflow": workflow, "case": case_id, "node": nid}})]
+
+def _g_route(ctx, node, case, workflow, now):
+    """Route a task/decision node to its actor's Inbox (a user via route.to_field on the case scope, or a role)."""
+    tenant = case["tenant"]; route = node.get("route") or {}
+    approver = _approver(route, case.get("scope") or {}, tenant) or (
+        f"role://{tenant}/{node['assignee_role']}" if node.get("assignee_role") else None)
+    if not approver:
+        return None
+    iid = f"ds:{tenant}:platform/inbox_item/{workflow.replace('.','-')}-{node['id']}-{case['id'].rsplit('/',1)[-1]}"
+    ctx["kwrite"](iid, {"schema": "platform.inbox_item", "id": iid, "tenant": tenant, "actor": approver,
+                        "title": route.get("title") or f"{workflow}: {node['id']}", "ref": case["id"],
+                        "kind": "task", "status": "unread", "created_at": now,
+                        "actions": _g_actions(node, workflow, case["id"]),
+                        **_task_scope(ctx, route, {"record": case, "payload": {}, "case": case["id"],
+                                                   "sub": case.get("opened_by"), "tenant": tenant, "now": now})})
+    return approver
+
+def _g_register_timer(ctx, node, case, now):
+    """Best-effort platform.schedule wake-up for a timer/sla (W1b proves the round-trip end-to-end). Safe on shape drift."""
+    try:
+        tenant = case["tenant"]
+        sid = f"ds:{tenant}:platform/schedule/wf-{case['id'].rsplit('/',1)[-1]}-{node['id']}"
+        ctx["kwrite"](sid, {"schema": "platform.schedule", "id": sid, "tenant": tenant, "enabled": True,
+                            "run_after": node.get("wait"), "run_at": node.get("until"), "verb": "tick",
+                            "component": "ds:airawatdeveloper:engine/lifecycle-engine",
+                            "body": {"case": case["id"], "node": node["id"]}, "created_at": now})
+    except Exception as e:
+        print("[graph] timer register skipped:", str(e)[:80], flush=True)
+
+def _close_node_task(ctx, case_id, nid):
+    for t in ctx["kfind"]("platform.inbox_item"):
+        if t.get("ref") == case_id and t.get("kind") == "task" and t.get("status") != "done" and ("-"+nid+"-") in str(t.get("id","")):
+            ctx["kwrite"](t["id"], {**t, "status": "done"})
+
+def _advance_graph(ctx, decl, case_id):
+    """Materialise EVERY ready-not-active node: run effect/gateway nodes immediately + recurse; route task/decision
+    nodes to Inboxes; register timers. Loops until nothing new is ready. Idempotent (skips active/done nodes)."""
+    case = ctx["kget"](case_id)
+    if not case:
+        return []
+    tenant = case["tenant"]; workflow = decl["workflow"]; now = _now()
+    st = _gstate(case); done = set(st.get("done") or []); openn = set(st.get("open") or [])
+    waiting = set(st.get("waiting") or []); decisions = dict(st.get("decisions") or {}); routed = []
+    changed = True
+    while changed:
+        changed = False
+        for n in (decl.get("nodes") or []):
+            nid = n["id"]; kind = n.get("kind")
+            if nid in done or nid in openn or nid in waiting or nid == "END":
+                continue
+            if not _gready(n, done, decisions):
+                continue
+            if kind in ("task", "decision"):
+                who = _g_route(ctx, n, case, workflow, now); openn.add(nid)
+                if who: routed.append({"node": nid, "to": who})
+                changed = True
+            elif kind == "effect":
+                _run_effects(ctx, n.get("effects"), {"record": case, "payload": {}, "case": case_id,
+                             "sub": case.get("opened_by"), "tenant": tenant, "now": now},
+                             subjects=case.setdefault("subjects", []))
+                done.add(nid); changed = True
+            elif kind == "gateway":
+                done.add(nid); changed = True                 # readiness already enforced the join/split via `after`
+            elif kind == "timer":
+                _g_register_timer(ctx, n, case, now); waiting.add(nid); changed = True
+    scope = dict(case.get("scope") or {})
+    scope["_graph"] = {"done": sorted(done), "open": sorted(openn), "waiting": sorted(waiting), "decisions": decisions}
+    live = bool(openn or waiting)
+    ctx["kwrite"](case_id, {**case, "scope": scope,
+                            "current_step": (sorted(openn)[0] if openn else ("waiting" if waiting else "closed")),
+                            "status": "open" if live else "closed", "updated_at": now})
+    return routed
+
+def h_graph_request(ctx, decl):
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    workflow = decl["workflow"]; payload = dict(body.get("payload") or {}); now = _now()
+    prep = decl.get("prepare") or {}                          # optional context provider (same as FSM)
+    if prep.get("engine") and prep.get("verb") and ctx.get("call"):
+        try:
+            pres, perr = ctx["call"](prep["engine"], prep["verb"], dict(payload, **(prep.get("args") or {})))
+        except Exception as e:
+            return None, "prepare failed: " + str(e)[:120]
+        if perr:
+            return None, perr if isinstance(perr, str) else "prepare failed"
+        if isinstance(pres, dict):
+            for k, v in pres.items(): payload.setdefault(k, v)
+    cid = f"ds:{tenant}:case/{workflow.replace('.','-')}-{_u.uuid4().hex[:8]}"
+    cf = set()                                                # denormalise routing fields onto the case scope (spine convention)
+    for n in (decl.get("nodes") or []):
+        r = n.get("route") or {}
+        if r.get("to_field"): cf.add(r["to_field"])
+    scope = {k: payload.get(k) for k in cf if payload.get(k) is not None}
+    scope["_graph"] = {"done": [], "open": [], "waiting": [], "decisions": {}}
+    ctx["kwrite"](cid, {"schema": "platform.case", "id": cid, "tenant": tenant, "workflow": workflow, "status": "open",
+                        "current_step": decl.get("start") or "start", "opened_by": sub, "opened_at": now,
+                        "updated_at": now, "subjects": [], "scope": scope,
+                        "title": str(payload.get("title") or payload.get("name") or workflow)})
+    routed = _advance_graph(ctx, decl, cid)
+    case = ctx["kget"](cid)
+    return {"case": cid, "workflow": workflow, "status": case.get("status"), "step": case.get("current_step"), "routed": routed}, None
+
+def h_graph_update(ctx, decl):
+    """Complete a `task` node → mark done, unblock dependents."""
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    workflow, case_id, nid = decl["workflow"], body.get("case"), body.get("node")
+    case = ctx["kget"](case_id)
+    if not case: return None, "case not found"
+    node = _gnode(decl, nid)
+    if not node or node.get("kind") != "task": return None, f"'{nid}' is not a task node"
+    st = _gstate(case)
+    if nid not in (st.get("open") or []): return None, f"task '{nid}' is not open"
+    now = _now(); scope = dict(case.get("scope") or {}); g = dict(scope.get("_graph") or {})
+    g["open"] = [x for x in (g.get("open") or []) if x != nid]; g.setdefault("done", []).append(nid); scope["_graph"] = g
+    for k, v in (body.get("patch") or {}).items():
+        if k != "_graph": scope[k] = v                        # a task may collect data onto the case
+    case_u = {**case, "scope": scope, "updated_at": now}
+    if node.get("effects"):
+        _run_effects(ctx, node.get("effects"), {"record": case_u, "payload": body.get("payload") or {}, "case": case_id,
+                     "sub": sub, "tenant": tenant, "now": now}, subjects=case_u.setdefault("subjects", []))
+    ctx["kwrite"](case_id, case_u); _close_node_task(ctx, case_id, nid); _advance_graph(ctx, decl, case_id)
+    case2 = ctx["kget"](case_id)
+    return {"case": case_id, "node": nid, "completed": True, "status": case2.get("status"), "step": case2.get("current_step")}, None
+
+def h_graph_decide(ctx, decl):
+    """Complete a `decision` node → pick a transition → branch."""
+    body, tenant, sub = ctx["body"], ctx["tenant"], ctx["sub"]
+    workflow, case_id, nid, tname = decl["workflow"], body.get("case"), body.get("node"), body.get("transition")
+    case = ctx["kget"](case_id)
+    if not case: return None, "case not found"
+    node = _gnode(decl, nid)
+    if not node or node.get("kind") != "decision": return None, f"'{nid}' is not a decision node"
+    st = _gstate(case)
+    if nid not in (st.get("open") or []): return None, f"decision '{nid}' is not open"
+    tr = next((t for t in (node.get("transitions") or []) if t.get("name") == tname), None)
+    if not tr: return None, f"unknown transition '{tname}'"
+    ok, why = _authorized({**node, **tr}, case, ctx)          # node.authorize (OR-form) or tr overrides
+    if not ok: return None, why
+    now = _now(); vars = {"record": case, "payload": body.get("payload") or {}, "case": case_id, "sub": sub, "tenant": tenant, "now": now}
+    case_u = dict(case)
+    _run_effects(ctx, tr.get("effects"), {**vars, "record": case_u}, subjects=case_u.setdefault("subjects", []))
+    scope = dict(case_u.get("scope") or {})
+    scope.update(_resolve(tr.get("stamp") or {}, vars))       # stamp → freeform scope (platform.case root is schema-closed)
+    g = dict(scope.get("_graph") or {})
+    g["open"] = [x for x in (g.get("open") or []) if x != nid]; g.setdefault("done", []).append(nid)
+    g.setdefault("decisions", {})[nid] = tname; scope["_graph"] = g; case_u["scope"] = scope
+    ctx["kwrite"](case_id, case_u); _close_node_task(ctx, case_id, nid); _advance_graph(ctx, decl, case_id)
+    case2 = ctx["kget"](case_id)
+    return {"case": case_id, "node": nid, "transition": tname, "status": case2.get("status"), "step": case2.get("current_step")}, None
+
+def h_graph_status(ctx, decl):
+    case = ctx["kget"](ctx["body"].get("case"))
+    if not case: return None, "case not found"
+    tasks = [i for i in ctx["kfind"]("platform.inbox_item") if i.get("ref") == case["id"]]
+    return {"case": case["id"], "status": case.get("status"), "step": case.get("current_step"),
+            "graph": _gstate(case), "record": case,
+            "tasks": [{"id": t["id"], "actor": t.get("actor"), "kind": t.get("kind"), "status": t.get("status")} for t in tasks]}, None
+
+def h_tick(ctx):
+    """W1b: scheduler wake-up for a timer/sla node — fire the timer (mark done + advance) or apply an SLA rung."""
+    body = ctx["body"]; case = ctx["kget"](body.get("case")) if body.get("case") else None
+    if not case: return {"tick": "no-case"}, None
+    decl = _gwf(ctx, case.get("workflow"))
+    if not decl: return {"tick": "no-graph-decl"}, None
+    nid = body.get("node"); node = _gnode(decl, nid); st = _gstate(case)
+    if node and node.get("kind") == "timer" and nid in (st.get("waiting") or []):
+        scope = dict(case.get("scope") or {}); g = dict(scope.get("_graph") or {})
+        g["waiting"] = [x for x in (g.get("waiting") or []) if x != nid]; g.setdefault("done", []).append(nid)
+        scope["_graph"] = g; ctx["kwrite"](case["id"], {**case, "scope": scope})
+        _advance_graph(ctx, decl, case["id"])
+        return {"tick": "timer-fired", "node": nid}, None
+    return {"tick": "noop"}, None
+
+
 # ADR-0091/0097 canonical Lifecycle verbs are the BARE names (request/decide/update/withdraw/status); the
 # namespaced `lifecycle-*` keys are retained so the pre-#263 bridge verbs keep resolving during migration.
 HANDLERS = {
@@ -577,6 +797,7 @@ HANDLERS = {
     "lifecycle-update": h_update, "lifecycle-withdraw": h_withdraw,
     "service-advance": h_service_advance,   # ADR-0097: the ported service-request workflow interpreter (advance)
     "service-open": h_service_open,         # ADR-0097: the ported service-request case opener (first step)
+    "tick": h_tick,                         # ADR-0097 W1/W1b: scheduler wake-up for a timer / SLA node on a graph case
 }
 
 
