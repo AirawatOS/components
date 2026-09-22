@@ -1,0 +1,15 @@
+[
+  {
+    "schema": "platform.subscription",
+    "id": "ds:$tenant:subscription/air-recommendation-to-action",
+    "name": "Air Intelligence: recommendation → open action",
+    "enabled": true,
+    "match": { "subject_schema": "governance.recommendation" },
+    "action": {
+      "kind": "http",
+      "interface": "decision.route",
+      "body": { "component": "ds:airawatdeveloper:engine/decision-router", "tenant": "$tenant", "reason": "governance.recommendation → route to Inbox" }
+    },
+    "tenant": "$tenant"
+  }
+]

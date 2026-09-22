@@ -19,6 +19,9 @@
   .price{font-size:12px} .free{color:var(--accent)} .paid{color:#d29922}
   .cert{font-size:11px;color:var(--accent)} .cert.bad{color:#f85149}
   button{margin-left:auto;background:var(--blue);color:#fff;border:0;border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer}
+  button.danger{background:transparent;color:#f0a3a3;border:1px solid #7a3b3b}
+  button.danger:hover{background:#5a2a2a;color:#ffd6d6}
+  button:disabled{opacity:.55;cursor:default}
   button:disabled{background:#30363d;color:var(--dim);cursor:default}
   .members{color:var(--dim);font-size:11px;margin-top:6px}
   #msg{margin:10px 0;color:var(--dim);font-size:12px;min-height:16px}
@@ -61,20 +64,43 @@ function priceLabel(p){ p=p||{}; if(p.model==='free'||!p.model) return '<span cl
   if(p.model==='metered') return `<span class="price paid">Metered · ${p.price||''} ${p.currency||''}/${p.unit||'call'}</span>`;
   return `<span class="price">${p.model}</span>`; }
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-async function install(kind,id,btn){
+async function install(kind,id,btn,members){
   btn.disabled=true; btn.textContent='Installing…';
   const m=document.getElementById('msg');
   try{
     const r=await fetch('/bridge/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,id})}).then(r=>r.json());
-    if(r.error){ m.textContent='✗ '+r.error+' (install needs a tenant-admin session)'; btn.disabled=false; btn.textContent='Install'; return; }
+    if(r.error){ m.textContent='✗ '+r.error+' (install needs a tenant-admin session)'; wireInstallBtn(btn,kind,id,{installable:true,label:'Install',members}); return; }
     // `members` is an ARRAY for a component fan-out but an integer COUNT for a solution install — handle both.
     const mem=r.members; const n=Array.isArray(mem)?mem.filter(x=>!x.error).length:(typeof mem==='number'?mem:0);
     const apps=(r.shelved_apps||[]).length;
     m.textContent='✓ installed '+pretty(id.split('/').pop())+(n?` (${n} component${n>1?'s':''})`:'')+(apps?` — added ${apps} app${apps>1?'s':''} to your desktop (refresh to see it)`:'');
-    btn.textContent='Installed';
+    if(!INSTALLED.includes(id)) INSTALLED.push(id);         // now installed → button flips to Uninstall
+    wireInstallBtn(btn,kind,id,{installable:true,label:'Install',members});
   }catch(e){                                               // never leave the button stuck on 'Installing…'
-    m.textContent='✗ install failed: '+(e && e.message || e); btn.disabled=false; btn.textContent='Install';
+    m.textContent='✗ install failed: '+(e && e.message || e); wireInstallBtn(btn,kind,id,{installable:true,label:'Install',members});
   }
+}
+async function uninstall(kind,id,btn,members){
+  btn.disabled=true; btn.textContent='Uninstalling…';
+  const m=document.getElementById('msg');
+  try{
+    const r=await fetch('/bridge/uninstall',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,id,members})}).then(r=>r.json());
+    if(r.error){ m.textContent='✗ '+r.error; wireInstallBtn(btn,kind,id,{installable:true,label:'Install',members}); return; }
+    m.textContent='✓ uninstalled '+pretty(id.split('/').pop())+(id.includes(':app/')?' — removed from your desktop (refresh)':' — grants revoked')+(r.errors&&r.errors.length?' (some grants could not be revoked)':'');
+    INSTALLED=INSTALLED.filter(x=>x!==id);                  // no longer installed → button flips back to Install
+    wireInstallBtn(btn,kind,id,{installable:true,label:'Install',members});
+  }catch(e){
+    m.textContent='✗ uninstall failed: '+(e && e.message || e); wireInstallBtn(btn,kind,id,{installable:true,label:'Install',members});
+  }
+}
+// One place that decides a listing's action button: Uninstall if installed, else Install (or Unavailable).
+function wireInstallBtn(b,kind,id,opts){
+  opts=opts||{}; const installed=INSTALLED.includes(id); const installable=opts.installable!==false;
+  b.classList.toggle('danger', installed);
+  if(installed){ b.textContent='Uninstall'; b.disabled=false; b.onclick=()=>uninstall(kind,id,b,opts.members); }
+  else if(installable){ b.textContent=opts.label||'Install'; b.disabled=false; b.onclick=()=>install(kind,id,b,opts.members); }
+  else { b.textContent='Unavailable'; b.disabled=true; b.onclick=null; }
+  return b;
 }
 function compCard(c){
   const installed=INSTALLED.includes(c.component_id);
@@ -98,9 +124,7 @@ function compCard(c){
   el.querySelector('.more').onclick=()=>detail(c);
   const b=document.createElement('button');
   const label=mem.length?'Install Expert':'Install';
-  b.textContent=installed?'Installed':(installable?label:'Unavailable');
-  b.disabled=installed||!installable;
-  if(installable&&!installed) b.onclick=()=>install('component',c.component_id,b);
+  wireInstallBtn(b,'component',c.component_id,{installable,label,members:mem});
   el.querySelector('.row:last-child').appendChild(b);
   return el;
 }
@@ -140,9 +164,7 @@ function detail(c){
   ov.querySelector('#xc').onclick=()=>ov.remove();
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const btn=document.createElement('button');
-  btn.textContent=installed?'Installed':(installable?(mem.length?'Install Expert':'Install'):'Unavailable');
-  btn.disabled=installed||!installable;
-  if(installable&&!installed) btn.onclick=()=>{install('component',c.component_id,btn);};
+  wireInstallBtn(btn,'component',c.component_id,{installable,label:(mem.length?'Install Expert':'Install'),members:mem});
   ov.querySelector('.row:last-child').appendChild(btn);
 }
 // ADR-0102 S3: render a component's PACKAGED documentation (+ inline Docs Assistant) inside the Marketplace
@@ -184,7 +206,7 @@ function solCard(s){
   el.innerHTML=`<span class="k">solution</span>
     <div class="name">${esc(niceName(s))}</div><div class="prov">v${s.version} · ${s.members.length} components</div>
     <div class="members">${s.members.map(m=>pretty(m.split('/').pop())).join(' · ')}</div><div class="row"></div>`;
-  const b=document.createElement('button'); b.textContent='Install'; b.onclick=()=>install('solution',s.solution_id,b);
+  const b=document.createElement('button'); wireInstallBtn(b,'solution',s.solution_id,{installable:true,label:'Install',members:s.members});
   el.querySelector('.row').appendChild(b); return el;
 }
 function renderFilters(){

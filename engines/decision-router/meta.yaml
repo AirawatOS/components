@@ -23,3 +23,12 @@ scopes:
   - { verb: write, scope: platform.case }
   - { verb: write, scope: platform.task }
   - { verb: write, scope: platform.inbox_item }
+
+# ADR-0104 S1 — DECLARED data-event handlers. The developer declares WHICH event this component reacts to;
+# the publish-time generator (tools/wire_subscriptions.py) produces the governed platform.subscription
+# (+ interface + binding) automatically. No hand-authored subscription record.
+#   `action:` names a governed verb this engine already implements (headless-scan engine → run itself).
+#   A HANDLERS-based engine would instead name `handler: <fn>` and the generator govern+binds a per-handler verb.
+subscribes:
+  - on: governance.recommendation        # WHEN an actionable recommendation is written…
+    action: decision.route               # THEN run this engine's governed verb (opens case+task → Inbox)
