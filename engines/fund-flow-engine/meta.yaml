@@ -32,6 +32,18 @@ verbs_exempt:
   - hrt-summary      # HRT watchtower read (report assembly) — not an advance/flow action
   - fund-source      # upsert a governed finance.fund_source (donor funding line) — catalog authoring
   - fund-sources     # list the governed fund sources (catalog read)
+  - provision        # ADR-0104 lifecycle handler (on_install) — not a substitutable action verb
+  - reconfigure      # ADR-0104 lifecycle handler (on_configure)
+  - teardown         # ADR-0104 lifecycle handler (on_uninstall)
+
+# ADR-0104 — LIFECYCLE HOOKS. The platform CALLS these handlers when this component crosses a stage; the
+# handler name maps to a run.py HANDLERS key, and the stage payload arrives in ctx (e.g. on_configure gets
+# the new config in ctx["body"]["config"]). Idempotent + best-effort (§6). A component implements only the
+# hooks it cares about. See docs/decisions/ADR-0104.
+lifecycle:
+  on_install:   provision      # first install into a tenant
+  on_configure: reconfigure    # typed config changed
+  on_uninstall: teardown       # fired BEFORE grants are revoked — cleanup while rights are still held
 
 required_schemas: [finance.account, finance.advance, finance.fund_flow, finance.fund_source, finance.budget, finance.transaction]
 reads: [finance.account, finance.advance, finance.fund_flow, finance.fund_source, finance.budget, finance.transaction]

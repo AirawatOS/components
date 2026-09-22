@@ -294,11 +294,30 @@ def h_hrt_summary(ctx):
             "watchlist": watch, "revenue": {"committed": crev, "realized": rrev}}, None
 
 
+# ---- ADR-0104 lifecycle hooks -----------------------------------------------------------------------
+# The platform CALLS these when this component crosses a stage (declared in meta.yaml `lifecycle:`); ctx
+# carries the stage payload (ctx["body"]["config"] on configure, etc.). Idempotent + best-effort (§6) —
+# stages are at-least-once. They run in this engine's CONFINED ctx, with exactly its declared grants.
+def provision(ctx):        # on_install — first install into a tenant
+    print(f"[fund-flow-engine] on_install → provision: tenant={ctx.get('tenant')} (seed defaults, idempotent)", flush=True)
+    return {"lifecycle": "on_install", "tenant": ctx.get("tenant")}, None
+
+def reconfigure(ctx):      # on_configure — typed config changed (new config in ctx["body"]["config"])
+    conf = (ctx.get("body") or {}).get("config") or {}
+    print(f"[fund-flow-engine] on_configure → reconfigure: tenant={ctx.get('tenant')} config_keys={sorted(conf)}", flush=True)
+    return {"lifecycle": "on_configure", "applied": sorted(conf)}, None
+
+def teardown(ctx):         # on_uninstall — fired BEFORE grants are revoked, so cleanup still has its rights
+    print(f"[fund-flow-engine] on_uninstall → teardown: tenant={ctx.get('tenant')} (tombstone/archive, idempotent)", flush=True)
+    return {"lifecycle": "on_uninstall", "tenant": ctx.get("tenant")}, None
+
+
 HANDLERS = {
     "advance-disburse": h_advance_disburse, "advance-liquidate": h_advance_liquidate,
     "advance-reconcile": h_advance_reconcile, "advance-outstanding": h_advance_outstanding,
     "flow-stamp": h_flow_stamp, "flow-status": h_flow_status, "hrt-summary": h_hrt_summary,
     "fund-source": h_fund_source, "fund-sources": h_fund_sources,
+    "provision": provision, "reconfigure": reconfigure, "teardown": teardown,   # ADR-0104 lifecycle
 }
 
 
