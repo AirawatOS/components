@@ -76,7 +76,16 @@
   <div class="left" id="left"></div>
   <div class="center">
     <div class="tabs" id="tabs"></div>
-    <div class="edit" id="edit"><div class="welcome" id="welcome">Select a project, then open <b>🗺 Architecture</b> to see it as layers of components — or open a file from the explorer.<br><span class="sub">The explorer groups your solution by layer. Right-click a layer to add a component · right-click a component for actions.</span></div></div>
+    <div class="edit" id="edit"><div class="welcome" id="welcome"><div style="max-width:540px">
+      <div style="font-size:15px;color:var(--txt);margin-bottom:8px">Build a solution from small pieces that talk through shared <b>Contracts</b>.</div>
+      <div class="sub">Right-click a group in the left explorer to add a piece · right-click a piece (or click its node in 🗺 Architecture) to <b>🔍 Open</b> it · then <b>⬆ Publish as Solution</b> bundles everything into one installable app.</div>
+      <div class="sub" style="margin-top:12px;text-align:left;display:inline-block;line-height:1.9">
+        📱 <b>Apps &amp; Screens</b> — what people use<br>
+        🔌 <b>Data In</b> — bring outside data in as governed facts<br>
+        🧠 <b>Logic &amp; AI</b> — engines, skills &amp; AI experts that compute<br>
+        ⚖️ <b>Rules &amp; Automation</b> — workflows &amp; event→action reactions<br>
+        🔗 <b>Contracts</b> — the shared specs every piece speaks</div>
+    </div></div></div>
     <div class="bottom" id="bottom"></div>
   </div>
   <div class="right collapsed" id="right"></div>
@@ -266,7 +275,7 @@ function jumpToLine(ln){
 }
 function renderEdit(){
   const E=$('edit');
-  if(!ACTIVE){E.innerHTML='<div class="welcome" id="welcome">Open a file from the explorer, or right-click a component.</div>';return;}
+  if(!ACTIVE){E.innerHTML='<div class="welcome" id="welcome">Open a file from the explorer, or right-click a component → <b>🔍 Open</b>.</div>';return;}
   if(ACTIVE.path&&ACTIVE.path.indexOf('docs/')===0&&ACTIVE.path.endsWith('.md'))return renderDocEdit();
   const t=ACTIVE, isCode=t.path==='run.py', m=memberFor(t.ref);
   E.innerHTML=`<div class="edtoolbar"><span class="sub">${esc(t.ref)} / ${esc(t.path)}</span>
@@ -808,17 +817,17 @@ function guide(){
   ${L('📦 Skill / AI Expert','turns facts + rules into a CITED recommendation. It recommends; a human decides.')}
   ${L('📦 App','what people actually see and use.')}
   ${L('📐 Spec','the shared CONTRACT two components agree on — a noun (a data schema) or a verb (an interface). Components never guess each other; they speak specs.')}
-  <h4 style="margin:14px 0 4px">The layers <span class="sub">(open 🗺 Architecture to see yours)</span></h4>
-  ${L('Interaction','the apps people use')}
-  ${L('Governance','who decides, and the rules & workflow')}
-  ${L('Intelligence','engines, skills & AI experts — the reasoning')}
-  ${L('Domain','drivers that acquire data → governed facts')}
-  ${L('Platform','shared plumbing')}
-  ${L('Network','the specs & standards everything speaks')}
+  <h4 style="margin:14px 0 4px">The groups <span class="sub">(open 🗺 Architecture to see yours)</span></h4>
+  ${L('📱 Apps & Screens','what people use')}
+  ${L('🔌 Data In','drivers that bring outside data in as governed facts')}
+  ${L('🧠 Logic & AI','engines, skills & AI experts — the reasoning')}
+  ${L('⚖️ Rules & Automation','workflows, event→action automations & decisions')}
+  ${L('🔗 Contracts','the specs & standards every component speaks')}
+  ${L('⚙️ Advanced','pipelines & lower-level plumbing')}
   <h4 style="margin:14px 0 4px">Build vs Configure</h4>
-  <div class="sub"><b>Build</b> a NEW component when nothing fits: scaffold → generate/edit code → Test → Publish. <b>Configure</b> an EXISTING platform component when one already does the job: install it, set its API keys & schedule — no code. Reuse first; the Solution Expert always suggests reuse before building.</div>
+  <div class="sub"><b>Build</b> a NEW component when nothing fits: scaffold → generate/edit code → Test → Publish. <b>Configure</b> an EXISTING platform component when one already does the job: install it, set its API keys & schedule — no code. Reuse first; the Solution Expert always suggests reuse before building. (Right-click any piece → <b>🔍 Open</b> to see its contract and the right actions.)</div>
   <h4 style="margin:14px 0 4px">The flow</h4>
-  <div class="sub">① <b>＋ Project</b> — answer the wizard (what · who · data · decisions · triggers). ② The <b>🧠 Solution Expert</b> proposes a layered graph — reuse or build each part, confirm-gated. ③ See it in <b>🗺 Architecture</b>. ④ Test each component in your dev sandbox. ⑤ Publish. ⑥ <b>Compose → Solution</b> — one install brings the whole thing.</div>
+  <div class="sub">① <b>＋ Project</b> — answer the wizard (what · who · data · decisions · triggers). ② The <b>🧠 Solution Expert</b> proposes a layered graph — reuse or build each part, confirm-gated. ③ See it in <b>🗺 Architecture</b>. ④ Test each component in your dev sandbox. ⑤ Publish. ⑥ <b>⬆ Publish as Solution</b> — one install brings the whole thing.</div>
   <div style="text-align:right;margin-top:14px"><button class="btn primary" id="x">Got it</button></div>`);
   m.q('#x').onclick=m.close;
 }
@@ -868,7 +877,7 @@ async function renderArch(){
       `</g>`;});
   svg+='</svg>';
   E.innerHTML=`<div class="edtoolbar"><b>🗺 Solution architecture</b> <span class="sub">— ${order.length} nodes · ${bands.length} layers · <span style="color:#2f81f7">▬ writes</span> · <span style="color:#8b949e">┈ reads</span> · <span style="color:#d29922">┈ events</span> · <span style="color:#3fb950">⟳ lifecycle</span> · 📐 spec</span><span style="margin-left:auto"></span><button class="btn sm" id="filesBtn">📄 Files</button></div>
-    <div style="flex:1;overflow:auto;background:var(--bg)">${bands.length?svg:'<div class="welcome">No components yet.<br><span class="sub">Right-click a layer in the explorer to add one, or ask the Solution Expert.</span></div>'}</div>`;
+    <div style="flex:1;overflow:auto;background:var(--bg)">${bands.length?svg:'<div class="welcome">No components yet.<br><span class="sub">Right-click a group in the explorer to add one, or ask the 🧠 Solution Expert.</span></div>'}</div>`;
   $('filesBtn').onclick=()=>{VIEW='files';renderEdit();};
   E.querySelectorAll('.anode').forEach(g=>{const ref=g.dataset.ref;const m=ref&&memberFor(ref);if(m&&m.kind!=='schema'&&m.kind!=='interface')g.style.cursor='pointer',g.onclick=()=>componentPanel(ref);});   // S3: node → unified panel
 }
