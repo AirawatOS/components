@@ -67,13 +67,10 @@
   <span class="ic" id="renProj" title="Rename this project / solution">✎</span>
   <span class="ic" id="delProj" title="Delete this project">🗑</span>
   <span style="margin-left:auto"></span>
-  <span class="ic" id="guideBtn" title="New to this? A plain-language guide">❓ Guide</span>
-  <span class="ic" id="specsBtn">📐 Specs</span>
-  <span class="ic" id="reqSchema">Request schema</span>
-  <span class="ic" id="myReqBtn">📥 My Requests</span>
-  <span class="ic" id="gitBtn">⎇ Git</span>
+  <span class="ic" id="contractsBtn" title="The shared specs your components speak — browse, request a new one, or track your requests">🔗 Contracts</span>
   <span class="ic" id="archBtn" title="See the whole solution as layers of components wired by specs">🗺 Architecture</span>
-  <span class="ic" id="composeBtn">Compose → Solution</span>
+  <span class="ic" id="composeBtn" title="Bundle these components into one installable solution and publish it to the Marketplace">⬆ Publish as Solution</span>
+  <span class="ic" id="moreBtn" title="More — guide, git settings">⋯</span>
 </div>
 <div class="body">
   <div class="left" id="left"></div>
@@ -131,11 +128,10 @@ async function boot(){
   $('newProj').onclick=newProject;
   $('renProj').onclick=renameProject;
   $('delProj').onclick=deleteProject;
-  $('specsBtn').onclick=specsBrowser;
-  $('guideBtn').onclick=guide;
-  $('reqSchema').onclick=requestSchema;
-  $('myReqBtn').onclick=myRequests;
-  if($('gitBtn'))$('gitBtn').onclick=gitSettings;
+  // S2: one Contracts surface (browse · request · track) + an overflow for guide/git, so the top bar is 3 clear actions.
+  const drop=(e,items)=>{const r=e.currentTarget.getBoundingClientRect();menu(r.left,r.bottom+4,items);};
+  $('contractsBtn').onclick=e=>drop(e,[['📐 Browse specs',specsBrowser],['＋ Request a schema',requestSchema],['📥 My requests',myRequests]]);
+  $('moreBtn').onclick=e=>drop(e,[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
   $('composeBtn').onclick=composeSolution;
   $('archBtn').onclick=toggleArch;
   buildRight();
