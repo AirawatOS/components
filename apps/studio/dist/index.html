@@ -150,6 +150,7 @@ function tree(){
         html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${spec?'view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${spec?'📐':'📦'}</span><span class="nm">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
         if(co&&!spec){ const fs=FILES[m.ref];
           if(!fs) html+=`<div class="sub" style="padding-left:44px">loading…</div>`;
+          else if(!Object.keys(fs).length) html+=`<div class="sub" style="padding:2px 0 2px 44px">— source not available (component may have been renamed or not yet built) —</div>`;
           else Object.keys(fs).forEach(fp=>{ html+=`<div class="node" data-file="${esc(m.ref)}::${esc(fp)}" style="padding-left:40px"><span class="tw"></span><span class="ig">📄</span><span class="nm">${esc(fp)}</span></div>`;});
         }});
     }
