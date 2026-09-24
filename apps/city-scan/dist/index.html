@@ -641,7 +641,7 @@ async function loadFootprints(cell){                              // pull ONLY t
   footLoading=true; cellPanel();
   const rows=await qf("geo.building",{h3_id:cell.h3});
   if(!drillCell || drillCell.h3!==cell.h3) return;                // user already drilled elsewhere / exited
-  drillBuildings=rows.map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2,status:o.method})).filter(b=>ringOf(b.geometry));
+  drillBuildings=rows.map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2,status:o.method,prov:o.prov})).filter(b=>ringOf(b.geometry));
   footLoading=false; cellPanel(); render();
 }
 function drillInto(cell){                                          // zoom into a cell + reveal its native features
@@ -1152,7 +1152,7 @@ function fitView(bbox){
   if(!LAYERS.length){ $("mapload").remove(); $("map").innerHTML='<div class="empty">No baseline data for this workspace yet.</div>'; drawTrust(); return; }
   view=fitView(DATA.aoi.bbox||DATA.scope||[72.8,18.9,72.99,19.28]);
   deckgl=new deck.Deck({
-    parent:$("map"), initialViewState:view, controller:true, useDevicePixels:false,
+    parent:$("map"), initialViewState:view, controller:true, getTooltip:({object})=>{if(!object||!object.status||!object.prov)return null;var p=object.prov,e=function(v){return v==null?'\u2014':v},unreg=object.status==='tax-unregistered',r=function(k,v){return '<div style=\'display:flex;gap:10px;margin:1px 0\'><span style=\'opacity:.55;min-width:90px\'>'+k+'</span><b>'+e(v)+'</b></div>'};return {html:'<div style=\'font:12px system-ui,sans-serif;min-width:210px\'>'+'<div style=\'font-weight:700;margin-bottom:5px;color:'+(unreg?'#ff6b6b':'#6ab0e0')+'\'>'+(unreg?'UNREGISTERED property':'Registered property')+'</div>'+r('Owner',p.owner)+r('UID',p.uid)+r('Property ID',p.property_id)+r('Ward',p.ward)+r('Mobile',p.mobile)+r('Use',p.land_use)+r('Confidence',p.confidence)+'</div>',style:{background:'#0c1622f5',color:'#e6edf3',padding:'8px 11px',borderRadius:'9px',border:'1px solid #24344a',boxShadow:'0 6px 20px #0009'}}}, useDevicePixels:false,
     views:[new deck.MapView({repeat:false})],
     onViewStateChange:({viewState})=>{ view=viewState; },
     onHover:info=>tip(info),
