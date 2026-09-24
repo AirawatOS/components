@@ -327,7 +327,47 @@ def h_gap_scan(ctx):
         cand["recommendation"] = rid; ctx["kwrite"](cid, cand)
         cands.append({"candidate": cid, "parcel": pid, "confidence": conf, "signals": [e["signal"] for e in ev]})
     cands.sort(key=lambda c: -c["confidence"])
-    return {"scanned_parcels": scanned, "candidates": len(cands), "by_signal": by_signal,
+    # ── H3 rollup → cell.tax_gap (so City Scan can render a top-level 'unregistered density' choropleth). Guarded:
+    # if the runtime has no h3 lib it's simply skipped (the choropleth can also be seeded out-of-band). ──
+    cells = 0
+    try:
+        import h3
+        cand_pids = {c["parcel"] for c in cands}
+        agg = {}
+        for pc in parcels:
+            g = pc.get("geometry")
+            if not (isinstance(g, dict) and g.get("coordinates")):
+                continue
+            if g.get("type") == "Point":
+                lon, lat = g["coordinates"][0], g["coordinates"][1]
+            else:
+                c = _centroid(g)
+                if not c:
+                    continue
+                lon, lat = c[0], c[1]
+            try:
+                hc = h3.latlng_to_cell(lat, lon, 9)
+            except Exception:
+                hc = h3.geo_to_h3(lat, lon, 9)          # older h3 API
+            a = agg.setdefault(hc, {"s": 0, "u": 0})
+            a["s"] += 1
+            if pc.get("parcel_id") in cand_pids:
+                a["u"] += 1
+        for hc, a in agg.items():
+            try:
+                clat, clon = h3.cell_to_latlng(hc)
+            except Exception:
+                clat, clon = h3.h3_to_geo(hc)
+            cellid = f"ds:{tenant}:cell/tax_gap/{hc}"
+            ctx["kwrite"](cellid, {"schema": "cell.tax_gap", "id": cellid, "tenant": tenant,
+                "space": {"h3": hc, "res": 9, "centroid": [round(clon, 6), round(clat, 6)]},
+                "surveyed_count": a["s"], "unregistered_count": a["u"], "observed_at": now,
+                "prov": {"component": "component://ds:airawatdeveloper:engine/tax-gap-engine", "at": now, "method": "h3-rollup"},
+                "source": "tax-gap-engine", "created_at": now})
+            cells += 1
+    except Exception as e:
+        print("[tax-gap-engine] cell.tax_gap rollup skipped:", e)
+    return {"scanned_parcels": scanned, "candidates": len(cands), "cells": cells, "by_signal": by_signal,
             "top": cands[:20], "policy_used": {"min_confidence": min_conf, "review_threshold": review_th}}, None
 
 

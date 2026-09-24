@@ -5,7 +5,7 @@
 # match-preview (weight tuning), gap-scan (the spine). Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/tax-gap-engine
 kind: engine
-version: 0.2.5   # tax.candidate carries the parcel point (renderable on the map)
+version: 0.2.6   # + H3 rollup to cell.tax_gap (renders as City Scan choropleth)
 provider: ds:airawat:developer
 display_name: Tax Gap Engine
 entrypoint: run.py
@@ -23,4 +23,4 @@ verbs_exempt:
 required_schemas: [tax.match_policy, tax.assessment, util.connection, geo.parcel, geo.building, tax.change_signal]
 reads: [tax.match_policy, tax.assessment, util.connection, geo.parcel, geo.building, tax.change_signal]
 # writes: the matching policy (config console), the flagged candidates, and the AI recommendation behind each flag.
-writes: [tax.match_policy, tax.candidate, governance.recommendation]
+writes: [tax.match_policy, tax.candidate, governance.recommendation, cell.tax_gap]

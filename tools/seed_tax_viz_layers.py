@@ -17,14 +17,14 @@ def put(oid,obj):
 LAYERS=[
  {"id":"ds:airawat:viz/layer/tax-unregistered","layer_id":"tax-unregistered","schema":"viz.layer",
   "label":"Unregistered properties (tax gap)","short_label":"Unregistered","group":"Property Tax","subgroup":"Enforcement",
-  "order":30,"render":"map","category":"built","solution":"tax-gap-finder","color_scale":"reds","value_field":"confidence",
-  "source_schema":"tax.candidate","unit":"","enabled":True,"higher_is_worse":True,
+  "order":30,"render":"map","category":"built","solution":"tax-gap-finder","color_scale":"reds","value_field":"unregistered_count",
+  "source_schema":"cell.tax_gap","unit":"","enabled":True,"higher_is_worse":True,
   "description":"Surveyed built properties with NO matching record in the property-tax register — candidates for field verification.",
   "interpretation":"Each point is a property the GIS survey found but the tax register does not carry. Confidence reflects how many independent signals fired (unregistered footprint, utility with no tax, satellite new-build)."},
  {"id":"ds:airawat:viz/layer/tax-surveyed","layer_id":"tax-surveyed","schema":"viz.layer",
   "label":"Surveyed properties (cadastre)","short_label":"Surveyed","group":"Property Tax","subgroup":"Enforcement",
-  "order":31,"render":"map","category":"built","solution":"tax-gap-finder","color_scale":"blues","value_field":"",
-  "source_schema":"geo.parcel","unit":"","enabled":True,"higher_is_worse":False,
+  "order":31,"render":"map","category":"built","solution":"tax-gap-finder","color_scale":"blues","value_field":"surveyed_count",
+  "source_schema":"cell.tax_gap","unit":"","enabled":True,"higher_is_worse":False,
   "description":"All built properties from the GIS property survey — the cadastral base the tax gap is measured against.",
   "interpretation":"The full universe of surveyed built properties. Those NOT lit up as unregistered are the ones the engine matched to a tax-register record."},
 ]
