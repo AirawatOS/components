@@ -1,0 +1,20 @@
+# ingest-tax-register (kind=driver) — load a municipal PROPERTY-TAX REGISTER export (the tax roll / system-of-record,
+# from any Municipal Public Service Delivery System) into tax.assessment. Source-agnostic: the register's origin is
+# just a `source` label, never baked in. Reads a CSV asset from the filestore (REGISTER_FILE_ID); maps configurable
+# columns → tax.assessment. Uses a row's own lat/long when present (registers are often pre-geocoded) — never guesses.
+# The join key to the property survey (`uid`) is the survey id where the register carries one, else the register id;
+# rows with no survey key still load and fall to the engine's fuzzy/spatial linkage. Confined — only I/O is the broker.
+component_id: ds:airawat:driver/ingest-tax-register
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Ingest Property-Tax Register
+entrypoint: run.py
+confinement_min: L1
+reads: [tax.assessment]
+writes: [tax.assessment]
+# config: which file, per-run cap, and OPTIONAL column-name overrides (auto-detected from the header otherwise).
+config: [REGISTER_FILE_ID, MAX, SOURCE, KEY_FIELD, FALLBACK_KEY_FIELD, LAT_FIELD, LON_FIELD, OWNER_FIELD, MOBILE_FIELD, ADDRESS_FIELD, WARD_FIELD]
+scopes:
+  - { verb: read,  scope: tax.assessment }
+  - { verb: write, scope: tax.assessment }

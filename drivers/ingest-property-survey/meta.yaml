@@ -1,0 +1,21 @@
+# ingest-property-survey (kind=driver) — load a GIS PROPERTY SURVEY (the cadastral ground-truth of built properties)
+# into geo.parcel (the layer every tax signal is spatially joined to). Two input modes, both from the filestore:
+#   • shapefile  (SURVEY_SHP_FILE_ID + optional SURVEY_CSV_FILE_ID for attributes) → true plot POLYGONS;
+#   • csv        (SURVEY_CSV_FILE_ID with lat/long)                                → point centroids.
+# Source-agnostic + column-auto-detected (env overrides available) so it ingests surveys from any city without code
+# changes. `parcel_id` = the survey uid (the join key the tax register links to). Pure-stdlib shapefile reader — runs
+# in the standard runtime, no geo libraries. NO fabrication: a feature with no geometry/uid is skipped, never invented.
+component_id: ds:airawat:driver/ingest-property-survey
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Ingest Property Survey
+entrypoint: run.py
+confinement_min: L1
+reads: [geo.parcel]
+writes: [geo.parcel, geo.building]
+config: [SURVEY_SHP_FILE_ID, SURVEY_CSV_FILE_ID, MAX, WRITE_BUILDINGS, UID_FIELD, WARD_FIELD, USE_FIELD, AREA_FIELD, OWNER_FIELD, LAT_FIELD, LON_FIELD]
+scopes:
+  - { verb: read,  scope: geo.parcel }
+  - { verb: write, scope: geo.parcel }
+  - { verb: write, scope: geo.building }
