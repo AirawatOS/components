@@ -12,7 +12,7 @@ Mismatches become scored `tax.candidate`s (+ a governance.recommendation — AI 
 fuzzy weight comes from `tax.match_policy` — nothing is hardcoded. Handlers: matchpolicy-get · matchpolicy-set ·
 match-preview · gap-scan. Writes as component://tax-gap-engine obo the user.
 """
-import time as _t, re as _re
+import time as _t, re as _re, os as _os, json as _json
 
 _ADMIN = {"platform.tenant-admin", "platform.steward", "admin"}
 
@@ -24,7 +24,12 @@ DEFAULT_POLICY = {
                          "multi_parcel": "flag", "outside_all": "flag"},
     "fuzzy_weights": {"mobile": 0.4, "name": 0.3, "address": 0.3},
     "fuzzy_thresholds": {"match": 0.85, "review": 0.6},
-    "candidate": {"min_confidence": 0.5,
+    # LINKAGE LADDER: try an EXACT key-join first (a clean survey↔register key like surveyid↔uid), then fall back
+    # to the fuzzy/spatial machinery. A city WITHOUT a clean key just leaves key_join off and uses the fallback.
+    "link": {"key_join": {"enabled": True, "parcel_field": "parcel_id", "assessment_field": "uid"}},
+    # parcel_is_footprint: when the cadastre IS the built-property survey (each geo.parcel is a surveyed building),
+    # a parcel with no assessment is itself the "footprint with no tax record" — no separate geo.building needed.
+    "candidate": {"min_confidence": 0.5, "parcel_is_footprint": False,
                   "signal_weights": {"utility_no_tax": 0.4, "footprint_no_assessment": 0.3,
                                      "change_detected": 0.2, "under_assessed": 0.1}},
 }
@@ -221,6 +226,9 @@ def h_gap_scan(ctx):
     tol = pol["geometry_hygiene"].get("on_boundary_tolerance_m", 5)
     review_th = pol["fuzzy_thresholds"].get("review", 0.6)
     sw = pol["candidate"]["signal_weights"]; min_conf = pol["candidate"].get("min_confidence", 0.5)
+    kj = (pol.get("link") or {}).get("key_join") or {}
+    kj_on = bool(kj.get("enabled")); kj_pf = kj.get("parcel_field", "parcel_id"); kj_af = kj.get("assessment_field", "uid")
+    parcel_is_footprint = bool(pol["candidate"].get("parcel_is_footprint"))
     parcels = ctx["kfind"]("geo.parcel")
     assessments = ctx["kfind"]("tax.assessment")
     utilities = ctx["kfind"]("util.connection")
@@ -239,6 +247,15 @@ def h_gap_scan(ctx):
     for a in assessments:
         if a.get("_parcel"):
             assess_by_parcel.setdefault(a["_parcel"], []).append(a)
+    # LINKAGE TIER 1 — exact key-join: index assessments by their survey key (uid). A parcel whose parcel_id equals
+    # an assessment's uid is REGISTERED by that clean key alone; the spatial/fuzzy tiers below are the fallback for
+    # rows that lack such a key. Cities without a clean key just leave key_join off in the policy.
+    assess_by_key = {}
+    if kj_on:
+        for a in assessments:
+            k = (a.get(kj_af) or "").strip() if isinstance(a.get(kj_af), str) else a.get(kj_af)
+            if k:
+                assess_by_key.setdefault(k, []).append(a)
 
     # 2) per-parcel signal fusion
     scanned = 0; cands = []; by_signal = {}
@@ -253,7 +270,9 @@ def h_gap_scan(ctx):
                 fp_parcels.add(pidf)
     for pc in parcels:
         scanned += 1; pid = pc.get("parcel_id"); ev = []
-        has_assess = bool(assess_by_parcel.get(pid))
+        # TIER 1 exact key-join, then TIER 2 the spatially-joined index: registered if EITHER links an assessment.
+        key_hit = assess_by_key.get(pc.get(kj_pf)) if kj_on else None
+        has_assess = bool(assess_by_parcel.get(pid)) or bool(key_hit)
         # utility_no_tax: a utility on this parcel whose fuzzy-link to any assessment is below the review threshold
         util_here = [u for u in utilities if u.get("_parcel") == pid]
         matched_util = None
@@ -262,9 +281,13 @@ def h_gap_scan(ctx):
             if best < review_th:
                 ev.append({"signal": "utility_no_tax", "detail": f"{u.get('utility_type')} conn {u.get('account_no') or u.get('uid')} (best link {best})", "weight": sw.get("utility_no_tax", 0)})
                 matched_util = u.get("id"); bump("utility_no_tax"); break
-        # footprint_no_assessment: a building footprint exists on a parcel with no assessment
-        if not has_assess and pid in fp_parcels:
-            ev.append({"signal": "footprint_no_assessment", "detail": "building footprint present, no assessment", "weight": sw.get("footprint_no_assessment", 0)})
+        # footprint_no_assessment (UNREGISTERED): a built property with no tax record found by key OR spatial OR fuzzy.
+        # The footprint is either a separately-placed geo.building OR — when the cadastre IS the built-property survey
+        # (parcel_is_footprint) — the surveyed parcel itself. This is the core "in the survey, not in the register" gap.
+        if not has_assess and (pid in fp_parcels or parcel_is_footprint):
+            detail = "in the property survey, no matching tax record (key/spatial/fuzzy)" if parcel_is_footprint \
+                else "building footprint present, no assessment"
+            ev.append({"signal": "footprint_no_assessment", "detail": detail, "weight": sw.get("footprint_no_assessment", 0)})
             bump("footprint_no_assessment")
         # change_detected: a new/expanded change signal on this parcel
         ch = next((c for c in changes if c.get("parcel_id") == pid and c.get("change_type") in ("new_build", "expanded")), None)
@@ -302,8 +325,51 @@ HANDLERS = {"matchpolicy-get": h_matchpolicy_get, "matchpolicy-set": h_matchpoli
             "match-preview": h_match_preview, "gap-scan": h_gap_scan}
 
 
+# ── headless run (scheduler /run) ────────────────────────────────────────────────────────────────────────
+# When the scheduler runs this engine as a component (RUN_TOKEN present), it executes gap-scan headless against
+# the confined broker — same read (/v1/query, /v1/read) + write (/v1/write/batch) contract the drivers use — so a
+# periodic tax-gap re-scan is just a scheduled run. The in-process verb dispatch (HANDLERS) is unchanged.
+def _bcall(path, body):
+    import urllib.request
+    api = _os.environ.get("AIRAWAT_API", "http://localhost:8080")
+    req = urllib.request.Request(api + path, data=_json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "X-Run-Token": _os.environ.get("RUN_TOKEN", "")}, method="POST")
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return _json.loads(r.read() or b"{}")
+
+
+def _bquery(scope):
+    return [r.get("object") or r for r in (_bcall("/v1/query", {"scope": scope, "limit": 200000}).get("results") or [])]
+
+
+def _bwrite(oid, obj):
+    _bcall("/v1/write/batch", {"items": [{"scope": obj.get("schema"), "id": oid, "object": obj}], "asserted_at": _now()})
+
+
+def _run_tenant():
+    try:
+        t = (_bcall("/v1/context", {}) or {}).get("tenant")
+        if t:
+            return t
+    except Exception:
+        pass
+    return _os.environ.get("TENANT") or _os.environ.get("WRITE_TENANT") or ""
+
+
 def main():
-    print("Tax Gap Engine — handlers:", ", ".join(sorted(HANDLERS)))
+    action = _os.environ.get("RUN_HANDLER") or ("gap-scan" if _os.environ.get("RUN_TOKEN") else "")
+    if action != "gap-scan":
+        print("Tax Gap Engine — handlers:", ", ".join(sorted(HANDLERS))); return 0
+    tenant = _run_tenant()
+    if not tenant:
+        print("[tax-gap-engine] FAIL: could not resolve the run tenant"); return 1
+    ctx = {"tenant": tenant, "kfind": _bquery, "kget": lambda i: None, "kwrite": _bwrite,
+           "body": {}, "sub": "component://tax-gap-engine", "claims": {"roles": []}}
+    res, err = h_gap_scan(ctx)
+    if err:
+        print("[tax-gap-engine] gap-scan error:", err); return 1
+    print(f"[tax-gap-engine] gap-scan tenant={tenant}: scanned={res['scanned_parcels']} "
+          f"candidates={res['candidates']} by_signal={res['by_signal']}", flush=True)
     return 0
 
 
