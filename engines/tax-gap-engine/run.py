@@ -305,7 +305,14 @@ def h_gap_scan(ctx):
         cid = f"ds:{tenant}:tax/candidate/{pid.rsplit('/', 1)[-1]}"
         est = None
         a0 = (assess_by_parcel.get(pid) or [{}])[0]
-        cand = {"schema": "tax.candidate", "id": cid, "tenant": tenant, "parcel_id": pid, "point": pc.get("geometry") and None,
+        # carry the parcel's location onto the candidate so it RENDERS on the map (a Point coord, or a polygon centroid)
+        _g = pc.get("geometry"); _pt = None
+        if isinstance(_g, dict):
+            if _g.get("type") == "Point" and _g.get("coordinates"):
+                _c = _g["coordinates"]; _pt = {"lon": _c[0], "lat": _c[1]}
+            else:
+                _c = _centroid(_g); _pt = {"lon": _c[0], "lat": _c[1]} if _c else None
+        cand = {"schema": "tax.candidate", "id": cid, "tenant": tenant, "parcel_id": pid, "point": _pt,
                 "ward": pc.get("ward"), "evidence": ev, "confidence": conf, "estimated_revenue": est,
                 "recommended_action": "field-verify", "matched_utility": matched_util,
                 "matched_assessment": a0.get("id"), "status": "flagged", "created_at": now}
