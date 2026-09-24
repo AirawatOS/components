@@ -4,7 +4,7 @@
 # columns → tax.assessment. Uses a row's own lat/long when present (registers are often pre-geocoded) — never guesses.
 # The join key to the property survey (`uid`) is the survey id where the register carries one, else the register id;
 # rows with no survey key still load and fall to the engine's fuzzy/spatial linkage. Confined — only I/O is the broker.
-component_id: ds:airawat:driver/ingest-tax-register
+component_id: ds:airawatdeveloper:driver/ingest-tax-register
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer

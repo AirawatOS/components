@@ -5,7 +5,7 @@
 # Source-agnostic + column-auto-detected (env overrides available) so it ingests surveys from any city without code
 # changes. `parcel_id` = the survey uid (the join key the tax register links to). Pure-stdlib shapefile reader — runs
 # in the standard runtime, no geo libraries. NO fabrication: a feature with no geometry/uid is skipped, never invented.
-component_id: ds:airawat:driver/ingest-property-survey
+component_id: ds:airawatdeveloper:driver/ingest-property-survey
 kind: driver
 version: 0.1.0
 provider: ds:airawat:developer
