@@ -5,7 +5,7 @@
 # match-preview (weight tuning), gap-scan (the spine). Editable + versioned in Studio.
 component_id: ds:airawatdeveloper:engine/tax-gap-engine
 kind: engine
-version: 0.2.3   # + exact key-join linkage tier (survey key↔uid) + parcel_is_footprint + headless gap-scan runner
+version: 0.2.4   # utility_no_tax now compares against KEY-JOINED assessments too (correct suppression on registered parcels)
 provider: ds:airawat:developer
 display_name: Tax Gap Engine
 entrypoint: run.py

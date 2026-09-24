@@ -7,7 +7,7 @@ geocoder, egress-gated) — same fail-loud rule as the ledger (an unresolved add
      mobile, address_string, lat, lon, tier;
   2. GEOCODE any util.connection with an address_string but no point.
 """
-import os, json, time, csv, io, urllib.parse, urllib.request
+import os, json, time, csv, io, base64, urllib.parse, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
@@ -70,26 +70,35 @@ def _num(v):
 def ingest_csv():
     if not UTIL_FILE_ID:
         return 0
-    raw = unwrap(call("/v1/file/get", {"file_id": UTIL_FILE_ID}))
-    text = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
-    n = 0
+    res = call("/v1/file/get", {"id": UTIL_FILE_ID})              # broker: {id} -> {content_b64}
+    text = base64.b64decode(res.get("content_b64") or "").decode("utf-8", "replace")
+    batch = []
     for row in csv.DictReader(io.StringIO(text)):
-        uid = (row.get("uid") or row.get("account_no") or "").strip()
-        utype = (row.get("utility_type") or "electricity").strip().lower()
+        low = {k.lower().strip(): v for k, v in row.items()}
+        uid = (low.get("uid") or low.get("account_no") or "").strip()
+        utype = (low.get("utility_type") or "electricity").strip().lower()
         if not uid or utype not in TYPES:
             continue
         cid = f"ds:{TENANT}:util/connection/{utype}-{uid}"
-        lon, lat = _num(row.get("lon") or row.get("long") or row.get("longitude")), _num(row.get("lat") or row.get("latitude"))
+        lon, lat = _num(low.get("lon") or low.get("long") or low.get("longitude")), _num(low.get("lat") or low.get("latitude"))
         obj = {"schema": "util.connection", "id": cid, "tenant": TENANT, "uid": uid, "utility_type": utype,
-               "account_no": row.get("account_no"), "consumer_name": row.get("consumer_name"), "mobile": row.get("mobile"),
-               "address_string": row.get("address_string") or row.get("address"), "tier": row.get("tier"),
+               "account_no": low.get("account_no"), "consumer_name": low.get("consumer_name"), "mobile": low.get("mobile"),
+               "address_string": low.get("address_string") or low.get("address"), "tier": low.get("tier"),
+               # parcel_id links the connection DIRECTLY to a cadastral parcel (the survey key) when the utility list
+               # carries one — so the engine needn't geocode + spatial-join to place it. Optional; auto-detected.
+               "parcel_id": (low.get("parcel_id") or low.get("property_id") or low.get("survey_id") or None),
                "source": "ingest-utilities", "created_at": NOW}
         if lon is not None and lat is not None:                # lat/long present → use DIRECTLY (no geocode needed)
             obj["point"] = {"lon": lon, "lat": lat}; obj["geocode_confidence"] = 1.0; obj["geocode_band"] = "high"
-        call("/v1/write", {"scope": "util.connection", "id": cid, "object": {k: v for k, v in obj.items() if v is not None}})
-        n += 1
-    print(f"[ingest] wrote {n} utility connections from file", flush=True)
-    return n
+        batch.append({"scope": "util.connection", "id": cid, "object": {k: v for k, v in obj.items() if v is not None}})
+    written = 0
+    for i in range(0, len(batch), 1000):
+        r = call("/v1/write/batch", {"items": batch[i:i + 1000], "asserted_at": NOW}) or {}
+        written += int(r.get("written", 0) or 0)
+        if r.get("errors"):
+            print("  batch errors:", json.dumps(r["errors"][:3])[:400], flush=True)
+    print(f"[ingest] PERSISTED {written}/{len(batch)} utility connections from file", flush=True)
+    return written
 
 
 def main():

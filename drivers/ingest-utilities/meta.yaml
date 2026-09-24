@@ -3,7 +3,7 @@
 # gated). Optionally ingests a utility CSV asset first (UTIL_FILE_ID). Unresolved addresses get no point (never guessed).
 component_id: ds:airawat:driver/ingest-utilities
 kind: driver
-version: 0.1.0
+version: 0.2.0   # fix broker file-read contract ({id}->content_b64) + batch writes + optional parcel_id link
 provider: ds:airawat:developer
 display_name: Ingest Utilities
 entrypoint: run.py
@@ -12,7 +12,7 @@ reads: [util.connection]
 writes: [util.connection]
 egress:
   - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/ingest-utilities (+https://airawat.org; manishsv@gmail.com)" }
-config: [CITY_HINT, MAX, GEOCODER_URL]
+config: [UTIL_FILE_ID, CITY_HINT, MAX, GEOCODER_URL]
 sources:
   - { ref: "ds:airawat:ref/source/nominatim", host: nominatim.openstreetmap.org, provides: [util.connection] }
 scopes:

@@ -273,11 +273,14 @@ def h_gap_scan(ctx):
         # TIER 1 exact key-join, then TIER 2 the spatially-joined index: registered if EITHER links an assessment.
         key_hit = assess_by_key.get(pc.get(kj_pf)) if kj_on else None
         has_assess = bool(assess_by_parcel.get(pid)) or bool(key_hit)
-        # utility_no_tax: a utility on this parcel whose fuzzy-link to any assessment is below the review threshold
+        # utility_no_tax: a utility on this parcel whose fuzzy-link to any assessment is below the review threshold.
+        # Compare against assessments linked by EITHER the spatial index OR the exact key-join, so a registered parcel's
+        # utility (which fuzzy-matches its key-joined assessment) is correctly suppressed.
+        linked_assess = assess_by_parcel.get(pid, []) + (list(key_hit) if key_hit else [])
         util_here = [u for u in utilities if u.get("_parcel") == pid]
         matched_util = None
         for u in util_here:
-            best = max((match_score(u, a, pol["fuzzy_weights"])[0] for a in assess_by_parcel.get(pid, [])), default=0.0)
+            best = max((match_score(u, a, pol["fuzzy_weights"])[0] for a in linked_assess), default=0.0)
             if best < review_th:
                 ev.append({"signal": "utility_no_tax", "detail": f"{u.get('utility_type')} conn {u.get('account_no') or u.get('uid')} (best link {best})", "weight": sw.get("utility_no_tax", 0)})
                 matched_util = u.get("id"); bump("utility_no_tax"); break
