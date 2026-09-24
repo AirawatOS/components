@@ -633,7 +633,7 @@ function footprintsLayer(){                                       // the drilled
   if(!drillCell || !drillBuildings.length || !showBuildings) return null;   // toggle off → reveal roads/drains beneath
   return new deck.PolygonLayer({id:"footprints",data:drillBuildings,pickable:true,extruded:true,wireframe:true,
     getPolygon:b=>ringOf(b.geometry), getElevation:b=> (typeof b.height_m==="number"&&b.height_m>0)?b.height_m:NOMINAL_H,
-    getFillColor:[203,213,225,230], getLineColor:[100,116,139,255], lineWidthUnits:"pixels", getLineWidth:0.5,
+    getFillColor:b=>b.status==="tax-unregistered"?[220,53,53,238]:b.status==="tax-registered"?[70,130,180,225]:[203,213,225,230], getLineColor:[100,116,139,255], lineWidthUnits:"pixels", getLineWidth:0.5,
     material:{ambient:0.6,diffuse:0.65,shininess:32,specularColor:[60,70,85]},
     updateTriggers:{getPolygon:[drillCell&&drillCell.h3]}});
 }
@@ -641,7 +641,7 @@ async function loadFootprints(cell){                              // pull ONLY t
   footLoading=true; cellPanel();
   const rows=await qf("geo.building",{h3_id:cell.h3});
   if(!drillCell || drillCell.h3!==cell.h3) return;                // user already drilled elsewhere / exited
-  drillBuildings=rows.map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2})).filter(b=>ringOf(b.geometry));
+  drillBuildings=rows.map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2,status:o.method})).filter(b=>ringOf(b.geometry));
   footLoading=false; cellPanel(); render();
 }
 function drillInto(cell){                                          // zoom into a cell + reveal its native features
