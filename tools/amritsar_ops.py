@@ -38,7 +38,24 @@ def resolve(schema):
             return out
     return []
 
-if MODE == "seedpolicy":
+if MODE == "retract":
+    # USER-AUTHORISED governed cleanup: retract the demo records that still carry real survey/property id NUMBERS,
+    # so they can be reloaded with fully pseudonymised ids. registry.retract is a bitemporal SOFT close (current view
+    # vanishes, history is retained + reversible) — own-tenant only. Scoped to this tenant's demo facts.
+    total = 0
+    for sch in ("tax.candidate", "governance.recommendation", "tax.assessment", "geo.parcel"):
+        rows = resolve(sch); n = 0
+        for oid, _o in rows:
+            r, e = post(KERNEL + "/v1/registry/retract", {"id": oid}, tok)
+            if e is None:
+                n += 1
+            elif "not found" not in (e or "").lower():
+                print("  retract note", oid, e)
+        total += n
+        print(f"  retracted {sch}: {n}/{len(rows)}")
+    print("RETRACT DONE, total", total)
+
+elif MODE == "seedpolicy":
     pid = f"ds:{TENANT}:tax/match_policy/default"
     # NOTE: key_join is ON by default in the engine's DEFAULT_POLICY; the schema doesn't carry a top-level `link`
     # key, so we only persist the candidate tuning (cadastre-as-footprint + the unregistered signal weight).
