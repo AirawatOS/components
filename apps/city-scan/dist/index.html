@@ -883,7 +883,7 @@ function tip(info){
   if(!info||!info.object){ t.style.opacity=0; return; }
   const L=LAYERS.find(l=>l.key===active);
   const o=info.object;
-  const label = o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
+  const label = (o.prov&&o.status) ? ('<b style=\'color:'+(o.status==="tax-unregistered"?"#ff6b6b":"#6ab0e0")+'\'>'+(o.status==="tax-unregistered"?"UNREGISTERED property":"Registered property")+'</b>'+'<br>Owner: '+(o.prov.owner||'\u2014')+'<br>UID: '+(o.prov.uid||'\u2014')+'<br>Property ID: '+(o.prov.property_id||'\u2014')+'<br>Ward: '+(o.prov.ward||'\u2014')+'<br>Mobile: '+(o.prov.mobile||'\u2014')+'<br>Use: '+(o.prov.land_use||'\u2014')+'<br>Confidence: '+(o.prov.confidence==null?'\u2014':o.prov.confidence)) : o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
               : o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
               : o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
               : o.feature!==undefined ? esc(o.feature||"road")
@@ -1152,7 +1152,7 @@ function fitView(bbox){
   if(!LAYERS.length){ $("mapload").remove(); $("map").innerHTML='<div class="empty">No baseline data for this workspace yet.</div>'; drawTrust(); return; }
   view=fitView(DATA.aoi.bbox||DATA.scope||[72.8,18.9,72.99,19.28]);
   deckgl=new deck.Deck({
-    parent:$("map"), initialViewState:view, controller:true, getTooltip:({object})=>{if(!object||!object.status||!object.prov)return null;var p=object.prov,e=function(v){return v==null?'\u2014':v},unreg=object.status==='tax-unregistered',r=function(k,v){return '<div style=\'display:flex;gap:10px;margin:1px 0\'><span style=\'opacity:.55;min-width:90px\'>'+k+'</span><b>'+e(v)+'</b></div>'};return {html:'<div style=\'font:12px system-ui,sans-serif;min-width:210px\'>'+'<div style=\'font-weight:700;margin-bottom:5px;color:'+(unreg?'#ff6b6b':'#6ab0e0')+'\'>'+(unreg?'UNREGISTERED property':'Registered property')+'</div>'+r('Owner',p.owner)+r('UID',p.uid)+r('Property ID',p.property_id)+r('Ward',p.ward)+r('Mobile',p.mobile)+r('Use',p.land_use)+r('Confidence',p.confidence)+'</div>',style:{background:'#0c1622f5',color:'#e6edf3',padding:'8px 11px',borderRadius:'9px',border:'1px solid #24344a',boxShadow:'0 6px 20px #0009'}}}, useDevicePixels:false,
+    parent:$("map"), initialViewState:view, controller:true, useDevicePixels:false,
     views:[new deck.MapView({repeat:false})],
     onViewStateChange:({viewState})=>{ view=viewState; },
     onHover:info=>tip(info),
