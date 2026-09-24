@@ -11,7 +11,7 @@ footprints too), attributed to this component:
 `parcel_id` is the survey uid — the exact key the property-tax register links to; where a survey has no uid the row is
 skipped (never invented). Column names auto-detect from the header (case-insensitive), with env overrides.
 """
-import os, json, csv, io, struct, time
+import os, json, csv, io, struct, time, base64
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
@@ -43,12 +43,10 @@ def call(path, body):
         return json.loads(r.read() or b"{}")
 
 
-def unwrap(res):
-    if isinstance(res, dict):
-        for k in ("body", "data", "result", "response", "content"):
-            if k in res:
-                return res[k]
-    return res
+def read_file(fid):
+    """Read a filestore asset via the broker: {id} → {content_b64}. Returns bytes (broker mediates; no direct I/O)."""
+    res = call("/v1/file/get", {"id": fid})
+    return base64.b64decode(res.get("content_b64") or "")
 
 
 def _resolve_columns(header):
@@ -148,19 +146,24 @@ def main():
         print("[ingest-property-survey] no tenant in this context — nothing to do"); return 0
     csv_text = ""
     if CSV_FILE_ID:
-        raw = unwrap(call("/v1/file/get", {"file_id": CSV_FILE_ID}))
-        csv_text = raw.decode(errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        csv_text = read_file(CSV_FILE_ID).decode("utf-8", "replace")
     if SHP_FILE_ID:
-        raw = unwrap(call("/v1/file/get", {"file_id": SHP_FILE_ID}))
-        shp_bytes = raw if isinstance(raw, (bytes, bytearray)) else bytes(raw, "latin-1")
+        shp_bytes = read_file(SHP_FILE_ID)
         gen = features_to_parcels(shp_bytes, csv_text, TENANT); mode = "shapefile"
     elif csv_text:
         gen = csv_to_parcels(csv_text, TENANT); mode = "csv-centroid"
     else:
         print("[ingest-property-survey] neither SURVEY_SHP_FILE_ID nor SURVEY_CSV_FILE_ID set — nothing to do"); return 0
     batch, n, nogeom = [], 0, 0
+    def _wr(b):
+        r = call("/v1/write/batch", {"items": b, "asserted_at": NOW}) or {}
+        if isinstance(r, dict):
+            written[0] += int(r.get("written", 0) or 0)
+            if r.get("errors"):
+                print("  batch errors:", json.dumps(r["errors"][:3])[:400], flush=True)
+    written = [0]
     for pid, obj, geom, centroid, uid in gen:
-        batch.append({"scope": "geo.parcel", "id": pid, "object": obj})
+        batch.append({"scope": "geo.parcel", "id": pid, "object": obj})       # {items:[{scope,id,object}], asserted_at}
         if geom is None:
             nogeom += 1
         elif WRITE_BUILDINGS:
@@ -169,12 +172,12 @@ def main():
                 "tenant": TENANT, "geometry": geom, "centroid": centroid, "parcel_id": uid, "source": SOURCE}})
         n += 1
         if len(batch) >= BATCH:
-            call("/v1/write/batch", {"writes": batch}); batch = []
+            _wr(batch); batch = []
         if MAX and n >= MAX:
             break
     if batch:
-        call("/v1/write/batch", {"writes": batch})
-    print(f"[ingest-property-survey] wrote {n} geo.parcel ({mode}); {nogeom} without geometry", flush=True)
+        _wr(batch)
+    print(f"[ingest-property-survey] processed {n} features ({mode}); {nogeom} without geometry; PERSISTED {written[0]} geo.parcel", flush=True)
     return 0
 
 

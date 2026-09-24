@@ -10,7 +10,7 @@ the generic `tax.assessment` schema, and writes them attributed to this componen
   - Column names are auto-detected from the header (case-insensitive), with optional env overrides — so the same
     driver ingests registers from different systems without code changes. NO fabrication of any field.
 """
-import os, json, csv, io, time
+import os, json, csv, io, time, base64
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
@@ -42,12 +42,10 @@ def call(path, body):
         return json.loads(r.read() or b"{}")
 
 
-def unwrap(res):
-    if isinstance(res, dict):
-        for k in ("body", "data", "result", "response", "content"):
-            if k in res:
-                return res[k]
-    return res
+def read_file(fid):
+    """Read a filestore asset via the broker: {id} → {content_b64}. Returns bytes (broker mediates; no direct I/O)."""
+    res = call("/v1/file/get", {"id": fid})
+    return base64.b64decode(res.get("content_b64") or "")
 
 
 def _resolve_columns(header):
@@ -91,24 +89,34 @@ def rows_to_assessments(csv_text, tenant, source=SOURCE):
         yield aid, {k: v for k, v in obj.items() if v is not None}
 
 
+_written = [0]
+def _wr(batch):
+    r = call("/v1/write/batch", {"items": batch, "asserted_at": NOW}) or {}
+    if isinstance(r, dict):
+        _written[0] += int(r.get("written", 0) or 0)
+        if r.get("errors"):
+            print("  batch errors:", json.dumps(r["errors"][:3])[:400], flush=True)
+        elif r.get("written") is None:
+            print("  batch resp (no 'written' key):", json.dumps(r)[:300], flush=True)
+
+
 def main():
     if not TENANT:
         print("[ingest-tax-register] no tenant in this context — nothing to do"); return 0
     if not REGISTER_FILE_ID:
         print("[ingest-tax-register] REGISTER_FILE_ID not set — nothing to ingest"); return 0
-    raw = unwrap(call("/v1/file/get", {"file_id": REGISTER_FILE_ID}))
-    text = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
+    text = read_file(REGISTER_FILE_ID).decode("utf-8", "replace")
     batch, n, geoc = [], 0, 0
     for aid, obj in rows_to_assessments(text, TENANT):
-        batch.append({"scope": "tax.assessment", "id": aid, "object": obj})
+        batch.append({"scope": "tax.assessment", "id": aid, "object": obj})   # {items:[{scope,id,object}], asserted_at}
         n += 1; geoc += 1 if obj.get("point") else 0
         if len(batch) >= BATCH:
-            call("/v1/write/batch", {"writes": batch}); batch = []
+            _wr(batch); batch = []
         if MAX and n >= MAX:
             break
     if batch:
-        call("/v1/write/batch", {"writes": batch})
-    print(f"[ingest-tax-register] wrote {n} tax.assessment rows ({geoc} with coordinates) from {REGISTER_FILE_ID}", flush=True)
+        _wr(batch)
+    print(f"[ingest-tax-register] processed {n} rows ({geoc} with coordinates); PERSISTED {_written[0]} tax.assessment", flush=True)
     return 0
 
 

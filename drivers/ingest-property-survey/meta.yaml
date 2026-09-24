@@ -7,7 +7,7 @@
 # in the standard runtime, no geo libraries. NO fabrication: a feature with no geometry/uid is skipped, never invented.
 component_id: ds:airawatdeveloper:driver/ingest-property-survey
 kind: driver
-version: 0.1.0
+version: 0.1.2
 provider: ds:airawat:developer
 display_name: Ingest Property Survey
 entrypoint: run.py

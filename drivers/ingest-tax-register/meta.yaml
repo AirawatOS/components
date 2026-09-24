@@ -6,7 +6,7 @@
 # rows with no survey key still load and fall to the engine's fuzzy/spatial linkage. Confined — only I/O is the broker.
 component_id: ds:airawatdeveloper:driver/ingest-tax-register
 kind: driver
-version: 0.1.0
+version: 0.1.3
 provider: ds:airawat:developer
 display_name: Ingest Property-Tax Register
 entrypoint: run.py
