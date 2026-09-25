@@ -1,0 +1,19 @@
+# CROWD-FLOW COORDINATOR (kind=engine) — the sense→diagnose→recommend step of the Ramkund crowd-flow control loop.
+# It fuses the CROWD-COUNT function (cell.crowd_density time series) with the CCTV function (vision.detection) at the
+# SAME H3 cell: where a camera has detected a hotspot AND the crowd is climbing to danger/critical, it computes the
+# net INFLOW-vs-OUTFLOW imbalance from the rate of rise and emits a cited governance.recommendation to REDUCE INFLOW
+# (hold buses, redirect parking, meter gates). AI flags; the commander decides (ADR-0029). Confined — broker only.
+component_id: ds:airawatdeveloper:engine/crowd-flow-coordinator
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Crowd-Flow Coordinator (CCTV × crowd → reduce-inflow)
+entrypoint: run.py
+confinement_min: L1
+required_schemas: [cell.crowd_density, vision.detection, governance.recommendation]
+reads: [cell.crowd_density, vision.detection]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read,  scope: cell.crowd_density }
+  - { verb: read,  scope: vision.detection }
+  - { verb: write, scope: governance.recommendation }
