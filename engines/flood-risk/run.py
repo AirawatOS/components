@@ -14,7 +14,7 @@ API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
 T = os.environ.get("WRITE_TENANT", "kmc")
 RAINFALL_MM = float(os.environ.get("RAINFALL_MM", "125"))     # a labelled rainfall FORECAST (24h scenario)
-CID = "ds:airawat:engine/flood-risk"; VER = "0.1.0"
+CID = "ds:airawatdeveloper:engine/flood-risk"; VER = "0.1.0"
 
 
 def _call(path, body, timeout=60):
@@ -67,27 +67,44 @@ def main():
         _o = _d.get("object") or _d; _h = (_o.get("cell_ref") or {}).get("h3_id"); _dd = _o.get("drain_density_km_per_km2")
         if _h and isinstance(_dd, (int, float)):
             drainage[_h] = _dd
-    n = 0; t2 = 0; levels = {"low": 0, "moderate": 0, "high": 0, "severe": 0}
+    # T3 (HYDROLOGY): cell.hydrology carries flood_susceptibility (0..1) from MERIT-Hydro HAND — the height of the
+    # cell above the nearest drainage line. A low HAND cell is genuinely flood-prone (near a channel, easily
+    # inundated) in a way pure elevation-rank can miss. Where hydrology is present it becomes the PRIMARY driver
+    # (0.65) blended with terrain (0.35); where absent we fall back to pure terrain rank. This is the hydrology
+    # driver actually STEERING the flood prediction, not just sitting in the registry.
+    HYDRO_W = float(os.environ.get("HYDRO_WEIGHT", "0.65"))
+    hydro = {}
+    for _hy in (_call("/v1/query", {"scope": "cell.hydrology", "limit": 20000}).get("results") or []):
+        _o = _hy.get("object") or _hy; _h = (_o.get("cell_ref") or {}).get("h3_id"); _fs = _o.get("flood_susceptibility")
+        if _h and isinstance(_fs, (int, float)):
+            hydro[_h] = _fs
+    n = 0; t2 = 0; h3n = 0; levels = {"low": 0, "moderate": 0, "high": 0, "severe": 0}
     for c in land:
         elev = c.get("elevation_m", 0.0); slope = c.get("slope_deg", 0.0)
         h3 = (c.get("space") or {}).get("h3", "") or c.get("h3_id", "")
         elev_norm = bisect.bisect_left(elevs, elev) / _dn              # 0 = lowest land, 1 = highest
         slope_factor = 1 - min(slope / 15.0, 1.0)
-        suscept = 0.62 * (1 - elev_norm) + 0.38 * slope_factor          # T1 terrain susceptibility 0..1
-        dd = drainage.get(h3); tier = "T1"                              # T2 drainage relief where drainage is mapped
+        terr_s = 0.62 * (1 - elev_norm) + 0.38 * slope_factor          # T1 terrain susceptibility 0..1
+        hs = hydro.get(h3)                                             # HAND-based hydrological susceptibility 0..1
+        if hs is not None:
+            suscept = HYDRO_W * hs + (1 - HYDRO_W) * terr_s; tier = "T3-hydro"; h3n += 1
+        else:
+            suscept = terr_s; tier = "T1"                              # no hydrology → pure terrain rank
+        dd = drainage.get(h3)                                          # drainage relief where drains are mapped
         if dd is not None:
-            suscept *= (1 - DRAIN_W * min(dd / DRAIN_REF, 1.0)); tier = "T2"; t2 += 1
+            suscept *= (1 - DRAIN_W * min(dd / DRAIN_REF, 1.0)); tier += "+drain"; t2 += 1
         score = round(suscept * (0.55 + 0.45 * rain_factor), 3)         # rainfall forecast scales it
         level = "severe" if score >= 0.85 else "high" if score >= 0.70 else "moderate" if score >= 0.50 else "low"
         levels[level] += 1
         rf = {"schema": "risk.flood", "id": f"ds:{T}:risk/flood/{h3}", "space": c["space"], "h3_id": h3,
               "score": score, "level": level, "method": "model", "confidence": 0.72,
               "drivers": {"elevation_m": elev, "slope_deg": slope, "rainfall_mm": RAINFALL_MM,
-                          "drain_density_km_per_km2": dd, "tier": tier},
+                          "flood_susceptibility_hand": hs, "drain_density_km_per_km2": dd, "tier": tier},
               # `forecast` is a resolvable ref to the met.forecast used; here a LABELLED scenario string (no
               # met.forecast record — this is a T1 scenario input, honestly flagged as such).
               "forecast": f"scenario:rainfall-24h:{RAINFALL_MM}mm",
-              "prov": {"method": "model", "derived_from_refs": [f"ds:{T}:geo/terrain/{h3}"],
+              "prov": {"method": "model",
+                       "derived_from_refs": [f"ds:{T}:geo/terrain/{h3}"] + ([f"ds:{T}:cell/hydrology/{h3}"] if hs is not None else []),
                        "forecast_scenario": f"rainfall-24h:{RAINFALL_MM}mm", "component": f"{CID}@{VER}",
                        "observed_at": now},
               "observed_at": now, "tenant": T}
@@ -95,8 +112,8 @@ def main():
                             "valid_time": {"from": now}, "asserted_at": now})
         n += 1
     print(f"flood-risk: predicted risk.flood for {n} LAND cells (masked {skipped} water/no-data at/below {NODATA_M}m; "
-          f"{t2} cells got T2 drainage relief, {n - t2} pure T1; rainfall {RAINFALL_MM}mm/24h; land elevation "
-          f"{emin}-{emax}m) — levels {levels}. method=model; forecast-driven prediction, not an observation.")
+          f"{h3n} cells hydrology-led (HAND), {n - h3n} terrain-only; {t2} got drainage relief; rainfall {RAINFALL_MM}"
+          f"mm/24h; land elevation {emin}-{emax}m) — levels {levels}. method=model; forecast-driven prediction.")
     return 0
 
 

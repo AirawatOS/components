@@ -3,16 +3,17 @@
 # T2 = where cell.drainage exists, dense drainage RELIEVES ponding risk (drained low land < undrained low
 # land). Writes a predicted risk.flood score (0..1) + level + method.tier per cell. A PREDICTION (method=
 # model), carrying its drivers so it is transparent + re-derivable. The Flood Advisory skill applies rules to it.
-component_id: ds:airawat:engine/flood-risk
+component_id: ds:airawatdeveloper:engine/flood-risk
 kind: engine
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: Flood Risk (terrain × drainage × forecast → risk.flood)
 entrypoint: run.py
 confinement_min: L1
-reads: [geo.terrain, cell.drainage]
+reads: [geo.terrain, cell.drainage, cell.hydrology]
 writes: [risk.flood]
 scopes:
   - { verb: read,  scope: geo.terrain }
   - { verb: read,  scope: cell.drainage }
+  - { verb: read,  scope: cell.hydrology }
   - { verb: write, scope: risk.flood }
