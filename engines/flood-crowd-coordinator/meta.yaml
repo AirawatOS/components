@@ -1,0 +1,18 @@
+# FLOOD × CROWD COORDINATOR (kind=engine) — the CROSS-FUNCTION join no single procured system can do. Reads the flood
+# function's risk.flood and the crowd function's cell.crowd_density, finds the H3 cells that are FLOODING **and**
+# CROWDED at the same time, and emits a cited governance.recommendation to thin the crowd + relocate riverside assets.
+# AI flags; the commander decides (ADR-0029). Confined — only I/O is the broker. Reuses the mass-gathering spine.
+component_id: ds:airawatdeveloper:engine/flood-crowd-coordinator
+kind: engine
+version: 0.1.1
+provider: ds:airawat:developer
+display_name: Flood × Crowd Coordinator
+entrypoint: run.py
+confinement_min: L1
+required_schemas: [risk.flood, cell.crowd_density, governance.recommendation]
+reads: [risk.flood, cell.crowd_density]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read,  scope: risk.flood }
+  - { verb: read,  scope: cell.crowd_density }
+  - { verb: write, scope: governance.recommendation }
