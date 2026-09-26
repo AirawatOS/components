@@ -113,12 +113,25 @@ def cmd_test(args):
 
 def cmd_deploy(args):
     if not args.sandbox:
-        sys.exit("aos deploy currently supports --sandbox only (P3 will add promotion).")
-    print(f"→ deploy to sandbox tenant '{args.tenant}' (environment: development)")
-    print("  · governance auto-approved in dev:", policy.can_govern_in_place("development"))
-    print("  · artifacts stamped:", policy.dev_marking({"environment": "development"})["badge"]["label"])
-    print("  (P3: this will govern schemas/roles, build+certify members, install the whole")
-    print("   solution into your dev tenant, and open it for live exercise.)")
+        sys.exit("aos deploy currently supports --sandbox only (promotion to prod is a separate flow).")
+    from .solution import Solution, Deployer, InMemoryBackend
+    sol = Solution.load(args.dir)
+    probs = sol.validate()
+    if probs:
+        print("✗ solution.yaml invalid:")
+        for p in probs:
+            print("  -", p)
+        sys.exit(1)
+    # Offline InMemoryBackend proves the pipeline; a BrokerBackend over the dev-token
+    # (AIRAWAT_API+RUN_TOKEN) runs it for real once ADR-0106 S2 (dev governance) is live.
+    backend = InMemoryBackend()
+    rep = Deployer(backend).deploy_sandbox(sol, args.tenant)
+    print(f"→ deploy '{sol.name}' → sandbox tenant '{args.tenant}' (environment: {rep['environment']})")
+    print(f"  governance auto-approved in dev: {policy.can_govern_in_place('development')}")
+    for step, ref in rep["steps"]:
+        print(f"   • {step}: {ref}")
+    print(f"   ▸ {rep['marking']['badge']['label']} · open {rep['open'][0]}")
+    print("✓ whole solution stood up in the sandbox (offline backend; set AIRAWAT_API+RUN_TOKEN for a live dev deploy once S2 lands).")
 
 
 def cmd_publish(args):

@@ -1,0 +1,12 @@
+# A whole decision-support vertical, declared once (ADR-0106 S1). Inline lists/maps so it
+# parses with or without PyYAML. `aos deploy --sandbox` stands this up in your dev tenant.
+solution: water-safety
+environment: development
+schemas: [{id: cell.flood_risk, x-kind: measure}, {id: risk.flood, x-kind: measure}]
+roles: [water.duty-officer]
+workflow: workflow.graph.yaml
+members: {reuse: [lifecycle-engine, decision-router, effectiveness-engine-aos], build: [engines/infer]}
+viz_layers: [cell.flood_risk, risk.flood]
+decider: water.duty-officer
+subscriptions: [{on: governance.recommendation, do: decision.route}]
+contributions: []
