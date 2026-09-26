@@ -121,6 +121,87 @@ class InMemoryBackend:
         return [f"https://…/{tenant}/{solution_name}"]
 
 
+# ── live backend: drives the platform over the developer's dev-token (INT-0004) ──
+class BrokerBackend:
+    """Runs the pipeline against LIVE services, confined to the dev tenant by a dev-token
+    (INT-0004). Same protocol as InMemoryBackend. Requires ADR-0106 S2 live on the network
+    for dev-tenant governance auto-approval. `transport` is injectable for testing — it takes
+    (method, url, body, token) and returns a dict; the default is a urllib transport with retry.
+    """
+    def __init__(self, tenant, network_url, kernel_url, identity_url=None, token=None, transport=None):
+        self.tenant = tenant
+        self.net = network_url.rstrip("/")
+        self.kernel = kernel_url.rstrip("/")
+        self.idn = (identity_url or "").rstrip("/")
+        self._t = transport or _urllib_transport
+        self.log = []
+        self._tok = token or self._mint_dev_token()
+
+    def _mint_dev_token(self):
+        # INT-0004: the kernel mints a dev-token confined to this development tenant.
+        r = self._t("POST", self.kernel + "/v1/components/dev-token", {"tenant": self.tenant}, None) or {}
+        return r.get("token") or r.get("access_token")
+
+    def _post(self, url, body):
+        return self._t("POST", url, body, self._tok) or {}
+
+    def govern_schema(self, sid, defn, tenant, environment):
+        # ADR-0106 S2: in a dev tenant the network auto-approves this into ds:<tenant>:vocab/<sid>.
+        r = self._post(self.net + "/v1/schema-requests", {"schema_id": sid, "definition": defn or {}})
+        self.log.append(("govern_schema", sid, r.get("status", "?")))
+        return r.get("filed") or _dev_scope(sid, tenant)
+
+    def govern_role(self, role, tenant, environment):
+        r = self._post(self.net + "/v1/role-requests", {"role": role, "tenant": tenant})
+        self.log.append(("govern_role", role, r.get("status", "?")))
+
+    def build_member(self, ref, tenant, environment):
+        # Dev build: certify the member's source against the shared catalog ∪ dev vocab (S2) and
+        # register it installable-from-source in the dev tenant (INT-0004). Reuses the certify path.
+        r = self._post(self.net + "/v1/certify", {"subject_id": ref, "subject_kind": "component", "dev": True})
+        self.log.append(("build+certify", ref, "verified" if r.get("certificate") else "?"))
+
+    def compose_install(self, solution_name, members, tenant, environment):
+        sid = f"ds:{tenant}:solution/{solution_name}"
+        self._post(self.net + "/v1/solutions", {"id": sid, "tenant": tenant, "members": members, "environment": environment})
+        self._post(self.kernel + "/v1/solutions/install", {"solution": sid, "tenant": tenant})   # ADR-0075 closure
+        self.log.append(("compose+install", sid, "ok"))
+        return sid
+
+    def seed_viz(self, layer, tenant):
+        oid = f"ds:{tenant}:viz/layer/{layer}"
+        self._post(self.kernel + "/v1/registry/objects",
+                   {"id": oid, "object": {"schema": "viz.layer", "id": oid, "tenant": tenant, "source_schema": layer}})
+        self.log.append(("seed_viz", layer, "ok"))
+
+    def seed_contribution(self, rec, tenant):
+        self._post(self.kernel + "/v1/registry/objects", {"id": rec.get("id"), "object": rec} if isinstance(rec, dict) else {"ref": rec})
+        self.log.append(("seed_contribution", rec, "ok"))
+
+    def open_urls(self, solution_name, tenant):
+        return [f"https://…/{tenant}/{solution_name}"]
+
+
+def _urllib_transport(method, url, body, token):
+    import urllib.request, urllib.error, json as _j, time as _tm
+    data = _j.dumps(body).encode() if body is not None else None
+    hdr = {"Content-Type": "application/json"}
+    if token:
+        hdr["Authorization"] = token if str(token).startswith("Bearer ") else "Bearer " + token
+    last = None
+    for a in range(3):
+        try:
+            req = urllib.request.Request(url, data=data, headers=hdr, method=method)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return _j.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            body_txt = e.read().decode()[:300]
+            raise RuntimeError(f"{method} {url} → {e.code}: {body_txt}")
+        except urllib.error.URLError as e:
+            last = e; _tm.sleep(1.5 * (a + 1))
+    raise RuntimeError(f"{method} {url} unreachable: {last}")
+
+
 # ── the pipeline ──────────────────────────────────────────────────────────────
 class Deployer:
     def __init__(self, backend):
