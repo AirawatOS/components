@@ -652,37 +652,85 @@ async function publishAsService(){
   };
 }
 async function specsBrowser(){
-  const m=modal(`<h3>📐 Network Specifications</h3><div class="sub">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Click one to see its contract.</div>
-    <div class="row" style="gap:10px;margin-top:8px"><div id="slist" style="flex:1;max-height:52vh;overflow:auto;border-right:1px solid var(--line);padding-right:8px">loading…</div>
-    <div id="sdet" style="flex:1.4;max-height:52vh;overflow:auto"><div class="sub">Select a noun or verb.</div></div></div>
-    <div style="text-align:right;margin-top:8px"><button class="btn" id="x">Close</button></div>`);
+  const m=modal(`<style>
+    .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+    .seg button{border:0;background:transparent;padding:5px 10px;cursor:pointer;font:inherit;color:var(--muted)}
+    .seg button.on{background:var(--accent);color:#fff}
+    #specq{flex:1;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--surface,transparent);color:inherit}
+    #sdet mark{background:var(--accent);color:#fff;border-radius:2px;padding:0 1px}
+    .xitem:hover{background:var(--line)}
+  </style>
+  <h3>📐 Network Specifications</h3>
+  <div class="sub">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Search a name, or a <b>field</b> like “threshold” to find every spec that carries it.</div>
+  <div class="row" style="gap:8px;margin:8px 0;align-items:center">
+    <input id="specq" placeholder="Search nouns, verbs, or a field (e.g. threshold)…" autocomplete="off">
+    <div id="seg" class="seg"><button data-k="all" class="on">All</button><button data-k="noun">📄 Nouns</button><button data-k="verb">⚡ Verbs</button></div>
+  </div>
+  <div class="row" style="gap:10px"><div id="slist" style="flex:1;max-height:50vh;overflow:auto;border-right:1px solid var(--line);padding-right:8px">loading…</div>
+  <div id="sdet" style="flex:1.4;max-height:50vh;overflow:auto"><div class="sub">Select a noun or verb — or search a field to see where it appears.</div></div></div>
+  <div style="text-align:right;margin-top:8px"><button class="btn" id="x">Close</button></div>`);
   m.q('#x').onclick=m.close;
   let d={schemas:[],pending:[]}; try{d=await post('/bridge/schemas',{});}catch(e){}
   let ifs=[]; try{ifs=(await post('/bridge/interfaces',{})).interfaces||[];}catch(e){}
   const iid=f=>f.interface_id||f.id||f.name||'';
-  const by={}; (d.schemas||[]).forEach(s=>{const k=(s.schema_id||'').split('.')[0]||'other';(by[k]=by[k]||[]).push(s);});
-  let html=`<div class="sub" style="margin-bottom:6px">${(d.schemas||[]).length} nouns · ${ifs.length} verbs · ${(d.pending||[]).length} pending</div>`;
-  html+=`<div style="font-weight:700;margin:4px 0 2px">📄 Nouns <span class="sub">(data schemas)</span></div>`;
-  Object.keys(by).sort().forEach(dom=>{html+=`<div style="font-weight:600;margin:6px 0 2px;color:var(--accent)">${esc(dom)}</div>`;
-    by[dom].sort((a,b)=>(a.schema_id>b.schema_id?1:-1)).forEach(s=>{const sens=s.sensitivity||'internal';
-      html+=`<div class="node sitem" data-sid="${esc(s.schema_id)}" style="padding:3px 4px;cursor:pointer">📄 ${esc(s.schema_id)} <span class="sub">v${esc(s.version||'')}</span> <span class="st st-${sens}" title="${sens}"></span></div>`;});});
-  (d.pending||[]).forEach(p=>{html+=`<div class="node" style="padding:3px 4px;color:var(--muted)">⏳ ${esc(p.schema_id)} <span class="sub">pending approval</span></div>`;});
-  if(ifs.length){html+=`<div style="font-weight:700;margin:12px 0 2px">⚡ Verbs <span class="sub">(interfaces — how components CALL each other, ADR-0058)</span></div>`;
-    ifs.sort((a,b)=>(iid(a)>iid(b)?1:-1)).forEach(f=>{html+=`<div class="node iitem" data-iid="${esc(iid(f))}" style="padding:3px 4px;cursor:pointer">⚡ ${esc(iid(f))} <span class="sub">v${esc(f.version||'')}</span></div>`;});}
-  m.q('#slist').innerHTML=html;
-  m.q('#slist').querySelectorAll('.sitem').forEach(el=>el.onclick=async()=>{
-    const sid=el.dataset.sid; m.q('#sdet').innerHTML='<div class="sub">resolving…</div>';
-    let r={}; try{r=await post('/bridge/schema-resolve',{schema_id:sid});}catch(e){}
-    m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">📄 ${esc(sid)} <span class="sub">v${esc(r.version||'')}</span></h4>
-      <div class="sub">a NOUN (data schema) · sensitivity: ${esc(r.sensitivity||'internal')} · issued_by ${esc(r.issued_by||'—')} · status ${esc(r.status||'active')}</div>
+  const nouns=(d.schemas||[]).map(s=>({kind:'noun',id:s.schema_id||'',version:s.version||'',sens:s.sensitivity||'internal',domain:(s.schema_id||'').split('.')[0]||'other'}));
+  const verbs=ifs.map(f=>({kind:'verb',id:iid(f),version:f.version||'',modality:f.modality||'request',status:f.status||'active',domain:(iid(f).split('.')[0])||'other'}));
+  const pend=(d.pending||[]);
+  let kind='all', deep=null;   // deep = {id: matched_in[]} from /bridge/spec-search (null when not deep-searching)
+  const pool=()=> kind==='noun'?nouns : kind==='verb'?verbs : nouns.concat(verbs);
+
+  function render(){
+    const q=(m.q('#specq').value||'').trim().toLowerCase();
+    let items=pool();
+    if(q) items=items.filter(it=> it.id.toLowerCase().includes(q) || (deep&&deep[it.id]));
+    const by={}; items.forEach(it=>{(by[it.domain]=by[it.domain]||[]).push(it);});
+    const fieldHits=deep?Object.keys(deep).filter(id=>(deep[id]||[]).some(x=>x!=='id')).length:0;
+    let html=`<div class="sub" style="margin-bottom:6px">${nouns.length} nouns · ${verbs.length} verbs${q&&deep!==null?` · <b>${items.length}</b> match${fieldHits?` (${fieldHits} by field)`:''}`:` · ${pend.length} pending`}</div>`;
+    if(!items.length) html+=`<div class="sub" style="padding:6px 2px">No ${kind==='all'?'specs':kind+'s'} match “${esc(q)}”.</div>`;
+    Object.keys(by).sort().forEach(dom=>{
+      html+=`<div style="font-weight:600;margin:6px 0 2px;color:var(--accent)">${esc(dom)}</div>`;
+      by[dom].sort((a,b)=>a.id>b.id?1:-1).forEach(it=>{
+        const ic=it.kind==='noun'?'📄':'⚡';
+        const fm=(deep&&deep[it.id]||[]).filter(x=>x!=='id');
+        const badge=fm.length?` <span class="sub" title="matched in: ${esc((deep[it.id]||[]).join(', '))}">🔍 ${esc(fm[0])}</span>`:'';
+        const tail=it.kind==='noun'?`<span class="st st-${it.sens}" title="${it.sens}"></span>`:'';
+        html+=`<div class="node xitem" data-id="${esc(it.id)}" data-kind="${it.kind}" style="padding:3px 4px;cursor:pointer">${ic} ${esc(it.id)} <span class="sub">v${esc(it.version)}</span> ${tail}${badge}</div>`;
+      });
+    });
+    if(kind!=='verb' && !q) pend.forEach(p=>{html+=`<div class="node" style="padding:3px 4px;color:var(--muted)">⏳ ${esc(p.schema_id)} <span class="sub">pending approval</span></div>`;});
+    m.q('#slist').innerHTML=html;
+    m.q('#slist').querySelectorAll('.xitem').forEach(el=>el.onclick=()=>showDetail(el.dataset.id, el.dataset.kind));
+  }
+
+  async function showDetail(id, k){
+    const q=(m.q('#specq').value||'').trim();
+    m.q('#sdet').innerHTML='<div class="sub">resolving…</div>';
+    let r={}; try{r=await post(k==='noun'?'/bridge/schema-resolve':'/bridge/interface-resolve', k==='noun'?{schema_id:id}:{interface_id:id});}catch(e){}
+    let pre=JSON.stringify(r.definition||r,null,2); pre=esc(pre);
+    if(q){ const rx=new RegExp('('+q.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')+')','ig'); pre=pre.replace(rx,'<mark>$1</mark>'); }
+    const ic=k==='noun'?'📄':'⚡';
+    const meta=k==='noun'?`a NOUN (data schema) · sensitivity ${esc(r.sensitivity||'internal')} · status ${esc(r.status||'active')}`
+                         :`a VERB (interface, ADR-0058) · modality ${esc(r.modality||'request')} · status ${esc(r.status||'active')}`;
+    const mi=(deep&&deep[id])?`<div class="sub" style="margin-top:4px">🔍 matched in: <b>${esc(deep[id].join(', '))}</b></div>`:'';
+    m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">${ic} ${esc(id)} <span class="sub">v${esc(r.version||'')}</span></h4>
+      <div class="sub">${meta}</div>${mi}
       <div class="sub" style="margin-top:6px">definition</div>
-      <pre style="max-height:34vh;overflow:auto;font-size:12px">${esc(JSON.stringify(r.definition||r,null,2))}</pre>`;});
-  m.q('#slist').querySelectorAll('.iitem').forEach(el=>el.onclick=async()=>{
-    const id=el.dataset.iid; m.q('#sdet').innerHTML='<div class="sub">resolving…</div>';
-    let r={}; try{r=await post('/bridge/interface-resolve',{interface_id:id});}catch(e){}
-    m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">⚡ ${esc(id)} <span class="sub">v${esc(r.version||'')}</span></h4>
-      <div class="sub">a VERB (interface) — a request/response or event contract components call each other through</div>
-      <pre style="max-height:40vh;overflow:auto;font-size:12px">${esc(JSON.stringify(r.definition||r,null,2))}</pre>`;});
+      <pre style="max-height:38vh;overflow:auto;font-size:12px">${pre}</pre>`;
+  }
+
+  m.q('#seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    kind=b.dataset.k; m.q('#seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); doSearch();});
+  let t=null;
+  m.q('#specq').oninput=()=>{ render(); clearTimeout(t); t=setTimeout(doSearch,300); };
+  async function doSearch(){
+    const q=(m.q('#specq').value||'').trim();
+    if(q.length<2){ deep=null; return render(); }
+    try{ const r=await post('/bridge/spec-search',{q, kind:kind==='all'?null:kind});
+         deep={}; (r.results||[]).forEach(x=>{deep[x.id]=x.matched_in;});
+    }catch(e){ deep=null; }   // endpoint not deployed yet → graceful fall back to name filter
+    render();
+  }
+  render();
 }
 async function requestSchema(prefill){prefill=prefill||{};
   // The template is a COMPLETE, house-rule-compliant ENVELOPE for its x-kind — not a bare {schema,id} stub.

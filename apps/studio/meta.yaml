@@ -3,7 +3,7 @@
 # registry via the host's admin-gated /bridge/save. Editing a subscription hot-reloads the automation.
 component_id: ds:airawatdeveloper:app/studio   # ADR-0094: software is stewarded by the developer participant (NOT airawat, the Network Admin); tenant DATA it authors stays ds:<tenant>:…
 kind: app
-version: 0.2.1   # ADR-0106 S4: "Under Development" badge; 0.2.0 ADR-0097 W5 Publish as Service; 0.1.4 re-homed
+version: 0.2.2   # ADR-0106 S4: "Under Development" badge; 0.2.0 ADR-0097 W5 Publish as Service; 0.1.4 re-homed
 provider: ds:airawatdeveloper:developer
 display_name: Studio
 icon: 🛠️
