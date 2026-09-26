@@ -17,6 +17,52 @@ def _h3(o):
     return g.get("h3_id") or g.get("h3")
 
 
+def _age_minutes(iso):
+    """Minutes since an ISO8601 observed_at, or None if unparseable."""
+    import time, calendar
+    try:
+        t = time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S")
+        return round((time.time() - calendar.timegm(t)) / 60.0)
+    except Exception:
+        return None
+
+
+def evidence_quality(facts_by_schema, coverage):
+    """Compose the multi-dimensional QUALITY of the evidence per source layer — coverage %, freshness,
+    observed-vs-inferred (method), and mean confidence — from records the platform already produces. This is
+    the essay's core point: not a single confidence number, but the quality of the evidence behind a conclusion.
+    `coverage` maps source_schema → a city.coverage record (coverage-qa)."""
+    out = {}
+    for schema, rows in facts_by_schema.items():
+        n = len(rows)
+        ages = [a for a in (_age_minutes(r.get("observed_at") or "") for r in rows) if a is not None]
+        methods = {}
+        confs = []
+        for r in rows:
+            m = (r.get("method") or "").lower()
+            if m in ("measured", "sensor", "human", "vision-count", "person-detection", "count"):
+                k = "observed"                                   # a direct measurement / detection
+            elif m in ("model", "statistical", "rule", "sim-gaussian", "simulation") or m.startswith("sim"):
+                k = "inferred"                                   # estimated / modelled / simulated
+            else:
+                k = "unattributed"                               # no method declared — itself an evidence-quality signal
+            methods[k] = methods.get(k, 0) + 1
+            c = r.get("confidence")
+            if isinstance(c, (int, float)):
+                confs.append(c)
+        cv = coverage.get(schema) or {}
+        out[schema] = {
+            "records": n,
+            "coverage_pct": cv.get("coverage_pct") or cv.get("coverage") or cv.get("coverage_percent"),
+            "gaps": cv.get("gaps"),
+            "freshness_min": (min(ages) if ages else None),      # freshest observation, minutes old
+            "staleness_min": (max(ages) if ages else None),      # oldest observation still in play
+            "observed_vs_inferred": methods,                     # e.g. {"observed": 12, "inferred": 40}
+            "mean_confidence": (round(sum(confs) / len(confs), 3) if confs else cv.get("mean_confidence")),
+        }
+    return out
+
+
 def h_ask(ctx):
     body = ctx.get("body") or {}
     question = (body.get("question") or body.get("q") or "").strip()[:500]
@@ -45,6 +91,17 @@ def h_ask(ctx):
     recs = [o for o in kfind("governance.recommendation")
             if any(k in (o.get("id") or "") for k in ("floodcrowd-", "crowdflow-")) and "incident" not in (o.get("id") or "")]
 
+    # ── EVIDENCE QUALITY (the essay's point: not one confidence number, but the QUALITY of the evidence) ──
+    # Compose what the platform already computes — coverage (city.coverage), freshness (observed_at age),
+    # observed-vs-inferred (method), and per-source confidence — into ONE structure the decider can interrogate.
+    cov = {}
+    for o in kfind("city.coverage"):
+        src = o.get("source_schema") or o.get("layer") or o.get("noun")
+        if src:
+            cov[src] = o
+    eq = evidence_quality({"risk.flood": list(flood.values()), "cell.crowd_density": list(crowd.values()),
+                           "vision.detection": list(cctv.values())}, cov)
+
     overlap = []
     for h, f in flood.items():
         c = crowd.get(h)
@@ -69,6 +126,7 @@ def h_ask(ctx):
         "top_overlaps": overlap[:8],
         "open_recommendations": [{"title": r.get("title"), "action": r.get("proposed_action"),
                                   "rationale": r.get("rationale")} for r in recs[:8]],
+        "evidence_quality": eq,
     }
     present = {"risk.flood": flood, "cell.crowd_density": crowd, "vision.detection": cctv,
                "governance.recommendation": recs}
@@ -79,7 +137,10 @@ def h_ask(ctx):
               "joined across the flood, crowd, CCTV and recommendation layers. State concrete numbers (cells, people, "
               "scores, sites) from the facts; never invent any. Name the worst site(s) and, if the question asks who "
               "to mobilise, list the response roles implied by the open recommendations (e.g. crowd marshals, "
-              "sanitation, medical & transit, transport, parking, police). Output ONLY the final briefing for the "
+              "sanitation, medical & transit, transport, parking, police). ALWAYS end with a one-line "
+              "'Evidence quality:' note drawn from facts.evidence_quality — coverage %, freshest/oldest observation "
+              "age, observed-vs-inferred mix, and confidence — so the commander sees how good the evidence is, not "
+              "just the conclusion. Output ONLY the final briefing for the "
               "commander: begin immediately with a one-line headline, then hyphen bullets. Do NOT show any reasoning, "
               "do NOT restate the question or these instructions, and never write phrases like 'the user wants' or "
               "'the facts say'. If the facts show no overlap, say so plainly. You inform; a human commander decides "

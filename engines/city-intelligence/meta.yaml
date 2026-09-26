@@ -8,7 +8,7 @@
 # resolves here with NO host code and NO baking — swap or upgrade by publishing a new version.
 component_id: ds:airawatdeveloper:engine/city-intelligence
 kind: engine
-version: 0.1.0
+version: 0.2.1
 provider: ds:airawat:developer
 display_name: City Intelligence
 entrypoint: run.py
@@ -16,11 +16,12 @@ confinement_min: L1
 implements: [city.analyst@0.1.0]
 verbs:
   city-ask: city.analyst@0.1.0
-required_schemas: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation]
-reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation]
+required_schemas: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage]
+reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage]
 writes: []
 scopes:
   - { verb: read, scope: risk.flood }
   - { verb: read, scope: cell.crowd_density }
   - { verb: read, scope: vision.detection }
   - { verb: read, scope: governance.recommendation }
+  - { verb: read, scope: city.coverage }
