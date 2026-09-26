@@ -99,6 +99,14 @@ def h_ask(ctx):
         src = o.get("source_schema") or o.get("layer") or o.get("noun")
         if src:
             cov[src] = o
+    # PAST INTERVENTIONS — did what we did before actually work? (ASSESS edge, intelligence.effectiveness).
+    # Grounds the analyst so it can say "last time we reduced inflow here, density fell 89%" instead of
+    # recommending blind. Newest first.
+    effect = sorted(kfind("intelligence.effectiveness"), key=lambda o: o.get("observed_at") or "", reverse=True)
+    past = [{"intervention": e.get("intervention"), "target": e.get("target_schema"),
+             "direction": e.get("direction"), "delta_pct": e.get("delta_pct"),
+             "baseline": (e.get("baseline") or {}).get("mean"), "followup": (e.get("followup") or {}).get("mean"),
+             "decision": e.get("decision")} for e in effect[:8]]
     eq = evidence_quality({"risk.flood": list(flood.values()), "cell.crowd_density": list(crowd.values()),
                            "vision.detection": list(cctv.values())}, cov)
 
@@ -127,6 +135,7 @@ def h_ask(ctx):
         "open_recommendations": [{"title": r.get("title"), "action": r.get("proposed_action"),
                                   "rationale": r.get("rationale")} for r in recs[:8]],
         "evidence_quality": eq,
+        "past_interventions": past,
     }
     present = {"risk.flood": flood, "cell.crowd_density": crowd, "vision.detection": cctv,
                "governance.recommendation": recs}
@@ -143,7 +152,9 @@ def h_ask(ctx):
               "just the conclusion. Output ONLY the final briefing for the "
               "commander: begin immediately with a one-line headline, then hyphen bullets. Do NOT show any reasoning, "
               "do NOT restate the question or these instructions, and never write phrases like 'the user wants' or "
-              "'the facts say'. If the facts show no overlap, say so plainly. You inform; a human commander decides "
+              "'the facts say'. If facts.past_interventions is non-empty, ground the advice in it — say whether the "
+              "same action worked before (direction + delta_pct) so the commander is not acting blind. "
+              "If the facts show no overlap, say so plainly. You inform; a human commander decides "
               "and signs the action.")
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts)[:11000] + "\n\nQUESTION: " + question}]
