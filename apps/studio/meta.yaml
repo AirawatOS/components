@@ -3,12 +3,12 @@
 # registry via the host's admin-gated /bridge/save. Editing a subscription hot-reloads the automation.
 component_id: ds:airawatdeveloper:app/studio   # ADR-0094: software is stewarded by the developer participant (NOT airawat, the Network Admin); tenant DATA it authors stays ds:<tenant>:…
 kind: app
-version: 0.1.4   # ADR-0094: re-homed airawat→airawatdeveloper + self-hosting (studio.project/solution-studio); 0.1.3 ⎇ Git settings; 0.1.2 nav/schema-request
+version: 0.2.0   # ADR-0097 W5: 🌐 Publish as Service (offering→platform.workflow graph, bound to the certified solution); 0.1.4 re-homed; 0.1.3 Git settings
 provider: ds:airawatdeveloper:developer
 display_name: Studio
 icon: 🛠️
 entrypoint: index.html
-required_schemas: [studio.project, platform.subscription, platform.workflow]
+required_schemas: [studio.project, platform.subscription, platform.workflow, network.service_offering]
 sandboxed: true
 system: true            # a platform dev tool: default-available (not a per-tenant install)…
 developer_only: true    # …but INT-0004 §6 gates it to a user in a development tenant (a Developer participant)

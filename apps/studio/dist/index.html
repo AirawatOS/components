@@ -70,6 +70,7 @@
   <span class="ic" id="contractsBtn" title="The shared specs your components speak — browse, request a new one, or track your requests">🔗 Contracts</span>
   <span class="ic" id="archBtn" title="See the whole solution as layers of components wired by specs">🗺 Architecture</span>
   <span class="ic" id="composeBtn" title="Bundle these components into one installable solution and publish it to the Marketplace">⬆ Publish as Solution</span>
+  <span class="ic" id="serviceBtn" title="Expose this solution's workflow as a citizen service on the Network — discoverable + runnable across tenants (ADR-0097 W5)">🌐 Publish as Service</span>
   <span class="ic" id="moreBtn" title="More — guide, git settings">⋯</span>
 </div>
 <div class="body">
@@ -142,6 +143,7 @@ async function boot(){
   $('contractsBtn').onclick=e=>drop(e,[['📐 Browse specs',specsBrowser],['＋ Request a schema',requestSchema],['📥 My requests',myRequests]]);
   $('moreBtn').onclick=e=>drop(e,[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
   $('composeBtn').onclick=composeSolution;
+  $('serviceBtn').onclick=publishAsService;
   $('archBtn').onclick=toggleArch;
   buildRight();
 }
@@ -603,6 +605,48 @@ async function composeSolution(){if(!SEL)return;const pub=(SEL.members||[]).filt
   bottom('Composing '+SEL.title+' → solution …');const r=await post('/bridge/project-compose',{project:SEL.id});
   if(r.solution){SEL.target_solution=r.solution;bottom('✓ composed '+r.solution+' ('+r.members.length+' members, verified='+r.verified+') → published to the Marketplace (one install brings all members)');}
   else bottom('✗ '+(r.error||'compose failed'));}
+// ADR-0097 W5 — publish this solution's WORKFLOW as a citizen SERVICE on the Network. The offering is an
+// envelope (form + discovery/entitlement) that REFERENCES a platform.workflow GRAPH (workflow_ref) fulfilled by
+// this project's CERTIFIED solution — the developer path, distinct from Service Studio's no-code declarative path.
+async function publishAsService(){
+  if(!SEL){return;}
+  const wfs=(SEL.members||[]).filter(m=>m.kind==='workflow');
+  const sol=SEL.target_solution||'';
+  const solHint = sol ? `<div class="sub">Fulfilled by <b>${esc(sol.split('/').pop())}</b> — it must be <b>certified</b> (the Network rejects an uncertified solution).</div>`
+                      : `<div class="sub" style="color:var(--warn,#b45309)">⚠ Publish this project as a Solution first (⬆) so the service can bind to it.</div>`;
+  const wfOpts = wfs.length ? wfs.map(m=>`<option value="${esc(m.ref.split('/').pop())}">${esc(m.title||m.ref.split('/').pop())}</option>`).join('')
+                            : '';
+  const m=modal(`<h3>🌐 Publish as Service</h3>
+    <div class="sub">Expose this solution's workflow as a citizen-facing service on the Network — discoverable via the Service Directory and runnable across tenants.</div>
+    ${solHint}
+    <label class="sub" style="margin-top:8px">Workflow (the graph that fulfils it)</label>
+    ${wfs.length?`<select class="in" id="svc_wf">${wfOpts}</select>`
+                :`<input class="in" id="svc_wf" placeholder="platform.workflow name, e.g. myagency.trade_licence">
+                  <div class="sub">No workflow component in this project — type the governed <b>platform.workflow</b> name your solution seeds.</div>`}
+    <div class="row" style="gap:8px"><div style="flex:1"><label class="sub" style="margin-top:8px">Service id</label><input class="in" id="svc_id" placeholder="trade-licence"></div>
+      <div style="flex:2"><label class="sub" style="margin-top:8px">Title</label><input class="in" id="svc_title" placeholder="Trade Licence"></div></div>
+    <div class="row" style="gap:8px"><div style="flex:1"><label class="sub" style="margin-top:8px">Domain</label><input class="in" id="svc_domain" placeholder="commerce"></div>
+      <div style="flex:1"><label class="sub" style="margin-top:8px">Jurisdiction</label><input class="in" id="svc_juris" placeholder="tenant / jurisdiction code"></div></div>
+    <div class="row" style="gap:8px"><div style="flex:1"><label class="sub" style="margin-top:8px">Audience (governed role)</label><input class="in" id="svc_aud" value="civic.resident"></div>
+      <div style="flex:1"><label class="sub" style="margin-top:8px">Qualifies by</label><select class="in" id="svc_ent"><option value="residence">residence</option><option value="property">property</option></select></div></div>
+    <div style="text-align:right;margin-top:10px"><button class="btn" id="svc_x">Cancel</button> <button class="btn primary" id="svc_go">Publish service</button></div>`);
+  m.q('#svc_x').onclick=m.close;
+  m.q('#svc_go').onclick=async()=>{
+    const wref=(m.q('#svc_wf').value||'').trim(), sid=(m.q('#svc_id').value||'').trim(), title=(m.q('#svc_title').value||'').trim();
+    if(!wref||!sid||!title){alert('Workflow, service id and title are required');return;}
+    if(!sol){alert('Publish this project as a Solution first (⬆), then bind the service to it.');return;}
+    const body={service_id:sid, title, domain:(m.q('#svc_domain').value||'').trim(),
+      jurisdiction:(m.q('#svc_juris').value||'').trim()||undefined,
+      audience:(m.q('#svc_aud').value||'civic.resident').trim(), entitlement:m.q('#svc_ent').value,
+      interaction:['search','init','status'], workflow_ref:wref, solution:sol,
+      request_schema:{type:'object',properties:{},additionalProperties:true}};
+    const btn=m.q('#svc_go'); btn.disabled=true; btn.textContent='Publishing…';
+    const r=await post('/bridge/service-offering-save', body);
+    btn.disabled=false; btn.textContent='Publish service';
+    if(r.published){m.close();bottom('✓ Published service “'+title+'” → '+r.published+'\nCitizens can now discover it in the Service Directory; requests open a case in the provider tenant, fulfilled by the graph “'+wref+'”.');}
+    else bottom('✗ '+(r.detail||r.error||'service publish failed'));
+  };
+}
 async function specsBrowser(){
   const m=modal(`<h3>📐 Network Specifications</h3><div class="sub">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Click one to see its contract.</div>
     <div class="row" style="gap:10px;margin-top:8px"><div id="slist" style="flex:1;max-height:52vh;overflow:auto;border-right:1px solid var(--line);padding-right:8px">loading…</div>
