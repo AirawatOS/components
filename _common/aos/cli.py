@@ -128,7 +128,10 @@ def cmd_deploy(args):
         net = os.environ.get("AIRAWAT_NETWORK", "http://network:8090")
         kern = os.environ.get("AIRAWAT_KERNEL", "http://kernel:8080")
         idn = os.environ.get("AIRAWAT_IDENTITY", "http://identity:8093")
-        backend = BrokerBackend(args.tenant, net, kern, idn, token=os.environ.get("RUN_TOKEN"))
+        backend = BrokerBackend(args.tenant, net, kern, idn,
+                                identity_token=os.environ.get("AIRAWAT_IDENTITY_TOKEN"),
+                                dev_user=os.environ.get("AIRAWAT_DEV_USER", "devrick"),
+                                token=os.environ.get("RUN_TOKEN"))
         print(f"  (live backend → network {net} · kernel {kern})")
     else:
         backend = InMemoryBackend()
@@ -138,7 +141,11 @@ def cmd_deploy(args):
     for step, ref in rep["steps"]:
         print(f"   • {step}: {ref}")
     print(f"   ▸ {rep['marking']['badge']['label']} · open {rep['open'][0]}")
-    print("✓ whole solution stood up in the sandbox (offline backend; set AIRAWAT_API+RUN_TOKEN for a live dev deploy once S2 lands).")
+    if args.live:
+        print("✓ whole solution stood up LIVE in the dev tenant over the dev-token "
+              "(govern auto-approved · certified · installed · seeded — all confined to development).")
+    else:
+        print("✓ whole solution stood up in the sandbox (offline backend; add --live to drive real services over the dev-token).")
 
 
 def cmd_publish(args):

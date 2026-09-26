@@ -21,8 +21,8 @@ print("  marking:", rep["marking"]["badge"]["label"], "| open:", rep["open"][0])
 be.log.clear(); Deployer(be).deploy_sandbox(sol,"asha-dev")
 noops=[l for l in be.log if l[2]=="noop"]; news=[l for l in be.log if l[2]=="new"]
 print("\n[deploy #2] new=",len(news)," noop=",len(noops))
-ok = (not probs and be.installed and "ds:asha-dev:vocab/cell.flood_risk" in be.governed_schemas
-      and be.viz=={"cell.flood_risk","risk.flood"} and rep["marking"]["badge"]["label"]=="Under Development"
+ok = (not probs and be.installed and "ds:asha-dev:vocab/risk.flood" in be.governed_schemas
+      and be.viz=={"risk.flood","risk.exposure"} and rep["marking"]["badge"]["label"]=="Under Development"
       and len(news)==0)
 print("\n"+("✅ S1 PROVEN — solution.yaml → whole-solution sandbox deploy; dev-scoped vocab; idempotent; Under Development." if ok else "❌ inspect above"))
 sys.exit(0 if ok else 1)

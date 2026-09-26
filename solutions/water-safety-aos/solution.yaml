@@ -2,11 +2,13 @@
 # parses with or without PyYAML. `aos deploy --sandbox` stands this up in your dev tenant.
 solution: water-safety
 environment: development
-schemas: [{id: cell.flood_risk, x-kind: measure}, {id: risk.flood, x-kind: measure}]
+# L3 risk assessments (derived from many inputs) — stand-alone measures, no L1 entity dependency
+# (ADR-0060 §3a). A cell-level measure (cell.*) would additionally require a published L1 entity.
+schemas: [{id: risk.flood, x-kind: measure}, {id: risk.exposure, x-kind: measure}]
 roles: [water.duty-officer]
 workflow: workflow.graph.yaml
 members: {reuse: [lifecycle-engine, decision-router, effectiveness-engine-aos], build: [engines/infer]}
-viz_layers: [cell.flood_risk, risk.flood]
+viz_layers: [risk.flood, risk.exposure]
 decider: water.duty-officer
 subscriptions: [{on: governance.recommendation, do: decision.route}]
 contributions: []

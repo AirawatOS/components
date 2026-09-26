@@ -128,66 +128,99 @@ class BrokerBackend:
     for dev-tenant governance auto-approval. `transport` is injectable for testing — it takes
     (method, url, body, token) and returns a dict; the default is a urllib transport with retry.
     """
-    def __init__(self, tenant, network_url, kernel_url, identity_url=None, token=None, transport=None):
+    def __init__(self, tenant, network_url, kernel_url, identity_url=None, identity_token=None,
+                 dev_user="devrick", token=None, transport=None):
         self.tenant = tenant
         self.net = network_url.rstrip("/")
         self.kernel = kernel_url.rstrip("/")
         self.idn = (identity_url or "").rstrip("/")
         self._t = transport or _urllib_transport
         self.log = []
-        self._tok = token or self._mint_dev_token()
+        # TWO tokens, two planes (surfaced by the local live proof):
+        #  • identity token — the developer's JWT; authenticates NETWORK governance/certify/solutions
+        #    (verified against IDENTITY_JWKS) AND authorizes the dev-token mint (INT-0004 §6).
+        #  • dev-token — the kernel RUN-token; broker-confined to this dev tenant, used for KERNEL
+        #    registry writes (seeds) so they skip the steward-grant/governed-vocab check within the tenant.
+        self._id_tok = identity_token or (self._login(dev_user) if self.idn else None)
+        self._dev_tok = token or self._mint_dev_token()
+
+    def _login(self, username):
+        r = self._t("POST", self.idn + "/login", {"username": username}, None) or {}
+        return r.get("access_token")
 
     def _mint_dev_token(self):
-        # INT-0004: the kernel mints a dev-token confined to this development tenant.
-        r = self._t("POST", self.kernel + "/v1/components/dev-token", {"tenant": self.tenant}, None) or {}
-        return r.get("token") or r.get("access_token")
+        # INT-0004: the kernel mints a dev-token confined to this development tenant. Needs a component_id
+        # (any id under the dev tenant — the write capability is tenant-scoped, not component-scoped) and
+        # an authenticated Developer bearer (the identity token). The response field is `run_token`.
+        cid = f"ds:{self.tenant}:solution/_aos-deploy"
+        r = self._t("POST", self.kernel + "/v1/components/dev-token",
+                    {"component_id": cid, "tenant": self.tenant}, self._id_tok) or {}
+        return r.get("run_token") or r.get("token") or r.get("access_token")
 
-    def _post(self, url, body):
-        return self._t("POST", url, body, self._tok) or {}
+    def _net(self, url, body):
+        # NETWORK plane — authenticated by the developer identity token (JWT).
+        return self._t("POST", url, body, self._id_tok) or {}
+
+    def _kwrite(self, oid, obj):
+        # KERNEL registry plane — a broker write under the dev-token (X-Run-Token header), confined to
+        # the dev tenant. scope = the write tenant; the dev-token's capability grants write scope:* there.
+        return self._t("POST", self.kernel + "/v1/write",
+                       {"scope": self.tenant, "id": oid, "object": obj},
+                       None, {"X-Run-Token": self._dev_tok}) or {}
 
     def govern_schema(self, sid, defn, tenant, environment):
         # ADR-0106 S2: in a dev tenant the network auto-approves this into ds:<tenant>:vocab/<sid>.
-        r = self._post(self.net + "/v1/schema-requests", {"schema_id": sid, "definition": defn or {}})
+        r = self._net(self.net + "/v1/schema-requests", {"schema_id": sid, "definition": defn or {}})
         self.log.append(("govern_schema", sid, r.get("status", "?")))
         return r.get("filed") or _dev_scope(sid, tenant)
 
     def govern_role(self, role, tenant, environment):
-        r = self._post(self.net + "/v1/role-requests", {"role": role, "tenant": tenant})
+        r = self._net(self.net + "/v1/role-requests", {"role": role, "tenant": tenant})
         self.log.append(("govern_role", role, r.get("status", "?")))
 
     def build_member(self, ref, tenant, environment):
         # Dev build: certify the member's source against the shared catalog ∪ dev vocab (S2) and
         # register it installable-from-source in the dev tenant (INT-0004). Reuses the certify path.
-        r = self._post(self.net + "/v1/certify", {"subject_id": ref, "subject_kind": "component", "dev": True})
-        self.log.append(("build+certify", ref, "verified" if r.get("certificate") else "?"))
+        cid = _canon_member(ref, tenant)   # `engines/infer` → ds:<tenant>:engine/infer (steward = dev tenant)
+        r = self._net(self.net + "/v1/certify", {"subject_id": cid, "subject_kind": "component", "dev": True})
+        self.log.append(("build+certify", cid, "verified" if r.get("certificate") else "?"))
 
     def compose_install(self, solution_name, members, tenant, environment):
         sid = f"ds:{tenant}:solution/{solution_name}"
-        self._post(self.net + "/v1/solutions", {"id": sid, "tenant": tenant, "members": members, "environment": environment})
-        self._post(self.kernel + "/v1/solutions/install", {"solution": sid, "tenant": tenant})   # ADR-0075 closure
+        mids = [_canon_member(m, tenant) for m in members]   # bare names → dev-scoped component ids
+        # register the signed bundle (network), then install the ADR-0075 closure into the dev tenant —
+        # ONE tenant-admin approval grants writes for every member (the developer is admin of their own tenant).
+        self._net(self.net + "/v1/solutions",
+                  {"solution_id": sid, "title": solution_name, "version": "0.1.0", "members": mids})
+        self._net(self.net + "/v1/solutions/install", {"solution_id": sid, "tenant": tenant})
         self.log.append(("compose+install", sid, "ok"))
         return sid
 
     def seed_viz(self, layer, tenant):
         oid = f"ds:{tenant}:viz/layer/{layer}"
-        self._post(self.kernel + "/v1/registry/objects",
-                   {"id": oid, "object": {"schema": "viz.layer", "id": oid, "tenant": tenant, "source_schema": layer}})
+        label = layer.split(".", 1)[-1].replace("_", " ").title()
+        self._kwrite(oid, {"schema": "viz.layer", "id": oid,
+                           "layer_id": layer, "source_schema": layer, "label": label,
+                           "value_field": "value", "color_scale": "viridis"})
         self.log.append(("seed_viz", layer, "ok"))
 
     def seed_contribution(self, rec, tenant):
-        self._post(self.kernel + "/v1/registry/objects", {"id": rec.get("id"), "object": rec} if isinstance(rec, dict) else {"ref": rec})
+        if isinstance(rec, dict) and rec.get("id"):
+            self._kwrite(rec["id"], rec)
         self.log.append(("seed_contribution", rec, "ok"))
 
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
 
-def _urllib_transport(method, url, body, token):
+def _urllib_transport(method, url, body, token, headers=None):
     import urllib.request, urllib.error, json as _j, time as _tm
     data = _j.dumps(body).encode() if body is not None else None
     hdr = {"Content-Type": "application/json"}
     if token:
         hdr["Authorization"] = token if str(token).startswith("Bearer ") else "Bearer " + token
+    if headers:
+        hdr.update(headers)
     last = None
     for a in range(3):
         try:
@@ -215,7 +248,8 @@ class Deployer:
         # 1) govern (dev: auto-approved in place, tenant-scoped — ADR-0106 §3)
         for s in sol.schemas:
             sid = s.get("id") if isinstance(s, dict) else s
-            gid = self.b.govern_schema(sid, s.get("definition") if isinstance(s, dict) else None, tenant, env)
+            defn = (s.get("definition") if isinstance(s, dict) else None) or _synth_definition(s)
+            gid = self.b.govern_schema(sid, defn, tenant, env)
             rep["steps"].append(("govern-schema", gid))
         for r in sol.roles:
             self.b.govern_role(r, tenant, env)
@@ -249,6 +283,50 @@ class Deployer:
 def _dev_scope(schema_id, tenant):
     """Dev-governed vocabulary is quarantined to the dev tenant's namespace (ADR-0106 §3)."""
     return f"ds:{tenant}:vocab/{schema_id}"
+
+
+def _canon_member(ref, tenant):
+    """Canonicalize a `build` member reference to a dev-scoped component id the network can
+    steward-check: `engines/infer` → `ds:<tenant>:engine/infer`. An already-qualified `ds:…` id
+    passes through. The kind dir is singularized (`engines`→`engine`, `apps`→`app`)."""
+    if isinstance(ref, str) and ref.startswith("ds:"):
+        return ref
+    parts = str(ref).strip("/").split("/")
+    name = parts[-1]
+    kind = parts[-2] if len(parts) > 1 else "engine"
+    kind = {"engines": "engine", "drivers": "driver", "apps": "app", "solutions": "solution",
+            "pipelines": "pipeline", "agents": "agent"}.get(kind, kind.rstrip("s") or "engine")
+    return f"ds:{tenant}:{kind}/{name}"
+
+
+def _synth_definition(entry):
+    """Synthesize a house-rule-conformant JSON-Schema from the manifest shorthand
+    (`{id, x-kind, x-view?, fields?}`) — the "dev supplies only the domain delta" principle:
+    the SDK fills the fixed envelope (schema+id), closure (additionalProperties:false), the
+    resolvable-id pattern, and — for a measure — the (observed_at, prov) provenance pair + the
+    entity it views (x-view). A full `definition` in the manifest always overrides this."""
+    if not isinstance(entry, dict):
+        entry = {"id": entry}
+    sid = entry.get("id", "")
+    kind = entry.get("x-kind") or entry.get("kind") or "measure"
+    props = {"schema": {"type": "string"},
+             "id": {"type": "string", "pattern": r"^ds:[a-z0-9-]+:\S+$"}}
+    required = ["schema", "id"]
+    defn = {"type": "object", "x-kind": kind, "additionalProperties": False}
+    if kind == "measure":
+        # a measure views an entity (x-view) and carries provenance + observation time (R5)
+        defn["x-view"] = entry.get("x-view") or ("space.cell" if sid.startswith("cell.") else "space.cell")
+        props["observed_at"] = {"type": "string"}
+        props["prov"] = {"type": "object"}
+        props["cell_id"] = {"type": "string"}
+        props["value"] = {"type": "number"}
+        required += ["observed_at", "prov"]
+    # caller-declared extra fields (shorthand: {fields: {name: type}})
+    for fname, ftype in (entry.get("fields") or {}).items():
+        props[fname] = {"type": ftype if isinstance(ftype, str) else "string"}
+    defn["properties"] = props
+    defn["required"] = required
+    return defn
 
 
 # ── YAML reader: PyYAML if present, else an inline-only fallback ──────────────
