@@ -1,0 +1,18 @@
+# AUTO-DERIVED by `aos check` from run.py — do not hand-edit reads/writes/scopes.
+component_id: ds:airawatdeveloper:engine/effectiveness-engine-aos
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Effectiveness Engine (aos)
+implements: [intelligence.assess_effectiveness@0.1.0]
+verbs:
+  assess-effectiveness: intelligence.assess_effectiveness@0.1.0
+reads: [cell.crowd_density, cell.crush_risk, governance.decision, governance.recommendation, risk.flood]
+writes: [intelligence.effectiveness]
+scopes:
+  - {verb: read, scope: cell.crowd_density}
+  - {verb: read, scope: cell.crush_risk}
+  - {verb: read, scope: governance.decision}
+  - {verb: read, scope: governance.recommendation}
+  - {verb: read, scope: risk.flood}
+  - {verb: write, scope: intelligence.effectiveness}
