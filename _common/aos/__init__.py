@@ -154,6 +154,53 @@ class Ctx:
     def now(self):
         return now()
 
+    # ── spine sugar (P2): the decision/service spine as API, not rediscovered shapes ──
+    def recommend(self, title, action, evidence, rationale="", confidence=0.7, produced_by=None, id=None):
+        """Write a governance.recommendation that cites its evidence (ADR-0029). Returns the record."""
+        rid = id or f"ds:{self.tenant}:governance/recommendation/{_slug(title)}-{now()[:19]}"
+        return self.write({"schema": "governance.recommendation", "id": rid, "title": title,
+                           "proposed_action": action, "rationale": rationale,
+                           "evidence": list(evidence or []), "method": "rule", "confidence": confidence,
+                           "produced_by": produced_by, "observed_at": now()})
+
+    def route_to(self, role, title, ref=None, body="", case=None, scope=None, actions=None, verb="review"):
+        """Open a task + a role-addressed inbox item — the fan-out step every vertical repeats."""
+        base = f"ds:{self.tenant}"
+        tid = f"{base}/task/{_slug(title)}-{now()[11:19].replace(':','')}"
+        actor = role if str(role).startswith("role://") else f"role://{self.tenant}/{role}"
+        self.write({"schema": "platform.task", "id": tid, "case": case, "title": title, "verb": verb,
+                    "assignee": actor, "status": "open", "created_at": now(), "scope": scope})
+        iid = f"{base}/platform/inbox_item/{_slug(title)}-{now()[11:19].replace(':','')}"
+        self.write({"schema": "platform.inbox_item", "id": iid, "actor": actor, "title": title,
+                    "body": body, "ref": ref or tid, "kind": "task", "status": "unread",
+                    "created_at": now(), "scope": scope, **({"actions": actions} if actions else {})})
+        return {"task": tid, "inbox_item": iid, "routed_to": actor}
+
+    def decide(self, recommendation_ids, authority, outcome="approved", rationale="", id=None):
+        """Admit recommendation(s) into a governance.decision. Signing is a host capability
+        (decision-service / Vault) — used when available; the record shape is fixed here."""
+        did = id or f"ds:{self.tenant}:governance/decision/{now()[:19].replace(':','')}"
+        core = {"schema": "governance.decision", "id": did, "outcome": outcome, "authority": authority,
+                "rationale": rationale, "evidence_manifest": list(recommendation_ids or []), "decided_at": now()}
+        if self._call:
+            try:
+                signed = self._call("ds:airawatdeveloper:engine/decision-service", "sign-decision", core)
+                if isinstance(signed, dict) and signed.get("signature"):
+                    core = signed
+            except Exception:
+                pass
+        return self.write(core)
+
+    def open_case(self, workflow, payload):
+        """Open a platform.workflow graph case via the one interpreter (ADR-0097)."""
+        return self.call("ds:airawatdeveloper:engine/lifecycle-engine", "lifecycle-request",
+                         {"workflow": workflow, "payload": payload})
+
+
+def _slug(s):
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")[:48] or "x"
+
 
 def _broker_ctx(_post, body):
     """Ctx backed by broker HTTP verbs (headless). Kept minimal for P1."""
