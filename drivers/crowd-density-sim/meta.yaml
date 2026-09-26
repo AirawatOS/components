@@ -1,0 +1,23 @@
+# CROWD DENSITY SENSOR (simulation) — a GENERIC, confined driver (renamed from kumbh-crowd-sim; no event/city in
+# the name or code). Generates a peak-day crowd-density timeline for a set of gathering hotspots supplied via
+# CONFIG (CROWD_SITES) and writes it to the governed cell.crowd_density schema. EVERY record carries
+# prov.source="simulation" — scenario/demo data, NOT a real feed (in production it is replaced by CCTV
+# people-counting / telco density / bus GPS writing the SAME schema). City-specific hotspots live in config,
+# never in the component (the AirawatOS rule: specifics in data, generic in code).
+component_id: ds:airawatdeveloper:driver/crowd-density-sim
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Crowd Density Sensor (simulation)
+entrypoint: run.py
+confinement_min: L1
+egress: []
+reads: []
+writes: [cell.crowd_density]
+# CONFIG (per-run, per-tenant): the gathering hotspots + scenario. No coordinates in the code.
+#   CROWD_SITES = JSON [{ "name","lat","lng","k","peak_density" }]  — k = ring radius (cells), peak_density = /m² at peak
+#   SCENARIO    = baseline | surge         SURGE_SITES = comma-list of site names that spike (default: all)
+#   SIM_DATE    = YYYY-MM-DD               PEAK_HOUR = int (default 13)
+config: [CROWD_SITES, SCENARIO, SURGE_SITES, SIM_DATE, PEAK_HOUR]
+scopes:
+  - { verb: write, scope: cell.crowd_density }
