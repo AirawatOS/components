@@ -7,7 +7,7 @@ the `crowd-crush-density-bands` rule (>=4.5/m² DANGER, >=6/m² CRITICAL). All I
 import json, os, urllib.request
 
 API   = os.environ.get("AIRAWAT_API", "http://localhost:8080")
-TOKEN = os.environ["RUN_TOKEN"]
+TOKEN = os.environ.get("RUN_TOKEN", "")   # lazy: module must import for in-process HANDLERS/lifecycle dispatch
 
 def call(path, body):
     req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
@@ -53,3 +53,41 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ── ADR-0104 lifecycle hook: on_install ──────────────────────────────────────────────────────────
+# When Crowd Intelligence is installed into a tenant, seed the crowd viz.layer DESCRIPTORS into that
+# tenant's registry so the Crowd layers appear automatically in City Scan / City Intelligence (whose
+# layer catalogue is registry-driven). Runs in the confined engine ctx (ctx["kwrite"], attributed to
+# this component under its viz.layer write grant). Idempotent — re-install just re-writes the same ids.
+_CROWD_LAYERS = [
+    {"layer_id": "crowd-density", "label": "Crowd Density", "short_label": "Crowd", "order": 10,
+     "category": "people", "color_scale": "reds", "value_field": "density_sqm", "unit": "/m²",
+     "source_schema": "cell.crowd_density",
+     "interpretation": "People per m² per cell. >4.5/m² = crush danger; >6 = critical."},
+    {"layer_id": "crush-risk", "label": "Crush Risk", "short_label": "Crush", "order": 11,
+     "category": "people", "color_scale": "reds", "value_field": "density_sqm", "unit": "/m²",
+     "source_schema": "cell.crush_risk",
+     "interpretation": "Cells past the crush-danger density threshold (derived from crowd density)."},
+    {"layer_id": "ai-crowd-count", "label": "AI Crowd Count", "short_label": "CCTV", "order": 12,
+     "category": "people", "color_scale": "reds", "value_field": "count",
+     "source_schema": "vision.detection",
+     "interpretation": "People counted per cell by CCTV person-detection."},
+]
+
+
+def h_seed_layers(ctx):
+    """on_install: register the Crowd Intelligence viz.layer descriptors into the installing tenant."""
+    tenant = ctx.get("tenant")
+    if not tenant:
+        return None, "no tenant in install context"
+    n = 0
+    for L in _CROWD_LAYERS:
+        vid = f"ds:{tenant}:viz/layer/{L['layer_id']}"
+        ctx["kwrite"](vid, {"schema": "viz.layer", "id": vid, "enabled": True, "render": "map", **L})
+        n += 1
+    return {"seeded_layers": n, "tenant": tenant,
+            "layers": [L["layer_id"] for L in _CROWD_LAYERS]}, None
+
+
+HANDLERS = {"seed-layers": h_seed_layers, "on_install": h_seed_layers}
