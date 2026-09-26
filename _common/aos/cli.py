@@ -111,10 +111,8 @@ def cmd_test(args):
     print(f"✓ ran {len(handlers)} verb(s) against {len(reg)} seeded record(s); reads={sorted(READS)} writes={sorted(WRITES)}")
 
 
-def cmd_deploy(args):
-    if not args.sandbox:
-        sys.exit("aos deploy currently supports --sandbox only (promotion to prod is a separate flow).")
-    from .solution import Solution, Deployer, InMemoryBackend, BrokerBackend
+def _load_solution(args):
+    from .solution import Solution
     sol = Solution.load(args.dir)
     probs = sol.validate()
     if probs:
@@ -122,19 +120,31 @@ def cmd_deploy(args):
         for p in probs:
             print("  -", p)
         sys.exit(1)
-    # --live drives real services over the dev-token (BrokerBackend); default is the offline
-    # InMemoryBackend (proves the pipeline). Live needs ADR-0106 S2 governance on the network.
-    if args.live:
-        net = os.environ.get("AIRAWAT_NETWORK", "http://network:8090")
-        kern = os.environ.get("AIRAWAT_KERNEL", "http://kernel:8080")
-        idn = os.environ.get("AIRAWAT_IDENTITY", "http://identity:8093")
-        backend = BrokerBackend(args.tenant, net, kern, idn,
-                                identity_token=os.environ.get("AIRAWAT_IDENTITY_TOKEN"),
-                                dev_user=os.environ.get("AIRAWAT_DEV_USER", "devrick"),
-                                token=os.environ.get("RUN_TOKEN"))
-        print(f"  (live backend → network {net} · kernel {kern})")
-    else:
-        backend = InMemoryBackend()
+    return sol
+
+
+def _backend_for(args):
+    """--live drives real services over the dev-token (BrokerBackend); default is the offline
+    InMemoryBackend (proves the pipeline). Live needs ADR-0106 S2 governance on the network."""
+    from .solution import InMemoryBackend, BrokerBackend
+    if not getattr(args, "live", False):
+        return InMemoryBackend()
+    net = os.environ.get("AIRAWAT_NETWORK", "http://network:8090")
+    kern = os.environ.get("AIRAWAT_KERNEL", "http://kernel:8080")
+    idn = os.environ.get("AIRAWAT_IDENTITY", "http://identity:8093")
+    print(f"  (live backend → network {net} · kernel {kern})")
+    return BrokerBackend(args.tenant, net, kern, idn,
+                         identity_token=os.environ.get("AIRAWAT_IDENTITY_TOKEN"),
+                         dev_user=os.environ.get("AIRAWAT_DEV_USER", "devrick"),
+                         token=os.environ.get("RUN_TOKEN"))
+
+
+def cmd_deploy(args):
+    if not args.sandbox:
+        sys.exit("aos deploy currently supports --sandbox only (promotion to prod is a separate flow).")
+    from .solution import Deployer
+    sol = _load_solution(args)
+    backend = _backend_for(args)
     rep = Deployer(backend).deploy_sandbox(sol, args.tenant)
     print(f"→ deploy '{sol.name}' → sandbox tenant '{args.tenant}' (environment: {rep['environment']})")
     print(f"  governance auto-approved in dev: {policy.can_govern_in_place('development')}")
@@ -146,6 +156,19 @@ def cmd_deploy(args):
               "(govern auto-approved · certified · installed · seeded — all confined to development).")
     else:
         print("✓ whole solution stood up in the sandbox (offline backend; add --live to drive real services over the dev-token).")
+
+
+def cmd_destroy(args):
+    if not args.sandbox:
+        sys.exit("aos destroy currently supports --sandbox only.")
+    from .solution import Deployer
+    sol = _load_solution(args)
+    backend = _backend_for(args)
+    rep = Deployer(backend).destroy_sandbox(sol, args.tenant)
+    print(f"→ destroy '{sol.name}' ← sandbox tenant '{args.tenant}'  ({rep['destroyed']})")
+    for step in rep["steps"]:
+        print(f"   • {step[0]}: {step[1]}  [{step[2]}]")
+    print("✓ sandbox closure torn down (idempotent — safe to re-run; a fresh `aos deploy` re-governs from scratch).")
 
 
 def cmd_publish(args):
@@ -164,6 +187,7 @@ def main(argv=None):
     p = sub.add_parser("check"); p.add_argument("dir", nargs="?", default="."); p.set_defaults(f=cmd_check)
     p = sub.add_parser("test"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_test)
     p = sub.add_parser("deploy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="drive real services over the dev-token (BrokerBackend); default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_deploy)
+    p = sub.add_parser("destroy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="tear down the LIVE dev-tenant closure over the dev-token; default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_destroy)
     p = sub.add_parser("publish"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--target", required=True, choices=["marketplace", "service-directory"]); p.add_argument("--env", default="development"); p.set_defaults(f=cmd_publish)
     args = ap.parse_args(argv)
     args.f(args)

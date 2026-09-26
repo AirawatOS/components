@@ -120,6 +120,34 @@ class InMemoryBackend:
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
+    # ── teardown (ADR-0106 S5) — reverse the closure, idempotent ──
+    def unseed_viz(self, layer, tenant):
+        found = layer in self.viz; self.viz.discard(layer)
+        self.log.append(("unseed_viz", layer, "ok" if found else "gone"))
+
+    def unseed_contribution(self, rec, tenant):
+        if rec in self.contributions:
+            self.contributions.remove(rec)
+        self.log.append(("unseed_contribution", rec, "ok"))
+
+    def uninstall(self, solution_name, members, tenant):
+        sid = f"ds:{tenant}:solution/{solution_name}"
+        found = sid in self.installed; self.installed.pop(sid, None)
+        self.log.append(("uninstall", sid, "ok" if found else "gone"))
+
+    def retire_member(self, ref, tenant):
+        found = ref in self.built; self.built.discard(ref)
+        self.log.append(("retire", ref, "ok" if found else "gone"))
+
+    def retract_schema(self, sid, tenant):
+        gid = _dev_scope(sid, tenant)
+        found = gid in self.governed_schemas; self.governed_schemas.pop(gid, None)
+        self.log.append(("retract_schema", gid, "ok" if found else "gone"))
+
+    def retract_role(self, role, tenant):
+        found = role in self.governed_roles; self.governed_roles.discard(role)
+        self.log.append(("retract_role", role, "ok" if found else "gone"))
+
 
 # ── live backend: drives the platform over the developer's dev-token (INT-0004) ──
 class BrokerBackend:
@@ -212,6 +240,42 @@ class BrokerBackend:
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
+    # ── teardown (ADR-0106 S5) — reverse the closure over the live services, dev-confined ──
+    def _kretract(self, oid):
+        # KERNEL registry retract (tombstone). Unlike /v1/write (a broker run-token path), retract is
+        # attributed via the identity token; the developer (tenant admin of the dev tenant) may tombstone
+        # its own tenant's objects (kernel C3: own-tenant only).
+        return self._t("POST", self.kernel + "/v1/registry/retract", {"id": oid}, self._id_tok) or {}
+
+    def unseed_viz(self, layer, tenant):
+        self._kretract(f"ds:{tenant}:viz/layer/{layer}")
+        self.log.append(("unseed_viz", layer, "ok"))
+
+    def unseed_contribution(self, rec, tenant):
+        if isinstance(rec, dict) and rec.get("id"):
+            self._kretract(rec["id"])
+        self.log.append(("unseed_contribution", rec, "ok"))
+
+    def uninstall(self, solution_name, members, tenant):
+        # UNINSTALL = REVOKE all of each member's grants in the dev tenant (the inverse of install-as-grant).
+        for m in members:
+            self._net(self.net + "/v1/grants/revoke-for",
+                      {"tenant": tenant, "component_id": _canon_member(m, tenant)})
+        self.log.append(("uninstall", solution_name, "ok"))
+
+    def retire_member(self, ref, tenant):
+        self._net(self.net + "/v1/certificates/retire", {"subject_id": _canon_member(ref, tenant)})
+        self.log.append(("retire", ref, "ok"))
+
+    def retract_schema(self, sid, tenant):
+        self._net(self.net + "/v1/schema-requests/retract", {"schema_id": sid})
+        self.log.append(("retract_schema", sid, "ok"))
+
+    def retract_role(self, role, tenant):
+        # a dev role is governed as a (pending) role-request, not persisted dev-vocab like a schema —
+        # nothing durable to retract server-side; recorded for symmetry with the offline backend.
+        self.log.append(("retract_role", role, "noop"))
+
 
 def _urllib_transport(method, url, body, token, headers=None):
     import urllib.request, urllib.error, json as _j, time as _tm
@@ -277,6 +341,43 @@ class Deployer:
         # 5) stamp "Under Development" + open
         rep["marking"] = policy.dev_marking({"environment": env})
         rep["open"] = self.b.open_urls(sol.name, tenant)
+        return rep
+
+    def destroy_sandbox(self, sol: Solution, tenant):
+        """ADR-0106 §S5: tear the sandbox closure down in REVERSE — unseed → uninstall (revoke grants) →
+        decertify build members → retract dev vocab. Idempotent + best-effort: a step whose target is
+        already gone is recorded 'skip', never fatal, so destroy is safe to re-run. Confined to the dev
+        tenant throughout (dev-token for kernel retracts, tenant-admin identity for network revokes)."""
+        env = policy.DEV
+        rep = {"solution": sol.name, "tenant": tenant, "environment": env, "steps": []}
+
+        def step(label, fn, arg):
+            try:
+                fn(arg, tenant); rep["steps"].append((label, arg, "ok"))
+            except Exception as e:
+                rep["steps"].append((label, arg, f"skip ({str(e)[:60]})"))
+
+        # 1) unseed contributions + viz.layers (retract the tombstone)
+        for c in sol.contributions:
+            step("unseed-contribution", self.b.unseed_contribution, c)
+        for layer in sol.viz_layers:
+            step("unseed-viz", self.b.unseed_viz, layer)
+        # 2) uninstall — revoke every member's grants (the inverse of the ADR-0075 install closure)
+        members = list(sol.reuse) + list(sol.build)
+        try:
+            self.b.uninstall(sol.name, members, tenant); rep["steps"].append(("uninstall", sol.name, "ok"))
+        except Exception as e:
+            rep["steps"].append(("uninstall", sol.name, f"skip ({str(e)[:60]})"))
+        # 3) decertify the build members (dev certs)
+        for m in sol.build:
+            step("retire", self.b.retire_member, m)
+        # 4) retract the dev-governed vocabulary (leaves the dev tenant clean for a fresh deploy)
+        for s in sol.schemas:
+            sid = s.get("id") if isinstance(s, dict) else s
+            step("retract-schema", self.b.retract_schema, sid)
+        for r in sol.roles:
+            step("retract-role", self.b.retract_role, r)
+        rep["destroyed"] = f"ds:{tenant}:solution/{sol.name}"
         return rep
 
 
