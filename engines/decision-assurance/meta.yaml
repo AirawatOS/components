@@ -1,0 +1,31 @@
+# DECISION ASSURANCE (kind=engine) — contestability & defensibility as first-class capabilities (From Evidence to
+# Action / ADR-0056). Two request/response verbs over the decision spine:
+#   decision-dossier  — reconstruct a signed decision's FULL record: authority, rationale, signature, the evidence
+#                       it relied on (each recommendation + the facts it cited, with method/freshness), and the
+#                       measured outcome (intelligence.effectiveness). The "defend the decision as of when it was
+#                       made" view — answers "why?" for a reviewer or a citizen.
+#   contest-decision  — file a CHALLENGE against a decision: routes it to the deciding authority for review
+#                       (platform.inbox_item) and returns the dossier so the challenger sees the basis. Contest is
+#                       a design property, not an afterthought.
+component_id: ds:airawatdeveloper:engine/decision-assurance
+kind: engine
+version: 0.1.1
+provider: ds:airawatdeveloper:developer
+display_name: Decision Assurance (dossier + contest)
+entrypoint: run.py
+confinement_min: L1
+implements: [intelligence.decision_dossier@0.1.0, intelligence.contest_decision@0.1.0]
+verbs:
+  decision-dossier: intelligence.decision_dossier@0.1.0
+  contest-decision: intelligence.contest_decision@0.1.0
+required_schemas: [governance.decision, governance.recommendation, intelligence.effectiveness, platform.inbox_item]
+reads: [governance.decision, governance.recommendation, intelligence.effectiveness, risk.flood, cell.crowd_density, vision.detection]
+writes: [platform.inbox_item]
+scopes:
+  - { verb: read,  scope: governance.decision }
+  - { verb: read,  scope: governance.recommendation }
+  - { verb: read,  scope: intelligence.effectiveness }
+  - { verb: read,  scope: risk.flood }
+  - { verb: read,  scope: cell.crowd_density }
+  - { verb: read,  scope: vision.detection }
+  - { verb: write, scope: platform.inbox_item }

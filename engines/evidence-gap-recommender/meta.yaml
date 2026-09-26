@@ -1,0 +1,21 @@
+# EVIDENCE-GAP RECOMMENDER (kind=engine) — "sometimes the right recommendation is: find out more."
+# Finds detected hotspots (flood high/severe ∩ crowd elevated) that LACK corroboration — no CCTV on the cell, or
+# a city.coverage gap — and emits a governance.recommendation with proposed_action=gather-evidence, so the platform
+# manages UNCERTAINTY as a first-class move (dispatch a field officer / camera check) instead of acting blind.
+# AI flags; a human decides (ADR-0029). Confined — only I/O is the broker.
+component_id: ds:airawatdeveloper:engine/evidence-gap-recommender
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Evidence-Gap Recommender (find out more)
+entrypoint: run.py
+confinement_min: L1
+required_schemas: [risk.flood, cell.crowd_density, vision.detection, city.coverage, governance.recommendation]
+reads: [risk.flood, cell.crowd_density, vision.detection, city.coverage]
+writes: [governance.recommendation]
+scopes:
+  - { verb: read,  scope: risk.flood }
+  - { verb: read,  scope: cell.crowd_density }
+  - { verb: read,  scope: vision.detection }
+  - { verb: read,  scope: city.coverage }
+  - { verb: write, scope: governance.recommendation }

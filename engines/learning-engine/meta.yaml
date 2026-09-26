@@ -1,0 +1,17 @@
+# LEARNING ENGINE (kind=engine) — the LEARN edge. Mines intelligence.effectiveness (outcomes of past decisions)
+# into institutional signals: which interventions consistently work, how much, and how often — so the platform
+# accumulates knowledge instead of leaving it in officers' heads. Writes intelligence.learning per intervention.
+# Confined — broker only. Honest: aggregates OBSERVED outcomes; sample sizes are small early on and reported as such.
+component_id: ds:airawatdeveloper:engine/learning-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Learning Engine (which interventions work?)
+entrypoint: run.py
+confinement_min: L1
+required_schemas: [intelligence.effectiveness, intelligence.learning]
+reads: [intelligence.effectiveness]
+writes: [intelligence.learning]
+scopes:
+  - { verb: read,  scope: intelligence.effectiveness }
+  - { verb: write, scope: intelligence.learning }
