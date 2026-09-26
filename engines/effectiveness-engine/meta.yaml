@@ -1,0 +1,26 @@
+# EFFECTIVENESS ENGINE (kind=engine) — the ASSESS edge of the decision loop ("closure ≠ success", ADR-0029 /
+# From Evidence to Action). After a signed governance.decision dispatches an intervention, this engine measures
+# the TARGET MEASURE on the affected cells BEFORE vs AFTER the intervention and writes an intelligence.effectiveness
+# record — did density actually fall, did flood risk recede — turning the outcome into new evidence for the next
+# decision. Honest by construction: it reports the OBSERVED change and states that causal attribution needs a
+# counterfactual (it never claims the intervention alone caused the change). Confined in-process engine (ctx I/O).
+component_id: ds:airawatdeveloper:engine/effectiveness-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Effectiveness Engine (did the intervention work?)
+entrypoint: run.py
+confinement_min: L1
+implements: [intelligence.assess_effectiveness@0.1.0]
+verbs:
+  assess-effectiveness: intelligence.assess_effectiveness@0.1.0
+required_schemas: [governance.decision, governance.recommendation, cell.crowd_density, intelligence.effectiveness]
+reads: [governance.decision, governance.recommendation, cell.crowd_density, risk.flood, cell.crush_risk]
+writes: [intelligence.effectiveness]
+scopes:
+  - { verb: read,  scope: governance.decision }
+  - { verb: read,  scope: governance.recommendation }
+  - { verb: read,  scope: cell.crowd_density }
+  - { verb: read,  scope: risk.flood }
+  - { verb: read,  scope: cell.crush_risk }
+  - { verb: write, scope: intelligence.effectiveness }
