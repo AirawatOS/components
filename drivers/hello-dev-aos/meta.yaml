@@ -1,0 +1,8 @@
+# hello-dev-aos — the SDK rewrite of hello-dev. reads/writes/scopes are DERIVED by `aos check`
+# from what the code actually does (ctx.write demo.ping + ctx.get demo.ping) — not hand-maintained.
+component_id: ds:airawatdeveloper:driver/hello-dev-aos
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:participant/developer
+entrypoint: run.py
+confinement_min: L1

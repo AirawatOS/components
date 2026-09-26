@@ -80,13 +80,13 @@ class Query:
 # ─────────────────────────────────────────────────────────────────────────────
 class Ctx:
     def __init__(self, *, body=None, tenant=None, sub=None, claims=None,
-                 kfind=None, kwrite=None, kget=None, ai=None, call=None):
+                 kfind=None, kwrite=None, kget=None, ai=None, call=None, kbatch=None):
         self.body = body or {}
         self.tenant = tenant
         self.sub = sub
         self.claims = claims or {}
         self._kfind, self._kwrite, self._kget = kfind, kwrite, kget
-        self._ai, self._call = ai, call
+        self._ai, self._call, self._kbatch = ai, call, kbatch
 
     # --- adapters ---------------------------------------------------------------
     @classmethod
@@ -95,31 +95,46 @@ class Ctx:
         return cls(body=hc.get("body"), tenant=hc.get("tenant"), sub=hc.get("sub"),
                    claims=hc.get("claims"),
                    kfind=lambda s: hc["kfind"](s), kwrite=lambda i, o: hc["kwrite"](i, o),
-                   kget=lambda i: hc.get("kget", lambda _x: None)(i),
+                   kget=lambda i, _s=None: hc.get("kget", lambda _x: None)(i),
                    ai=hc.get("ai_complete"), call=hc.get("call"))
+
+    @classmethod
+    def in_memory(cls, store=None, tenant="you-dev", body=None):
+        """A dict-backed ctx for `aos test` — the whole surface (facts/get/write/write_many)
+        against an in-process registry, no live services. Same code path a driver runs live."""
+        store = store if store is not None else {}
+        cx = cls(body=body, tenant=tenant,
+                 kfind=lambda s: [o for o in store.values() if o.get("schema") == s],
+                 kwrite=lambda i, o: store.__setitem__(i, o),
+                 kget=lambda i, s=None: store.get(i),
+                 kbatch=lambda objs: [store.__setitem__(o["id"], o) for o in objs])
+        cx._store = store
+        return cx
 
     @classmethod
     def from_broker(cls, body=None):
         """Headless driver/engine: the broker transport (RUN_TOKEN + AIRAWAT_API),
         owned once here instead of hand-rolled per component (retry + backoff included)."""
         api, tok = os.environ.get("AIRAWAT_API", ""), os.environ.get("RUN_TOKEN", "")
+        hdr = {"Content-Type": "application/json", "X-Run-Token": tok}
 
-        def _post(path, payload, tries=4):
-            data = json.dumps(payload).encode()
-            hdr = {"Content-Type": "application/json", "X-Run-Token": tok}
+        def _req(method, path, payload=None, tries=4):
+            data = json.dumps(payload).encode() if payload is not None else None
             last = None
             for a in range(tries):
                 try:
-                    req = urllib.request.Request(api + path, data=data, headers=hdr, method="POST")
-                    with urllib.request.urlopen(req, timeout=30) as r:
+                    req = urllib.request.Request(api + path, data=data, headers=hdr, method=method)
+                    with urllib.request.urlopen(req, timeout=90) as r:
                         return json.loads(r.read() or b"{}")
-                except (urllib.error.HTTPError, urllib.error.URLError) as e:
-                    last = e
-                    time.sleep(1.5 * (a + 1))
-            raise Reject(f"broker call {path} failed: {last}")
+                except urllib.error.HTTPError as e:
+                    if e.code in (502, 503, 504) and a < tries - 1:
+                        time.sleep(1.5 * (a + 1)); last = e; continue
+                    raise Reject(f"broker {method} {path} → {e.code}: {e.read().decode()[:200]}")
+                except urllib.error.URLError as e:
+                    last = e; time.sleep(1.5 * (a + 1))
+            raise Reject(f"broker {method} {path} failed: {last}")
 
-        cx = _broker_ctx(_post, body)
-        return cx
+        return _broker_ctx(_req, body)
 
     # --- the API developers use -------------------------------------------------
     def facts(self, schema, where=None):
@@ -128,8 +143,16 @@ class Ctx:
         q = Query(rows, schema)
         return q.where(where) if where else q
 
-    def get(self, oid):
-        return self._kget(oid) if self._kget else None
+    def get(self, oid, scope=None):
+        if not self._kget:
+            return None
+        sc = scope or _scope_from_id(oid)
+        if sc:
+            READS.add(sc)                          # a point read still needs read capability on the scope
+        try:
+            return self._kget(oid, sc)             # broker kget takes (id, scope)
+        except TypeError:
+            return self._kget(oid)                 # host kget takes (id)
 
     def write(self, obj=None, *, schema=None, id=None, **fields):
         if obj is None:
@@ -140,6 +163,21 @@ class Ctx:
         obj.setdefault("tenant", self.tenant)
         self._kwrite(obj["id"], obj)
         return obj
+
+    def write_many(self, objs):
+        """Bulk write — the driver superpower. One batch round-trip over the broker (/v1/write/batch)
+        when headless; a simple loop in-process. Every object is tenant-stamped + its schema tracked."""
+        objs = [dict(o) for o in objs]
+        for o in objs:
+            if o.get("schema"):
+                WRITES.add(o["schema"])
+            o.setdefault("tenant", self.tenant)
+        if self._kbatch:
+            self._kbatch(objs)
+        else:
+            for o in objs:
+                self._kwrite(o["id"], o)
+        return len(objs)
 
     def ai(self, messages, max_tokens=900):
         if not self._ai:
@@ -202,20 +240,43 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")[:48] or "x"
 
 
-def _broker_ctx(_post, body):
-    """Ctx backed by broker HTTP verbs (headless). Kept minimal for P1."""
-    def kfind(schema):
-        return (_post("/v1/query", {"filter": {"schema": schema}, "limit": 100000}) or {}).get("results", [])
+def _scope_from_id(oid):
+    """AirawatOS id convention `ds:<tenant>:<schema>/<localid>` → the schema/scope segment."""
+    try:
+        return str(oid).split(":", 2)[2].split("/", 1)[0]
+    except Exception:
+        return None
+
+
+def _broker_ctx(_req, body):
+    """Ctx backed by the real broker HTTP verbs (headless) — the exact kernel contract:
+    GET /v1/context · POST /v1/query (scope+keyset paging) · /v1/read (scope) · /v1/write ·
+    /v1/write/batch · /v1/complete. This is the full engine surface, over the broker."""
+    def kfind(scope):
+        rows, cursor = [], None
+        while True:
+            r = _req("POST", "/v1/query", {"scope": scope, "limit": 5000, **({"cursor": cursor} if cursor else {})}) or {}
+            rows.extend(r.get("results", []))
+            cursor = r.get("next_cursor")
+            if not cursor:
+                return rows
 
     def kwrite(oid, obj):
-        return _post("/v1/write", {"scope": obj.get("schema"), "id": oid, "object": obj})
+        return _req("POST", "/v1/write", {"scope": obj.get("schema") or _scope_from_id(oid), "id": oid, "object": obj})
 
-    def kget(oid):
-        r = (_post("/v1/read", {"id": oid}) or {}).get("results", [])
-        return r[0].get("object") if r else None
+    def kbatch(objs):
+        items = [{"scope": o.get("schema") or _scope_from_id(o["id"]), "id": o["id"], "object": o} for o in objs]
+        return _req("POST", "/v1/write/batch", {"items": items})
 
-    tenant = (_post("/v1/context", {}) or {}).get("tenant") if body is None else None
-    return Ctx(body=body, tenant=tenant, kfind=kfind, kwrite=kwrite, kget=kget)
+    def kget(oid, scope=None):
+        return (_req("POST", "/v1/read", {"scope": scope or _scope_from_id(oid), "id": oid}) or {}).get("object")
+
+    def ai(messages, max_tokens=900):
+        r = _req("POST", "/v1/complete", {"messages": messages, "max_tokens": max_tokens}) or {}
+        return r.get("content", r)
+
+    tenant = (_req("GET", "/v1/context") or {}).get("tenant") if body is None else None
+    return Ctx(body=body, tenant=tenant, kfind=kfind, kwrite=kwrite, kget=kget, kbatch=kbatch, ai=ai)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,6 +379,22 @@ class _Driver:
             return self._main()
         finally:
             _current.reset(token)
+
+    def run_local(self, store=None, tenant="you-dev"):
+        """`aos test` path: run the driver against an in-memory registry (no live services).
+        Returns the resulting store so the harness can assert what was written."""
+        if not self._main:
+            raise Reject("no @driver.main registered")
+        cx = Ctx.in_memory(store, tenant)
+        token = _current.set(cx)
+        try:
+            self._main()
+        finally:
+            _current.reset(token)
+        return cx._store
+
+    def registered(self):
+        return self._main is not None
 
 
 driver = _Driver()

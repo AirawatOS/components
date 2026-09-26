@@ -13,7 +13,7 @@ Directory, and dev artifacts are stamped "Under Development".
     python -m aos publish <dir> --target marketplace --env development
 """
 import argparse, importlib.util, os, sys, json
-from . import meta as M, policy, READS, WRITES
+from . import meta as M, policy, READS, WRITES, driver
 
 ENGINE_TEMPLATE = '''\
 """{title} — {kind} on the aos SDK."""
@@ -29,6 +29,33 @@ def {fn}(body):
 
 
 HANDLERS = engine.handlers()
+'''
+
+DRIVER_TEMPLATE = '''\
+"""{title} — a driver on the aos SDK (headless ingest/transform).
+
+The SDK owns the broker transport, tenant resolution, retry, and reads/writes tracking, so a
+driver is just: fetch → shape → write. `aos check` derives the meta; `aos test` dry-runs this
+against an in-memory registry; `aos deploy --sandbox` runs it in your dev tenant.
+"""
+from aos import driver, ctx
+
+
+@driver.main
+def run():
+    # 1) EGRESS: fetch from your source (plain urllib/httpx — egress is yours, not the broker's).
+    # 2) SHAPE: build governed facts (envelope: schema + id, tenant is stamped for you).
+    rows = [
+        {{"schema": "TODO.output", "id": f"ds:{{ctx.tenant}}:TODO.output/example",
+          "observed_at": ctx.now(), "prov": {{}}, "value": 1}},
+    ]
+    # 3) WRITE: one batched round-trip; auto-declares the write scope for meta.
+    n = ctx.write_many(rows)
+    print(f"{{n}} fact(s) written to tenant {{ctx.tenant}}")
+
+
+if __name__ == "__main__":
+    driver.run()
 '''
 
 
@@ -53,11 +80,14 @@ def _base_meta(dirpath, args):
             if ":" in line and not line.startswith("-"):
                 k, v = line.split(":", 1)
                 k, v = k.strip(), v.strip()
-                if k in ("component_id", "kind", "version", "provider", "display_name"):
+                if k in ("component_id", "kind", "version", "provider", "display_name",
+                         "entrypoint", "confinement_min"):
                     base[k] = v
                 elif k in ("reads", "writes") and v.startswith("[") and v.endswith("]"):
                     base[k] = [x.strip() for x in v[1:-1].split(",") if x.strip()]
-    base.setdefault("component_id", getattr(args, "id", None) or f"ds:airawatdeveloper:engine/{os.path.basename(os.path.abspath(dirpath))}")
+    base.setdefault("component_id", getattr(args, "id", None) or f"ds:airawatdeveloper:{base['kind']}/{os.path.basename(os.path.abspath(dirpath))}")
+    if base["kind"] == "driver":
+        base.setdefault("entrypoint", "run.py")   # a headless driver declares its entrypoint
     return base
 
 
@@ -66,17 +96,25 @@ def cmd_new(args):
     name = args.id.rsplit("/", 1)[-1]
     d = args.into or name
     os.makedirs(d, exist_ok=True)
+    title = name.replace("-", " ").title()
+    if args.kind == "driver":
+        open(os.path.join(d, "run.py"), "w").write(DRIVER_TEMPLATE.format(title=title))
+        print(f"✓ scaffolded driver '{args.id}' → {d}/run.py  (SDK model — @driver.main, ctx, derived meta)")
+        print("  next: implement fetch→shape→write, then `aos check` and `aos test`.")
+        return
     verb = args.verb or f"{name}-run"
     fn = verb.replace("-", "_")
     iface = args.implements or f"{name.replace('-', '_')}.{fn}@0.1.0"
     open(os.path.join(d, "run.py"), "w").write(ENGINE_TEMPLATE.format(
-        title=name.replace("-", " ").title(), kind=kind_dir, verb=verb, fn=fn, iface=iface))
+        title=title, kind=kind_dir, verb=verb, fn=fn, iface=iface))
     print(f"✓ scaffolded {kind_dir} '{args.id}' → {d}/run.py  (SDK model — ctx, derived meta)")
     print("  next: implement the verb, then `aos check` and `aos test`.")
 
 
 def cmd_check(args):
-    _load(args.dir)
+    m = _load(args.dir)
+    if driver.registered() and not hasattr(m, "HANDLERS"):
+        args.kind = "driver"          # kind derived from the code (a @driver.main, no HANDLERS)
     meta = M.derive(_base_meta(args.dir, args))
     problems = M.validate(meta)
     print(M.to_yaml(meta))
@@ -99,16 +137,26 @@ def cmd_test(args):
     if os.path.isfile(fx):
         for o in json.load(open(fx)):
             reg[o["id"]] = o
+    seeded = len(reg)
+    # DRIVER path: run the headless main against an in-memory registry (same ctx surface as live).
+    if driver.registered() and not hasattr(m, "HANDLERS"):
+        store = driver.run_local(reg, tenant=args.tenant)
+        print(f"✓ ran driver against {seeded} seeded record(s); registry now has {len(store)} object(s)")
+        print(f"  reads={sorted(READS)} writes={sorted(WRITES)}")
+        for oid, obj in list(store.items())[-5:]:
+            print(f"   • {obj.get('schema','?')}: {oid}")
+        return
+    # ENGINE path: dry-run the exported HANDLERS.
     hc = {"kfind": lambda s: [o for o in reg.values() if o.get("schema") == s],
           "kwrite": lambda i, o: reg.__setitem__(i, o), "kget": lambda i: reg.get(i),
           "tenant": args.tenant, "sub": f"user://{args.tenant}/dev", "claims": {}, "body": {}}
     handlers = getattr(m, "HANDLERS", {})
     if not handlers:
-        sys.exit("no HANDLERS exported")
+        sys.exit("no HANDLERS exported and no @driver.main registered")
     for verb, h in handlers.items():
         res, err = h(hc)
         print(f"  {verb}: {'ERR '+err if err else json.dumps(res)[:160]}")
-    print(f"✓ ran {len(handlers)} verb(s) against {len(reg)} seeded record(s); reads={sorted(READS)} writes={sorted(WRITES)}")
+    print(f"✓ ran {len(handlers)} verb(s) against {seeded} seeded record(s); reads={sorted(READS)} writes={sorted(WRITES)}")
 
 
 def _load_solution(args):
