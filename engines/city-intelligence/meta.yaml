@@ -1,0 +1,26 @@
+# CITY INTELLIGENCE (kind=engine) — the City Scan ANALYST as a certified, confined, ROUTED component (not baked
+# into the host). Implements the `city.analyst` interface: the verb `city-ask` takes an operator's question, reads
+# the tenant's GOVERNED map layers (risk.flood, cell.crowd_density, vision.detection, governance.recommendation) via
+# its OWN read grants, computes the cross-layer facts (cells that are BOTH flooding and crowded, people exposed,
+# worst sites, open recommendations), grounds the confined model on ONLY those facts, and returns a cited answer.
+# In-process HANDLERS engine (ADR-0030/#166): its I/O is the ctx surface (kfind + ai_complete) — nothing else.
+# AI informs, a human commander decides (ADR-0029). Routed via governed verb_binding (#268), so /bridge/city-ask
+# resolves here with NO host code and NO baking — swap or upgrade by publishing a new version.
+component_id: ds:airawatdeveloper:engine/city-intelligence
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Intelligence
+entrypoint: run.py
+confinement_min: L1
+implements: [city.analyst@0.1.0]
+verbs:
+  city-ask: city.analyst@0.1.0
+required_schemas: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation]
+reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation]
+writes: []
+scopes:
+  - { verb: read, scope: risk.flood }
+  - { verb: read, scope: cell.crowd_density }
+  - { verb: read, scope: vision.detection }
+  - { verb: read, scope: governance.recommendation }
