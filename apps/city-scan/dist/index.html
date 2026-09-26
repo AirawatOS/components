@@ -1212,6 +1212,15 @@ function fitView(bbox){
    +'.am.me{align-self:flex-end;background:#38bdf8;color:#04121f}'
    +'.am.ai{align-self:flex-start;background:#13273b;color:#e6edf5}'
    +'.am .src{margin-top:6px;font-size:11.5px;color:#7dd3fc}'
+   +'.eq{margin-top:8px;border-top:1px solid #22344a;padding-top:7px}'
+   +'.eq-h{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#8aa0b6;font-weight:700;margin-bottom:5px}'
+   +'.eq-row{display:flex;align-items:center;gap:6px;font-size:11.5px;margin:3px 0;flex-wrap:wrap}'
+   +'.eq-row .ly{font-weight:600;color:#cdd9e5;min-width:104px}'
+   +'.eq-tag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;white-space:nowrap}'
+   +'.eq-obs{background:#12301f;color:#57bd86;border:1px solid #1f5236}'
+   +'.eq-inf{background:#332815;color:#d69a3e;border:1px solid #5b4a1f}'
+   +'.eq-un{background:#331d1c;color:#e0736b;border:1px solid #5c2c2a}'
+   +'.eq-m{color:#8aa0b6;font-size:11px}'
    +'.askin{display:flex;gap:6px;padding:10px;border-top:1px solid #22344a}'
    +'#askq{flex:1;background:#0a1622;border:1px solid #22344a;color:#e6edf5;border-radius:8px;padding:8px 10px}'
    +'#asksend{background:#38bdf8;color:#04121f;border:none;border-radius:8px;padding:0 13px;font-weight:700;cursor:pointer}';
@@ -1219,6 +1228,29 @@ function fitView(bbox){
   const G=id=>document.getElementById(id);
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function addMsg(role,html){const l=G('asklog');const d=document.createElement('div');d.className='am '+role;d.innerHTML=html;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
+  // Evidence-quality panel: how GOOD is the evidence behind the answer (not just the conclusion) — per governed
+  // layer: observed vs inferred, coverage %, freshness, confidence. Grounds "quality & uncertainty of evidence".
+  const LAYER_NAME={'risk.flood':'Flood risk','cell.crowd_density':'Crowd density','vision.detection':'CCTV count',
+                    'cell.crush_risk':'Crush risk','cell.hydrology':'Hydrology','geo.terrain':'Terrain'};
+  function agelbl(m){ if(m==null) return null; m=Math.abs(m);
+    return m<90?m+'m old':m<1440?Math.round(m/60)+'h old':Math.round(m/1440)+'d old'; }
+  function evidenceQualityHtml(eq){
+    if(!eq||typeof eq!=='object') return '';
+    const rows=Object.keys(eq).map(k=>{
+      const v=eq[k]||{}; const mix=v.observed_vs_inferred||{};
+      const tags=Object.keys(mix).map(m=>{
+        const cls=m==='observed'?'eq-obs':(m==='inferred'?'eq-inf':'eq-un');
+        return '<span class="eq-tag '+cls+'">'+esc(m)+' '+mix[m]+'</span>';}).join(' ');
+      const bits=[];
+      if(v.coverage_pct!=null) bits.push('coverage '+Math.round(v.coverage_pct)+'%');
+      else if(v.gaps) bits.push('gaps: '+esc(String(v.gaps)));
+      const fresh=agelbl(v.freshness_min); if(fresh) bits.push(fresh);
+      if(v.mean_confidence!=null) bits.push('conf '+v.mean_confidence);
+      return '<div class="eq-row"><span class="ly">'+esc(LAYER_NAME[k]||k)+'</span>'+tags
+        +(bits.length?'<span class="eq-m">· '+esc(bits.join(' · '))+'</span>':'')+'</div>';
+    }).join('');
+    return rows?('<div class="eq"><div class="eq-h">Evidence quality</div>'+rows+'</div>'):'';
+  }
   let ASKING=false;
   G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden)G('askq').focus();};
   G('askx').onclick=()=>{G('askpanel').hidden=true;};
@@ -1231,7 +1263,8 @@ function fitView(bbox){
     try{
       const d=await bridge('/bridge/city-ask',{question:q});
       slot.innerHTML=esc(d.answer||'No answer.')
-        +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'');
+        +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'')
+        +evidenceQualityHtml(d.facts&&d.facts.evidence_quality);
       ASK_HL=Array.isArray(d.highlight)?d.highlight:[];
       if(typeof render==='function') render();
       if(ASK_HL.length && window.h3){ try{ const c=h3.cellToLatLng(ASK_HL[0]);
