@@ -1,46 +1,36 @@
 #!/usr/bin/env python3
-"""air-sensors driver: AOI → REAL ground-station readings → air.sensor_reading (points).
+"""air-sensors driver (aos SDK): AOI → REAL ground-station readings → air.sensor_reading (points).
 
-Confined — its only I/O is the kernel broker. It READS the AOI (space.aoi) for the bbox, then INGESTS REAL
-air-quality observations from the ground-station networks, and NEVER fabricates: if a source's key is
-missing/rejected or the source is unreachable it FAILS that source (writes nothing from it); if a source simply
-has no stations in the AOI it reports 0. Point measures carry the ADR-0053 space block; valid-time is the
-observation's own datetime.
+Reads the AOI (space.aoi) for the bbox, then INGESTS REAL air-quality observations from the ground-station
+networks, and NEVER fabricates: if a source's key is missing/rejected or the source is unreachable it FAILS
+that source (writes nothing from it); if a source simply has no stations in the AOI it reports 0. Point
+measures carry the ADR-0053 space block; valid-time is the observation's own datetime.
+
+The aos SDK owns the broker transport (tenant resolution, registry read/query/write, retry): AOI reads and
+sensor-reading writes go through `ctx`. External egress (CPCB / OpenAQ public APIs) stays plain urllib; the
+tenant's API keys are read from the injected env and applied exactly as before — OPENAQ_API_KEY as the
+X-API-Key header, CPCB_API_KEY as the `api-key` query param.
 
 Two REAL sources (SOURCE env selects; default "cpcb,openaq" — try each, write from all that succeed):
   • CPCB CAAQMS (data.gov.in) — India's regulatory monitoring network; the ground truth a PM2.5 model trains +
-    validates against (ADR-0073). The broker injects the tenant's CPCB_API_KEY as the `api-key` query param.
-  • OpenAQ v3 — global aggregator; the broker injects OPENAQ_API_KEY as the X-API-Key header.
+    validates against (ADR-0073).
+  • OpenAQ v3 — global aggregator.
 
-  Env: TENANT/broker-context · AOI_ID (opt) · SOURCE (cpcb,openaq) · MAX_LOCATIONS (OpenAQ, 25)
+  Env: AOI_ID (opt) · SOURCE (cpcb,openaq) · MAX_LOCATIONS (OpenAQ, 25)
        AS_OF_DATE (OpenAQ historical day) · RESOURCE_ID + PAGE_LIMIT (CPCB dataset id / page size)
 """
-import json, os, random, time, urllib.request, urllib.error
+import json, os, random, time, urllib.parse, urllib.request, urllib.error  # noqa: h3 imported lazily in run()
 from datetime import datetime, timedelta, timezone
-import h3
+from aos import driver, ctx
 
-API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
-TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "")     # the injected AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
-SOURCE = [s.strip().lower() for s in os.environ.get("SOURCE", "cpcb,openaq").split(",") if s.strip()]
 OPENAQ = "https://api.openaq.org/v3"
-MAX_LOCATIONS = int(os.environ.get("MAX_LOCATIONS", "25"))
-AS_OF = os.environ.get("AS_OF_DATE", "").strip()   # optional YYYY-MM-DD: ingest that day's REAL history, not /latest
 _INJECT = {"name": "OPENAQ_API_KEY", "as": "header", "header": "X-API-Key", "prefix": ""}
 _PARAMS = ("pm25", "no2", "o3", "pm10", "so2", "co")
 # CPCB (data.gov.in) "Real time Air Quality Index" dataset (overridable if the portal re-keys it).
-RESOURCE_ID = os.environ.get("RESOURCE_ID", "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69")
-PAGE_LIMIT = int(os.environ.get("PAGE_LIMIT", "1000"))
-CPCB_BASE = f"https://api.data.gov.in/resource/{RESOURCE_ID}"
 CPCB_INJECT = {"name": "CPCB_API_KEY", "as": "query", "param": "api-key"}
 CPCB_POLL = {"PM2.5": "pm25", "NO2": "no2", "OZONE": "o3", "O3": "o3"}
-NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
-def _call(path, body):
-    req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "X-Run-Token": TOKEN}, method="POST")
-    return json.loads(urllib.request.urlopen(req, timeout=60).read())
+# Structured egress identity (PLAT-EGRESS-004 — identify yourself; OpenAQ suspends anonymous/abusive clients).
+_UA = "AirawatOS/air-sensors (+https://airawat.org; manishsv@gmail.com)"
 
 
 def _reset_wait(hdrs, attempt):
@@ -50,22 +40,41 @@ def _reset_wait(hdrs, attempt):
     return min(2 ** attempt + random.random(), 30)         # exp backoff + jitter, capped
 
 
+def _apply_inject(url, headers, inject):
+    """Apply the tenant's injected secret exactly as the broker used to — header or query param."""
+    if not inject:
+        return url
+    secret = os.environ.get(inject["name"], "")
+    if not secret:
+        return url
+    if inject.get("as") == "header":
+        headers[inject["header"]] = inject.get("prefix", "") + secret
+    elif inject.get("as") == "query":
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}{inject['param']}={urllib.parse.quote(secret)}"
+    return url
+
+
 def _fetch(url, inject=_INJECT, tries=5):
-    """Brokered egress with BACKOFF — a good citizen. Backs off on the BROKER's 429 and the VENDOR's 429.
-    Returns (status, json|None)."""
+    """Direct egress with BACKOFF — a good citizen. Backs off on the VENDOR's 429 and pre-emptively pauses when
+    near the rate limit. Returns (status, json|None)."""
     for attempt in range(tries):
+        headers = {"User-Agent": _UA}
+        u = _apply_inject(url, headers, inject)
         try:
-            r = _call("/v1/fetch", {"url": url, "inject": inject})
+            with urllib.request.urlopen(urllib.request.Request(u, headers=headers), timeout=60) as resp:
+                st = resp.status
+                hdrs = {k.lower(): v for k, v in resp.headers.items()}
+                body = resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
+            hdrs = {k.lower(): v for k, v in (e.headers or {}).items()}
             if e.code == 429:
-                wait = min(int(e.headers.get("Retry-After") or 2 ** attempt), 15)
-                print(f"  broker rate limit → waiting {wait}s"); time.sleep(wait); continue
+                wait = _reset_wait(hdrs, attempt)
+                print(f"  vendor 429 → waiting {wait}s (remaining {hdrs.get('x-ratelimit-remaining', '?')})")
+                time.sleep(wait); continue
             return e.code, None
-        st = r.get("upstream_status"); hdrs = r.get("headers") or {}
-        if st == 429:
-            wait = _reset_wait(hdrs, attempt)
-            print(f"  vendor 429 → waiting {wait}s (remaining {hdrs.get('x-ratelimit-remaining', '?')})")
-            time.sleep(wait); continue
+        except urllib.error.URLError as e:
+            print(f"  egress error → {e}"); return None, None
         # CONSIDERATE USE (OpenAQ): pre-emptively pause when we're near the limit — respect x-ratelimit-remaining
         # BEFORE the vendor has to 429 us, rather than only backing off after. Prevents overburdening the key.
         try:
@@ -78,19 +87,11 @@ def _fetch(url, inject=_INJECT, tries=5):
         time.sleep(0.3)
         if st == 200:
             try:
-                return st, json.loads(r.get("body") or "{}")
+                return st, json.loads(body or "{}")
             except Exception:
                 return st, None
         return st, None
     return 429, None
-
-
-def _tenant():
-    try:
-        req = urllib.request.Request(API + "/v1/context", headers={"X-Run-Token": TOKEN})
-        return (json.loads(urllib.request.urlopen(req, timeout=20).read()) or {}).get("tenant")
-    except Exception:
-        return None
 
 
 def _day_bounds(d):
@@ -106,17 +107,16 @@ def _num(v):
         return None
 
 
-def _write(T, sid, lat, lng, res, vals, obs, source, station, method):
+def _fact(T, sid, lat, lng, res, vals, obs, source, station, method):
+    """Build the air.sensor_reading fact (identical shape to the original write). Tenant is stamped by the SDK."""
     cell = h3.latlng_to_cell(lat, lng, res)
     rid = f"ds:{T}:air/sensor_reading/{sid}-{obs[:13]}"
     fact = {"schema": "air.sensor_reading", "id": rid, "sensor_id": sid,
             "space": {"h3": cell, "res": res, "centroid": [round(lng, 5), round(lat, 5)]},
             "pm25": vals.get("pm25"), "no2": vals.get("no2"), "o3": vals.get("o3"),
             "observed_at": obs, "source": source,
-            "prov": {"method": method, "component": "ds:airawat:driver/air-sensors", "station": station, "observed_at": obs}}
-    fact = {k: v for k, v in fact.items() if v is not None}
-    _call("/v1/write", {"scope": "air.sensor_reading", "id": rid, "object": fact,
-                        "valid_time": {"from": obs}, "asserted_at": NOW})
+            "prov": {"method": method, "component": "ds:airawatdeveloper:driver/air-sensors", "station": station, "observed_at": obs}}
+    return {k: v for k, v in fact.items() if v is not None}
 
 
 # ------------------------------------------------------------------ CPCB CAAQMS (data.gov.in)
@@ -129,13 +129,16 @@ def _cpcb_to_utc(last_update):
         return None
 
 
-def ingest_cpcb(T, bbox, res):
+def ingest_cpcb(T, bbox, res, out):
     """REAL CPCB CAAQMS stations inside the AOI bbox → air.sensor_reading. Pages the all-India live dataset,
-    groups rows by station, keeps those inside the bbox. Broker injects the api-key. Real or 0."""
+    groups rows by station, keeps those inside the bbox. api-key injected from env. Real or 0."""
+    resource_id = os.environ.get("RESOURCE_ID", "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69")
+    page_limit = int(os.environ.get("PAGE_LIMIT", "1000"))
+    cpcb_base = f"https://api.data.gov.in/resource/{resource_id}"
     w, s, e, n = bbox
     stations, offset, total = {}, 0, 0
     for _ in range(50):
-        st, page = _fetch(f"{CPCB_BASE}?format=json&offset={offset}&limit={PAGE_LIMIT}", inject=CPCB_INJECT)
+        st, page = _fetch(f"{cpcb_base}?format=json&offset={offset}&limit={page_limit}", inject=CPCB_INJECT)
         if st == 403:
             print("  CPCB: data.gov.in 403 — CPCB_API_KEY missing/invalid (Connections → Air sensors → API key). Skipping CPCB.")
             return 0
@@ -157,16 +160,16 @@ def ingest_cpcb(T, bbox, res):
                                              "obs": _cpcb_to_utc(rec.get("last_update")), "vals": {}})
             if field and val is not None:
                 srec["vals"][field] = val
-        if len(recs) < PAGE_LIMIT:
+        if len(recs) < page_limit:
             break
-        offset += PAGE_LIMIT
+        offset += page_limit
     written = 0
     for srec in stations.values():
         if "pm25" not in srec["vals"] or not srec["obs"]:
             continue
         slug = "".join(c if c.isalnum() else "-" for c in (srec["name"] or "cpcb"))[:48].strip("-").lower()
-        _write(T, f"cpcb-{slug}", srec["lat"], srec["lon"], res, srec["vals"], srec["obs"], "cpcb", srec["name"],
-               "cpcb-caaqms.data.gov.in")
+        out.append(_fact(T, f"cpcb-{slug}", srec["lat"], srec["lon"], res, srec["vals"], srec["obs"], "cpcb",
+                         srec["name"], "cpcb-caaqms.data.gov.in"))
         written += 1
     print(f"  CPCB: scanned {total} rows → {len(stations)} in-AOI stations → wrote {written} with a current PM2.5")
     return written
@@ -174,9 +177,10 @@ def ingest_cpcb(T, bbox, res):
 
 # ------------------------------------------------------------------ OpenAQ v3
 def _openaq_readings(loc):
+    as_of = os.environ.get("AS_OF_DATE", "").strip()   # optional YYYY-MM-DD: ingest that day's REAL history, not /latest
     param_of = {sn.get("id"): ((sn.get("parameter") or {}).get("name") or "").lower()
                 for sn in loc.get("sensors", [])}
-    if not AS_OF:
+    if not as_of:
         st2, latest = _fetch(f"{OPENAQ}/locations/{loc['id']}/latest")
         if st2 != 200 or not latest:
             return {}, None
@@ -187,7 +191,7 @@ def _openaq_readings(loc):
                 vals[pn] = m.get("value")
                 obs = obs or ((m.get("datetime") or {}).get("utc"))
         return vals, obs
-    fr, to = _day_bounds(AS_OF)
+    fr, to = _day_bounds(as_of)
     vals = {}
     for sn in loc.get("sensors", []):
         pn = ((sn.get("parameter") or {}).get("name") or "").lower()
@@ -200,10 +204,11 @@ def _openaq_readings(loc):
         xs = [m.get("value") for m in hist.get("results", []) if isinstance(m.get("value"), (int, float))]
         if xs:
             vals[pn] = round(sum(xs) / len(xs), 1)
-    return (vals, f"{AS_OF}T12:00:00Z") if vals else ({}, None)
+    return (vals, f"{as_of}T12:00:00Z") if vals else ({}, None)
 
 
-def ingest_openaq(T, bbox, res):
+def ingest_openaq(T, bbox, res, out):
+    max_locations = int(os.environ.get("MAX_LOCATIONS", "25"))
     w, s, e, n = bbox
     st, locs = _fetch(f"{OPENAQ}/locations?bbox={w},{s},{e},{n}&limit=100")
     if st != 200:
@@ -214,7 +219,7 @@ def ingest_openaq(T, bbox, res):
         print(f"  OpenAQ: 0 stations in AOI bbox [{w},{s},{e},{n}].")
         return 0
     written = 0
-    for loc in results[:MAX_LOCATIONS]:
+    for loc in results[:max_locations]:
         coords = loc.get("coordinates") or {}
         lat, lng = coords.get("latitude"), coords.get("longitude")
         if lat is None or lng is None:
@@ -222,20 +227,24 @@ def ingest_openaq(T, bbox, res):
         vals, obs = _openaq_readings(loc)
         if "pm25" not in vals or not obs:
             continue
-        _write(T, f"openaq-{loc['id']}", lat, lng, res, vals, obs, "openaq", loc.get("name"), "openaq.v3")
+        out.append(_fact(T, f"openaq-{loc['id']}", lat, lng, res, vals, obs, "openaq", loc.get("name"), "openaq.v3"))
         written += 1
     print(f"  OpenAQ: {len(results)} stations in AOI → wrote {written} with a current PM2.5")
     return written
 
 
-def main():
-    T = _tenant()
+@driver.main
+def run():
+    import h3                                    # lazy (heavy dep) — keeps import-time clean for aos check
+    T = ctx.tenant
     if not T:
         print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
-    if AOI_ID:
-        aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+    source = [s.strip().lower() for s in os.environ.get("SOURCE", "cpcb,openaq").split(",") if s.strip()]
+    aoi_id = os.environ.get("AOI_ID", "")     # the injected AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
+    if aoi_id:
+        aoi = ctx.get(aoi_id, "space.aoi")
     else:
-        rows = _call("/v1/query", {"scope": "space.aoi", "limit": 500}).get("results", [])
+        rows = ctx.facts("space.aoi").list()
         mine = [(r.get("object") or r) for r in rows
                 if str((r.get("object") or r).get("id", "")).startswith(f"ds:{T}:")
                 and len((r.get("object") or r).get("bbox") or []) == 4]
@@ -243,21 +252,24 @@ def main():
     if not aoi:
         print(f"FAIL: no space.aoi for tenant '{T}' — set AOI_ID or run City Setup first. Nothing written."); return 1
     bbox = [float(v) for v in aoi["bbox"]]; res = int(aoi["h3_res"])
-    print(f"tenant={T} aoi={aoi.get('id')} bbox={bbox} · sources={SOURCE}", flush=True)
+    print(f"tenant={T} aoi={aoi.get('id')} bbox={bbox} · sources={source}", flush=True)
 
+    out = []
     written = 0
-    if "cpcb" in SOURCE:
-        written += ingest_cpcb(T, bbox, res)
-    if "openaq" in SOURCE:
-        written += ingest_openaq(T, bbox, res)
+    if "cpcb" in source:
+        written += ingest_cpcb(T, bbox, res, out)
+    if "openaq" in source:
+        written += ingest_openaq(T, bbox, res, out)
+    if out:
+        ctx.write_many(out)
 
     if not written:
         print("No REAL station readings ingested from any configured source (nothing written; no synthetic fill).")
-        return 1 if "cpcb" in SOURCE or "openaq" in SOURCE else 0
-    print(f"ingested {written} REAL air.sensor_reading points (sources: {','.join(SOURCE)})")
-    print(f"RESULT: {json.dumps({'sources': SOURCE, 'written': written})}")
+        return 1 if "cpcb" in source or "openaq" in source else 0
+    print(f"ingested {written} REAL air.sensor_reading points (sources: {','.join(source)})")
+    print(f"RESULT: {json.dumps({'sources': source, 'written': written})}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(driver.run())

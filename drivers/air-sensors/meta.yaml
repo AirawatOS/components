@@ -4,9 +4,9 @@
 # regulatory network, the PM2.5 ground truth of ADR-0073) with CPCB_API_KEY injected as the api-key query
 # param, and OpenAQ v3 with OPENAQ_API_KEY as X-API-Key. NO synthetic fallback — a source that has no key /
 # is unreachable is skipped; if none yield data the run fails loudly and writes nothing.
-component_id: ds:airawat:driver/air-sensors
+component_id: ds:airawatdeveloper:driver/air-sensors
 kind: driver
-version: 0.2.1   # 0.2.1: OpenAQ considerate-use — 30/min (≤2000/hr) + pre-emptive x-ratelimit-remaining pause
+version: 0.2.0   # 0.2.1: OpenAQ considerate-use — 30/min (≤2000/hr) + pre-emptive x-ratelimit-remaining pause
 provider: ds:airawat:developer
 display_name: Air Sensors
 entrypoint: run.py
