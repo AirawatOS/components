@@ -24,12 +24,13 @@ Design notes:
 - Backed by the injected host ctx (in-process) OR the broker HTTP transport (headless);
   the developer's code is identical either way.
 """
-import os, json, time, contextvars, urllib.request, urllib.error
+import os, json, time, base64, hashlib, contextvars, urllib.request, urllib.error
 
 __all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now"]
 
 # ── observed vocabulary (populated at runtime by Ctx; consumed by aos.meta.derive) ──
-READS, WRITES = set(), set()
+# READS/WRITES → scopes; FILES (put/get) → the `filestore` capability the runtime must grant.
+READS, WRITES, FILES = set(), set(), set()
 
 
 class Reject(Exception):
@@ -80,13 +81,15 @@ class Query:
 # ─────────────────────────────────────────────────────────────────────────────
 class Ctx:
     def __init__(self, *, body=None, tenant=None, sub=None, claims=None,
-                 kfind=None, kwrite=None, kget=None, ai=None, call=None, kbatch=None):
+                 kfind=None, kwrite=None, kget=None, ai=None, call=None, kbatch=None,
+                 fput=None, fget=None):
         self.body = body or {}
         self.tenant = tenant
         self.sub = sub
         self.claims = claims or {}
         self._kfind, self._kwrite, self._kget = kfind, kwrite, kget
         self._ai, self._call, self._kbatch = ai, call, kbatch
+        self._fput, self._fget = fput, fget
 
     # --- adapters ---------------------------------------------------------------
     @classmethod
@@ -96,19 +99,27 @@ class Ctx:
                    claims=hc.get("claims"),
                    kfind=lambda s: hc["kfind"](s), kwrite=lambda i, o: hc["kwrite"](i, o),
                    kget=lambda i, _s=None: hc.get("kget", lambda _x: None)(i),
-                   ai=hc.get("ai_complete"), call=hc.get("call"))
+                   ai=hc.get("ai_complete"), call=hc.get("call"),
+                   fput=hc.get("file_put"), fget=hc.get("file_get"))
 
     @classmethod
     def in_memory(cls, store=None, tenant="you-dev", body=None):
         """A dict-backed ctx for `aos test` — the whole surface (facts/get/write/write_many)
         against an in-process registry, no live services. Same code path a driver runs live."""
         store = store if store is not None else {}
+        blobs = {}                                  # content-addressed blob store — same seam a driver runs live
+        def _fput(b):
+            fid = "sha2-256:" + hashlib.sha256(b).hexdigest()   # digest IS the id (write-once + dedup)
+            blobs[fid] = b
+            return fid
         cx = cls(body=body, tenant=tenant,
                  kfind=lambda s: [o for o in store.values() if o.get("schema") == s],
                  kwrite=lambda i, o: store.__setitem__(i, o),
                  kget=lambda i, s=None: store.get(i),
-                 kbatch=lambda objs: [store.__setitem__(o["id"], o) for o in objs])
+                 kbatch=lambda objs: [store.__setitem__(o["id"], o) for o in objs],
+                 fput=_fput, fget=lambda i: blobs.get(i))
         cx._store = store
+        cx._blobs = blobs
         return cx
 
     @classmethod
@@ -179,6 +190,14 @@ class Ctx:
                 self._kwrite(o["id"], o)
         return len(objs)
 
+    @property
+    def file(self):
+        """The filestore surface — `ctx.file.put(bytes|str) → id`, `ctx.file.get(id) → bytes`.
+        Content-addressed (the id IS the sha2-256 digest): write-once + dedup, and possessing the
+        digest is the read capability. Same code path host (local blob), broker (/v1/file), and
+        `aos test` (in-memory). Using it derives the `filestore` capability into meta."""
+        return _FileAPI(self)
+
     def ai(self, messages, max_tokens=900):
         if not self._ai:
             raise Reject("ai() unavailable in this runtime")
@@ -235,6 +254,28 @@ class Ctx:
                          {"workflow": workflow, "payload": payload})
 
 
+class _FileAPI:
+    """`ctx.file` — the content-addressed blob surface. Bound per-invocation to the runtime's
+    put/get callables (host local-blob / broker /v1/file / in-memory). Every call records the
+    `filestore` capability so `aos check` derives it into meta (never hand-declared)."""
+    def __init__(self, cx):
+        self._cx = cx
+
+    def put(self, data):
+        """Store bytes (or a str, encoded utf-8) → returns the content-addressed id (the sha2-256 digest)."""
+        FILES.add("put")
+        if self._cx._fput is None:
+            raise Reject("ctx.file.put unavailable in this runtime (no filestore capability)")
+        return self._cx._fput(data.encode() if isinstance(data, str) else bytes(data))
+
+    def get(self, fid):
+        """Fetch bytes by content-addressed id. Returns raw bytes (b'' if absent)."""
+        FILES.add("get")
+        if self._cx._fget is None:
+            raise Reject("ctx.file.get unavailable in this runtime (no filestore capability)")
+        return self._cx._fget(fid)
+
+
 def _slug(s):
     import re
     return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")[:48] or "x"
@@ -275,8 +316,15 @@ def _broker_ctx(_req, body):
         r = _req("POST", "/v1/complete", {"messages": messages, "max_tokens": max_tokens}) or {}
         return r.get("content", r)
 
+    def fput(b):    # broker filestore PUT (PLAT-FILE-002): base64 over the JSON seam → content-addressed id
+        return (_req("POST", "/v1/file/put", {"content_b64": base64.b64encode(b).decode()}) or {}).get("id")
+
+    def fget(fid):  # broker filestore GET: the digest IS the read capability → raw bytes back
+        return base64.b64decode((_req("POST", "/v1/file/get", {"id": fid}) or {}).get("content_b64") or "")
+
     tenant = (_req("GET", "/v1/context") or {}).get("tenant") if body is None else None
-    return Ctx(body=body, tenant=tenant, kfind=kfind, kwrite=kwrite, kget=kget, kbatch=kbatch, ai=ai)
+    return Ctx(body=body, tenant=tenant, kfind=kfind, kwrite=kwrite, kget=kget, kbatch=kbatch,
+               ai=ai, fput=fput, fget=fget)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

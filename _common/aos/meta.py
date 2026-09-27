@@ -7,7 +7,7 @@ SDK observed at runtime), so a developer never hand-maintains `reads`/`writes`/`
 gate `aos check` runs locally, before the network ever sees the component.
 """
 import re
-from . import engine, READS, WRITES
+from . import engine, READS, WRITES, FILES
 
 _NOUN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")            # <domain>.<subject>
 _CID = re.compile(r"^ds:[a-z0-9-]+:(driver|engine|app|skill|agent|pipeline|solution)/[a-z0-9-]+$")
@@ -30,6 +30,12 @@ def derive(base):
     # scopes are DERIVED, never hand-written (kills the reads/writes↔scopes duplication)
     meta["scopes"] = ([{"verb": "read", "scope": r} for r in reads] +
                       [{"verb": "write", "scope": w} for w in writes])
+    # capabilities the runtime must grant beyond registry scopes (filestore, …) — also DERIVED from the code
+    caps = set(base.get("capabilities") or [])
+    if FILES:
+        caps.add("filestore")
+    if caps:
+        meta["capabilities"] = sorted(caps)
     return meta
 
 
@@ -67,7 +73,7 @@ def validate(meta):
 def to_yaml(meta):
     """Minimal deterministic YAML emit (enough for the canonical fields; no external dep)."""
     lines, order = [], ["component_id", "kind", "version", "provider", "display_name",
-                        "implements", "verbs", "reads", "writes", "scopes"]
+                        "implements", "verbs", "reads", "writes", "scopes", "capabilities"]
     for k in order + [x for x in meta if x not in order]:
         if k not in meta:
             continue
