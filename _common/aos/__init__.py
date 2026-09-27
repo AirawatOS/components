@@ -97,7 +97,7 @@ class Ctx:
         """In-process HANDLERS engine: wrap app_host's injected ctx dict."""
         return cls(body=hc.get("body"), tenant=hc.get("tenant"), sub=hc.get("sub"),
                    claims=hc.get("claims"),
-                   kfind=lambda s: hc["kfind"](s), kwrite=lambda i, o: hc["kwrite"](i, o),
+                   kfind=lambda s: hc["kfind"](s), kwrite=_host_kwrite(hc["kwrite"]),
                    kget=lambda i, _s=None: hc.get("kget", lambda _x: None)(i),
                    ai=hc.get("ai_complete"), call=hc.get("call"),
                    fput=hc.get("file_put"), fget=hc.get("file_get"))
@@ -114,9 +114,9 @@ class Ctx:
             return fid
         cx = cls(body=body, tenant=tenant,
                  kfind=lambda s: [o for o in store.values() if o.get("schema") == s],
-                 kwrite=lambda i, o: store.__setitem__(i, o),
+                 kwrite=lambda i, o, **_env: store.__setitem__(i, o),
                  kget=lambda i, s=None: store.get(i),
-                 kbatch=lambda objs: [store.__setitem__(o["id"], o) for o in objs],
+                 kbatch=lambda entries, asserted_at=None: [store.__setitem__(o["id"], o) for o, _vt in entries],
                  fput=_fput, fget=lambda i: blobs.get(i))
         cx._store = store
         cx._blobs = blobs
@@ -165,29 +165,41 @@ class Ctx:
         except TypeError:
             return self._kget(oid)                 # host kget takes (id)
 
-    def write(self, obj=None, *, schema=None, id=None, **fields):
+    def write(self, obj=None, *, schema=None, id=None,
+              valid_time=None, valid_from=None, valid_to=None, asserted_at=None, **fields):
+        """Write a record. Pass valid_time={"from":…,"to"?:…} (or the valid_from/valid_to shorthands) to
+        record it as a bitemporal ASSERTION true over that world-time window — the correct shape for an
+        observation whose validity is pinned to when it was measured, not when it was written. asserted_at
+        sets the transaction time (when the system learned it). Omit both → a latest-wins ENTITY, as before."""
         if obj is None:
             obj = dict(fields, schema=schema, id=id)
         sch = obj.get("schema")
         if sch:
             WRITES.add(sch)
         obj.setdefault("tenant", self.tenant)
-        self._kwrite(obj["id"], obj)
+        self._kwrite(obj["id"], obj, valid_time=(valid_time or _valid_period(valid_from, valid_to)),
+                     asserted_at=asserted_at)
         return obj
 
-    def write_many(self, objs):
+    def write_many(self, objs, *, asserted_at=None, valid_from_field=None):
         """Bulk write — the driver superpower. One batch round-trip over the broker (/v1/write/batch)
-        when headless; a simple loop in-process. Every object is tenant-stamped + its schema tracked."""
+        when headless; a simple loop in-process. Every object is tenant-stamped + its schema tracked.
+        valid_from_field names a per-object field (e.g. "observed_at") to lift into each record's valid_time
+        window — so a time-series backfill stays bitemporally correct row-by-row. asserted_at is one
+        transaction time for the whole batch."""
         objs = [dict(o) for o in objs]
+        entries = []
         for o in objs:
             if o.get("schema"):
                 WRITES.add(o["schema"])
             o.setdefault("tenant", self.tenant)
+            vt = {"from": o[valid_from_field]} if valid_from_field and o.get(valid_from_field) else None
+            entries.append((o, vt))
         if self._kbatch:
-            self._kbatch(objs)
+            self._kbatch(entries, asserted_at=asserted_at)
         else:
-            for o in objs:
-                self._kwrite(o["id"], o)
+            for o, vt in entries:
+                self._kwrite(o["id"], o, valid_time=vt, asserted_at=asserted_at)
         return len(objs)
 
     @property
@@ -276,6 +288,31 @@ class _FileAPI:
         return self._cx._fget(fid)
 
 
+def _valid_period(vfrom, vto):
+    """valid_from/valid_to shorthands → the kernel's {from, to?} valid_time window (None if neither given)."""
+    if vfrom is None and vto is None:
+        return None
+    p = {}
+    if vfrom is not None:
+        p["from"] = vfrom
+    if vto is not None:
+        p["to"] = vto
+    return p
+
+
+def _host_kwrite(host_write):
+    """Wrap the in-process host kwrite(oid, obj) so ctx.write can pass valid_time/asserted_at. Older host
+    ctx predates the envelope — forward it when accepted, else fall back to the bare write (graceful)."""
+    def kw(oid, obj, valid_time=None, asserted_at=None):
+        if valid_time is not None or asserted_at is not None:
+            try:
+                return host_write(oid, obj, valid_time=valid_time, asserted_at=asserted_at)
+            except TypeError:
+                pass
+        return host_write(oid, obj)
+    return kw
+
+
 def _slug(s):
     import re
     return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")[:48] or "x"
@@ -302,12 +339,25 @@ def _broker_ctx(_req, body):
             if not cursor:
                 return rows
 
-    def kwrite(oid, obj):
-        return _req("POST", "/v1/write", {"scope": obj.get("schema") or _scope_from_id(oid), "id": oid, "object": obj})
+    def kwrite(oid, obj, valid_time=None, asserted_at=None):
+        body = {"scope": obj.get("schema") or _scope_from_id(oid), "id": oid, "object": obj}
+        if valid_time is not None:                         # bitemporal ASSERTION window {from,to?}
+            body["valid_time"] = valid_time
+        if asserted_at is not None:                        # transaction time (default epoch server-side)
+            body["asserted_at"] = asserted_at
+        return _req("POST", "/v1/write", body)
 
-    def kbatch(objs):
-        items = [{"scope": o.get("schema") or _scope_from_id(o["id"]), "id": o["id"], "object": o} for o in objs]
-        return _req("POST", "/v1/write/batch", {"items": items})
+    def kbatch(entries, asserted_at=None):
+        items = []
+        for o, vt in entries:                              # entries = [(object, valid_time|None), …]
+            it = {"scope": o.get("schema") or _scope_from_id(o["id"]), "id": o["id"], "object": o}
+            if vt is not None:
+                it["valid_time"] = vt
+            items.append(it)
+        body = {"items": items}
+        if asserted_at is not None:
+            body["asserted_at"] = asserted_at
+        return _req("POST", "/v1/write/batch", body)
 
     def kget(oid, scope=None):
         return (_req("POST", "/v1/read", {"scope": scope or _scope_from_id(oid), "id": oid}) or {}).get("object")
