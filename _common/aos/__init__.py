@@ -30,7 +30,8 @@ __all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now"]
 
 # ── observed vocabulary (populated at runtime by Ctx; consumed by aos.meta.derive) ──
 # READS/WRITES → scopes; FILES (put/get) → the meta `files:` declaration the runtime reads to grant the blob store.
-READS, WRITES, FILES = set(), set(), set()
+# EGRESS → the external hosts a run reached via ctx.fetch (observability; declared rate/UA/auth stay in meta.egress).
+READS, WRITES, FILES, EGRESS = set(), set(), set(), set()
 
 
 class Reject(Exception):
@@ -82,14 +83,14 @@ class Query:
 class Ctx:
     def __init__(self, *, body=None, tenant=None, sub=None, claims=None,
                  kfind=None, kwrite=None, kget=None, ai=None, call=None, kbatch=None,
-                 fput=None, fget=None):
+                 fput=None, fget=None, ffetch=None):
         self.body = body or {}
         self.tenant = tenant
         self.sub = sub
         self.claims = claims or {}
         self._kfind, self._kwrite, self._kget = kfind, kwrite, kget
         self._ai, self._call, self._kbatch = ai, call, kbatch
-        self._fput, self._fget = fput, fget
+        self._fput, self._fget, self._ffetch = fput, fget, ffetch
 
     # --- adapters ---------------------------------------------------------------
     @classmethod
@@ -100,24 +101,31 @@ class Ctx:
                    kfind=lambda s: hc["kfind"](s), kwrite=_host_kwrite(hc["kwrite"]),
                    kget=lambda i, _s=None: hc.get("kget", lambda _x: None)(i),
                    ai=hc.get("ai_complete"), call=hc.get("call"),
-                   fput=hc.get("file_put"), fget=hc.get("file_get"))
+                   fput=hc.get("file_put"), fget=hc.get("file_get"), ffetch=hc.get("fetch"))
 
     @classmethod
-    def in_memory(cls, store=None, tenant="you-dev", body=None):
-        """A dict-backed ctx for `aos test` — the whole surface (facts/get/write/write_many)
-        against an in-process registry, no live services. Same code path a driver runs live."""
+    def in_memory(cls, store=None, tenant="you-dev", body=None, fetches=None):
+        """A dict-backed ctx for `aos test` — the whole surface (facts/get/write/write_many/file)
+        against an in-process registry, no live services. Same code path a driver runs live.
+        `fetches` supplies egress responses offline: a dict url→{status,body,headers} or a callable
+        (url, method, body, inject)→that dict — so a fetch driver is testable without network or fabrication."""
         store = store if store is not None else {}
         blobs = {}                                  # content-addressed blob store — same seam a driver runs live
         def _fput(b):
             fid = "sha2-256:" + hashlib.sha256(b).hexdigest()   # digest IS the id (write-once + dedup)
             blobs[fid] = b
             return fid
+        def _ffetch(url, method, body_, inject, headers):
+            r = fetches(url, method, body_, inject) if callable(fetches) else (fetches or {}).get(url)
+            if r is None:
+                raise Reject(f"ctx.fetch: no offline fixture for {url} (seed Ctx.in_memory(fetches=...) in your test)")
+            return r
         cx = cls(body=body, tenant=tenant,
                  kfind=lambda s: [o for o in store.values() if o.get("schema") == s],
                  kwrite=lambda i, o, **_env: store.__setitem__(i, o),
                  kget=lambda i, s=None: store.get(i),
                  kbatch=lambda entries, asserted_at=None: [store.__setitem__(o["id"], o) for o, _vt in entries],
-                 fput=_fput, fget=lambda i: blobs.get(i))
+                 fput=_fput, fget=lambda i: blobs.get(i), ffetch=_ffetch)
         cx._store = store
         cx._blobs = blobs
         return cx
@@ -210,6 +218,21 @@ class Ctx:
         `aos test` (in-memory). Using it derives the meta `files: [put|get]` declaration."""
         return _FileAPI(self)
 
+    def fetch(self, url, method="GET", body=None, inject=None, headers=None):
+        """Brokered external EGRESS — the ONE way a confined component reaches an outside host when a
+        secret must stay hidden. The broker checks this run's declared egress + rate limit, injects the
+        named secret + declared User-Agent/auth SERVER-SIDE, and audits the call; the component never sees
+        the key. `inject` names the secret ("FIRMS_MAP_KEY" or {"name": ...}). Returns a FetchResult
+        (.status/.ok/.body/.json()/.headers). Public/keyless egress can still use plain urllib directly."""
+        if self._ffetch is None:
+            raise Reject("ctx.fetch unavailable in this runtime (no brokered-egress capability)")
+        inj = {"name": inject} if isinstance(inject, str) else (inject or None)
+        host = url.split("://", 1)[-1].split("/", 1)[0].split("@")[-1].split(":")[0]
+        if host:
+            EGRESS.add(host)                       # observed egress host (declared rate/UA/auth live in meta.egress)
+        r = self._ffetch(url, method, body, inj, headers) or {}
+        return FetchResult(r.get("upstream_status"), r.get("body"), r.get("headers"))
+
     def ai(self, messages, max_tokens=900):
         if not self._ai:
             raise Reject("ai() unavailable in this runtime")
@@ -286,6 +309,25 @@ class _FileAPI:
         if self._cx._fget is None:
             raise Reject("ctx.file.get unavailable in this runtime (no filestore capability)")
         return self._cx._fget(fid)
+
+
+class FetchResult:
+    """The result of ctx.fetch — the broker's {upstream_status, body, headers} in an ergonomic shape.
+    body is the raw response text; .json() parses it; .ok is a 2xx check."""
+    def __init__(self, status, body, headers=None):
+        self.status = status
+        self.body = body or ""
+        self.headers = headers or {}
+
+    @property
+    def ok(self):
+        return 200 <= (self.status or 0) < 300
+
+    def json(self):
+        return json.loads(self.body or "null")
+
+    def __repr__(self):
+        return f"<FetchResult {self.status} {len(self.body)}B>"
 
 
 def _valid_period(vfrom, vto):
@@ -372,9 +414,20 @@ def _broker_ctx(_req, body):
     def fget(fid):  # broker filestore GET: the digest IS the read capability → raw bytes back
         return base64.b64decode((_req("POST", "/v1/file/get", {"id": fid}) or {}).get("content_b64") or "")
 
+    def ffetch(url, method, body_, inject, headers):
+        """Brokered EGRESS: the broker resolves this run's declared egress + rate limit, injects the named
+        secret + declared User-Agent/auth SERVER-SIDE, and audits to prov.egress. The component never sees
+        the key. Returns the raw {upstream_status, body, headers} dict."""
+        payload = {"url": url, "method": (method or "GET").upper()}
+        if body_ is not None:
+            payload["body"] = body_
+        if inject:
+            payload["inject"] = inject          # {"name": "<secret>"} — broker injects; component never sees the value
+        return _req("POST", "/v1/fetch", payload) or {}
+
     tenant = (_req("GET", "/v1/context") or {}).get("tenant") if body is None else None
     return Ctx(body=body, tenant=tenant, kfind=kfind, kwrite=kwrite, kget=kget, kbatch=kbatch,
-               ai=ai, fput=fput, fget=fget)
+               ai=ai, fput=fput, fget=fget, ffetch=ffetch)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

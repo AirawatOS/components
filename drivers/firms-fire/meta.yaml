@@ -7,7 +7,7 @@
 # the window is a legitimate result (reported, not an error — no fires ≠ failure). Host subprocess.
 component_id: ds:airawat:driver/firms-fire
 kind: driver
-version: 0.1.0
+version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.get/facts/write_many + ctx.fetch (brokered egress)
 provider: ds:airawat:developer
 display_name: Active Fires (NASA FIRMS)
 entrypoint: run.py
