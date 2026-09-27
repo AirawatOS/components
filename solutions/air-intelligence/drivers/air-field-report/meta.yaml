@@ -1,0 +1,11 @@
+# A net-new DRIVER (kind=driver) authored inside the air-intelligence solution project (ADR-0106 build member).
+# The VERIFY step: on-ground confirmation of a flagged air.hotspot → air.field_report, with a content-addressed
+# site photo as evidence (ctx.file). reads/writes/files/scopes are DERIVED by `aos check` from the code.
+component_id: ds:airawatdeveloper:driver/air-field-report
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Air Field Report
+entrypoint: run.py
+confinement_min: L1
+config: [HOTSPOT_REF, PHOTO_FILE, PHOTO_B64, READING_PM25, VERDICT, REPORTER, NOTE, OBSERVED_AT]

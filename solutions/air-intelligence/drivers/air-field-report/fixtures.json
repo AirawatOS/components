@@ -1,0 +1,2 @@
+[{"schema": "air.hotspot", "id": "ds:you-dev:air/hotspot/8a2ab1234567fff-2026-01-05T08",
+  "space": {"h3": "8a2ab1234567fff", "centroid": [77.21, 28.63]}, "severity": "critical", "value": 168.4}]
