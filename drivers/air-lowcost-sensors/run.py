@@ -1,69 +1,51 @@
 #!/usr/bin/env python3
-"""kanpur-idss driver: Kanpur iDSS low-cost sensor network → air.sensor_reading (points).
+"""air-lowcost-sensors driver: an agency iDSS low-cost sensor network → air.sensor_reading (points).
 
-Confined — its only I/O is the kernel broker. The iDSS API is district-scoped and LOGIN-authed: the BROKER
-performs the login (username/password from Vault) and injects the JWT per this driver's egress auth profile,
-so this code never sees the credentials or the token. It fetches sensor metadata + a readings window
-(paginated), joins them, and writes air.sensor_reading. Two modes: LIVE (the most recent reading per sensor
-in the last IDSS_WINDOW_HOURS) or, when AS_OF_DATE=YYYY-MM-DD is set, the DAILY MEAN per sensor for that
-historical day. It writes into whichever tenant RUNS it (broker context) and cells at that tenant's AOI
-resolution — never a hardcoded city. It does NOT fabricate data: if the API is unreachable, auth fails, or
-there are no located sensors it writes nothing and says so (non-zero exit on failure).
+Confined — its only I/O is the kernel broker. The iDSS vendor API is district-scoped and LOGIN-authed: the
+BROKER performs the login (username/password from Vault) and injects the JWT per this driver's egress AUTH
+PROFILE, so this code never sees the credentials or the token. It fetches sensor metadata + a readings window
+(paginated), joins them, and writes air.sensor_reading. Two modes: LIVE (the most recent reading per sensor in
+the last IDSS_WINDOW_HOURS) or, when AS_OF_DATE=YYYY-MM-DD is set, the DAILY MEAN per sensor for that historical
+day. It writes into whichever tenant RUNS it (broker context) and cells at that tenant's AOI resolution — the
+vendor district is configuration (IDSS_DISTRICT), never a hardcoded city. It does NOT fabricate data: if the API
+is unreachable, auth fails, or there are no located sensors it writes nothing and says so (non-zero on failure).
+
+aos SDK: registry I/O (tenant resolution, space.aoi reads, air.sensor_reading writes) is the SDK's ctx, and the
+iDSS egress goes through ctx.fetch — the SDK's brokered-egress seam — so the broker applies this driver's
+declared egress AUTH PROFILE (login → JWT) server-side and the component never holds the credentials/token.
 """
-import json, os, re, urllib.request, urllib.parse, urllib.error
+import json, os, re, urllib.parse
 from datetime import datetime, timedelta, timezone
-import h3
+from aos import driver, ctx, Reject
 
-API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
-TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "")      # explicit AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
-IDSS = os.environ.get("IDSS_BASE", "http://13.205.88.131:3001")
-DISTRICT = os.environ.get("IDSS_DISTRICT", "uttar-pradesh-kanpur")
-WINDOW_H = int(os.environ.get("IDSS_WINDOW_HOURS", "6"))
-AS_OF = os.environ.get("AS_OF_DATE", "").strip()          # YYYY-MM-DD: that whole day's REAL readings (daily mean/sensor)
-PM_MAX = float(os.environ.get("PM_MAX_PLAUSIBLE", "985"))  # low-cost sensors emit 0 (offline) / 999,1000 (out-of-range) as
-_PARAMS = ("pm25", "no2", "o3")                            # faults — reject them (QC, not fabrication) so a dead sensor
-                                                          # never becomes a false hotspot. Real extreme days stay <985.
+CID = "ds:airawatdeveloper:driver/air-lowcost-sensors"
+_PARAMS = ("pm25", "no2", "o3")
 
 
-def _ok(param, v):
+def _ok(param, v, pm_max):
     """A plausible ambient reading — drops device faults (offline 0, sentinel 999/1000)."""
     if v is None:
         return False
-    if param in ("pm25", "pm10") and (v <= 0 or v >= PM_MAX):
+    if param in ("pm25", "pm10") and (v <= 0 or v >= pm_max):
         return False
     return True
 
 
-def _call(path, body):
-    req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "X-Run-Token": TOKEN}, method="POST")
-    return json.loads(urllib.request.urlopen(req, timeout=40).read())
-
-
 def _fetch(url):
-    """Brokered GET — the broker logs in + injects the iDSS bearer (auth profile). Returns (status, json|None).
-    A broker/vendor error (e.g. 403 when no IDSS credentials are bound) is returned as a code, not a crash."""
+    """Brokered GET via ctx.fetch — the broker logs in + injects the vendor bearer (this driver's egress AUTH
+    PROFILE), so this code never sees the credentials/token. Returns (status, json|None); a broker/vendor error
+    (e.g. 403 when no iDSS credentials are bound) comes back as a code, not a crash."""
     try:
-        r = _call("/v1/fetch", {"url": url})
-    except urllib.error.HTTPError as e:
-        return e.code, None
-    st = r.get("upstream_status")
-    if st == 200:
+        r = ctx.fetch(url)                       # method defaults GET; auth profile applied broker-side per host
+    except Reject as e:
+        print(f"[air-lowcost-sensors] brokered egress failed: {e}")
+        return 0, None
+    if r.status == 200:
         try:
-            return 200, json.loads(r.get("body") or "{}")
+            return 200, r.json()
         except Exception:
             return 200, None
-    return st, None
-
-
-def _tenant():
-    """This run's tenant (broker context) — the driver writes into whoever runs it, never kmc."""
-    try:
-        req = urllib.request.Request(API + "/v1/context", headers={"X-Run-Token": TOKEN})
-        return (json.loads(urllib.request.urlopen(req, timeout=20).read()) or {}).get("tenant")
-    except Exception:
-        return None
+    return r.status, None
 
 
 def _slug(s):
@@ -77,14 +59,27 @@ def _isoz(ts):
         return ts
 
 
-def main():
-    T = _tenant()
+@driver.main
+def run():
+    import h3                                    # lazy (heavy dep) — keeps import-time clean for aos check
+    AOI_ID = os.environ.get("AOI_ID", "")      # explicit AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
+    IDSS = os.environ.get("IDSS_BASE", "http://13.205.88.131:3001")
+    DISTRICT = os.environ.get("IDSS_DISTRICT", "").strip()   # the vendor district id — configuration, no hardcoded city
+    WINDOW_H = int(os.environ.get("IDSS_WINDOW_HOURS", "6"))
+    AS_OF = os.environ.get("AS_OF_DATE", "").strip()          # YYYY-MM-DD: that whole day's REAL readings (daily mean/sensor)
+    PM_MAX = float(os.environ.get("PM_MAX_PLAUSIBLE", "985"))  # low-cost sensors emit 0 (offline) / 999,1000 (out-of-range) as
+                                                              # faults — reject them (QC, not fabrication) so a dead sensor
+                                                              # never becomes a false hotspot. Real extreme days stay <985.
+    if not DISTRICT:
+        print("FAIL: IDSS_DISTRICT not set — this connector needs the vendor district id (no hardcoded city)."); return 1
+
+    T = ctx.tenant                                            # this run's tenant (broker context) — writes into whoever runs it
     if not T:
         print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
     if AOI_ID:                                              # explicit AOI (must belong to this tenant)
-        aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+        aoi = ctx.get(AOI_ID, "space.aoi")
     else:                                                  # discover the tenant's largest AOI (no hardcoded city)
-        rows = _call("/v1/query", {"scope": "space.aoi", "limit": 500}).get("results", [])
+        rows = ctx.facts("space.aoi").list()
         mine = [(r.get("object") or r) for r in rows
                 if str((r.get("object") or r).get("id", "")).startswith(f"ds:{T}:")
                 and len((r.get("object") or r).get("bbox") or []) == 4]
@@ -137,7 +132,7 @@ def main():
             for f in _PARAMS:
                 try: v = float(rd.get(f)) if rd.get(f) is not None else None
                 except (TypeError, ValueError): v = None
-                if _ok(f, v):
+                if _ok(f, v, PM_MAX):
                     agg.setdefault(sid, {}).setdefault(f, []).append(v)
         per_sensor = {sid: ({f: round(sum(xs) / len(xs), 1) for f, xs in d.items() if xs},
                             f"{AS_OF}T12:00:00Z") for sid, d in agg.items()}
@@ -155,11 +150,11 @@ def main():
             for f in _PARAMS:
                 try: v = float(rd.get(f)) if rd.get(f) is not None else None
                 except (TypeError, ValueError): v = None
-                if _ok(f, v):
+                if _ok(f, v, PM_MAX):
                     vals[f] = v
             per_sensor[sid] = (vals, _isoz(rd["timestamp"]))
 
-    written = 0
+    facts = []
     for sid, (vals, obs) in per_sensor.items():
         if "pm25" not in vals:                             # need a PM2.5 to be useful downstream
             continue
@@ -170,17 +165,16 @@ def main():
         fact = {"schema": "air.sensor_reading", "id": rid, "sensor_id": stn,
                 "space": {"h3": cell, "res": res, "centroid": [round(loc["lng"], 5), round(loc["lat"], 5)]},
                 **vals, "observed_at": obs, "source": "idss",
-                "prov": {"method": "idss.v1", "component": "ds:airawat:driver/kanpur-idss",
-                         "station": loc.get("name") or sid}}
-        _call("/v1/write", {"scope": "air.sensor_reading", "id": rid, "object": fact,   # asserted_at = write time (not the reading time)
-                            "valid_time": {"from": obs}, "asserted_at": _isoz(datetime.now(timezone.utc))})
-        written += 1
+                "prov": {"method": "idss.v1", "component": CID, "station": loc.get("name") or sid}}
+        facts.append((fact, obs))
+    # bitemporal: each reading's validity is pinned to its own observation time (valid_from), one batched round-trip
+    written = ctx.write_many([f for f, _ in facts], valid_from_field="observed_at") if facts else 0
 
     mode = f"AS_OF {AS_OF} (daily mean)" if AS_OF else f"live {WINDOW_H}h (latest/sensor)"
-    print(f"ingested {written} REAL air.sensor_reading points from Kanpur iDSS [{mode}] "
+    print(f"ingested {written} REAL air.sensor_reading points from iDSS district '{DISTRICT}' [{mode}] "
           f"into tenant '{T}' @res{res} ({len(sensors)} located sensors, {len(rows)} readings)")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(driver.run())

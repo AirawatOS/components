@@ -9,7 +9,7 @@ entrypoint: run.py
 summary: "Give the city a live, hyperlocal air-quality picture and flag pollution hotspots so officials can target enforcement and advisories."
 members:
   - ds:airawat:driver/air-sensors
-  - ds:airawat:driver/kanpur-idss
+  - ds:airawatdeveloper:driver/air-lowcost-sensors
   - ds:airawat:engine/station-interpolation
   - ds:airawat:engine/hotspot-detection
   - ds:airawat:skill/air-quality-advisory

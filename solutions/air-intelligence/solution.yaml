@@ -1,0 +1,27 @@
+# Air Intelligence v0.2.0 (ADR-0106 manifest) — the full sense→decide→act→verify→measure loop for
+# hyperlocal air quality, authored on the aos SDK and deployed into a dev tenant with `aos deploy --sandbox`.
+# Supersedes the legacy meta.yaml members list. Inline lists/maps so it parses with or without PyYAML.
+#
+# ADR-0094: air-specific software is stewarded by the DEVELOPER participant (ds:airawatdeveloper:*), never by
+# airawat (Network Admin). Shared platform engines/apps (decision-router, inbox) are reused, not re-homed.
+solution: air-intelligence
+environment: development
+
+# New governed noun for Slice C (field verification of a flagged hotspot). air.hotspot / air.quality /
+# governance.recommendation already exist (ADR-0073 + the decision spine).
+schemas: [{id: air.field_report, x-kind: measure}]
+roles: [air.enforcement-officer]
+
+# PINNED members (ADR-0098 lockfile — exact versions → reproducible). reuse = published components this
+# solution installs (the air-specific spine re-homed to ds:airawatdeveloper:* at 0.2.0 in Slice A; shared
+# platform components keep their own id). build = net-new components authored inside this project (Slices B/C).
+members: {reuse: [ds:airawatdeveloper:driver/air-sensors@0.2.0, ds:airawatdeveloper:driver/air-lowcost-sensors@0.2.0, ds:airawatdeveloper:engine/station-interpolation@0.2.0, ds:airawatdeveloper:engine/hotspot-detection@0.2.0, ds:airawatdeveloper:skill/air-quality-advisory@0.2.0, ds:airawatdeveloper:app/air-explorer@0.2.0, ds:airawatdeveloper:engine/decision-router@0.1.0, ds:airawatdeveloper:engine/effectiveness-engine-aos@0.1.0, ds:airawat:app/inbox@0.1.0], build: [engines/air-recommendation-expert, drivers/air-field-report]}
+
+# The decision loop as governed automation (ADR-0063 subscriptions name a governed verb):
+#   air.hotspot written → air-recommendation-expert turns it into a cited governance.recommendation
+#   governance.recommendation written → decision-router opens a role-addressed action in the Inbox
+subscriptions: [{on: air.hotspot, do: air.recommend}, {on: governance.recommendation, do: decision.route}]
+
+viz_layers: [air.hotspot, governance.recommendation, air.field_report]
+decider: air.enforcement-officer
+contributions: []
