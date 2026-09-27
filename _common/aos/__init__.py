@@ -83,7 +83,7 @@ class Query:
 class Ctx:
     def __init__(self, *, body=None, tenant=None, sub=None, claims=None,
                  kfind=None, kwrite=None, kget=None, ai=None, call=None, kbatch=None,
-                 fput=None, fget=None, ffetch=None):
+                 fput=None, fget=None, ffetch=None, caps=None):
         self.body = body or {}
         self.tenant = tenant
         self.sub = sub
@@ -91,6 +91,7 @@ class Ctx:
         self._kfind, self._kwrite, self._kget = kfind, kwrite, kget
         self._ai, self._call, self._kbatch = ai, call, kbatch
         self._fput, self._fget, self._ffetch = fput, fget, ffetch
+        self._caps = caps or {}          # host-only capabilities (kfind_x, http, network_url, embed, …)
 
     # --- adapters ---------------------------------------------------------------
     @classmethod
@@ -101,7 +102,10 @@ class Ctx:
                    kfind=lambda s: hc["kfind"](s), kwrite=_host_kwrite(hc["kwrite"]),
                    kget=lambda i, _s=None: hc.get("kget", lambda _x: None)(i),
                    ai=hc.get("ai_complete"), call=hc.get("call"),
-                   fput=hc.get("file_put"), fget=hc.get("file_get"), ffetch=hc.get("fetch"))
+                   fput=hc.get("file_put"), fget=hc.get("file_get"), ffetch=hc.get("fetch"),
+                   caps={k: hc[k] for k in ("kfind_x", "http", "network_url", "kernel_url", "embed",
+                                            "embed_url", "ensure_install", "federate", "remote_status",
+                                            "provision_login", "token") if k in hc})
 
     @classmethod
     def in_memory(cls, store=None, tenant="you-dev", body=None, fetches=None):
@@ -125,7 +129,9 @@ class Ctx:
                  kwrite=lambda i, o, **_env: store.__setitem__(i, o),
                  kget=lambda i, s=None: store.get(i),
                  kbatch=lambda entries, asserted_at=None: [store.__setitem__(o["id"], o) for o, _vt in entries],
-                 fput=_fput, fget=lambda i: blobs.get(i), ffetch=_ffetch)
+                 fput=_fput, fget=lambda i: blobs.get(i), ffetch=_ffetch,
+                 caps={"kfind_x": lambda schema, target, where=None:      # cross-tenant read, testable offline
+                       [o for o in store.values() if o.get("schema") == schema and o.get("tenant") == target]})
         cx._store = store
         cx._blobs = blobs
         return cx
@@ -242,6 +248,54 @@ class Ctx:
         if not self._call:
             raise Reject("call() unavailable in this runtime")
         return self._call(engine_id, verb, payload)
+
+    # ── host-only capabilities (in-process engines): cross-tenant reads, network/model gateways, install,
+    #    federation. Confined drivers (broker/headless) do NOT get these — each raises a clear Reject. ──
+    def _cap(self, name):
+        c = self._caps.get(name)
+        if c is None:
+            raise Reject(f"ctx.{name} is a host capability (in-process engine only) — unavailable in this runtime")
+        return c
+
+    def facts_x(self, schema, tenant, where=None):
+        """AGGREGATOR cross-tenant READ (ADR-0072): resolve ANOTHER tenant's rows of `schema` via THIS engine's
+        own cross-tenant grant — the lane a program engine uses to read many agencies' data. Records a READ."""
+        READS.add(schema)
+        return Query(self._cap("kfind_x")(schema, tenant, where) or [], schema)
+
+    def http(self, method, url, payload=None, token=None, headers=None):
+        """Host-held HTTP to a platform service (network/kernel/model gateway). Engines call other services this
+        way rather than hand-rolling urllib; use ctx.network_url / ctx.kernel_url to build the URL."""
+        return self._cap("http")(method, url, payload, token, headers)
+
+    @property
+    def network_url(self):
+        return self._caps.get("network_url")
+
+    @property
+    def kernel_url(self):
+        return self._caps.get("kernel_url")
+
+    def embed(self, texts, kind="query"):
+        """Embed text via the host model gateway (RAG engines) — the gateway URL stays host-side."""
+        return self._cap("embed")(texts, kind)
+
+    def ensure_install(self, component_id):
+        """Register a per-tenant install-as-grant (mints the scheduler's run-token) — e.g. a self-serve toggle."""
+        return self._cap("ensure_install")(component_id)
+
+    def federate(self, provider, workflow, title, payload, parent_case):
+        """ADR-0097 W2: open a graph node's leg in a PROVIDER tenant under its own authority (host mints the token)."""
+        return self._cap("federate")(provider, workflow, title, payload, parent_case)
+
+    def remote_status(self, provider, remote_case):
+        """Read a federated leg's status back (cross-tenant, host-held provider token)."""
+        return self._cap("remote_status")(provider, remote_case)
+
+    def can(self, capability):
+        """True if this runtime grants a host-only capability (e.g. 'kfind_x', 'http', 'federate').
+        Lets a component take the own-tenant / degraded path cleanly instead of catching Reject."""
+        return capability in self._caps
 
     def now(self):
         return now()
