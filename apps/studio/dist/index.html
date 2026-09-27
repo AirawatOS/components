@@ -658,17 +658,23 @@ async function specsBrowser(){
     .seg button.on{background:var(--accent);color:#fff}
     #specq{flex:1;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--surface,transparent);color:inherit}
     #sdet mark{background:var(--accent);color:#fff;border-radius:2px;padding:0 1px}
+    #sdet pre{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:4px 0 0}
     .xitem:hover{background:var(--line)}
   </style>
-  <h3>📐 Network Specifications</h3>
-  <div class="sub">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Search a name, or a <b>field</b> like “threshold” to find every spec that carries it.</div>
-  <div class="row" style="gap:8px;margin:8px 0;align-items:center">
+  <h3 style="margin:0 0 2px">📐 Network Specifications</h3>
+  <div class="sub" style="flex:0 0 auto">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Search a name, or a <b>field</b> like “threshold” to find every spec that carries it.</div>
+  <div style="display:flex;gap:8px;margin:8px 0;align-items:center;flex:0 0 auto">
     <input id="specq" placeholder="Search nouns, verbs, or a field (e.g. threshold)…" autocomplete="off">
     <div id="seg" class="seg"><button data-k="all" class="on">All</button><button data-k="noun">📄 Nouns</button><button data-k="verb">⚡ Verbs</button></div>
   </div>
-  <div class="row" style="gap:10px"><div id="slist" style="flex:1;max-height:50vh;overflow:auto;border-right:1px solid var(--line);padding-right:8px">loading…</div>
-  <div id="sdet" style="flex:1.4;max-height:50vh;overflow:auto"><div class="sub">Select a noun or verb — or search a field to see where it appears.</div></div></div>
-  <div style="text-align:right;margin-top:8px"><button class="btn" id="x">Close</button></div>`);
+  <div style="display:flex;gap:0;flex:1 1 auto;min-height:0;flex-wrap:nowrap;align-items:stretch">
+    <div id="slist" style="flex:0 0 38%;min-height:0;overflow:auto;border-right:1px solid var(--line);padding-right:10px">loading…</div>
+    <div id="sdet" style="flex:1 1 auto;min-height:0;overflow:auto;padding-left:12px"><div class="sub">Select a noun or verb — or search a field to see where it appears.</div></div>
+  </div>
+  <div style="text-align:right;margin-top:10px;flex:0 0 auto"><button class="btn" id="x">Close</button></div>`);
+  // Widen the shared .sheet for this browser + make ONLY the panes scroll (no double-scroll).
+  const _sheet = m.q('.sheet');
+  if (_sheet) _sheet.style.cssText += ';width:1080px;max-width:96vw;height:84vh;display:flex;flex-direction:column;overflow:hidden';
   m.q('#x').onclick=m.close;
   let d={schemas:[],pending:[]}; try{d=await post('/bridge/schemas',{});}catch(e){}
   let ifs=[]; try{ifs=(await post('/bridge/interfaces',{})).interfaces||[];}catch(e){}
@@ -715,7 +721,7 @@ async function specsBrowser(){
     m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">${ic} ${esc(id)} <span class="sub">v${esc(r.version||'')}</span></h4>
       <div class="sub">${meta}</div>${mi}
       <div class="sub" style="margin-top:6px">definition</div>
-      <pre style="max-height:38vh;overflow:auto;font-size:12px">${pre}</pre>`;
+      <pre>${pre}</pre>`;
   }
 
   m.q('#seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
