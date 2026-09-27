@@ -83,7 +83,7 @@ def _base_meta(dirpath, args):
                 if k in ("component_id", "kind", "version", "provider", "display_name",
                          "entrypoint", "confinement_min"):
                     base[k] = v
-                elif k in ("reads", "writes") and v.startswith("[") and v.endswith("]"):
+                elif k in ("reads", "writes", "files") and v.startswith("[") and v.endswith("]"):
                     base[k] = [x.strip() for x in v[1:-1].split(",") if x.strip()]
     base.setdefault("component_id", getattr(args, "id", None) or f"ds:airawatdeveloper:{base['kind']}/{os.path.basename(os.path.abspath(dirpath))}")
     if base["kind"] == "driver":

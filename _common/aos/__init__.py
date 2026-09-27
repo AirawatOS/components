@@ -29,7 +29,7 @@ import os, json, time, base64, hashlib, contextvars, urllib.request, urllib.erro
 __all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now"]
 
 # ── observed vocabulary (populated at runtime by Ctx; consumed by aos.meta.derive) ──
-# READS/WRITES → scopes; FILES (put/get) → the `filestore` capability the runtime must grant.
+# READS/WRITES → scopes; FILES (put/get) → the meta `files:` declaration the runtime reads to grant the blob store.
 READS, WRITES, FILES = set(), set(), set()
 
 
@@ -195,7 +195,7 @@ class Ctx:
         """The filestore surface — `ctx.file.put(bytes|str) → id`, `ctx.file.get(id) → bytes`.
         Content-addressed (the id IS the sha2-256 digest): write-once + dedup, and possessing the
         digest is the read capability. Same code path host (local blob), broker (/v1/file), and
-        `aos test` (in-memory). Using it derives the `filestore` capability into meta."""
+        `aos test` (in-memory). Using it derives the meta `files: [put|get]` declaration."""
         return _FileAPI(self)
 
     def ai(self, messages, max_tokens=900):
@@ -256,8 +256,8 @@ class Ctx:
 
 class _FileAPI:
     """`ctx.file` — the content-addressed blob surface. Bound per-invocation to the runtime's
-    put/get callables (host local-blob / broker /v1/file / in-memory). Every call records the
-    `filestore` capability so `aos check` derives it into meta (never hand-declared)."""
+    put/get callables (host local-blob / broker /v1/file / in-memory). Every call records into
+    FILES so meta derives `files: [put|get]` (never hand-declared)."""
     def __init__(self, cx):
         self._cx = cx
 

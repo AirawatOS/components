@@ -30,12 +30,11 @@ def derive(base):
     # scopes are DERIVED, never hand-written (kills the reads/writes↔scopes duplication)
     meta["scopes"] = ([{"verb": "read", "scope": r} for r in reads] +
                       [{"verb": "write", "scope": w} for w in writes])
-    # capabilities the runtime must grant beyond registry scopes (filestore, …) — also DERIVED from the code
-    caps = set(base.get("capabilities") or [])
-    if FILES:
-        caps.add("filestore")
-    if caps:
-        meta["capabilities"] = sorted(caps)
+    # filestore use is DERIVED too — matches the platform's existing `files: [put|get]` meta convention
+    # (e.g. doc-acquire), so the runtime grants the blob capability without a hand-maintained declaration.
+    files = set(base.get("files") or []) | FILES
+    if files:
+        meta["files"] = sorted(files)
     return meta
 
 
@@ -73,7 +72,7 @@ def validate(meta):
 def to_yaml(meta):
     """Minimal deterministic YAML emit (enough for the canonical fields; no external dep)."""
     lines, order = [], ["component_id", "kind", "version", "provider", "display_name",
-                        "implements", "verbs", "reads", "writes", "scopes", "capabilities"]
+                        "implements", "verbs", "reads", "writes", "scopes", "files"]
     for k in order + [x for x in meta if x not in order]:
         if k not in meta:
             continue

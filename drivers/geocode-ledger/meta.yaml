@@ -3,13 +3,14 @@
 # through the broker; an unresolved address is left WITHOUT a point (never guessed). Confined — only I/O is the broker.
 component_id: ds:airawat:driver/geocode-ledger
 kind: driver
-version: 0.1.0
+version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.facts/write + ctx.file.get (ledger blob)
 provider: ds:airawat:developer
 display_name: Geocode Ledger
 entrypoint: run.py
 confinement_min: L1
 reads: [tax.assessment]
 writes: [tax.assessment]
+files: [get]                     # reads the optional ledger CSV blob from the filestore (ctx.file.get)
 egress:
   - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/geocode-ledger (+https://airawat.org; manishsv@gmail.com)" }
 config: [CITY_HINT, MAX, GEOCODER_URL]

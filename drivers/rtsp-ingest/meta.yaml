@@ -22,7 +22,7 @@
 #      open, not L2 as such.
 component_id: ds:airawatdeveloper:driver/rtsp-ingest
 kind: driver
-version: 0.1.0
+version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.facts/get/write + ctx.file.put
 provider: ds:airawatdeveloper:developer
 display_name: RTSP Camera Ingest
 entrypoint: run.py
@@ -34,6 +34,7 @@ runtime:
   profile: media          # components/runtimes/media — the image that carries ffmpeg
 reads: [device.camera, media.frame]
 writes: [media.frame, device.stream_health]
+files: [put]                     # stores the captured JPEG in the content-addressed filestore (ctx.file.put)
 # CAMERA_ID limits a run to one camera; otherwise every enabled device.camera this run can read.
 config: [CAMERA_ID, FFMPEG_BIN, FRAME_QUALITY, FFMPEG_TIMEOUT_S]
 scopes:

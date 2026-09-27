@@ -6,7 +6,7 @@
 # extracts/chunks — that's the S3 engine reading this doc's blob.
 component_id: ds:airawat:driver/doc-acquire
 kind: driver
-version: 0.1.0
+version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.write + ctx.file.put (filestore via the SDK)
 provider: ds:airawat:developer
 display_name: Document Acquire
 entrypoint: run.py

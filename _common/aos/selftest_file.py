@@ -59,8 +59,8 @@ print("[meta derivation]")
 check("FILES tracker recorded put+get", aos.FILES == {"put", "get"})
 from aos import meta as ameta
 m = ameta.derive({"component_id": "ds:acme:driver/blobby", "kind": "driver", "version": "0.1.0", "provider": "acme"})
-check("meta.capabilities == [filestore]", m.get("capabilities") == ["filestore"])
-check("to_yaml emits capabilities", "capabilities: [filestore]" in ameta.to_yaml(m))
+check("meta.files == [get, put] (platform files: convention)", m.get("files") == ["get", "put"])
+check("to_yaml emits files", "files: [get, put]" in ameta.to_yaml(m))
 
 # ── 4. a driver using ctx.file runs end-to-end under run_local (the live code path) ──
 print("[driver run_local]")
