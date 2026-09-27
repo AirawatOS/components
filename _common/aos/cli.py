@@ -199,6 +199,12 @@ def cmd_deploy(args):
     for step, ref in rep["steps"]:
         print(f"   • {step}: {ref}")
     print(f"   ▸ {rep['marking']['badge']['label']} · open {rep['open'][0]}")
+    _pinned = {c: v for c, v in (rep.get("pins") or {}).items() if v}
+    if _pinned:
+        print(f"   ⇈ pinned: {', '.join(f'{c}@{v}' for c, v in sorted(_pinned.items()))}")
+    if rep.get("unpinned"):
+        print(f"   ⚠ unpinned reuse (floats to LATEST until pinned): {', '.join(sorted(rep['unpinned']))}")
+        print("     → pin them as name@x.y.z in solution.yaml for a reproducible bundle (ADR-0098).")
     if args.live:
         print("✓ whole solution stood up LIVE in the dev tenant over the dev-token "
               "(govern auto-approved · certified · installed · seeded — all confined to development).")

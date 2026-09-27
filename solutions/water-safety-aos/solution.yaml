@@ -7,7 +7,9 @@ environment: development
 schemas: [{id: risk.flood, x-kind: measure}, {id: risk.exposure, x-kind: measure}]
 roles: [water.duty-officer]
 workflow: workflow.graph.yaml
-members: {reuse: [lifecycle-engine, decision-router, effectiveness-engine-aos], build: [engines/infer]}
+# reuse members are PINNED (name@x.y.z) — ADR-0098 lockfile: the bundle records exact versions so it is
+# reproducible; an unpinned reuse member floats to latest (aos deploy warns). build members are your own.
+members: {reuse: [lifecycle-engine@0.1.0, decision-router@0.1.0, effectiveness-engine-aos@0.1.0], build: [engines/infer]}
 viz_layers: [risk.flood, risk.exposure]
 decider: water.duty-officer
 subscriptions: [{on: governance.recommendation, do: decision.route}]

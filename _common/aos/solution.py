@@ -215,7 +215,13 @@ class BrokerBackend:
 
     def compose_install(self, solution_name, members, tenant, environment):
         sid = f"ds:{tenant}:solution/{solution_name}"
-        mids = [_canon_member(m, tenant) for m in members]   # bare names → dev-scoped component ids
+        # ADR-0098 pin: carry each member's pinned version into the SIGNED bundle so the declaration is a
+        # reproducible lockfile. Unpinned members serialize as a bare id (resolves latest until the ADR-0098
+        # runtime honours the pin at install/materialize).
+        mids = []
+        for m in members:
+            cid, ver = _member_id_ver(m, tenant)
+            mids.append({"component_id": cid, "version": ver} if ver else {"component_id": cid})
         # register the signed bundle (network), then install the ADR-0075 closure into the dev tenant —
         # ONE tenant-admin approval grants writes for every member (the developer is admin of their own tenant).
         self._net(self.net + "/v1/solutions",
@@ -329,6 +335,10 @@ class Deployer:
         sid = self.b.compose_install(sol.name, members, tenant, env)
         rep["solution_id"] = sid
         rep["steps"].append(("install", sid))
+        # ADR-0098 pin visibility: record resolved pins + flag REUSE members left unpinned (they belong to
+        # another steward and will float to latest until the pin is honoured at install/materialize).
+        rep["pins"] = {_member_id_ver(m, tenant)[0]: _member_id_ver(m, tenant)[1] for m in members}
+        rep["unpinned"] = [_member_id_ver(m, tenant)[0] for m in sol.reuse if not _member_id_ver(m, tenant)[1]]
 
         # 4) seed viz.layers, contributions, decider wiring
         for layer in sol.viz_layers:
@@ -386,10 +396,26 @@ def _dev_scope(schema_id, tenant):
     return f"ds:{tenant}:vocab/{schema_id}"
 
 
+_VER = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def _split_ver(ref):
+    """Split a possibly-pinned member ref into (base, version|None). Accepts `name@1.2.3`,
+    `engines/infer@1.2.3`, `ds:t:engine/x@1.2.3` — the version is the trailing `@x.y.z`."""
+    s = str(ref)
+    if "@" in s:
+        base, ver = s.rsplit("@", 1)
+        if _VER.match(ver):
+            return base, ver
+    return s, None
+
+
 def _canon_member(ref, tenant):
-    """Canonicalize a `build` member reference to a dev-scoped component id the network can
-    steward-check: `engines/infer` → `ds:<tenant>:engine/infer`. An already-qualified `ds:…` id
-    passes through. The kind dir is singularized (`engines`→`engine`, `apps`→`app`)."""
+    """Canonicalize a member reference to a dev-scoped component id the network can steward-check:
+    `engines/infer` → `ds:<tenant>:engine/infer`; a pinned `lifecycle-engine@0.1.0` → the bare cid
+    (the version is carried separately, see _member_id_ver). An already-qualified `ds:…` id passes
+    through. The kind dir is singularized (`engines`→`engine`, `apps`→`app`)."""
+    ref, _ = _split_ver(ref)
     if isinstance(ref, str) and ref.startswith("ds:"):
         return ref
     parts = str(ref).strip("/").split("/")
@@ -398,6 +424,14 @@ def _canon_member(ref, tenant):
     kind = {"engines": "engine", "drivers": "driver", "apps": "app", "solutions": "solution",
             "pipelines": "pipeline", "agents": "agent"}.get(kind, kind.rstrip("s") or "engine")
     return f"ds:{tenant}:{kind}/{name}"
+
+
+def _member_id_ver(ref, tenant):
+    """(canonical component id, pinned version | None) for a manifest member — ADR-0098 pin.
+    The version, when present, travels into the signed solution bundle so the declaration is a
+    reproducible lockfile (runtime honoring of the pin is the separate ADR-0098 install work)."""
+    _, ver = _split_ver(ref)
+    return _canon_member(ref, tenant), ver
 
 
 def _synth_definition(entry):
