@@ -1,0 +1,6 @@
+[
+  {"schema": "air.hotspot", "id": "ds:you-dev:air/hotspot/8a2-2026-01-05T08",
+   "space": {"h3": "8a2ab1234567fff", "res": 9, "centroid": [77.21, 28.63]},
+   "severity": "critical", "pollutant": "pm25", "value": 168.4, "threshold": 120.0,
+   "cell_count": 6, "observed_at": "2026-01-05T08:00:00Z", "method": "cpcb-breakpoint-cluster"}
+]

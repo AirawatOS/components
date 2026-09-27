@@ -1,0 +1,10 @@
+# A net-new ENGINE (kind=engine) authored inside the air-intelligence solution project (ADR-0106 build member).
+# The event-driven link that closes the Air Intelligence loop: air.hotspot → governance.recommendation.
+# Fired by the governed subscription {on: air.hotspot, do: air.recommend}. reads/writes/scopes/implements/verbs
+# are DERIVED by `aos check` from the code (the @engine.verb decorator).
+component_id: ds:airawatdeveloper:engine/air-recommendation-expert
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Air Recommendation Expert
+entrypoint: run.py
