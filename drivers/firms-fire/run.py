@@ -18,11 +18,16 @@ days have no nearby fires, especially outside the Oct–Nov burning season) — 
        FIRMS_MAP_KEY (Vault, injected by the broker — the component never sees it)
 """
 import csv, io, json, os
-from aos import driver, ctx
+from aos import driver, ctx, egress
 
 BASE = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{KEY}"
 INJECT = {"name": "FIRMS_MAP_KEY", "as": "template", "placeholder": "{KEY}"}
 SRC = "ds:airawat:ref/source/firms"
+
+# Declared egress → aos derives meta.egress/secrets/sources from THIS (no hand-maintained YAML block).
+egress("firms.modaps.eosdis.nasa.gov", rate_per_min=20,
+       user_agent="AirawatOS/firms-fire (+https://airawat.org; manishsv@gmail.com)",
+       secret="FIRMS_MAP_KEY", provides=["signal.fire"], source_ref=SRC)
 
 
 def resolve_aoi():

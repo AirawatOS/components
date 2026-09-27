@@ -7,7 +7,7 @@ SDK observed at runtime), so a developer never hand-maintains `reads`/`writes`/`
 gate `aos check` runs locally, before the network ever sees the component.
 """
 import re
-from . import engine, READS, WRITES, FILES
+from . import engine, READS, WRITES, FILES, SECRETS, _EGRESS_DECL
 
 _NOUN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")            # <domain>.<subject>
 _CID = re.compile(r"^ds:[a-z0-9-]+:(driver|engine|app|skill|agent|pipeline|solution)/[a-z0-9-]+$")
@@ -35,6 +35,18 @@ def derive(base):
     files = set(base.get("files") or []) | FILES
     if files:
         meta["files"] = sorted(files)
+    # egress / secrets / sources are DERIVED from the code's `aos.egress(...)` declarations + observed ctx.fetch
+    # use — retiring the hand-maintained YAML blocks (the last re-attach-at-certify step).
+    if _EGRESS_DECL:
+        meta["egress"] = [dict({"host": h}, **{k: v for k, v in d.items() if k in ("rate_per_min", "user_agent")})
+                          for h, d in sorted(_EGRESS_DECL.items())]
+        srcs = [{"ref": d["source_ref"], "host": h, "provides": d.get("provides") or []}
+                for h, d in sorted(_EGRESS_DECL.items()) if d.get("source_ref")]
+        if srcs:
+            meta["sources"] = srcs
+    secrets = set(base.get("secrets") or []) | SECRETS
+    if secrets:
+        meta["secrets"] = sorted(secrets)
     return meta
 
 
@@ -72,7 +84,8 @@ def validate(meta):
 def to_yaml(meta):
     """Minimal deterministic YAML emit (enough for the canonical fields; no external dep)."""
     lines, order = [], ["component_id", "kind", "version", "provider", "display_name",
-                        "implements", "verbs", "reads", "writes", "scopes", "files"]
+                        "implements", "verbs", "reads", "writes", "scopes", "files",
+                        "egress", "secrets", "sources"]
     for k in order + [x for x in meta if x not in order]:
         if k not in meta:
             continue

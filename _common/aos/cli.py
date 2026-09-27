@@ -126,6 +126,41 @@ def cmd_check(args):
     print("✓ aos check passed — meta valid, vocabulary well-formed.")
     if not READS and not WRITES:
         print("  note: reads/writes are decorator/declared only; run `aos test` to observe them at runtime.")
+    if meta.get("egress") or meta.get("secrets"):
+        print("  note: egress/secrets/sources DERIVED from aos.egress() — regenerate meta.yaml with `aos meta --write`.")
+
+
+def cmd_meta(args):
+    """Regenerate meta.yaml from code (the derived fields) while PRESERVING curated non-derivable ones
+    (display_name/entrypoint/confinement_min/runtime/config/assets). This is what retires hand-maintained
+    reads/writes/scopes/files/egress/secrets/sources — the code is the single source, the YAML is generated."""
+    m = _load(args.dir)
+    if driver.registered() and not hasattr(m, "HANDLERS"):
+        args.kind = "driver"
+    mp = os.path.join(args.dir, "meta.yaml")
+    try:
+        import yaml
+    except ImportError:
+        sys.exit("aos meta --write needs pyyaml (present in the build image) to safely round-trip curated fields; "
+                 "here, copy the derived block from `aos check`.")
+    existing = (yaml.safe_load(open(mp).read()) if os.path.isfile(mp) else {}) or {}
+    # start from the existing file's identity + curated fields; the SDK's base_meta also picks reads/writes
+    base = dict(existing); base.update({k: v for k, v in _base_meta(args.dir, args).items() if v is not None})
+    derived = M.derive(base)                                  # derived keys (scopes/files/egress/secrets/sources/…) win
+    merged = dict(existing); merged.update(derived)           # curated-only keys (runtime/config/assets) survive
+    problems = M.validate(merged)
+    if problems:
+        print("✗ refusing to write — derived meta invalid:")
+        for p in problems:
+            print("  -", p)
+        sys.exit(1)
+    if getattr(args, "write", False):
+        with open(mp, "w") as f:
+            yaml.safe_dump(merged, f, sort_keys=False, default_flow_style=False)
+        print(f"✓ wrote {mp} (derived fields regenerated; curated fields preserved)")
+    else:
+        print(yaml.safe_dump(merged, sort_keys=False, default_flow_style=False))
+        print("  (dry run — pass --write to update meta.yaml)")
 
 
 def cmd_test(args):
@@ -240,6 +275,7 @@ def main(argv=None):
     p.add_argument("--verb"); p.add_argument("--implements"); p.add_argument("--into"); p.set_defaults(f=cmd_new)
     p = sub.add_parser("check"); p.add_argument("dir", nargs="?", default="."); p.set_defaults(f=cmd_check)
     p = sub.add_parser("test"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_test)
+    p = sub.add_parser("meta"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--write", action="store_true", help="regenerate meta.yaml from code (derived fields), preserving curated ones"); p.set_defaults(f=cmd_meta)
     p = sub.add_parser("deploy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="drive real services over the dev-token (BrokerBackend); default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_deploy)
     p = sub.add_parser("destroy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="tear down the LIVE dev-tenant closure over the dev-token; default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_destroy)
     p = sub.add_parser("publish"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--target", required=True, choices=["marketplace", "service-directory"]); p.add_argument("--env", default="development"); p.set_defaults(f=cmd_publish)

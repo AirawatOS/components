@@ -26,12 +26,29 @@ Design notes:
 """
 import os, json, time, base64, hashlib, contextvars, urllib.request, urllib.error
 
-__all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now"]
+__all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now", "egress"]
 
 # ── observed vocabulary (populated at runtime by Ctx; consumed by aos.meta.derive) ──
-# READS/WRITES → scopes; FILES (put/get) → the meta `files:` declaration the runtime reads to grant the blob store.
-# EGRESS → the external hosts a run reached via ctx.fetch (observability; declared rate/UA/auth stay in meta.egress).
-READS, WRITES, FILES, EGRESS = set(), set(), set(), set()
+# READS/WRITES → scopes; FILES (put/get) → the meta `files:` declaration; EGRESS → external hosts reached via
+# ctx.fetch (observed); SECRETS → secret names injected via ctx.fetch (observed).
+READS, WRITES, FILES, EGRESS, SECRETS = set(), set(), set(), set(), set()
+
+# Declared egress policy (module-top `aos.egress(...)`, seen at import so `aos check` derives it): host →
+# {rate_per_min, user_agent, secret, provides, source_ref}. This is what makes meta.egress/secrets/sources a
+# function of the CODE (retiring the hand-maintained YAML blocks), the same way reads/writes derive scopes.
+_EGRESS_DECL = {}
+
+
+def egress(host, *, rate_per_min=None, user_agent=None, secret=None, provides=None, source_ref=None):
+    """Declare an external host this component egresses to (via ctx.fetch), once at module top. The broker
+    still enforces the real allowlist/rate/secret server-side; this declaration lets `aos` DERIVE the meta
+    egress/secrets/sources blocks from code instead of hand-maintaining them. Returns the host."""
+    _EGRESS_DECL[host] = {k: v for k, v in {"rate_per_min": rate_per_min, "user_agent": user_agent,
+                                            "secret": secret, "provides": provides, "source_ref": source_ref}.items()
+                          if v is not None}
+    if secret:
+        SECRETS.add(secret)
+    return host
 
 
 class Reject(Exception):
@@ -235,7 +252,9 @@ class Ctx:
         inj = {"name": inject} if isinstance(inject, str) else (inject or None)
         host = url.split("://", 1)[-1].split("/", 1)[0].split("@")[-1].split(":")[0]
         if host:
-            EGRESS.add(host)                       # observed egress host (declared rate/UA/auth live in meta.egress)
+            EGRESS.add(host)                       # observed egress host → derives meta.egress
+        if inj and inj.get("name"):
+            SECRETS.add(inj["name"])               # observed injected secret → derives meta.secrets
         r = self._ffetch(url, method, body, inj, headers) or {}
         return FetchResult(r.get("upstream_status"), r.get("body"), r.get("headers"))
 

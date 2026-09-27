@@ -13,10 +13,15 @@ registry I/O is `ctx.facts` / `ctx.write`, and the optional ledger-CSV ingest re
 The geocoder call is EXTERNAL EGRESS and stays plain urllib (it no longer routes through the broker /v1/fetch proxy).
 """
 import os, json, time, csv, io, urllib.parse, urllib.request
-from aos import driver, ctx
+from aos import driver, ctx, egress
 
 # egress user-agent — Nominatim's usage policy requires one; previously supplied by the broker egress config (meta.yaml).
 USER_AGENT = "AirawatOS/geocode-ledger (+https://airawat.org; manishsv@gmail.com)"
+
+# Declared egress → aos derives meta.egress/sources from THIS (no hand-maintained YAML). The Nominatim call is
+# public/keyless (plain urllib per policy), but the declaration still records the source for attribution + rate.
+egress("nominatim.openstreetmap.org", rate_per_min=30, user_agent=USER_AGENT,
+       provides=["tax.assessment"], source_ref="ds:airawat:ref/source/nominatim")
 
 
 def _parse_json(v):
