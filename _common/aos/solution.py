@@ -437,7 +437,9 @@ def _subscription_record(sub, tenant, sol_name):
     """Build a governed platform.subscription from a solution.yaml entry `{on, do, where?}`.
     `on` is the trigger schema (a registry write of it fires the sub); `do` is the governed verb
     to run (must be governed + bound). Shape mirrors app_host._materialize_subscriptions."""
-    on = sub.get("on")
+    # YAML 1.1 gotcha: a bare `on:` key is parsed as the boolean True by pyyaml (but stays "on" under the
+    # inline fallback) — accept both so `{on: …, do: …}` works in every parser.
+    on = sub.get("on") or sub.get(True)
     do = sub.get("do") or sub.get("action")
     where = sub.get("where")
     sid = f"ds:{tenant}:subscription/{_sub_slug(sol_name)}--{_sub_slug(on)}"
