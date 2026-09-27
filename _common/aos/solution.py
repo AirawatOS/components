@@ -82,6 +82,7 @@ class InMemoryBackend:
         self.installed = {}            # solution_id -> tenant
         self.viz = set()
         self.contributions = []
+        self.subs = {}                 # subscription_id -> record
         self.log = []
 
     def govern_schema(self, sid, defn, tenant, environment):
@@ -117,6 +118,12 @@ class InMemoryBackend:
         self.contributions.append(rec)
         self.log.append(("seed_contribution", rec, "new"))
 
+    def seed_subscription(self, sub, tenant, solution_name="solution"):
+        sid, rec = _subscription_record(sub, tenant, solution_name)
+        first = sid not in self.subs
+        self.subs[sid] = rec
+        self.log.append(("seed_subscription", f"{sub.get('on')}→{sub.get('do')}", "new" if first else "noop"))
+
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
@@ -147,6 +154,11 @@ class InMemoryBackend:
     def retract_role(self, role, tenant):
         found = role in self.governed_roles; self.governed_roles.discard(role)
         self.log.append(("retract_role", role, "ok" if found else "gone"))
+
+    def unseed_subscription(self, sub, tenant, solution_name="solution"):
+        sid, _ = _subscription_record(sub, tenant, solution_name)
+        found = sid in self.subs; self.subs.pop(sid, None)
+        self.log.append(("unseed_subscription", f"{sub.get('on')}→{sub.get('do')}", "ok" if found else "gone"))
 
 
 # ── live backend: drives the platform over the developer's dev-token (INT-0004) ──
@@ -243,6 +255,12 @@ class BrokerBackend:
             self._kwrite(rec["id"], rec)
         self.log.append(("seed_contribution", rec, "ok"))
 
+    def seed_subscription(self, sub, tenant, solution_name="solution"):
+        # ADR-0063: a platform.subscription fires a GOVERNED verb on a registry write of `on`'s schema.
+        sid, rec = _subscription_record(sub, tenant, solution_name)
+        self._kwrite(sid, rec)
+        self.log.append(("seed_subscription", f"{sub.get('on')}→{sub.get('do')}", "ok"))
+
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
@@ -281,6 +299,11 @@ class BrokerBackend:
         # a dev role is governed as a (pending) role-request, not persisted dev-vocab like a schema —
         # nothing durable to retract server-side; recorded for symmetry with the offline backend.
         self.log.append(("retract_role", role, "noop"))
+
+    def unseed_subscription(self, sub, tenant, solution_name="solution"):
+        sid, _ = _subscription_record(sub, tenant, solution_name)
+        self._kretract(sid)
+        self.log.append(("unseed_subscription", f"{sub.get('on')}→{sub.get('do')}", "ok"))
 
 
 def _urllib_transport(method, url, body, token, headers=None):
@@ -347,6 +370,11 @@ class Deployer:
         for c in sol.contributions:
             self.b.seed_contribution(c, tenant)
             rep["steps"].append(("contribution", c))
+        # 4b) wire event-triggers: seed platform.subscription per {on, do} (ADR-0063). The `do` verb must
+        # be governed + bound for the dispatcher to fire it; seeding the record itself is unconditional.
+        for sub in sol.subscriptions:
+            self.b.seed_subscription(sub, tenant, sol.name)
+            rep["steps"].append(("subscription", f"{sub.get('on')} → {sub.get('do')}"))
 
         # 5) stamp "Under Development" + open
         rep["marking"] = policy.dev_marking({"environment": env})
@@ -367,7 +395,12 @@ class Deployer:
             except Exception as e:
                 rep["steps"].append((label, arg, f"skip ({str(e)[:60]})"))
 
-        # 1) unseed contributions + viz.layers (retract the tombstone)
+        # 1) unseed subscriptions + contributions + viz.layers (retract the tombstone)
+        for sub in sol.subscriptions:
+            try:
+                self.b.unseed_subscription(sub, tenant, sol.name); rep["steps"].append(("unseed-subscription", f"{sub.get('on')}→{sub.get('do')}", "ok"))
+            except Exception as e:
+                rep["steps"].append(("unseed-subscription", f"{sub.get('on')}→{sub.get('do')}", f"skip ({str(e)[:50]})"))
         for c in sol.contributions:
             step("unseed-contribution", self.b.unseed_contribution, c)
         for layer in sol.viz_layers:
@@ -394,6 +427,26 @@ class Deployer:
 def _dev_scope(schema_id, tenant):
     """Dev-governed vocabulary is quarantined to the dev tenant's namespace (ADR-0106 §3)."""
     return f"ds:{tenant}:vocab/{schema_id}"
+
+
+def _sub_slug(s):
+    return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-") or "x"
+
+
+def _subscription_record(sub, tenant, sol_name):
+    """Build a governed platform.subscription from a solution.yaml entry `{on, do, where?}`.
+    `on` is the trigger schema (a registry write of it fires the sub); `do` is the governed verb
+    to run (must be governed + bound). Shape mirrors app_host._materialize_subscriptions."""
+    on = sub.get("on")
+    do = sub.get("do") or sub.get("action")
+    where = sub.get("where")
+    sid = f"ds:{tenant}:subscription/{_sub_slug(sol_name)}--{_sub_slug(on)}"
+    rec = {"schema": "platform.subscription", "id": sid, "tenant": tenant,
+           "name": f"{sol_name}: {on} → {do}", "enabled": True,
+           "match": dict({"subject_schema": on}, **({"where": where} if where else {})),
+           "action": {"kind": "http", "interface": do,
+                      "body": {"tenant": tenant, "reason": f"{on} → {do} (solution {sol_name})"}}}
+    return sid, rec
 
 
 _VER = re.compile(r"^\d+\.\d+\.\d+$")

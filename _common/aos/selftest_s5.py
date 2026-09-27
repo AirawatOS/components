@@ -10,7 +10,7 @@ T = "asha-dev"
 def closure(be):
     """The observable closure a deploy stands up — what destroy must remove and a redeploy reproduce."""
     return (frozenset(be.governed_schemas), frozenset(be.governed_roles), frozenset(be.built),
-            frozenset(be.installed), frozenset(be.viz))
+            frozenset(be.installed), frozenset(be.viz), frozenset(be.subs))
 
 
 be = InMemoryBackend()
@@ -20,7 +20,7 @@ d = Deployer(be)
 d.deploy_sandbox(sol, T)
 c1 = closure(be)
 print("[deploy #1] schemas:", sorted(be.governed_schemas), "| installed:", list(be.installed), "| viz:", sorted(be.viz))
-empty = (frozenset(),) * 5
+empty = (frozenset(),) * 6
 
 # destroy → closure must be fully torn down
 be.log.clear(); rep = d.destroy_sandbox(sol, T)
