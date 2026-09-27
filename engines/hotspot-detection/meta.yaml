@@ -1,7 +1,7 @@
 # An ENGINE (kind=engine) — confined; reads facts, writes derived facts.
-component_id: ds:airawat:engine/hotspot-detection
+component_id: ds:airawatdeveloper:engine/hotspot-detection
 kind: engine
-version: 0.1.1   # +HOUR env: detect hotspots on a specific air.quality hour (winter demo)
+version: 0.2.0   # +HOUR env: detect hotspots on a specific air.quality hour (winter demo)
 provider: ds:airawat:developer
 display_name: Air Pollution Hotspot Detection
 entrypoint: run.py

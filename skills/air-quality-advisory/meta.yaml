@@ -4,9 +4,9 @@
 # fired rule + the measured stats. Confined: broker only. AI recommends; an authority decides downstream
 # (decision-router → inbox → governance.decision). No synthetic data — if no rule fires it says so; if the
 # model is unavailable it falls back to a templated rationale, loudly.
-component_id: ds:airawat:skill/air-quality-advisory
+component_id: ds:airawatdeveloper:skill/air-quality-advisory
 kind: skill
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: Air Quality Advisory
 entrypoint: run.py

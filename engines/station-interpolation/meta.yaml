@@ -3,9 +3,9 @@
 # INTERPOLATING the ground-station point readings (air.sensor_reading) via inverse-distance weighting (IDW),
 # writing an air.quality cell-measure per cell (with method + a distance-based confidence). This is the
 # second half of the lean air-quality vertical: air-sensors (points) → station-interpolation (surface).
-component_id: ds:airawat:engine/station-interpolation
+component_id: ds:airawatdeveloper:engine/station-interpolation
 kind: engine
-version: 0.1.0
+version: 0.2.0
 provider: ds:airawat:developer
 display_name: Station Interpolation (IDW)
 entrypoint: run.py

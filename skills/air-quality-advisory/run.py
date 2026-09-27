@@ -1,45 +1,24 @@
 #!/usr/bin/env python3
-"""air-quality-advisory SKILL (INT-0002): Facts × Rules → cited governance.recommendation.
+"""air-quality-advisory SKILL (INT-0002, aos SDK): Facts × Rules → cited governance.recommendation.
 
 HYBRID reasoning: a DETERMINISTIC core evaluates the approved governance.rule for air.quality/pm25 against
 the AOI's measured facts and selects the highest-PRIORITY rule that fires (auditable, no model); the LLM
 then writes the human-readable advisory grounded ONLY in that fired rule + the measured stats. The
 recommendation's SUBSTANCE is rule-derived (method="rule"), so it stays auditable — the model only phrases
-it. Confined: the only I/O is the broker. AI recommends; an authority admits it into a governance.decision
-downstream (decision-router → inbox). No synthetic data: no fired rule ⇒ no recommendation; model
-unavailable ⇒ a templated rationale, LOUDLY flagged.
+it. Confined: the only I/O is the SDK's ctx (registry + ctx.ai model gateway). AI recommends; an authority
+admits it into a governance.decision downstream (decision-router → inbox). No synthetic data: no fired rule ⇒
+no recommendation; model unavailable ⇒ a templated rationale, LOUDLY flagged. Writes into the run tenant and
+its AOI (never a hardcoded city).
 """
-import json, os, time, urllib.request, urllib.error
+import os
+from aos import driver, ctx
 
-API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
-TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "ds:kmc:space/aoi/kanpur-core")
-FACT_SCHEMA = os.environ.get("FACT_SCHEMA", "air.quality")
-METRIC = os.environ.get("METRIC", "pm25")
-WRITE_TENANT = os.environ.get("WRITE_TENANT", "kmc")
-REASONING = os.environ.get("REASONING", "hybrid")        # deterministic | assisted | hybrid
-CID = "ds:airawat:skill/air-quality-advisory"
-VER = "0.1.0"
+CID = "ds:airawatdeveloper:skill/air-quality-advisory"
+VER = "0.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 _OPS = {">": lambda a, b: a > b, ">=": lambda a, b: a >= b, "<": lambda a, b: a < b,
         "<=": lambda a, b: a <= b, "==": lambda a, b: a == b, "!=": lambda a, b: a != b}
-
-
-def _call(path, body, timeout=60):
-    for a in range(4):
-        req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "X-Run-Token": TOKEN}, method="POST")
-        try:
-            return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
-        except urllib.error.HTTPError as e:
-            if e.code >= 500 and a < 3:
-                time.sleep(1.5 * (a + 1)); continue
-            raise
-        except urllib.error.URLError:
-            if a < 3:
-                time.sleep(1.5 * (a + 1)); continue
-            raise
 
 
 def _match(v, op, val):
@@ -75,7 +54,7 @@ def _clean(txt):
 
 
 def _narrative(base, rule, stats):
-    """LLM advisory grounded ONLY in the fired rule + stats. Returns (text, model, fell_back)."""
+    """LLM advisory (ctx.ai) grounded ONLY in the fired rule + stats. Returns (text, model, fell_back)."""
     try:
         instr = open(os.path.join(HERE, "SKILL.md")).read()
     except Exception:
@@ -87,10 +66,10 @@ def _narrative(base, rule, stats):
               f"Write the advisory now — 2-3 short sentences. Output ONLY the final advisory wrapped in "
               f"<advisory>…</advisory>, with NO analysis, preamble, drafts, or notes before or after it.")
     try:
-        res = _call("/v1/complete", {"messages": [{"role": "user", "content": prompt}]}, timeout=60)
-        txt = _clean((res.get("content") or "").strip())
+        content = ctx.ai([{"role": "user", "content": prompt}])
+        txt = _clean((content if isinstance(content, str) else (content.get("content") or "")).strip())
         if txt:
-            return txt, res.get("model"), False
+            return txt, "model", False
     except Exception:
         pass
     return (f"PM2.5 across {base} (mean {stats['mean']}, max {stats['max']} µg/m³ over {stats['n']} cells) crosses "
@@ -99,20 +78,35 @@ def _narrative(base, rule, stats):
             f"[advisory narrative model unavailable — templated]", None, True)
 
 
-def main():
-    aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
-    if not aoi:
-        print(f"FAIL: no AOI at {AOI_ID}"); return 1
-    base = aoi.get("name", "AOI")
+@driver.main
+def run():
+    FACT_SCHEMA = os.environ.get("FACT_SCHEMA", "air.quality")
+    METRIC = os.environ.get("METRIC", "pm25")
+    REASONING = os.environ.get("REASONING", "hybrid")        # deterministic | assisted | hybrid
+    AOI_ID = os.environ.get("AOI_ID", "")                    # explicit AOI, else discovered for THIS run's tenant
 
-    rules = [r.get("object") or r for r in _call("/v1/query", {"scope": "governance.rule", "limit": 1000}).get("results", [])]
+    T = ctx.tenant                                           # the run tenant (broker context) — never a hardcoded city
+    if not T:
+        print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
+    if AOI_ID:
+        aoi = ctx.get(AOI_ID, "space.aoi")
+    else:                                                   # discover the tenant's largest AOI (no hardcoded city)
+        mine = [(r.get("object") or r) for r in ctx.facts("space.aoi").list()
+                if str((r.get("object") or r).get("id", "")).startswith(f"ds:{T}:")
+                and len((r.get("object") or r).get("bbox") or []) == 4]
+        aoi = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1]))) if mine else None
+    if not aoi:
+        print(f"FAIL: no space.aoi for tenant '{T}' — set AOI_ID or run City Setup first."); return 1
+    base = aoi.get("name", "AOI"); AOI_ID = aoi["id"]
+
+    rules = [r.get("object") or r for r in ctx.facts("governance.rule").list()]
     # ONLY approved/live rules drive a recommendation — a `proposed` rule (freshly extracted) awaits human approval.
     rules = [r for r in rules if r.get("applies_to") == FACT_SCHEMA and r.get("metric") == METRIC
              and r.get("status") != "proposed"]
     if not rules:
         print(f"no approved governance.rule for {FACT_SCHEMA}.{METRIC} — nothing to apply."); return 0
 
-    cells = [c.get("object") or c for c in _call("/v1/query", {"scope": FACT_SCHEMA, "limit": 5000}).get("results", [])]
+    cells = [c.get("object") or c for c in ctx.facts(FACT_SCHEMA).list()]
     vals = [c.get(METRIC) for c in cells if isinstance(c.get(METRIC), (int, float))]
     if not vals:
         print(f"no {FACT_SCHEMA}.{METRIC} facts to evaluate — run the driver + interpolation first."); return 0
@@ -141,25 +135,24 @@ def main():
                for r in sorted(evald, key=lambda r: r.get("priority", 0))]
     evidence = [governing["id"], AOI_ID] + ([src["chunk_hash"]] if src.get("chunk_hash") else [])
 
-    rid = f"ds:{WRITE_TENANT}:governance/recommendation/air-quality-{obs[:13] or 'latest'}"
+    rid = f"ds:{T}:governance/recommendation/air-quality-{obs[:13] or 'latest'}"
     rec = {"schema": "governance.recommendation", "id": rid,
            "title": f"{base}: {governing['stage']} air quality — {governing['binding']} action",
            "summary": narrative, "proposed_action": governing.get("proposed_action", ""),
            "rationale": (f"Deterministic evaluation of {len(rules)} approved governance.rule against {n} "
                          f"{FACT_SCHEMA} cells; governing rule '{governing.get('rule_id')}' fired "
                          f"(pm25 {governing['operator']} {governing['value']}); the advisory text was drafted "
-                         f"by {'the '+model if model else 'a template'} from that rule + the measured stats."),
+                         f"by {'the model' if model else 'a template'} from that rule + the measured stats."),
            "evidence": [e for e in evidence if e], "confidence": 1.0 if not fell_back else 0.9,
            "method": "rule", "produced_by": f"component://{CID}@{VER}",
-           "score": governing.get("priority", 0), "created_at": obs, "tenant": WRITE_TENANT,
+           "score": governing.get("priority", 0), "created_at": obs,
            # skill provenance (INT-0002) — how this recommendation was reasoned
            "skill": CID, "reasoning": REASONING, "narrative_model": model, "narrative_templated": fell_back,
            "for_facts": {"schema": FACT_SCHEMA, "metric": METRIC, "aoi": AOI_ID, "n": n,
                          "mean": mean, "max": mx, "min": mn, "observed_at": obs, "cascade": cascade},
            "citation": {"rule": governing["id"], "authority": governing.get("authority"),
                         "chunk_hash": src.get("chunk_hash"), "instrument": src.get("citation")}}
-    _call("/v1/write", {"scope": "governance.recommendation", "id": rid, "object": rec,
-                        "valid_time": {"from": obs}, "asserted_at": obs})
+    ctx.write(rec, valid_from=obs or None, asserted_at=obs or None)
 
     print(f"RECOMMENDATION [{base}]: {rec['title']}")
     print(f"  {narrative}")
@@ -170,4 +163,4 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(driver.run())

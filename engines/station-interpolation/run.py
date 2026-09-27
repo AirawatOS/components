@@ -1,40 +1,24 @@
 #!/usr/bin/env python3
-"""station-interpolation engine: air.sensor_reading (station POINTS) → IDW → air.quality (cell SURFACE).
+"""station-interpolation engine (aos SDK): air.sensor_reading (station POINTS) → IDW → air.quality (cell SURFACE).
 
-Confined — its only I/O is the kernel broker. It READS the AOI (space.aoi) for the bbox + H3 resolution,
-QUERIES every ground-station reading in the tenant (air.sensor_reading), enumerates the H3 cells covering
-the AOI, and for each cell interpolates the station values by INVERSE-DISTANCE WEIGHTING (weight = 1/dᵖ).
-It writes one air.quality per cell with method="idw" and a distance-based confidence (nearer a station →
+Confined — its only I/O is the SDK's ctx (broker transport). It READS the AOI (space.aoi) for the bbox + H3
+resolution, QUERIES every ground-station reading in the tenant (air.sensor_reading), enumerates the H3 cells
+covering the AOI, and for each cell interpolates the station values by INVERSE-DISTANCE WEIGHTING (weight =
+1/dᵖ). It writes one air.quality per cell with method="idw" and a distance-based confidence (nearer a station →
 higher). It does NOT fabricate observations: with zero stations carrying PM2.5 it writes nothing and says so.
 The output is only as real as its inputs — interpolating demo readings yields demo cells.
-"""
-import json, os, math, urllib.request
-import h3
 
-API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
-TOKEN = os.environ["RUN_TOKEN"]
-AOI_ID = os.environ.get("AOI_ID", "")      # explicit AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
-POWER = float(os.environ.get("IDW_POWER", "2"))            # distance exponent p in 1/dᵖ
-PM_MAX = float(os.environ.get("PM_MAX_PLAUSIBLE", "985"))  # drop implausible station points (offline 0 / sentinel 999) —
+aos SDK: tenant resolution + registry read/query/write (with bitemporal valid_from) are the SDK's ctx. Each
+air.quality cell is written as a bitemporal ASSERTION valid from the observation time (ctx.write_many
+valid_from_field), one batched round-trip.
+"""
+import os, math
+from aos import driver, ctx
+
 _PARAMS = ("pm25", "no2", "o3")                            # an interpolator must never trust raw low-cost points blindly
 
 
-def _call(path, body):
-    req = urllib.request.Request(API + path, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "X-Run-Token": TOKEN}, method="POST")
-    return json.loads(urllib.request.urlopen(req, timeout=30).read())
-
-
-def _tenant():
-    """This run's tenant (broker context) — reads/writes into whoever runs it, never kmc."""
-    try:
-        req = urllib.request.Request(API + "/v1/context", headers={"X-Run-Token": TOKEN})
-        return (json.loads(urllib.request.urlopen(req, timeout=20).read()) or {}).get("tenant")
-    except Exception:
-        return None
-
-
-def cells_in_bbox(bbox, res):
+def cells_in_bbox(h3, bbox, res):
     """West,south,east,north → the res-cells covering it. polygon_to_cells where available, else a
     centroid grid-scan (robust across h3 builds)."""
     w, s, e, n = bbox
@@ -61,15 +45,20 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def main():
-    T = _tenant()
+@driver.main
+def run():
+    import h3
+    AOI_ID = os.environ.get("AOI_ID", "")      # explicit AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
+    POWER = float(os.environ.get("IDW_POWER", "2"))            # distance exponent p in 1/dᵖ
+    PM_MAX = float(os.environ.get("PM_MAX_PLAUSIBLE", "985"))  # drop implausible station points (offline 0 / sentinel 999)
+
+    T = ctx.tenant
     if not T:
         print("FAIL: could not resolve the run tenant (/v1/context)."); return 1
     if AOI_ID:
-        aoi = _call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object")
+        aoi = ctx.get(AOI_ID, "space.aoi")
     else:                                                  # discover the tenant's largest AOI (no hardcoded city)
-        qr = _call("/v1/query", {"scope": "space.aoi", "limit": 500}).get("results", [])
-        mine = [(r.get("object") or r) for r in qr
+        mine = [(r.get("object") or r) for r in ctx.facts("space.aoi").list()
                 if str((r.get("object") or r).get("id", "")).startswith(f"ds:{T}:")
                 and len((r.get("object") or r).get("bbox") or []) == 4]
         aoi = max(mine, key=lambda a: abs((a["bbox"][2] - a["bbox"][0]) * (a["bbox"][3] - a["bbox"][1]))) if mine else None
@@ -77,7 +66,7 @@ def main():
         print(f"FAIL: no space.aoi for tenant '{T}' — set AOI_ID or run City Setup first."); return 1
     bbox, res = aoi["bbox"], aoi["h3_res"]
 
-    rows = _call("/v1/query", {"scope": "air.sensor_reading", "limit": 5000}).get("results", [])
+    rows = ctx.facts("air.sensor_reading").list()
     latest, dropped = {}, 0                                # sensor key -> (lat, lng, {param:value}, observed_at)
     for r in rows:
         o = r.get("object") or r
@@ -98,11 +87,11 @@ def main():
         return 0
 
     obs = max(s[3] for s in stations) or "1970-01-01T00:00:00Z"
-    cells = cells_in_bbox(bbox, res)
+    cells = cells_in_bbox(h3, bbox, res)
     print(f"AOI '{aoi.get('name')}' bbox={bbox} res={res} → {len(cells)} cells; "
           f"{len(stations)} stations; IDW p={POWER}")
 
-    written = 0
+    facts = []
     for hcell in cells:
         lat, lng = h3.cell_to_latlng(hcell)
         acc = {p: [0.0, 0.0] for p in _PARAMS}             # param -> [Σ w·v, Σ w]
@@ -125,13 +114,13 @@ def main():
                 # prov: the measure's derivation block the house rule requires (ADR-0041/0063 R5).
                 "prov": {"method": "idw", "confidence": confidence, "derived_from": ["air.sensor_reading@stations"],
                          "observed_at": obs}}
-        _call("/v1/write", {"scope": "air.quality", "id": rid, "object": fact,
-                            "valid_time": {"from": obs}, "asserted_at": obs})
-        written += 1
+        facts.append(fact)
 
+    # bitemporal: each cell's validity pinned to the observation time; one batched round-trip
+    written = ctx.write_many(facts, valid_from_field="observed_at", asserted_at=obs) if facts else 0
     print(f"interpolated {written} air.quality cells from {len(stations)} stations (IDW p={POWER}, obs {obs})")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(driver.run())
