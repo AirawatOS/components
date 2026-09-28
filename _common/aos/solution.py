@@ -184,8 +184,17 @@ class BrokerBackend:
         #    (verified against IDENTITY_JWKS) AND authorizes the dev-token mint (INT-0004 §6).
         #  • dev-token — the kernel RUN-token; broker-confined to this dev tenant, used for KERNEL
         #    registry writes (seeds) so they skip the steward-grant/governed-vocab check within the tenant.
-        self._id_tok = identity_token or (self._login(dev_user) if self.idn else None)
+        # identity token precedence: explicit AIRAWAT_IDENTITY_TOKEN → a cached `aos login` (browser OIDC,
+        # the way to auth against a real Keycloak network) → the local passwordless dev /login.
+        self._id_tok = identity_token or self._cached_login() or (self._login(dev_user) if self.idn else None)
         self._dev_tok = token or self._mint_dev_token()
+
+    def _cached_login(self):
+        try:
+            from . import oidc
+            return oidc.cached_token()          # config/env-aware issuer resolution
+        except Exception:
+            return None
 
     def _login(self, username):
         # Two identity shapes: EC2 wants {username, tenant}; the local realm-based identity wants {username}.

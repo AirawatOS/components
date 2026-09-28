@@ -210,16 +210,56 @@ def _backend_for(args):
     """--live drives real services over the dev-token (BrokerBackend); default is the offline
     InMemoryBackend (proves the pipeline). Live needs ADR-0106 S2 governance on the network."""
     from .solution import InMemoryBackend, BrokerBackend
+    from . import config
     if not getattr(args, "live", False):
         return InMemoryBackend()
-    net = os.environ.get("AIRAWAT_NETWORK", "http://network:8090")
-    kern = os.environ.get("AIRAWAT_KERNEL", "http://kernel:8080")
-    idn = os.environ.get("AIRAWAT_IDENTITY", "http://identity:8093")
-    print(f"  (live backend → network {net} · kernel {kern})")
+    # resolve the target from `aos config` (env still overrides per-run); identity URL optional now that
+    # `aos login` caches a token — a cached login is used before any passwordless /login.
+    net = config.get("network"); kern = config.get("kernel"); idn = config.get("identity")
+    print(f"  (live backend → network {net} · kernel {kern}{' · identity ' + idn if idn else ' · aos-login token'})")
     return BrokerBackend(args.tenant, net, kern, idn,
                          identity_token=os.environ.get("AIRAWAT_IDENTITY_TOKEN"),
-                         dev_user=os.environ.get("AIRAWAT_DEV_USER", "devrick"),
-                         token=os.environ.get("RUN_TOKEN"))
+                         dev_user=config.get("dev_user"), token=os.environ.get("RUN_TOKEN"),
+                         login_tenant=config.get("login_tenant"))
+
+
+def cmd_login(args):
+    """Browser OIDC login for the CLI — no token pasting. Caches the bearer for `aos deploy --live`."""
+    from . import oidc
+    fn = oidc.device_login if getattr(args, "device", False) else oidc.login
+    tok = fn(issuer=args.issuer, client_id=args.client_id)
+    who = ""
+    try:                                                       # decode the JWT payload (no verify) for a friendly line
+        import base64 as _b, json as _j
+        p = tok.split(".")[1]; p += "=" * (-len(p) % 4)
+        c = _j.loads(_b.urlsafe_b64decode(p)); who = f" as {c.get('preferred_username') or c.get('sub','?')}"
+    except Exception:
+        pass
+    print(f"✓ logged in{who} · issuer {oidc._issuer(args.issuer)} · token cached ({oidc.CRED})")
+
+
+def cmd_logout(args):
+    from . import oidc
+    print(f"✓ logged out of {oidc.logout(args.issuer)}")
+
+
+def cmd_config(args):
+    """Persist the CLI target once (network/kernel/identity/issuer/…) instead of exporting env each run."""
+    from . import config
+    if args.action == "set":
+        pairs = {}
+        for kv in args.pairs:
+            if "=" not in kv:
+                sys.exit(f"expected key=value, got '{kv}'")
+            k, v = kv.split("=", 1)
+            pairs[k.strip()] = v.strip()
+        try:
+            config.set_many(pairs)
+        except KeyError as e:
+            sys.exit(str(e))
+        print(f"✓ saved to {config.CONFIG}: {', '.join(pairs)}")
+    for k, (v, src) in config.resolved().items():
+        print(f"  {k:16} = {v if v is not None else '(unset)':40} [{src}]")
 
 
 def cmd_deploy(args):
@@ -279,6 +319,9 @@ def main(argv=None):
     p = sub.add_parser("deploy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="drive real services over the dev-token (BrokerBackend); default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_deploy)
     p = sub.add_parser("destroy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="tear down the LIVE dev-tenant closure over the dev-token; default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_destroy)
     p = sub.add_parser("publish"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--target", required=True, choices=["marketplace", "service-directory"]); p.add_argument("--env", default="development"); p.set_defaults(f=cmd_publish)
+    p = sub.add_parser("login"); p.add_argument("--issuer"); p.add_argument("--client-id", dest="client_id"); p.add_argument("--device", action="store_true", help="device-code flow (headless; no loopback browser)"); p.set_defaults(f=cmd_login)
+    p = sub.add_parser("logout"); p.add_argument("--issuer"); p.set_defaults(f=cmd_logout)
+    p = sub.add_parser("config"); p.add_argument("action", nargs="?", default="list", choices=["set", "list"]); p.add_argument("pairs", nargs="*", help="key=value (network=…, issuer=…, kernel=…, identity=…, client-id=…, tenant=…)"); p.set_defaults(f=cmd_config)
     args = ap.parse_args(argv)
     args.f(args)
 
