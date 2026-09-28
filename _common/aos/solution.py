@@ -169,11 +169,14 @@ class BrokerBackend:
     (method, url, body, token) and returns a dict; the default is a urllib transport with retry.
     """
     def __init__(self, tenant, network_url, kernel_url, identity_url=None, identity_token=None,
-                 dev_user="devrick", token=None, transport=None):
+                 dev_user="devrick", token=None, transport=None, login_tenant=None):
         self.tenant = tenant
         self.net = network_url.rstrip("/")
         self.kernel = kernel_url.rstrip("/")
         self.idn = (identity_url or "").rstrip("/")
+        # the developer's HOME tenant for login (EC2 identity needs {username,tenant}); defaults to the
+        # deploy tenant, overridable (a developer logging in to promote INTO another tenant).
+        self._login_tenant = login_tenant or os.environ.get("AIRAWAT_LOGIN_TENANT") or tenant
         self._t = transport or _urllib_transport
         self.log = []
         # TWO tokens, two planes (surfaced by the local live proof):
@@ -185,6 +188,16 @@ class BrokerBackend:
         self._dev_tok = token or self._mint_dev_token()
 
     def _login(self, username):
+        # Two identity shapes: EC2 wants {username, tenant}; the local realm-based identity wants {username}.
+        # Try the tenant-scoped shape first (a bare-{username} server ignores the extra field or errors → we
+        # fall back). Either way we return the developer's access_token.
+        if self._login_tenant:
+            try:
+                r = self._t("POST", self.idn + "/login", {"username": username, "tenant": self._login_tenant}, None) or {}
+                if r.get("access_token"):
+                    return r["access_token"]
+            except Exception:
+                pass
         r = self._t("POST", self.idn + "/login", {"username": username}, None) or {}
         return r.get("access_token")
 
