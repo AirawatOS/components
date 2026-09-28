@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airawatos-aos"
+version = "0.1.0"
+description = "aos — the AirawatOS build SDK + CLI: author, check, test, deploy governed components & solutions"
+readme = "aos/README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "AirawatOS" }]
+keywords = ["airawatos", "sdk", "cli", "civic", "governed-components"]
+# stdlib-only core; pyyaml gives robust block-style solution.yaml parsing (an inline fallback exists without it).
+dependencies = ["pyyaml>=6"]
+
+[project.optional-dependencies]
+# some DRIVERS need h3 at runtime (H3 cells); the SDK/CLI itself does not — install with `pip install airawatos-aos[geo]`.
+geo = ["h3>=4"]
+
+[project.scripts]
+aos = "aos.cli:main"
+
+[project.urls]
+Homepage = "https://airos.airawat.org"
+Source = "https://github.com/AirawatOS/components"
+
+[tool.setuptools]
+packages = ["aos"]

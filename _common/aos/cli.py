@@ -323,6 +323,9 @@ def main(argv=None):
     p = sub.add_parser("logout"); p.add_argument("--issuer"); p.set_defaults(f=cmd_logout)
     p = sub.add_parser("config"); p.add_argument("action", nargs="?", default="list", choices=["set", "list"]); p.add_argument("pairs", nargs="*", help="key=value (network=…, issuer=…, kernel=…, identity=…, client-id=…, tenant=…)"); p.set_defaults(f=cmd_config)
     args = ap.parse_args(argv)
+    if not hasattr(args, "f"):          # bare `aos` → show help instead of crashing
+        ap.print_help()
+        return
     args.f(args)
 
 
