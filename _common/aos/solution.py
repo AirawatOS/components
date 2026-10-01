@@ -588,23 +588,59 @@ def _load_yaml(text):
 
 
 def _inline_yaml(text):
-    """Fallback: top-level `key: value` + one level of indented nested maps. Values may be
-    scalars or INLINE [lists]/{maps} (block `- ` lists unsupported here — write them inline,
-    e.g. `members: {reuse: [a, b]}`). Enough for solution.yaml authored inline."""
-    root, cur_key = {}, None
+    """Zero-dependency YAML-subset parser for solution.yaml when PyYAML is absent. Handles the common
+    block + inline forms: nested maps by indentation, block `- ` lists (of scalars, inline [..]/{..},
+    or multi-line maps), and inline [lists]/{maps}. Not a full YAML parser — no anchors/multiline
+    scalars/flow-over-lines — but enough that an author never has to hand-flatten to inline."""
+    lines = []
     for raw in text.splitlines():
-        line = raw.split(" #", 1)[0].rstrip()
-        if not line.strip() or line.strip().startswith("#") or ":" not in line:
+        s = raw.split(" #", 1)[0].rstrip()
+        if not s.strip() or s.lstrip().startswith("#"):
             continue
-        indent = len(line) - len(line.lstrip())
-        k, v = line.strip().split(":", 1)
-        k, v = k.strip(), v.strip()
-        if indent == 0:
-            root[k] = {} if v == "" else _scalar(v)
-            cur_key = k if v == "" else None
-        elif cur_key is not None and isinstance(root.get(cur_key), dict):
-            root[cur_key][k] = _scalar(v) if v else {}
-    return root
+        lines.append((len(s) - len(s.lstrip()), s.strip()))
+    val, _ = _parse_yaml_block(lines, 0, -1)
+    return val if isinstance(val, dict) else (val or {})
+
+
+def _parse_yaml_block(lines, i, parent_indent):
+    """Parse the block of lines indented deeper than `parent_indent`, starting at index `i`.
+    A block is a LIST if its first line starts with `-`, else a MAP. Returns (value, next_index)."""
+    n = len(lines)
+    if i >= n or lines[i][0] <= parent_indent:
+        return {}, i
+    indent = lines[i][0]
+    container = [] if lines[i][1].startswith("-") else {}
+    while i < n:
+        ind, text = lines[i]
+        if ind < indent:
+            break
+        if ind > indent:                       # stray deeper line with no owning key — skip defensively
+            i += 1; continue
+        if text.startswith("-"):
+            item = text[1:].strip()
+            if item == "":                     # "-" then a nested block on the following lines
+                child, i = _parse_yaml_block(lines, i + 1, indent)
+                container.append(child)
+            elif ":" in item and not item.startswith(("[", "{")):
+                # a map list item: first key is on the "- " line; more keys follow, indented deeper
+                k, _, v = item.partition(":")
+                m = {k.strip(): (_scalar(v.strip()) if v.strip() else {})}
+                i += 1
+                rest, i = _parse_yaml_block(lines, i, indent)
+                if isinstance(rest, dict):
+                    m.update(rest)
+                container.append(m)
+            else:
+                container.append(_scalar(item)); i += 1
+        else:
+            k, _, v = text.partition(":")
+            k, v = k.strip(), v.strip()
+            if v == "":                        # nested block (map or list) on the following lines
+                child, i = _parse_yaml_block(lines, i + 1, indent)
+                container[k] = child
+            else:
+                container[k] = _scalar(v); i += 1
+    return container, i
 
 
 def _scalar(v):
