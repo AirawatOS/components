@@ -215,12 +215,13 @@ def _backend_for(args):
         return InMemoryBackend()
     # resolve the target from `aos config` (env still overrides per-run); identity URL optional now that
     # `aos login` caches a token — a cached login is used before any passwordless /login.
-    net = config.get("network"); kern = config.get("kernel"); idn = config.get("identity")
-    print(f"  (live backend → network {net} · kernel {kern}{' · identity ' + idn if idn else ' · aos-login token'})")
+    net = config.get("network"); kern = config.get("kernel"); idn = config.get("identity"); apph = config.get("app_host")
+    print(f"  (live backend → network {net} · kernel {kern}{' · identity ' + idn if idn else ' · aos-login token'}"
+          + (f" · app-host {apph}" if apph else " · app-host UNSET (apps won't deliver — set `aos config set app-host=…`)") + ")")
     return BrokerBackend(args.tenant, net, kern, idn,
                          identity_token=os.environ.get("AIRAWAT_IDENTITY_TOKEN"),
                          dev_user=config.get("dev_user"), token=os.environ.get("RUN_TOKEN"),
-                         login_tenant=config.get("login_tenant"))
+                         login_tenant=config.get("login_tenant"), app_host_url=apph)
 
 
 def cmd_login(args):

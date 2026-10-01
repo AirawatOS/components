@@ -13,6 +13,7 @@ CONFIG = os.path.expanduser("~/.aos/config.json")
 _KEYS = {
     "network":        ("AIRAWAT_NETWORK", "http://network:8090"),
     "kernel":         ("AIRAWAT_KERNEL", "http://kernel:8080"),
+    "app_host":       ("AIRAWAT_APP_HOST", None),   # where app bundles are delivered (overlay) for a live deploy
     "identity":       ("AIRAWAT_IDENTITY", None),
     "oidc_issuer":    ("AIRAWAT_OIDC_ISSUER", None),
     "oidc_client_id": ("AIRAWAT_OIDC_CLIENT_ID", None),
@@ -22,7 +23,8 @@ _KEYS = {
 }
 # convenient aliases accepted by `aos config set`
 _ALIAS = {"net": "network", "kern": "kernel", "idn": "identity", "issuer": "oidc_issuer",
-          "client_id": "oidc_client_id", "client-id": "oidc_client_id"}
+          "client_id": "oidc_client_id", "client-id": "oidc_client_id",
+          "app-host": "app_host", "apphost": "app_host"}
 
 
 def _load():

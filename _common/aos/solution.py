@@ -97,8 +97,8 @@ class InMemoryBackend:
         self.governed_roles.add(role)
         self.log.append(("govern_role", role, "new" if first else "noop"))
 
-    def build_member(self, ref, tenant, environment):
-        first = ref not in self.built
+    def build_member(self, ref, tenant, environment, base_dir=None):
+        first = ref not in self.built          # offline: no real delivery (base_dir ignored)
         self.built.add(ref)
         self.log.append(("build+certify", ref, "new" if first else "noop"))
 
@@ -169,11 +169,14 @@ class BrokerBackend:
     (method, url, body, token) and returns a dict; the default is a urllib transport with retry.
     """
     def __init__(self, tenant, network_url, kernel_url, identity_url=None, identity_token=None,
-                 dev_user="devrick", token=None, transport=None, login_tenant=None):
+                 dev_user="devrick", token=None, transport=None, login_tenant=None, app_host_url=None):
         self.tenant = tenant
         self.net = network_url.rstrip("/")
         self.kernel = kernel_url.rstrip("/")
         self.idn = (identity_url or "").rstrip("/")
+        # the app-host that serves this tenant's desktop — where an APP bundle must be DELIVERED (overlay)
+        # for the tile to appear. Without it, --live still governs + installs-by-reference but can't deliver code.
+        self.app = (app_host_url or "").rstrip("/")
         # the developer's HOME tenant for login (EC2 identity needs {username,tenant}); defaults to the
         # deploy tenant, overridable (a developer logging in to promote INTO another tenant).
         self._login_tenant = login_tenant or os.environ.get("AIRAWAT_LOGIN_TENANT") or tenant
@@ -240,12 +243,46 @@ class BrokerBackend:
         r = self._net(self.net + "/v1/role-requests", {"role": role, "tenant": tenant})
         self.log.append(("govern_role", role, r.get("status", "?")))
 
-    def build_member(self, ref, tenant, environment):
-        # Dev build: certify the member's source against the shared catalog ∪ dev vocab (S2) and
-        # register it installable-from-source in the dev tenant (INT-0004). Reuses the certify path.
+    def build_member(self, ref, tenant, environment, base_dir=None):
+        # Dev build: DELIVER the locally-built source bundle to the app-host (so an app's tile appears on the
+        # desktop + a driver/engine is materialisable on install), then certify it against the shared catalog
+        # ∪ dev vocab (S2) and register it installable-from-source in the dev tenant (INT-0004). ADR-0106.
         cid = _canon_member(ref, tenant)   # `engines/infer` → ds:<tenant>:engine/infer (steward = dev tenant)
+        if base_dir and self.app:
+            self._publish_bundle(cid, os.path.join(base_dir, ref))
         r = self._net(self.net + "/v1/certify", {"subject_id": cid, "subject_kind": "component", "dev": True})
         self.log.append(("build+certify", cid, "verified" if r.get("certificate") else "?"))
+
+    def _publish_bundle(self, cid, src_dir):
+        """Deliver a locally-built component bundle to the app-host (ADR-0106 live-deploy delivery): tar the
+        dir and POST it to /bridge/component-publish, which runs the SAME _store_bundle seam Studio uses
+        (content-addressed filestore + platform.component_asset + app overlay for an app). DEV-SANDBOX only;
+        best-effort — a failure logs and the deploy still governs/installs."""
+        import io, tarfile, urllib.request, urllib.parse
+        if not os.path.isdir(src_dir):
+            self.log.append(("deliver", cid, "no-source")); return None
+        kind, ver = "app", "0.1.0"
+        mp = os.path.join(src_dir, "meta.yaml")
+        if os.path.isfile(mp):
+            try:
+                import yaml
+                m = yaml.safe_load(open(mp).read()) or {}
+                kind = m.get("kind", kind); ver = str(m.get("version", ver))
+            except Exception:
+                pass
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            tf.add(src_dir, arcname=".")        # arcname "." → extracted dir IS the component dir (meta.yaml at top)
+        q = urllib.parse.urlencode({"component": cid, "version": ver, "is_app": "1" if kind == "app" else "0"})
+        req = urllib.request.Request(self.app + "/bridge/component-publish?" + q, data=buf.getvalue(), method="POST",
+              headers={"Content-Type": "application/gzip", "Authorization": "Bearer " + (self._id_tok or "")})
+        try:
+            r = json.loads(urllib.request.urlopen(req, timeout=120).read() or b"{}")
+            self.log.append(("deliver", cid, ("bundle " + (r.get("file_id") or "")[:16]) if r.get("published") else "no-fid"))
+            return r.get("file_id")
+        except Exception as e:
+            self.log.append(("deliver", cid, "ERR " + str(e)[:90]))
+            return None
 
     def compose_install(self, solution_name, members, tenant, environment):
         sid = f"ds:{tenant}:solution/{solution_name}"
@@ -372,7 +409,7 @@ class Deployer:
 
         # 2) build + certify the new members (reuse members come from the marketplace)
         for m in sol.build:
-            self.b.build_member(m, tenant, env)
+            self.b.build_member(m, tenant, env, base_dir=sol.dir)
             rep["steps"].append(("build", m))
 
         # 3) compose + install the closure into the dev tenant (ADR-0075)
