@@ -191,6 +191,14 @@ class BrokerBackend:
         # the way to auth against a real Keycloak network) → the local passwordless dev /login.
         self._id_tok = identity_token or self._cached_login() or (self._login(dev_user) if self.idn else None)
         self._dev_tok = token or self._mint_dev_token()
+        # PLANE BOUNDARY: deploying to a developer sandbox touches ONLY the kernel (dev-token registry
+        # writes) + the app-host (bundle delivery). The NETWORK authority (certify / solutions / install /
+        # schema+role governance) is a SHARED, standards-body surface reached ONLY by Marketplace promotion
+        # — a tenant-admin action, gated client-side (aos.policy.check_publish) and server-side
+        # (PROD_PUBLISH_GATES), done through Studio, never by `aos deploy` from a developer's machine.
+        # Inside the dev tenant the dev-token already carries tenant-scoped write (scope:* ; grant + vocab
+        # relaxed per INT-0004 / ADR-0051-0106), so no authority round-trip is needed to govern or install.
+        self._use_authority = False
 
     def _cached_login(self):
         try:
@@ -223,7 +231,14 @@ class BrokerBackend:
         return r.get("run_token") or r.get("token") or r.get("access_token")
 
     def _net(self, url, body):
-        # NETWORK plane — authenticated by the developer identity token (JWT).
+        # NETWORK plane — the shared standards-body authority. A sandbox deploy does NOT reach it
+        # (see _use_authority in __init__): the leaf endpoint is logged and the call is skipped, returning
+        # an empty ack the callers already treat as "fall back to the dev-scoped local result". The network
+        # is exercised only by Marketplace promotion (tenant-admin, via Studio), never by `aos deploy`.
+        if not self._use_authority:
+            self.log.append(("authority-skip", url.rsplit("/", 1)[-1], "dev-sandbox: kernel+app-host only"))
+            return {}
+        # PRODUCTION/promotion plane — authenticated by the developer identity token (JWT).
         return self._t("POST", url, body, self._id_tok) or {}
 
     def _kwrite(self, oid, obj):
