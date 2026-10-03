@@ -18,6 +18,7 @@ _KEYS = {
     "oidc_issuer":    ("AIRAWAT_OIDC_ISSUER", None),
     "oidc_client_id": ("AIRAWAT_OIDC_CLIENT_ID", None),
     "dev_user":       ("AIRAWAT_DEV_USER", "devrick"),
+    "password":       ("AIRAWAT_PASSWORD", None),   # reference-IdP password (when flipped off passwordless, ADR-0068)
     "tenant":         ("AIRAWAT_TENANT", None),
     "login_tenant":   ("AIRAWAT_LOGIN_TENANT", None),
 }

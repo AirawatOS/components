@@ -8,7 +8,7 @@ confined to the developer's tenant, stamping every artifact "Under Development".
 The pipeline talks to the platform through a small `Backend` protocol, so it is testable
 offline against `InMemoryBackend` and runs for real against `BrokerBackend` (dev-token).
 """
-import os, json, re
+import os, sys, json, re
 from . import meta as M, policy
 
 _ROLE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9-]*$")   # <domain>.<name> — hyphens allowed (safety.ground-marshal)
@@ -169,8 +169,13 @@ class BrokerBackend:
     (method, url, body, token) and returns a dict; the default is a urllib transport with retry.
     """
     def __init__(self, tenant, network_url, kernel_url, identity_url=None, identity_token=None,
-                 dev_user="devrick", token=None, transport=None, login_tenant=None, app_host_url=None):
+                 dev_user="devrick", token=None, transport=None, login_tenant=None, app_host_url=None,
+                 password=None):
         self.tenant = tenant
+        # reference-IdP password (only needed when that IdP has been flipped off passwordless, ADR-0068);
+        # env/config supplies it for non-interactive runs, else `_login` prompts on a tty. The Keycloak
+        # `aos login` path carries its own password through the browser and ignores this.
+        self._password = password or os.environ.get("AIRAWAT_PASSWORD")
         self.net = network_url.rstrip("/")
         self.kernel = kernel_url.rstrip("/")
         self.idn = (identity_url or "").rstrip("/")
@@ -210,16 +215,36 @@ class BrokerBackend:
     def _login(self, username):
         # Two identity shapes: EC2 wants {username, tenant}; the local realm-based identity wants {username}.
         # Try the tenant-scoped shape first (a bare-{username} server ignores the extra field or errors → we
-        # fall back). Either way we return the developer's access_token.
-        if self._login_tenant:
+        # fall back). A `password` is included when the reference IdP has been flipped off passwordless
+        # (ADR-0068): supplied via env/config, else — only if the attempt yields nothing on a tty — prompted.
+        def _attempt(pw):
+            base = {"username": username}
+            if pw:
+                base["password"] = pw
+            bodies = ([{**base, "tenant": self._login_tenant}] if self._login_tenant else []) + [base]
+            for body in bodies:
+                try:
+                    r = self._t("POST", self.idn + "/login", body, None) or {}
+                    if r.get("access_token"):
+                        return r["access_token"]
+                except Exception:
+                    continue          # 401 (password required/wrong) or shape mismatch → try the next
+            return None
+        tok = _attempt(self._password)
+        if tok:
+            return tok
+        # Nothing came back (unknown user, or a flipped IdP needs a password we weren't given). If no
+        # password was configured and we're interactive, prompt once and retry.
+        if self._password is None and sys.stdin.isatty():
             try:
-                r = self._t("POST", self.idn + "/login", {"username": username, "tenant": self._login_tenant}, None) or {}
-                if r.get("access_token"):
-                    return r["access_token"]
+                import getpass
+                pw = getpass.getpass(f"Password for {username}: ") or None
             except Exception:
-                pass
-        r = self._t("POST", self.idn + "/login", {"username": username}, None) or {}
-        return r.get("access_token")
+                pw = None
+            if pw:
+                self._password = pw
+                return _attempt(pw)
+        return None
 
     def _mint_dev_token(self):
         # INT-0004: the kernel mints a dev-token confined to this development tenant. Needs a component_id

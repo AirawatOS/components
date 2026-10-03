@@ -221,7 +221,8 @@ def _backend_for(args):
     return BrokerBackend(args.tenant, net, kern, idn,
                          identity_token=os.environ.get("AIRAWAT_IDENTITY_TOKEN"),
                          dev_user=config.get("dev_user"), token=os.environ.get("RUN_TOKEN"),
-                         login_tenant=config.get("login_tenant"), app_host_url=apph)
+                         login_tenant=config.get("login_tenant"), app_host_url=apph,
+                         password=config.get("password"))
 
 
 def cmd_login(args):
