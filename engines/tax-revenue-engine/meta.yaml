@@ -1,0 +1,23 @@
+component_id: ds:airawatdeveloper:engine/tax-revenue-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Tax Revenue Engine
+description: >
+  The assess → demand → collect tail of Property Tax. Generated from the Property Tax service_spec
+  (ADR-0109 S4): realizes the revenue workflow (verified → assessed → demanded → collected), the
+  assessment formula (PT-ASSESS-FORMULA) and the due-date rule (PT-DEMAND-DUEDATE).
+implements:
+  - tax.raise_demand@0.1.0
+  - tax.record_payment@0.1.0
+verbs:
+  raise-demand: tax.raise_demand@0.1.0
+  record-payment: tax.record_payment@0.1.0
+reads:
+  - tax.assessment
+  - tax.candidate
+  - tax.demand
+writes:
+  - tax.demand
+  - tax.payment
+generated_from: ds:airawat:service_spec/property-tax     # ADR-0109 traceability: spec → this engine
