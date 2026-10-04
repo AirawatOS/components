@@ -1,0 +1,111 @@
+# AirawatOS Constitution (ADR-0109 S3) — the persistent rules every generation agent inherits and
+# every component is certified against. REVERSE-AUTHORED from what the platform already enforces, so each
+# principle is statused honestly:
+#   enforced  = a gate actually blocks a violation today (certify / kernel / lint / client+server)
+#   partial   = enforced in shadow or on a subset; being hardened
+#   advisory  = a principle agents must follow but nothing mechanically blocks yet
+# `enforce.by` names where it bites. These are the inherited context for the generate→certify→reconcile loop.
+id: ds:airawat:constitution/default
+title: AirawatOS Constitution
+version: 0.1.0
+status: active
+
+principles:
+
+  - id: GOVERNED-VOCABULARY
+    statement: Every schema, verb, role and interface a component uses MUST be governed by the Network.
+    rationale: A constrained, shared vocabulary is what makes generated code checkable and composable.
+    enforce: { mode: certify, by: conformance-suite + schema-naming-lint }
+    status: enforced
+    refs: [ADR-0025, ADR-0038, ADR-0108]
+
+  - id: VERB-GRAMMAR
+    statement: Governed verbs are generic PLANE verbs; a domain action is a workflow transition, not a new verb.
+    rationale: Stops the per-domain verb explosion; keeps the interaction surface small and composable.
+    enforce: { mode: lint, by: interface-house-rules (shadow; existing grandfathered) }
+    status: partial
+    refs: [ADR-0108, ADR-0097]
+
+  - id: ATTRIBUTED-WRITES
+    statement: Every registry write carries a signed provenance envelope — who, acting as what, when.
+    rationale: Civic systems must be auditable by construction, not by after-the-fact logging.
+    enforce: { mode: kernel, by: PROV_ENFORCE }
+    status: enforced
+    refs: [ADR-0052]
+
+  - id: CERTIFIED-WRITER
+    statement: Fact/measure data is written ONLY by a certified component through the broker.
+    rationale: The trust boundary for facts is "certified code", not "any tenant token".
+    enforce: { mode: kernel, by: data-plane writer gate (shadow→enforce) }
+    status: partial
+    refs: [ADR-0052, ADR-0051]
+
+  - id: BITEMPORAL-REGISTRY
+    statement: Records are versioned and bitemporal; history is append-only, never destructively overwritten.
+    rationale: You can always answer "what did we believe, and when" — essential for disputes and audit.
+    enforce: { mode: kernel, by: registry }
+    status: enforced
+    refs: [P1-registry-correctness]
+
+  - id: AUTH-VERIFIED-AT-KERNEL
+    statement: The kernel verifies the identity token itself (EdDSA/RS256 by key type); it never trusts an upstream header.
+    rationale: The trust boundary owns verification; no gateway can be spoofed into asserting identity.
+    enforce: { mode: kernel, by: services/authn }
+    status: enforced
+    refs: [ADR-0068]
+
+  - id: HUMAN-DECIDES
+    statement: AI PROPOSES (governance.recommendation); a human authority DECIDES (governance.decision).
+    rationale: Agents never take an irreversible civic action autonomously.
+    enforce: { mode: pattern, by: decision spine }
+    status: enforced
+    refs: [ADR-0029]
+
+  - id: PROMOTION-IS-REVIEWED
+    statement: Marketplace promotion is a reviewed, tenant-admin act; a development-tenant artifact cannot publish to shared production.
+    rationale: The sandbox is for building; the world sees a component only after review.
+    enforce: { mode: client+server, by: aos.policy + PROD_PUBLISH_GATES }
+    status: enforced
+    refs: [ADR-0109]
+
+  - id: SANDBOX-PLANE-BOUNDARY
+    statement: A sandbox deploy touches only the kernel + app-host; the shared network authority is reached only by promotion.
+    rationale: Keeps the authoring loop fast and the authority surface small and deliberate.
+    enforce: { mode: sdk, by: aos BrokerBackend }
+    status: enforced
+    refs: [ADR-0109]
+
+  - id: ACCESSIBLE-BY-DEFAULT
+    statement: User-facing surfaces meet WCAG 2.2 AA.
+    rationale: Public services must be usable by everyone; accessibility is not optional.
+    enforce: { mode: certify, by: a11y (axe) gate }
+    status: enforced
+    refs: [ADR-0077]
+
+  - id: SOURCE-ATTRIBUTION
+    statement: Derived and displayed data must carry its source attribution and citations.
+    rationale: A civic figure must be traceable to the record and method that produced it.
+    enforce: { mode: certify+ui, by: attribution checks + display chrome }
+    status: partial
+    refs: [ADR-0057, ADR-0041]
+
+  - id: NO-SYNTHETIC-DATA
+    statement: Fetch real data or fail loudly. Never fabricate; report skips honestly.
+    rationale: A government system that invents data is worse than one that admits a gap.
+    enforce: { mode: convention, by: review (engines report skips; no fabrication in code) }
+    status: convention
+    refs: [project-rule]
+
+  - id: PRIVACY-BY-CONSENT
+    statement: Access to personal data is owner-granted / consented, with least exposure.
+    rationale: Citizen data is used on a need-and-consent basis, not by blanket tenant access.
+    enforce: { mode: kernel, by: per-object access.grant (no blanket PII gate yet) }
+    status: partial
+    refs: [ADR-0103]
+
+  - id: EVENT-ON-STATE-CHANGE
+    statement: Significant state changes emit governed events; prefer asynchronous composition.
+    rationale: Lets services react and the feedback loop (telemetry → spec) close, without tight coupling.
+    enforce: { mode: advisory, by: "—" }
+    status: advisory
+    refs: [ADR-0089]
