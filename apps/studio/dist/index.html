@@ -363,19 +363,49 @@ async function openDoc(ref,slug,initial){
   if(!t){t={ref,path,content:md,dirty:(initial!==undefined)};TABS.push(t);}else t.content=md;
   ACTIVE=t; renderTabs(); renderEdit();
 }
-function generateInto(t){
+async function generateInto(t){
   const kind=(memberFor(t.ref)||{}).kind||'component';
   const m=modal(`<h3>✨ Generate with AI</h3>
-    <label class="sub">Describe what this ${esc(kind)} should do — Claude writes the code.</label>
+    <label class="sub">Ground this ${esc(kind)} on a governed <b>service spec</b> (ADR-0109) — or just describe it.</label>
+    <div style="display:flex;gap:8px;margin:8px 0 2px">
+      <select class="in" id="spec" style="flex:1"><option value="">— no spec (freeform) —</option></select>
+      <select class="in" id="target" style="flex:1;display:none"></select>
+    </div>
+    <div class="sub" id="specHint" style="margin:2px 0 8px;min-height:1.1em"></div>
+    <label class="sub" id="reqLbl">Describe what this ${esc(kind)} should do — Claude writes the code.</label>
     <textarea class="in" id="req" rows="4" style="font-family:inherit" placeholder="e.g. Fetch current temperature for AOI grid points from Open-Meteo and write one air.quality fact per point"></textarea>
     <div style="text-align:right;margin-top:10px"><button class="btn" id="x">Cancel</button> <button class="btn primary" id="go">Generate</button></div>`);
-  m.q('#x').onclick=m.close; const ta=m.q('#req'); if(ta&&ta.focus)ta.focus();
-  m.q('#go').onclick=()=>{const r=(m.q('#req').value||'').trim();if(!r)return;m.close();runGen(t.ref,r,'');};
+  m.q('#x').onclick=m.close;
+  const specSel=m.q('#spec'), tgtSel=m.q('#target'), hint=m.q('#specHint'), reqTa=m.q('#req'), reqLbl=m.q('#reqLbl');
+  if(reqTa&&reqTa.focus)reqTa.focus();
+  // ADR-0109: load governed service specs; when one is picked, the component is grounded on a spec TARGET
+  // (operation verb / domain noun / workflow) + the spec's inherited constitution — no freeform ask needed.
+  let SPECS=[];
+  try{SPECS=((await post('/bridge/service-specs',{}))||{}).specs||[];}catch(e){}
+  if(SPECS.length){
+    specSel.innerHTML='<option value="">— no spec (freeform) —</option>'+SPECS.map(s=>`<option value="${esc(s.id)}">${esc(s.capability||s.id)}</option>`).join('');
+    const K={operation:0,workflow:1,noun:2};
+    specSel.onchange=()=>{
+      const s=SPECS.find(x=>x.id===specSel.value);
+      if(!s){tgtSel.style.display='none';hint.textContent='';reqTa.style.display='';reqLbl.style.display='';return;}
+      reqTa.style.display='none';reqLbl.style.display='none';tgtSel.style.display='';
+      const ts=(s.targets||[]).slice().sort((a,b)=>(K[a.kind]-K[b.kind]));
+      tgtSel.innerHTML='<option value="">— pick what to realize —</option>'+ts.map(x=>`<option value="${esc(x.name)}">${esc(x.kind)}: ${esc(x.name)}${x.status?' ('+esc(x.status)+')':''}</option>`).join('');
+      hint.textContent='Grounded on this spec + its constitution — reads/writes, acceptance criteria & rules come from the spec.';
+    };
+  }else{ specSel.parentElement.style.display='none'; }  // no governed specs yet → plain freeform
+  m.q('#go').onclick=()=>{
+    const specId=specSel.value, target=tgtSel.value;
+    if(specId){ if(!target){alert('Pick what to realize from the spec (an operation, noun, or workflow).');return;} m.close(); runGen(t.ref,'','',{service_spec:specId,target}); return; }
+    const r=(reqTa.value||'').trim(); if(!r)return; m.close(); runGen(t.ref,r,'');
+  };
 }
-async function runGen(ref,req,fixError){
-  bottom((fixError?'🔧 Fixing ':'✨ Generating ')+ref+' … (~20s)');
+async function runGen(ref,req,fixError,spec){
+  bottom((fixError?'🔧 Fixing ':(spec?'✨ Generating '+ref+' from spec ':'✨ Generating '+ref))+' … (~20s)');
   const m=memberFor(ref);
-  const g=await post('/bridge/solution-generate',{component:ref,requirement:req||'',reads:(m&&m.reads)||'',writes:(m&&m.writes)||'',fix_error:fixError||''});
+  const body={component:ref,requirement:req||'',reads:(m&&m.reads)||'',writes:(m&&m.writes)||'',fix_error:fixError||''};
+  if(spec&&spec.service_spec){body.service_spec=spec.service_spec;body.target=spec.target;}  // ADR-0109 spec-grounded generation
+  const g=await post('/bridge/solution-generate',body);
   if(g.files){FILES[ref]=Object.assign(FILES[ref]||{},g.files);
     TABS.filter(x=>x.ref===ref).forEach(x=>{if(g.files[x.path]!==undefined){x.content=g.files[x.path];x.dirty=false;}});
     if(ACTIVE&&ACTIVE.ref===ref&&g.files[ACTIVE.path]!==undefined)$('code').value=g.files[ACTIVE.path];
