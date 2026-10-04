@@ -1,0 +1,160 @@
+# Property Tax — Service Specification (prototype)
+# ADR-0109 S4 proving slice: REVERSE-AUTHORED from the running Tax Gap Finder implementation.
+# This is the single artifact a human authors; it REFERENCES governed pieces, it does not duplicate them.
+# status legend:  built = present in code today   partial = exists but thin   roadmap = specified, not yet generated
+# Every element carries `impl:` — the governed id / file that already realizes it (the traceability backbone),
+# or `impl: null` when nothing implements it yet (→ a generation + conformance target).
+
+service_spec:
+  id: ds:airawat:service_spec/property-tax
+  version: 0.1.0
+  capability: >
+    Find, verify, assess, demand and collect property tax — bring unassessed and under-assessed
+    parcels onto the roll using survey, utility, satellite and register data, with human field
+    verification before any citizen-facing action.
+  realized_by: ds:airawat:solution/tax-gap-finder      # the solution this spec specifies
+  constitution: ds:airawat:constitution/default        # inherited rules (audit, privacy, vocab, verbs…)
+
+  # ── 1. Domain model (governed nouns) ───────────────────────────────────────────────
+  domain_model:
+    - noun: geo.parcel         status: built    role: "the property — cadastral master"
+      key: [parcel_id, land_use, ward, area_sqm, geometry, owner]
+      impl: components/solutions/tax-gap-finder/govern_schemas.py:53
+    - noun: tax.assessment     status: built    role: "the tax roll / register entry"
+      key: [uid, owner, mobile, address_string, ward, assessed_value, annual_tax, paid_status, point]
+      impl: govern_schemas.py:45
+    - noun: util.connection    status: built    role: "electricity/water connection (gap signal)"
+      key: [uid, utility_type, consumer_name, mobile, address_string, point, parcel_id]
+      impl: govern_schemas.py:59
+    - noun: tax.change_signal  status: built    role: "satellite-detected build/expansion (gap signal)"
+      key: [parcel_id, change_type, score, from_epoch, to_epoch]
+      impl: govern_schemas.py:66
+    - noun: tax.candidate      status: built    role: "a flagged potential gap, with evidence + confidence"
+      key: [parcel_id, evidence[], confidence, estimated_revenue, status, recommendation]
+      impl: govern_schemas.py:73
+    - noun: cell.tax_gap       status: built    role: "H3 density rollup of the gap"
+      impl: components/tools/seed_cell_tax_gap.py:21
+    - noun: geo.building       status: built    role: "footprint; links to parcel by parcel_id"
+      impl: foundation (written by ingest-property-survey / buildings-footprints)
+    - noun: tax.demand         status: roadmap  role: "issued demand note / bill"
+      key: [parcel_id, assessment, period, amount, due_date, status]
+      impl: null                                        # ← generation + conformance target
+    - noun: tax.payment        status: roadmap  role: "receipt against a demand"
+      key: [demand, amount, paid_at, channel, receipt_no]
+      impl: null
+    - noun: tax.objection      status: roadmap  role: "citizen objection / revision request"
+      impl: null
+
+  # ── 2. Roles ────────────────────────────────────────────────────────────────────────
+  roles:
+    - role: platform.tenant-admin  status: built    can: [configure policy, run gap-scan, create+assign campaigns]
+      impl: tax-gap-engine/run.py _ADMIN gate
+    - role: field-officer          status: built    modeled_as: org.employee (campaign assignee)
+      can: [record ground-truth verification on assigned candidates]
+      impl: campaign-engine/run.py:72
+    - role: assessor               status: roadmap  can: [finalize assessment, raise demand]
+      impl: null
+    - role: citizen                status: roadmap  can: [view own property, pay demand, file objection]
+      impl: null
+
+  # ── 3. Business rules (governed, config-driven — tax.match_policy) ────────────────────
+  rules_config: ds:{tenant}:tax/match_policy/default        # all thresholds editable; engine hardcodes nothing
+  business_rules:
+    - id: PT-LINK-KEYJOIN    status: built   rule: "parcel_id ↔ assessment.uid exact key-join tried first"
+      impl: tax-gap-engine/run.py gap-scan (link.key_join)
+    - id: PT-LINK-FUZZY      status: built   rule: "weighted link mobile .4 / name .3 / address .3; ≥0.85 auto-link, ≥0.6 candidate"
+      impl: tax-gap-engine/run.py:75 (match_score)
+    - id: PT-LINK-SPATIAL    status: built   rule: "point-in-polygon with 5m boundary tolerance; multi/boundary/outside → flag"
+      impl: tax-gap-engine/run.py:144 (locate)
+    - id: PT-GAP-UTILITY     status: built   rule: "utility on a parcel with no assessment link ≥ review → evidence weight 0.4"
+      impl: tax-gap-engine/run.py:260
+    - id: PT-GAP-FOOTPRINT   status: built   rule: "building footprint on a parcel with no assessment → evidence 0.3 (core 'in survey, not on roll')"
+      impl: tax-gap-engine/run.py:270
+    - id: PT-GAP-CHANGE      status: built   rule: "EO change new_build/expanded on a parcel → evidence 0.2"
+      impl: tax-gap-engine/run.py:285
+    - id: PT-CAND-CONF       status: built   rule: "confidence = min(1, Σ evidence weights); drop below min_confidence (0.5)"
+      impl: tax-gap-engine/run.py:300
+    - id: PT-ASSESS-FORMULA  status: roadmap rule: "annual_tax = assessed_value × base_rate × use_factor × (1 − exemption)"
+      impl: null                                         # ← no tax computation exists today
+    - id: PT-DEMAND-DUEDATE  status: roadmap rule: "demand due_date = issue_date + grace_days; arrears after"
+      impl: null
+
+  # ── 4. Workflow / state machine ──────────────────────────────────────────────────────
+  workflow:
+    candidate:   { states: [flagged, assigned, verifying, verified, dismissed], start: flagged, status: built,
+                   impl: "tax.candidate.status enum + campaign-engine transitions" }
+    assignment:  { states: [assigned, done], outcome: [confirmed, not_taxable, not_found], status: built,
+                   impl: campaign-engine/run.py }
+    revenue:     { states: [verified, assessed, demanded, collected], start: verified, status: roadmap,
+                   impl: null }                           # ← the assess→demand→collect tail is unbuilt
+    principle: "AI flags (governance.recommendation) → human decides (governance.decision)   [ADR-0029]"
+    routing: "assignment → the officer's platform.inbox_item (actionable: verify-submit)   [built]"
+
+  # ── 5. Operations (governed verbs / interfaces) ──────────────────────────────────────
+  operations:
+    - verb: tax.matchpolicy_get / tax.matchpolicy_set   status: built   impl: tax-gap-engine/run.py:192
+    - verb: tax.match_preview                           status: built   impl: tax-gap-engine/run.py:212
+    - verb: tax.gap_scan                                status: built   impl: tax-gap-engine/run.py:222  (headless-schedulable)
+    - verb: campaign.create / assign / record_verification / progress  status: built  impl: campaign-engine/run.py
+    - verb: tax.raise_demand                            status: roadmap impl: null
+    - verb: tax.record_payment                          status: roadmap impl: null
+
+  # ── 6. Data sources (all real; no fabrication — empty input ⇒ empty output) ──────────
+  data_sources:
+    - { src: "tax register CSV",          via: ingest-tax-register,        -> tax.assessment,   status: built }
+    - { src: "GIS cadastre (shp/csv)",    via: ingest-property-survey,     -> geo.parcel,       status: built }
+    - { src: "utility connections CSV",   via: ingest-utilities,           -> util.connection,  status: built }
+    - { src: "geocoding (Nominatim/OSM)", via: geocode-ledger,             -> tax.assessment.point, status: built }
+    - { src: "satellite change (AlphaEarth)", via: change-detect-alphaearth, -> tax.change_signal, status: built }
+    - { src: "building footprints (Open Buildings)", via: buildings-footprints, -> geo.building, status: built }
+
+  # ── 7. Non-functional / cross-cutting ────────────────────────────────────────────────
+  documents_credentials: { status: roadmap, note: "assessment certificate / demand note as a verifiable credential (ADR-0049)" }
+  fees:    { status: roadmap, note: "payment & fee quote (ADR-0067 S5) — not wired" }
+  slas:    { status: roadmap, note: "verification turnaround; demand issuance timeline — no timers today" }
+  events:  { status: partial, consumes: [tax.change_signal], emits: [], note: "no outbound workflow events (ADR-0089 target)" }
+  privacy: { status: roadmap, note: "owner name + mobile used in matching; no consent/PII governance yet" }
+
+  # ── 8. Acceptance criteria (GIVEN/WHEN/THEN) ─────────────────────────────────────────
+  #     `test:` names the conformance test; `null` = behaviour is built but UNVERIFIED (a traceability finding).
+  acceptance_criteria:
+    - id: AC-GAP-FOOTPRINT  status: built   test: null
+      given: "a parcel with a building footprint and no linked assessment"
+      when:  "gap_scan runs"
+      then:  "a tax.candidate is written with footprint_no_assessment evidence AND a governance.recommendation"
+      traces: [PT-GAP-FOOTPRINT]
+    - id: AC-LINK-REVIEW    status: built   test: null
+      given: "a utility whose best fuzzy link to any assessment is below the review threshold"
+      when:  "gap_scan runs"
+      then:  "utility_no_tax evidence fires on that parcel"
+      traces: [PT-LINK-FUZZY, PT-GAP-UTILITY]
+    - id: AC-CONF-FLOOR     status: built   test: null
+      given: "a candidate whose summed confidence is below min_confidence"
+      when:  "gap_scan runs"
+      then:  "the candidate is not returned"
+      traces: [PT-CAND-CONF]
+    - id: AC-VERIFY-CLOSE   status: built   test: null
+      given: "an officer assigned a candidate"
+      when:  "they submit outcome=confirmed with an assessed_value"
+      then:  "candidate→verified, estimated_revenue is set, and the inbox task closes with a governance.decision"
+      traces: [workflow.candidate, workflow.assignment]
+    - id: AC-NO-FABRICATION status: built   test: null
+      given: "no ingested source records"
+      when:  "gap_scan runs"
+      then:  "zero candidates are produced (nothing is invented)"
+      traces: []
+    - id: AC-DEMAND-ISSUE   status: roadmap test: null
+      given: "a verified candidate with an assessment"
+      when:  "an assessor raises a demand"
+      then:  "a tax.demand is issued with amount and due_date, and the citizen is notified"
+      traces: [PT-ASSESS-FORMULA, PT-DEMAND-DUEDATE]
+
+  # ── 9. Generation map (what each section would emit, per ADR-0109) ───────────────────
+  generation_map:
+    schemas:    from: domain_model      -> govern_schemas.py (built) + tax.demand/payment (roadmap)
+    interfaces: from: operations        -> governed verb interfaces (built: policy/scan/campaign; roadmap: demand/payment)
+    workflow:   from: workflow          -> platform.workflow graph (candidate lifecycle built; revenue tail roadmap)
+    rules:      from: business_rules    -> governance.policy_rule + tax.match_policy (built; assess/demand roadmap)
+    engine:     from: operations+rules  -> tax-gap-engine, campaign-engine (built); assess/demand engine (roadmap)
+    app:        from: roles+operations  -> tax-config-console, tax-gap-campaign (built); citizen + assessor surfaces (roadmap)
+    tests:      from: acceptance_criteria -> conformance suite (NONE today — every AC has test: null)
