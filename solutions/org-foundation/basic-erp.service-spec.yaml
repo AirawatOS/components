@@ -1,0 +1,99 @@
+# Basic ERP (Org Foundation) — Service Specification
+# ADR-0109: REVERSE-AUTHORED from the running Org Foundation solution (org + hr + finance + project + payroll).
+# The single artifact a human authors; it REFERENCES governed pieces, it does not duplicate them.
+# status legend: built = present in code today · partial = exists but thin · roadmap = specified, not yet built
+# Every element carries impl: — the governed engine/handler that realizes it (traceability), or null.
+
+service_spec:
+  id: ds:airawat:service_spec/basic-erp
+  version: 0.1.0
+  capability: >
+    Run an organisation's backbone: its structure and people (org units, positions, postings → live RBAC),
+    HR (leave, attendance, expense), finance (double-entry accounts, budgets, transactions), projects
+    (propose → approve → execute → review → evaluate), and payroll apportioned to project work — all as
+    governed records with manager-routed approvals in a universal Inbox.
+  realized_by: ds:airawat:solution/org-foundation
+  constitution: ds:airawat:constitution/default
+
+  # ── 1. Domain model (governed nouns) ─────────────────────────────────────────────
+  domain_model:
+    - { noun: org.org_unit,        status: built, role: "department / team node in the org tree",        impl: "components/engines/org-rbac-engine" }
+    - { noun: org.position,        status: built, role: "a job slot (level + stream) that can be filled", impl: "components/engines/org-rbac-engine" }
+    - { noun: org.posting,         status: built, role: "assignment of a person to a position (→ RBAC)",  impl: "components/engines/org-rbac-engine (posting-apply)" }
+    - { noun: org.employee,        status: built, role: "a person on staff; .citizen links to their login", impl: "components/engines/org-rbac-engine (employee-provision)" }
+    - { noun: governance.role_grant, status: built, role: "effective role a posting projects into live RBAC", impl: "components/engines/org-rbac-engine" }
+    - { noun: hr.job_level,        status: built, role: "grade/band (drives entitlements + policy)",       impl: "components/engines/policy-engine" }
+    - { noun: org.policy,          status: built, role: "a resolvable HR/finance policy (limits, entitlements)", impl: "components/engines/policy-engine (policy-resolve)" }
+    - { noun: hr.leave_request,    status: built, role: "a leave application + its approval state",         impl: "components/engines/hr-workflows (h_leave_apply)" }
+    - { noun: hr.attendance,       status: built, role: "a check-in/out record",                            impl: "components/engines/hr-workflows (attendance-mark)" }
+    - { noun: hr.expense_claim,    status: built, role: "an expense claim + policy/finance settlement",     impl: "components/engines/hr-workflows (h_expense_apply)" }
+    - { noun: hr.compensation,     status: built, role: "an employee's pay basis (drives payroll)",         impl: "components/engines/payroll-engine" }
+    - { noun: finance.account,     status: built, role: "chart-of-accounts node",                           impl: "components/engines/finance-engine" }
+    - { noun: finance.budget,      status: built, role: "a budget envelope that work commits against",      impl: "components/engines/finance-engine" }
+    - { noun: finance.transaction, status: built, role: "a double-entry posting",                           impl: "components/engines/finance-engine (finance-post)" }
+    - { noun: project.proposal,    status: built, role: "a proposed project awaiting approval",             impl: "components/engines/project-engine (proposal-submit)" }
+    - { noun: project.project,     status: built, role: "an approved project under execution",              impl: "components/engines/project-engine" }
+    - { noun: project.allocation,  status: built, role: "a person's time/cost allocation to a project",     impl: "components/engines/project-engine" }
+    - { noun: project.review,      status: built, role: "a periodic project review",                        impl: "components/engines/project-engine" }
+    - { noun: project.evaluation,  status: built, role: "end-of-project evaluation",                        impl: "components/engines/project-engine" }
+    - { noun: platform.inbox_item, status: built, role: "the routed approval task (manager/approver)",      impl: "foundation (kernel/app-host)" }
+    - { noun: platform.schedule,   status: built, role: "the recurring payroll run schedule",               impl: "components/engines/payroll-engine" }
+
+  # ── 2. Operations (governed verbs → engines) ─────────────────────────────────────
+  operations:
+    - { verb: employee-provision, status: built, role: "create an employee + link a login (citizen)",  impl: "org-rbac-engine (h_employee_provision)" }
+    - { verb: posting-apply,      status: built, role: "assign a posting → project a live role_grant",  impl: "org-rbac-engine (h_posting_apply)" }
+    - { verb: authz-check,        status: built, role: "resolve a caller's effective grants",           impl: "org-rbac-engine (h_authz_check)" }
+    - { verb: policy-resolve,     status: built, role: "resolve the applicable policy (limits/entitlements)", impl: "policy-engine (h_policy_resolve)" }
+    - { verb: leave-apply,        status: built, role: "file a leave request → route to manager",       impl: "hr-workflows (h_leave_apply)" }
+    - { verb: leave-decide,       status: built, role: "manager approves/rejects a leave request",       impl: "hr-workflows (h_leave_decide)" }
+    - { verb: attendance-mark,    status: built, role: "check in / check out",                           impl: "hr-workflows (attendance-mark)" }
+    - { verb: expense-apply,      status: built, role: "file an expense claim (policy-limited)",         impl: "hr-workflows (h_expense_apply)" }
+    - { verb: expense-decide,     status: built, role: "approve/reject → settle to finance",             impl: "hr-workflows (h_expense_decide)" }
+    - { verb: finance-post,       status: built, role: "post a double-entry transaction, commit budget", impl: "finance-engine (h_finance_post)" }
+    - { verb: proposal-submit,    status: built, role: "submit a project proposal for approval",         impl: "project-engine (h_proposal_submit)" }
+    - { verb: proposal-decide,    status: built, role: "approve/reject a proposal → open a project",     impl: "project-engine (h_proposal_decide)" }
+    - { verb: payroll-apportion,  status: built, role: "apportion pay across project allocations",       impl: "payroll-engine (h_payroll_apportion)" }
+    - { verb: payroll-run,        status: built, role: "run payroll → finance transactions",             impl: "payroll-engine (h_payroll_run)" }
+
+  # ── 3. Business rules ────────────────────────────────────────────────────────────
+  business_rules:
+    - { id: ERP-EMP-LOGIN,     status: built,   statement: "a person can only act in HR Desk if an org.employee record links their login (.citizen == sub)", impl: "hr-workflows (_me); UI disables Apply if unlinked" }
+    - { id: ERP-LEAVE-ROUTE,   status: built,   statement: "a filed leave request routes to the applicant's employee.manager as an inbox task; if no manager, it is filed but unrouted", impl: "hr-workflows (h_leave_apply routing)" }
+    - { id: ERP-LEAVE-DECIDE,  status: built,   statement: "only the named manager_login may approve/reject a leave request", impl: "hr-workflows (h_leave_decide authz)" }
+    - { id: ERP-LEAVE-BALANCE, status: partial, statement: "requested days must not exceed the policy-resolved available balance (unlimited if no leave policy)", impl: "hr-workflows (_leave_balance via policy-engine)" }
+    - { id: ERP-EXPENSE-LIMIT, status: built,   statement: "an expense claim above the policy limit requires approval before it settles to finance", impl: "hr-workflows + policy-engine + finance-engine" }
+    - { id: ERP-POSTING-RBAC,  status: built,   statement: "applying a posting projects a governance.role_grant so the person gains the position's role live", impl: "org-rbac-engine (h_posting_apply)" }
+    - { id: ERP-FINANCE-DE,    status: built,   statement: "every finance.transaction is balanced double-entry and commits against a budget envelope", impl: "finance-engine (h_finance_post)" }
+    - { id: ERP-PROJ-GATE,     status: built,   statement: "a proposal becomes a project only on an authorised approval (decided change-request)", impl: "project-engine (h_proposal_decide)" }
+    - { id: ERP-PAYROLL-APPORT, status: built,  statement: "payroll apportions each employee's pay across their project.allocations (day-fraction for mid-period joiners/leavers)", impl: "payroll-engine (h_payroll_apportion)" }
+
+  # ── 4. Workflows ─────────────────────────────────────────────────────────────────
+  workflow:
+    hr_leave:     { status: built,   states: [draft, pending, approved, rejected], impl: "hr-workflows (platform.lifecycle hr.leave)" }
+    hr_expense:   { status: built,   states: [filed, policy_checked, approved, settled, rejected], impl: "hr-workflows + finance-engine" }
+    project:      { status: built,   states: [proposal, approved, executing, reviewed, evaluated, adjusted], impl: "project-engine" }
+    payroll:      { status: built,   states: [preview, apportioned, posted], impl: "payroll-engine" }
+    onboarding:   { status: partial, states: [employee_created, login_linked, posted, role_granted], impl: "org-rbac-engine (employee-provision + posting-apply)" }
+
+  # ── 5. Roles (governed actor vocabulary) ─────────────────────────────────────────
+  roles:
+    - { role: employee,        status: built,   role: "files own leave/expense/attendance", impl: "hr-desk app (roles: [] — any staff)" }
+    - { role: manager,         status: built,   role: "approves team leave/expense",         impl: "resolved from org.employee.manager" }
+    - { role: hr-admin,        status: partial, role: "sets up employees, postings, policy", impl: "org-setup app + org-rbac-engine" }
+    - { role: finance-officer, status: partial, role: "posts transactions, manages budgets", impl: "finance-console + finance-engine" }
+
+  # ── 6. Acceptance criteria (the executable checks) ───────────────────────────────
+  acceptance_criteria:
+    - { id: AC-EMP-LINK,       status: built, test: null, traces: [ERP-EMP-LOGIN],    given: "a login with no linked employee", when: "it opens HR Desk and tries leave-apply", then: "the action is refused with a clear 'link your login' message and the Apply button is disabled" }
+    - { id: AC-LEAVE-ROUTE,    status: built, test: null, traces: [ERP-LEAVE-ROUTE],  given: "an employee with a manager", when: "they leave-apply", then: "an hr.leave_request(pending) is written AND a platform.inbox_item task is routed to the manager" }
+    - { id: AC-LEAVE-DECIDE,   status: built, test: null, traces: [ERP-LEAVE-DECIDE], given: "a pending leave request", when: "the named manager leave-decide:approve", then: "the request becomes approved and is stamped with the decider" }
+    - { id: AC-EXPENSE-LIMIT,  status: built, test: null, traces: [ERP-EXPENSE-LIMIT], given: "an expense above the policy limit", when: "it is filed and approved", then: "a balanced finance.transaction settles it against the budget" }
+    - { id: AC-POSTING-RBAC,   status: built, test: null, traces: [ERP-POSTING-RBAC], given: "a person and a position", when: "posting-apply runs", then: "a governance.role_grant appears so authz-check returns the new role" }
+    - { id: AC-PAYROLL-APPORT, status: built, test: null, traces: [ERP-PAYROLL-APPORT], given: "employees with compensation and project allocations", when: "payroll runs", then: "finance.transactions are apportioned across each allocation" }
+
+  # ── 7. Non-functional ────────────────────────────────────────────────────────────
+  nfr:
+    - { id: NFR-ATTRIBUTED, status: built, statement: "every write is attributed to the acting engine on-behalf-of the user (ADR-0052)" }
+    - { id: NFR-INBOX,      status: built, statement: "approvals surface in the universal Inbox and are actionable there (ADR-0048)" }
+    - { id: NFR-SETUP,      status: partial, statement: "a tenant is usable only after employees are created AND each login is linked AND managers are set (the nashik gap)" }
