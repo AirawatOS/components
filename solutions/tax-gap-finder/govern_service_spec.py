@@ -18,7 +18,7 @@ APP = os.environ.get("APP", "http://localhost:8099")
 NET = os.environ.get("NET", "http://localhost:8090")
 IDN = os.environ.get("IDN", "http://localhost:8093")
 KERNEL = os.environ.get("KERNEL", "http://localhost:8080")
-TENANT = os.environ.get("TENANT", "airawatdeveloper")
+TENANT = os.environ.get("TENANT", "airawat")   # the platform/standards tenant holds the reference service spec
 ID_PAT = r"^ds:[a-z0-9-]+:\S+$"
 SID = "platform.service_spec"
 
@@ -33,10 +33,11 @@ def post(url, body, token=None, cj=None):
     except urllib.error.HTTPError as e:
         return None, f"{e.code} {e.read().decode()[:300]}"
 
-# --- sessions: steward (approves governance) + devrick (authors in the dev tenant) ---
+# --- sessions: steward (airawat) proposes + approves + writes the platform artifact. The reference IdP is
+#     password-flipped for human users (ADR-0068), but service principals like steward stay passwordless. ---
 STOK = (post(IDN + "/realms/airawat/login", {"username": "steward"})[0] or {}).get("access_token")
 cj = http.cookiejar.CookieJar()
-post(APP + "/login", {"realm": TENANT, "username": "devrick"}, cj=cj)
+post(APP + "/login", {"realm": "airawat", "username": "steward"}, cj=cj)
 
 # --- 1. govern platform.service_spec (light envelope; open `spec` body) ---
 S = {"type": "string"}; Sn = {"type": ["string", "null"]}; O = {"type": "object"}
