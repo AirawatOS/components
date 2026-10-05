@@ -71,6 +71,13 @@ spec={
   "payroll":{"status":"built","states":["preview","apportioned","posted"],"impl":"payroll-engine"},
   "onboarding":{"status":"partial","states":["employee_created","login_linked","posted","role_granted"],"impl":"org-rbac-engine"},
  },
+ "apps":[
+  {"app":"org-setup","status":"built","role":"set up org units, positions, employees (+ link logins) & managers","impl":"components/apps/org-setup"},
+  {"app":"hr-desk","status":"built","role":"employee self-service: leave, attendance, expense + manager approvals","impl":"components/apps/hr-desk"},
+  {"app":"finance-console","status":"built","role":"accounts, vouchers, budgets, Trial Balance / P&L / Balance Sheet","impl":"components/apps/finance-console"},
+  {"app":"policy-console","status":"built","role":"author & resolve HR/finance policies (limits, entitlements)","impl":"components/apps/policy-console"},
+  {"app":"project-console","status":"built","role":"propose→approve→execute→review→evaluate projects + allocations","impl":"components/apps/project-console"},
+ ],
  "roles":[
   {"role":"employee","status":"built","role_desc":"files own leave/expense/attendance","impl":"hr-desk (roles: [])"},
   {"role":"manager","status":"built","role_desc":"approves team leave/expense","impl":"resolved from org.employee.manager"},
