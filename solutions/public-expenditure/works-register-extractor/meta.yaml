@@ -1,0 +1,19 @@
+component_id: ds:janaagraha:driver/works-register-extractor
+kind: driver
+version: 0.1.0
+provider: ds:janaagraha:developer
+entrypoint: run.py
+confinement_min: L1
+title: Works Register Extractor
+description: >
+  Wraps Janaagraha's Work-Order-PDF extractor output and writes governed public-works facts for the
+  Public Expenditure Dashboard: works.work_order + works.contract + works.contractor + works.payment,
+  each linked to the roads it touches. Realizes ds:janaagraha:service_spec/public-expenditure-dashboard.
+reads: []
+writes: [works.work_order, works.contract, works.contractor, works.payment]
+egress: []
+scopes:
+  - { verb: write, scope: works.work_order, tenant: janaagraha }
+  - { verb: write, scope: works.contract,   tenant: janaagraha }
+  - { verb: write, scope: works.contractor, tenant: janaagraha }
+  - { verb: write, scope: works.payment,    tenant: janaagraha }
