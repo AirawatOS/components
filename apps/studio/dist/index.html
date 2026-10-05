@@ -61,21 +61,28 @@
   .sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:560px;max-width:92vw;max-height:88vh;overflow:auto}
   input.in,select.in,textarea.in{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;margin:3px 0}
   .sub{color:var(--dim);font-size:12px}
+  /* traditional menu-bar: text menus open clamped dropdowns (replaces the crowded toolbar) */
+  .hbar .mlabel{font-weight:500;white-space:nowrap}
+  .hbar .projpick{display:inline-flex;align-items:center;gap:6px}
+  .hbar .projpick b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:26ch;color:var(--txt);font-weight:600}
+  .menu .sep{height:1px;background:var(--line);margin:4px 4px;padding:0;cursor:default}
+  .menu div:hover.sep,.menu .sep:hover{background:var(--line)}
+  .menu .dis{opacity:.4;pointer-events:none}
+  /* always-visible footer status bar (sandbox marking lives here, not in the toolbar) */
+  .statusbar{display:flex;align-items:center;gap:12px;padding:3px 10px;background:var(--panel);border-top:1px solid var(--line);flex:0 0 auto;font-size:11px;color:var(--dim)}
+  .statusbar .dev-badge{font-size:10px;padding:0 7px}
+  .xitem{padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;gap:8px;align-items:center}
+  .xitem:hover{background:var(--bg)}
 </style>
 <div class="hbar">
   <span class="ic" id="tgLeft" title="Toggle explorer">☰</span>
   <span class="t">🛠 Studio</span>
-  <select id="proj"></select>
-  <span class="ic" id="newProj">＋ Project</span>
-  <span class="ic" id="renProj" title="Rename this project / solution">✎</span>
-  <span class="ic" id="delProj" title="Delete this project">🗑</span>
-  <span class="dev-badge" title="Everything built in Studio runs in your developer sandbox — it is NOT published to the Marketplace or Service Directory until promoted to production (ADR-0106).">Under Development</span>
+  <span class="ic mlabel" id="mProject" title="New / open / rename / archive · publish">Project ▾</span>
+  <span class="ic mlabel" id="mContracts" title="Author, browse & request the specs your components speak">Contracts ▾</span>
+  <span class="ic mlabel" id="mView" title="Architecture & layout">View ▾</span>
+  <span class="ic mlabel" id="mHelp" title="Guide & git settings">Help ▾</span>
   <span style="margin-left:auto"></span>
-  <span class="ic" id="contractsBtn" title="The shared specs your components speak — browse, request a new one, or track your requests">🔗 Contracts</span>
-  <span class="ic" id="archBtn" title="See the whole solution as layers of components wired by specs">🗺 Architecture</span>
-  <span class="ic" id="composeBtn" title="Bundle these components into one installable solution and publish it to the Marketplace">⬆ Publish as Solution</span>
-  <span class="ic" id="serviceBtn" title="Expose this solution's workflow as a citizen service on the Network — discoverable + runnable across tenants (ADR-0097 W5)">🌐 Publish as Service</span>
-  <span class="ic" id="moreBtn" title="More — guide, git settings">⋯</span>
+  <span class="ic projpick" id="projPick" title="Open a project">📂 <b id="projName">—</b> ▾</span>
 </div>
 <div class="body">
   <div class="left" id="left"></div>
@@ -83,7 +90,7 @@
     <div class="tabs" id="tabs"></div>
     <div class="edit" id="edit"><div class="welcome" id="welcome"><div style="max-width:540px">
       <div style="font-size:15px;color:var(--txt);margin-bottom:8px">Build a solution from small pieces that talk through shared <b>Contracts</b>.</div>
-      <div class="sub">Right-click a group in the left explorer to add a piece · right-click a piece (or click its node in 🗺 Architecture) to <b>🔍 Open</b> it · then <b>⬆ Publish as Solution</b> bundles everything into one installable app.</div>
+      <div class="sub">Open or create a project from the <b>Project</b> menu · right-click a group in the left explorer to add a piece · right-click a piece (or click its node in <b>View → 🗺 Architecture</b>) to <b>🔍 Open</b> it · then <b>Project → ⬆ Publish as Solution</b> bundles everything into one installable app.</div>
       <div class="sub" style="margin-top:12px;text-align:left;display:inline-block;line-height:1.9">
         📱 <b>Apps &amp; Screens</b> — what people use<br>
         🔌 <b>Data In</b> — bring outside data in as governed facts<br>
@@ -94,6 +101,12 @@
     <div class="bottom" id="bottom"></div>
   </div>
   <div class="right collapsed" id="right"></div>
+</div>
+<div class="statusbar">
+  <span class="dev-badge" title="Everything built in Studio runs in your developer sandbox — it is NOT published to the Marketplace or Service Directory until promoted to production (ADR-0106).">Under Development</span>
+  <span id="sbTenant"></span>
+  <span style="margin-left:auto"></span>
+  <span id="sbProject"></span>
 </div>
 <script src="/shared/a11y.js"></script>
 <script>
@@ -134,22 +147,51 @@ async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;}catch(e){}  // build in the DEVELOPER's own tenant
   PROJECTS=await q('studio.project');
   try{MARKET=await fetch('/bridge/market').then(r=>r.json());}catch(e){}
-  const sel=$('proj'); sel.innerHTML=PROJECTS.map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')||'<option>— no projects —</option>';
-  sel.onchange=()=>{SEL=PROJECTS.find(p=>p.id===sel.value);TABS=[];ACTIVE=null;FILES={};renderTabs();renderEdit();tree();};
-  SEL=PROJECTS[0]||null; if(SEL)sel.value=SEL.id;
+  SEL = PROJECTS[0] || null;
+  if($('sbTenant')) $('sbTenant').textContent = 'sandbox: ' + TENANT;
+  refreshProjName();
   tree();
   $('tgLeft').onclick=()=>$('left').classList.toggle('collapsed');
-  $('newProj').onclick=newProject;
-  $('renProj').onclick=renameProject;
-  $('delProj').onclick=deleteProject;
-  // S2: one Contracts surface (browse · request · track) + an overflow for guide/git, so the top bar is 3 clear actions.
-  const drop=(e,items)=>{const r=e.currentTarget.getBoundingClientRect();menu(r.left,r.bottom+4,items);};
-  $('contractsBtn').onclick=e=>drop(e,[['✍️ Author a spec (AI)',authorSpec],['📐 Browse specs',specsBrowser],['＋ Request a schema',requestSchema],['📥 My requests',myRequests]]);
-  $('moreBtn').onclick=e=>drop(e,[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
-  $('composeBtn').onclick=composeSolution;
-  $('serviceBtn').onclick=publishAsService;
-  $('archBtn').onclick=toggleArch;
+  $('projPick').onclick=openProjectPicker;
+  // traditional menu bar — each label opens a (viewport-clamped) dropdown; items computed at click so they
+  // reflect whether a project is open. Everything lives under Project / Contracts / View / Help.
+  const at=(id,itemsFn)=>{const el=$(id); if(!el)return; el.onclick=()=>{const r=el.getBoundingClientRect();menu(r.left,r.bottom+4,itemsFn());};};
+  at('mProject',()=>{const has=!!SEL;return [
+    ['＋ New Project…',newProject],
+    ['📂 Open Project…',openProjectPicker],
+    ['---'],
+    ['✎ Rename Project…',has?renameProject:null],
+    ['🗑 Archive / Delete Project…',has?deleteProject:null],
+    ['---'],
+    ['⬆ Publish as Solution',has?composeSolution:null],
+    ['🌐 Publish as Service',has?publishAsService:null],
+  ];});
+  at('mContracts',()=>[['✍️ Author a spec (AI)',authorSpec],['📐 Browse specs',specsBrowser],['＋ Request a schema',requestSchema],['📥 My requests',myRequests]]);
+  at('mView',()=>[['🗺 Architecture',toggleArch],['☰ Toggle explorer',()=>$('left').classList.toggle('collapsed')]]);
+  at('mHelp',()=>[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
   buildRight();
+}
+// ---------- PROJECT PICKER (Open Project popup) + current-project chrome ----------
+function refreshProjName(){
+  const el=$('projName'); if(el) el.textContent = SEL ? SEL.title : '— open a project —';
+  const sp=$('sbProject'); if(sp) sp.textContent = SEL ? ('📂 ' + SEL.title) : 'no project open';
+}
+function selectProject(id){
+  SEL = PROJECTS.find(p=>p.id===id) || SEL;
+  TABS=[]; ACTIVE=null; FILES={};
+  refreshProjName(); renderTabs(); renderEdit(); tree();
+}
+function openProjectPicker(){
+  const rows = PROJECTS.length
+    ? PROJECTS.map(p=>`<div class="xitem" data-id="${esc(p.id)}">📂 <b>${esc(p.title)}</b> <span class="sub">· ${(p.members||[]).length} component(s)${SEL&&SEL.id===p.id?' · open':''}</span></div>`).join('')
+    : '<div class="sub" style="padding:10px">No projects yet — create your first.</div>';
+  const m=modal(`<h3>Open Project</h3>
+    <div class="sub">A project <b>is</b> a solution — its contracts and components live inside it.</div>
+    <div style="margin:12px 0;max-height:52vh;overflow:auto">${rows}</div>
+    <div style="display:flex;align-items:center;margin-top:4px"><button class="btn primary" id="np">＋ New Project</button><span style="margin-left:auto"></span><button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#np').onclick=()=>{m.close();newProject();};
+  m.q('.sheet').querySelectorAll('.xitem').forEach(el=>el.onclick=()=>{m.close();selectProject(el.dataset.id);});
 }
 // ---------- LEFT TREE ----------
 function tree(){
@@ -179,8 +221,15 @@ function tree(){
 function memberFor(ref){return (SEL.members||[]).find(m=>m.ref===ref);}
 // ---------- CONTEXT MENUS ----------
 function menu(x,y,items){document.querySelectorAll('.menu').forEach(m=>m.remove());const m=document.createElement('div');m.className='menu';m.style.left=x+'px';m.style.top=y+'px';
-  items.forEach(([label,fn])=>{const d=document.createElement('div');d.textContent=label;d.onclick=()=>{m.remove();fn();};m.appendChild(d);});
-  document.body.appendChild(m);setTimeout(()=>document.addEventListener('click',()=>m.remove(),{once:true}),0);}
+  items.forEach(it=>{ if(!it||it[0]==='---'){const s=document.createElement('div');s.className='sep';m.appendChild(s);return;}
+    const [label,fn]=it;const d=document.createElement('div');d.textContent=label;
+    if(fn)d.onclick=()=>{m.remove();fn();};else d.className='dis';m.appendChild(d);});
+  document.body.appendChild(m);
+  // clamp into the viewport so a right-edge / bottom menu never opens off-screen
+  const r=m.getBoundingClientRect();
+  if(r.right>window.innerWidth-6)m.style.left=Math.max(6,window.innerWidth-r.width-6)+'px';
+  if(r.bottom>window.innerHeight-6)m.style.top=Math.max(6,window.innerHeight-r.height-6)+'px';
+  setTimeout(()=>document.addEventListener('click',()=>m.remove(),{once:true}),0);}
 function ctxKind(kind,e){menu(e.clientX,e.clientY,[['＋ New '+ (kind==='agent'?'AI Expert':pretty(kind)),()=>addComponent(kind)]]);}
 function ctxLayer(layer,e){const items=(LAYER_KINDS[layer]||[]).map(k=>['＋ New '+(k==='agent'?'AI Expert':k==='pipeline'?'Pipeline (chained stages)':pretty(k)),()=>addComponent(k)]);
   if(layer==='domain'||layer==='network'||layer==='governance')items.push(['📐 Browse specs…',specsBrowser]);
@@ -480,8 +529,7 @@ function newProject(){const m=modal(`<h3>New Project — tell me what you're bui
     const brief={users:lines('#who'),entities:lines('#ent'),data_sources:lines('#src'),decisions:lines('#dec'),triggers:lines('#trg')};
     const design=m.q('#design').checked;
     await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),brief,status:'active',members:[],tenant:TENANT});
-    m.close(); await boot();
-    const sel=$('proj'); if([...sel.options].some(o=>o.value===id)){sel.value=id;SEL=PROJECTS.find(p=>p.id===id);TABS=[];FILES={};renderTabs();renderEdit();tree();}
+    m.close(); PROJECTS=await q('studio.project'); selectProject(id);
     if(design&&SEL){expandAI();setTimeout(()=>aiSend(briefPrompt(SEL)),150);}
   };}
 async function deleteProject(){
@@ -506,7 +554,7 @@ async function renameProject(){
   m.q('#ok').onclick=async()=>{const t=inp.value.trim(); if(!t||t===cur){m.close();return;}
     SEL.title=t; await save(SEL);
     const p=PROJECTS.find(x=>x.id===SEL.id); if(p)p.title=t;
-    const sel=$('proj'); if(sel.selectedIndex>=0)sel.options[sel.selectedIndex].textContent=t;   // reflect in the picker
+    refreshProjName();   // reflect the new name in the toolbar + status bar
     m.close(); tree();
     bottom('✓ renamed to “'+t+'”.'+(SEL.target_solution?'\nRe-run Compose → Solution to update the Marketplace listing “'+SEL.target_solution.split('/').pop()+'” (it bumps the version).':''));};
 }
@@ -689,6 +737,7 @@ async function specsBrowser(){
     #specq{flex:1;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--surface,transparent);color:inherit}
     #sdet mark{background:var(--accent);color:#fff;border-radius:2px;padding:0 1px}
     #sdet pre{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:4px 0 0}
+    #slist{overflow-x:hidden} #slist div{white-space:normal;word-break:break-word}
     .xitem:hover{background:var(--line)}
   </style>
   <h3 style="margin:0 0 2px">📐 Network Specifications</h3>
@@ -1085,7 +1134,7 @@ function guide(){
   <h4 style="margin:14px 0 4px">Build vs Configure</h4>
   <div class="sub"><b>Build</b> a NEW component when nothing fits: scaffold → generate/edit code → Test → Publish. <b>Configure</b> an EXISTING platform component when one already does the job: install it, set its API keys & schedule — no code. Reuse first; the Solution Expert always suggests reuse before building. (Right-click any piece → <b>🔍 Open</b> to see its contract and the right actions.)</div>
   <h4 style="margin:14px 0 4px">The flow</h4>
-  <div class="sub">① <b>＋ Project</b> — answer the wizard (what · who · data · decisions · triggers). ② The <b>🧠 Solution Expert</b> proposes a layered graph — reuse or build each part, confirm-gated. ③ See it in <b>🗺 Architecture</b>. ④ Test each component in your dev sandbox. ⑤ Publish. ⑥ <b>⬆ Publish as Solution</b> — one install brings the whole thing.</div>
+  <div class="sub">① <b>Project → ＋ New Project</b> — answer the wizard (what · who · data · decisions · triggers). ② The <b>🧠 Solution Expert</b> proposes a layered graph — reuse or build each part, confirm-gated. ③ See it in <b>View → 🗺 Architecture</b>. ④ Test each component in your dev sandbox. ⑤ <b>Project → ⬆ Publish as Solution</b> — one install brings the whole thing.</div>
   <div style="text-align:right;margin-top:14px"><button class="btn primary" id="x">Got it</button></div>`);
   m.q('#x').onclick=m.close;
 }
