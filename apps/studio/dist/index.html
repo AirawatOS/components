@@ -969,6 +969,7 @@ async function authorSpec(){
       <textarea class="in" id="spcap" rows="2" style="margin-top:6px;width:100%" placeholder="capability">${esc(r.capability||'')}</textarea>
       <div class="sub" style="margin-top:6px">nouns <b>${n('domain_model')}</b> · operations <b>${n('operations')}</b> · apps <b>${n('apps')}</b> · workflows <b>${n('workflow')}</b> · rules <b>${n('business_rules')}</b> · acceptance <b>${n('acceptance_criteria')}</b></div>`;
     q('#spslug').oninput=()=>{q('#spslugp').textContent=q('#spslug').value;};
+    if((r.warnings||[]).length){ q('#spdraft').innerHTML+=`<div style="margin-top:8px;border:1px solid var(--warn);border-radius:8px;padding:8px 10px;color:var(--warn);font-size:12px"><b>⚠ Governance checks:</b><br>`+r.warnings.map(esc).join('<br>')+`</div>`; }
     q('#spgovern').style.display=''; setStatus('Review the draft, then Govern.');
   };
   q('#spgovern').onclick=async()=>{
