@@ -12,3 +12,15 @@ sandboxed: true
 required_schemas: []
 system: true    # platform app — auto-installed for every tenant and cannot be uninstalled (the way in to install others)
 roles: [platform.tenant-admin]    # the Marketplace is an ADMIN tool — only the tenant admin sees it, not ordinary users
+# ADR-0081 App-Agent surface — the Marketplace plane of the Personal Agent: FIND → INSTALL → CONFIGURE → RUN
+# any certified component/solution. GENERIC + id-driven (ids come from marketplace_search over the live catalog;
+# the host holds no component list). Each write is admin-role-gated AND confirm-gated AND re-checked at the bridge
+# (install/configure/run delegate to the SAME helpers the storefront/components bridges use). Secrets are NEVER
+# handled here — a secret/API key is entered by the admin in a secure Vault popup, never through the agent.
+agent_tools:
+  - {name: marketplace_search, kind: read, roles: "platform.tenant-admin,platform.steward,admin", params: "query", desc: "Search the marketplace for certified components and solutions by keyword; returns their ids, names, kind, and whether already installed. Use this to find the id before install/run."}
+  - {name: install, kind: write, roles: "platform.tenant-admin,platform.steward,admin", params: "id,kind", desc: "Install a certified component or solution (full ds: id) into this tenant (install-as-grant / solution fan-out). Admin only."}
+  - {name: configure, kind: write, roles: "platform.tenant-admin,platform.steward,admin", params: "component,name,value", desc: "Set a NON-secret config value on an installed component (governed platform.component_config). API keys/secrets are NOT set here — use the secure Vault popup. Admin only."}
+  - {name: run, kind: write, roles: "platform.tenant-admin,platform.steward,admin", params: "component,env", desc: "Run an installed driver/engine for this tenant (the confined scheduler path; the tenant's area is passed automatically). Runs in the background. Admin only."}
+  - {name: provide_data_file, kind: write, roles: "platform.tenant-admin,platform.steward,admin", params: "component,url", desc: "Give a driver its bulk input data by URL (e.g. a Geofabrik .osm.pbf for the OSM drivers). The platform downloads it server-side, binds it to the driver's data asset, and runs the driver — no Overpass, no manual upload. Admin only."}
+  - {name: component_status, kind: read, roles: "platform.tenant-admin,platform.steward,admin", desc: "Status of component/driver runs and data-file downloads started via the assistant in this tenant."}

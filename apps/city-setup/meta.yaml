@@ -14,5 +14,12 @@ required_schemas: []
 system: false          # domain app — installed via the urban pack, not forced on every tenant
 developer_default: true # …but on a DEVELOPER tenant's starter shelf, so devs can run a city baseline out of the box
 roles: [platform.tenant-admin]
+# ADR-0081 App-Agent surface — City Setup owns the city PRIMITIVE: establishing the tenant's area of interest.
+# (Finding/installing/running the layer drivers themselves are GENERIC Marketplace tools on the storefront.)
+# set_area is admin-role-gated (a citizen's assistant never sees it) AND confirm-gated AND re-checked at the bridge.
+agent_tools:
+  - {name: set_area, kind: write, params: "city,bbox", roles: "platform.tenant-admin,platform.steward,admin", desc: "Set this tenant's area of interest (AOI). Give a city NAME (geocoded via OSM) or an explicit bbox 'west,south,east,north'. Admin only."}
+  - {name: city_status, kind: read, roles: "platform.tenant-admin,platform.steward,admin", desc: "This tenant's current area of interest + the status of the last city-baseline/driver run."}
 egress:
   - { host: tile.openstreetmap.org, rate_per_min: 300, user_agent: "AirawatOS/city-setup (+https://airawat.org; manishsv@gmail.com)" }
+  - { host: nominatim.openstreetmap.org, rate_per_min: 30, user_agent: "AirawatOS/city-setup (+https://airawat.org; manishsv@gmail.com)" }
