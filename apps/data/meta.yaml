@@ -36,5 +36,5 @@ calls: [network.data_exchange@0.1.0]
 # governed data. roles "*" = ANY signed-in user (reads are tenant-scoped + RBAC-gated by the kernel under the
 # user's own token, exactly like the Data app's browser — the agent can only read what the user may read).
 agent_tools:
-  - {name: list_data, kind: read, roles: "*", params: "query", desc: "List the governed data schemas you can query (optionally filtered by keyword), e.g. geo.road, works.work_order, air.quality."}
-  - {name: query_data, kind: read, roles: "*", params: "schema", desc: "Read records of one governed schema in your tenant (count + a sample), to answer questions about the city's data. Tenant-scoped to what you may see."}
+  - {name: list_data, kind: read, roles: "*", params: "query", desc: "List the governed data schemas you can query. NOTE the road/street NETWORK is geo.osm_feature (OSM highway ways; named generically, not 'road'); geo.road/geo.road_segment are named-street anchors; cell.roads is per-H3 road density. Other examples: works.work_order, air.quality, geo.building."}
+  - {name: query_data, kind: read, roles: "*", params: "schema", desc: "Read one governed schema in your tenant — returns the TRUE total count + a sample. For 'how many roads', query geo.osm_feature (the OSM road network) AND cell.roads (density cells). Tenant-scoped to what you may see."}
