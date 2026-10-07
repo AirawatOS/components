@@ -24,3 +24,5 @@ scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: write, scope: geo.osm_feature }
   - { verb: write, scope: cell.roads }
+runtime:
+  profile: geospatial          # needs h3 (cell.roads density) + osmium (PBF). geospatial provides both.

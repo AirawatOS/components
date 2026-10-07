@@ -41,15 +41,36 @@ async function agent(payload){return fetch('/bridge/agent',{method:'POST',header
 function renderReply(slot,j){
   slot.querySelector('.bub').innerHTML=esc(j.reply||'').replace(/\n/g,'<br>')+(j.link?` &nbsp;<a href="${esc(j.link)}" target="_top">Open ↗</a>`:'');
   if(Array.isArray(j.steps)&&j.steps.length){const t=document.createElement('div');t.className='tools';t.textContent='· used: '+j.steps.map(s=>s.tool).join(', ');slot.appendChild(t);}
-  if(j.propose){const p=document.createElement('div');p.className='propose';
-    p.innerHTML=`<div class="lbl">Proposed action — <b>${esc(j.propose.app)}</b> · ${esc(j.propose.label)}</div>
-      <div style="margin:6px 0 8px;font-size:12.5px;color:var(--mut)">${esc(JSON.stringify(j.propose.args))}</div>`;
+  if(j.propose){const p=document.createElement('div');p.className='propose';const pr=j.propose;
+    if(pr.kind==='secret'){
+      // SECRET STEP — the value is entered HERE and posted STRAIGHT to Vault (/bridge/secret). It never goes to
+      // the assistant, the plan, or the chat transcript. The agent is told only that the secret was set.
+      const comp=(pr.args&&(pr.args.component||pr.args.id))||'';const fld=(pr.args&&pr.args.name)||'key';
+      p.innerHTML=`<div class="lbl">🔒 Secret for <b>${esc(comp.split('/').pop()||comp)}</b> — <b>${esc(fld)}</b></div>
+        <div style="margin:4px 0 8px;font-size:12px;color:var(--mut)">Stored directly in Vault. The assistant never sees this value.</div>`;
+      const inp=document.createElement('input');inp.type='password';inp.autocomplete='new-password';inp.placeholder='paste the value';
+      inp.style.cssText='width:100%;box-sizing:border-box;padding:7px 9px;margin-bottom:8px;border:1px solid #2b6;border-radius:7px;background:#0b140d;color:inherit';
+      const ok=document.createElement('button');ok.className='btn';ok.textContent='Save to Vault';
+      const no=document.createElement('button');no.className='btn ghost';no.textContent='Cancel';no.style.marginLeft='8px';
+      ok.onclick=async()=>{const v=inp.value;if(!v){inp.focus();return;}ok.disabled=true;ok.textContent='…';
+        try{const sv=await fetch('/bridge/secret',{method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({action:'set',component:comp,name:fld,value:v})}).then(r=>r.json());
+          inp.value='';                                          // drop the value from memory immediately
+          if(sv&&sv.error){p.innerHTML='<span style="color:#f88;font-size:12px">✗ '+esc(sv.error)+'</span>';return;}
+          const r=await agent({confirm:{name:pr.name,args:{component:comp,name:fld}}});   // resume — NO value sent
+          p.innerHTML='';renderReply(slot,r);HIST.push({role:'assistant',content:r.reply||''});
+        }catch(e){p.innerHTML='<span style="color:#f88;font-size:12px">✗ '+esc(e)+'</span>';}};
+      no.onclick=()=>{inp.value='';p.innerHTML='<span style="color:var(--mut);font-size:12px">Cancelled.</span>';};
+      p.appendChild(inp);p.appendChild(ok);p.appendChild(no);slot.appendChild(p);
+    }else{
+    p.innerHTML=`<div class="lbl">Proposed action — <b>${esc(pr.app)}</b> · ${esc(pr.label)}</div>
+      <div style="margin:6px 0 8px;font-size:12.5px;color:var(--mut)">${esc(JSON.stringify(pr.args))}</div>`;
     const ok=document.createElement('button');ok.className='btn';ok.textContent='Confirm';
     const no=document.createElement('button');no.className='btn ghost';no.textContent='Cancel';no.style.marginLeft='8px';
-    ok.onclick=async()=>{ok.disabled=true;ok.textContent='…';const r=await agent({confirm:{name:j.propose.name,args:j.propose.args}});
+    ok.onclick=async()=>{ok.disabled=true;ok.textContent='…';const r=await agent({confirm:{name:pr.name,args:pr.args}});
       p.innerHTML='';renderReply(slot,r);HIST.push({role:'assistant',content:r.reply||''});};
     no.onclick=()=>{p.innerHTML='<span style="color:var(--mut);font-size:12px">Cancelled.</span>';};
-    p.appendChild(ok);p.appendChild(no);slot.appendChild(p);}
+    p.appendChild(ok);p.appendChild(no);slot.appendChild(p);}}
   $('log').scrollTop=$('log').scrollHeight;
 }
 async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(!q)return;$('q').value='';

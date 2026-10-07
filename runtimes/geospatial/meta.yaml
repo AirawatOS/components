@@ -3,16 +3,16 @@
 # (cell-indexer, accessibility, connectivity) belong here. Drivers declare `runtime.profile: geospatial`.
 component_id:   ds:airawatdeveloper:runtime/geospatial          # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
 kind:           runtime
-version:        0.1.0
+version:        0.1.1
 provider:       ds:airawatdeveloper:developer
 implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058) it satisfies
 runtime_id:     geospatial
 profile:        geospatial
 analytics_tier: diagnostic                  # describe/diagnose place from spatial data (aggregate, relate)
 display_name:   Geospatial (H3 · vector · raster · routing)
-image:          manishsv/airawatos-runtime-geospatial:0.1.0
-image_digest:   sha256:73b10a2fb9e87745c7ae911b2fa9b8ac28051fcdb397ec572200a03595841b06                # the CERTIFIED image content id (launcher runs only this)
-provides:       [h3, shapely, geopandas, pyproj, rasterio, networkx, numpy, requests, pyyaml]
+image:          manishsv/airawatos-runtime-geospatial:0.1.1
+image_digest:   sha256:5ca17487aac362a001a5208d901f462c6711802c7be7626b1896113688a743bb                # the CERTIFIED image content id (launcher runs only this)
+provides:       [h3, osmium, shapely, geopandas, pyproj, rasterio, networkx, numpy, requests, pyyaml]
 isolation:      shared
 confidential:   false
 level:          L2
