@@ -310,6 +310,10 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     # into the runtime-manager at their identical host path — so a filestore-rehydrated (docker-profile)
     # component mounts into its runtime exactly like a bind-mounted one. Keep COMPONENT_CACHE host-consistent.
     cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro"]
+    _common = os.path.abspath(os.path.join(component_dir, "..", "..", "_common"))  # shared helpers (ADR-0063 ids, etc.)
+    if os.path.isdir(_common):
+        cmd += ["-v", f"{_common}:/_common:ro"]   # drivers insert <up3>/_common on sys.path → /_common in-container
+
     # ALL env (broker + config + MATERIALISED SECRETS) goes via a private --env-file, NEVER `-e VALUE`: an
     # argv value leaks into `docker inspect`, `ps`, and any subprocess exception/log (e.g. TimeoutExpired). The
     # file is 0600, in the manager's own FS, and unlinked in `finally`. (Values must be single-line — API keys
