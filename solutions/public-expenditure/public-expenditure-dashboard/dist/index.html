@@ -31,6 +31,7 @@
   <div style="display:flex;gap:6px;margin:6px 0 12px;flex:0 0 auto">
     <button class="tab" id="t-wards">Spend by ward</button>
     <button class="tab" id="t-contractors">Top contractors</button>
+    <button class="tab" id="t-flags">🚩 Flags</button>
   </div>
   <div id="note" class="muted" style="font-size:12px;margin:-4px 0 10px;flex:0 0 auto;display:none">
     Names are as recorded in the source — the same agency can appear under spelling variants
@@ -75,7 +76,6 @@
   const grid = document.getElementById('grid');
 
   function renderWards(){
-    document.getElementById('note').style.display = 'none';
     grid.innerHTML =
       '<tr><th style="text-align:left;padding:8px">Ward</th><th style="text-align:right;padding:8px">Works</th><th style="text-align:right;padding:8px">Net paid</th></tr>'
       + wards.map(w => '<tr data-ward="' + encodeURIComponent(w.ward) + '" style="cursor:pointer;border-top:1px solid #eef1f4">'
@@ -85,7 +85,6 @@
     grid.querySelectorAll('tr[data-ward]').forEach(tr => tr.onclick = () => openWard(decodeURIComponent(tr.dataset.ward)));
   }
   function renderContractors(){
-    document.getElementById('note').style.display = '';
     grid.innerHTML =
       '<tr><th style="text-align:left;padding:8px">#</th><th style="text-align:left;padding:8px">Contractor</th><th style="text-align:right;padding:8px">Works</th><th style="text-align:right;padding:8px">Net paid</th></tr>'
       + topc.map((c,i) => '<tr style="border-top:1px solid #eef1f4">'
@@ -94,14 +93,38 @@
           + '<td style="text-align:right;padding:7px 8px">' + (c.works_count||0) + '</td>'
           + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">' + cr1(c.paid_net_total) + '</td></tr>').join('');
   }
+  // ---- flags (governance.recommendation from works-flags) ----
+  const FLAG_PRODUCER = 'ds:janaagraha:driver/works-flags';
+  let flagsCache = null;
+  async function renderFlags(){
+    if(!flagsCache){
+      grid.innerHTML = '<tr><td style="padding:14px" class="muted">Loading flags…</td></tr>';
+      flagsCache = (await fetchAll('governance.recommendation')).filter(r => r.produced_by === FLAG_PRODUCER)
+                     .sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+    }
+    grid.innerHTML =
+      '<tr><th style="text-align:left;padding:8px">Flag</th><th style="text-align:left;padding:8px">Why it matters</th><th style="text-align:right;padding:8px">Conf.</th></tr>'
+      + flagsCache.map(f => '<tr style="border-top:1px solid #eef1f4">'
+          + '<td style="padding:7px 8px;font-weight:600;min-width:220px;vertical-align:top">🚩 ' + (f.title||'') + '</td>'
+          + '<td style="padding:7px 8px;color:#41505f;vertical-align:top">' + (f.rationale||'') + '</td>'
+          + '<td style="text-align:right;padding:7px 8px;vertical-align:top">' + Math.round((f.confidence||0)*100) + '%</td></tr>').join('');
+  }
+
+  const NOTE = {
+    wards: '',
+    contractors: 'Names are as recorded in the source — the same agency can appear under spelling variants (e.g. KRIDL / M/s KRIDL / kridl). See the Flags tab for consolidation candidates.',
+    flags: 'AI-generated flags for human review (governance.recommendation, ADR-0029). The platform never auto-acts on these — a reviewer decides.'
+  };
   function setTab(t){
-    const on = (b,v)=>{ b.style.background=v?'#0e2a47':'#fff'; b.style.color=v?'#fff':'#1a2330'; b.style.borderColor=v?'#0e2a47':'#d6dde4'; };
-    on(document.getElementById('t-wards'), t==='wards');
-    on(document.getElementById('t-contractors'), t==='contractors');
-    (t==='wards') ? renderWards() : renderContractors();
+    const on = (id,v)=>{ const b=document.getElementById(id); b.style.background=v?'#0e2a47':'#fff'; b.style.color=v?'#fff':'#1a2330'; b.style.borderColor=v?'#0e2a47':'#d6dde4'; };
+    on('t-wards', t==='wards'); on('t-contractors', t==='contractors'); on('t-flags', t==='flags');
+    const note = document.getElementById('note');
+    note.textContent = NOTE[t] || ''; note.style.display = NOTE[t] ? '' : 'none';
+    if (t==='wards') renderWards(); else if (t==='contractors') renderContractors(); else renderFlags();
   }
   document.getElementById('t-wards').onclick = () => setTab('wards');
   document.getElementById('t-contractors').onclick = () => setTab('contractors');
+  document.getElementById('t-flags').onclick = () => setTab('flags');
   setTab('wards');
 
   // ---- ward drill-down ----
