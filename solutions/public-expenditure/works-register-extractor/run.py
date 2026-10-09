@@ -4,15 +4,19 @@ public-works facts for the Public Expenditure Dashboard. One CSV row → works.w
 works.contract, works.payment), each carrying full provenance back to the source CSV.
 
 aos SDK (clean-room / ADR-0030): the ONLY I/O is the broker. The OpenCity CSV is fetched via ctx.fetch
-(brokered, declared egress), governed records are written via ctx.write_many, the write-tenant is ctx.tenant.
+(brokered, declared egress), governed records are written via ctx.write, the write-tenant is ctx.tenant.
 No raw sockets — so it runs identically in the dev sandbox (Studio Test, L1) and when installed.
 
 REAL OpenCity data only: a fetch error fails loudly; ZERO work-order rows is a legitimate empty result
 (reported, exit 0, nothing invented). The full raw CSV row is preserved under prov.raw (original-input
 preservation) so no source field is ever lost, even when a column name isn't recognised.
 
+AMOUNTS: this file's money columns (Total/Deduction/Net) are inconsistent and the file is denormalised, so
+rupee amounts are deliberately NOT mapped — we land the reliable INVENTORY (work + contractor + contract +
+dates) and record only the bill-line count. Spend should come from eProc award values / BBMP IFMS.
+
   Env: OPENCITY_CSV_URL (a BBMP "Work Order Data" resource CSV; default = 308-CE-Lakes 2015-18) ·
-       MAX_ROWS (cap rows for a quick dev run; default 2000 — a cap is LOGGED, never silent).
+       MAX_ROWS (optional cap for a quick run; default 0 = ingest the WHOLE file; a cap is LOGGED).
 """
 import csv, io, os, hashlib
 from aos import driver, ctx, egress, now
@@ -64,10 +68,13 @@ def run():
         rows = rows[:cap]
 
     ts = now()
-    # These BBMP files are bill-payment REGISTERS — many bill lines per work order. So DEDUPE the work-order /
-    # contract / contractor entities (one record each) and AGGREGATE payment per work order (sum across its bill
-    # lines = total actually paid for that work). Keeps the write count ~#work-orders (fast, no timeout) and the
-    # full per-line detail stays in prov.raw on the work_order.
+    # AMOUNT SEMANTICS — deliberately NOT summed. This "Work Orders & Bill Payment" file is heavily
+    # DENORMALISED (6000 rows for ~37 work orders; one order had 1,214 rows) and its money columns are not
+    # self-consistent (Deduction and Net Payment both exceed Total Amount), with no published data dictionary.
+    # So no arithmetic on it yields a trustworthy rupee figure. We therefore land the RELIABLE part — the
+    # work-order INVENTORY (work + contractor + contract link + dates) — and leave sanctioned_amount /
+    # contract_value / paid_* EMPTY, recording only the bill-line COUNT. The full raw row stays in prov.raw.
+    # Reliable spend must come from a clean source (Karnataka eProc award values / BBMP IFMS payments).
     wo, ct, cr, pay = {}, {}, {}, {}
     for row in rows:
         wo_no = str(_pick(row, "work order number", "work order no", "wo no", "work_order_no",
@@ -82,10 +89,11 @@ def run():
                          "work_name": _pick(row, "work order details", "work name", "work_name", "name of work", "description"),
                          "ward": _pick(row, "ward", "ward no", "ward_no", "ward name"),
                          "zone": _pick(row, "zone", "zone name"),
-                         "sanctioned_amount": _num(_pick(row, "total amount in rs", "approved amount", "sanctioned amount",
-                                                          "estimate amount", "estimated amount", "amount")),
                          "work_order_date": _pick(row, "work order date", "wo date", "date", "loa date"),
-                         "prov": {"source": "opencity-bbmp", "source_ref": SRC, "source_url": url, "retrieved": ts, "raw": row}}
+                         # sanctioned_amount OMITTED — source amount columns are not interpretable (see prov.amounts_note)
+                         "prov": {"source": "opencity-bbmp", "source_ref": SRC, "source_url": url, "retrieved": ts, "raw": row,
+                                  "amounts_note": "source Total/Deduction/Net columns are inconsistent and the file is "
+                                                  "denormalised; rupee amounts intentionally NOT mapped — use eProc/IFMS for spend"}}
 
         cname = _pick(row, "contractor", "contractor name", "name of contractor", "agency", "agency name")
         contractor_id = None
@@ -95,20 +103,15 @@ def run():
 
         cid = f"ds:{T}:works/contract/{key}"
         if cid not in ct:
-            cval = _num(_pick(row, "contract amount", "contract value", "agreement amount", "tender amount", "loa amount"))
+            # contract_value OMITTED (same reason); the work_order↔contractor LINK is the reliable part.
             ct[cid] = {"schema": "works.contract", "id": cid, "tenant": T, "work_order": wo_id,
-                       "contractor": contractor_id, "contract_value": cval, "prov": {"source": "opencity-bbmp"}}
+                       "contractor": contractor_id, "prov": {"source": "opencity-bbmp"}}
 
         pid = f"ds:{T}:works/payment/{key}"
         p = pay.setdefault(pid, {"schema": "works.payment", "id": pid, "tenant": T, "work_order": wo_id,
-                                 "paid_net": 0.0, "paid_gross": 0.0,
-                                 "prov": {"source": "opencity-bbmp", "source_url": url, "bill_lines": 0}})
-        net = _num(_pick(row, "net payment in rs", "net amount", "paid amount"))
-        gross = _num(_pick(row, "total amount in rs", "bill amount", "gross amount"))
-        if net is not None:
-            p["paid_net"] += net
-        if gross is not None:
-            p["paid_gross"] += gross
+                                 # paid_net / paid_gross OMITTED — only the count of bill lines is trustworthy here
+                                 "prov": {"source": "opencity-bbmp", "source_url": url, "bill_lines": 0,
+                                          "amounts_note": "bill-line count only; source rupee amounts not interpretable"}})
         p["prov"]["bill_lines"] += 1
 
     if not wo:
@@ -119,7 +122,7 @@ def run():
         ctx.write(o)
     print(f"[works-register-extractor] OpenCity rows={len(rows)}{' (capped)' if capped else ''} → "
           f"work_orders={len(wo)} contracts={len(ct)} contractors={len(cr)} payments={len(pay)} "
-          f"(payment = total paid across bill lines) total_records={len(objs)} from {url}", flush=True)
+          f"(INVENTORY only — amounts intentionally empty, source not interpretable) total_records={len(objs)} from {url}", flush=True)
     return 0
 
 
