@@ -218,6 +218,9 @@ async function showPart(pid){
       <span class="pill ${csBad?'rejected':'approved'}">cert ${esc(cs)}</span>
       ${rec.jurisdiction?`<span>· jurisdiction <b>${esc(rec.jurisdiction)}</b></span>`:''}
       <span>· ${keys.length} key(s)</span></div>
+    ${kind!=='developer'?`<div class="sec">Actions</div>
+    <div class="card"><div class="hint" style="margin-bottom:8px">Promote this participant to <b>developer</b> standing so its tenant can author, test, and publish components in Studio (the dev-token gate admits only a developer-kind steward). Re-signs the directory entry with the same key — reversible.</div>
+    <button class="btn sm" data-promote="${esc(pid)}">🛠️ Promote to Developer</button></div>`:''}
     <div class="sec">Keys</div>
     ${keys.length?keys.map(k=>`<div class="card"><div class="mono" style="font-size:11px;color:var(--dim)">${esc(k.id||'')}</div>
       <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -230,6 +233,13 @@ async function showPart(pid){
     <div class="card mono" style="font-size:11px;word-break:break-all;color:#a9b6c4">${esc(rec.signature||'—')}</div>
     <div class="sec">Signed directory entry</div>
     <pre class="defn">${esc(JSON.stringify(rec,null,2))}</pre>`;
+  const pb=D.querySelector('[data-promote]'); if(pb) pb.onclick=async()=>{
+    if(!confirm('Promote '+pid+' to DEVELOPER standing?\n\nThis lets its tenant author, test, and publish components in Studio. Reversible.'))return;
+    pb.disabled=true; pb.textContent='promoting…';
+    const r=await jpost('/bridge/participant-set-kind',{participant_id:pid,kind:'developer'});
+    if(r.ok){ toast('✓ promoted to developer'); PART_SEL=pid; participants(); }
+    else { alert('✗ promote failed: '+((r.j&&(r.j.error||r.j.detail))||r.status)); pb.disabled=false; pb.textContent='🛠️ Promote to Developer'; }
+  };
 }
 
 // --- Specifications: IDE-like left nav (schemas by domain) + right panel (definition + history) -------
