@@ -1,0 +1,16 @@
+# An APP (kind=app) — a sandboxed UI served by the host. It reads governed data via the host
+# bridge /bridge/query (declare the schemas it reads in required_schemas). Edit dist/index.html.
+component_id: ds:janaagraha:app/public-expenditure-dashboard
+kind: app
+version: 0.1.0
+provider:  ds:janaagraha:developer
+display_name: Public Expenditure Dashboard
+icon: 🏗️
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+roles: []
+data_browser: false
+public: true
+public_read: [works.work_order, works.contract, works.contractor, works.payment, works.ward_rollup, works.city_summary, works.contractor_rollup, governance.recommendation]
+required_schemas: [works.work_order, works.contract, works.contractor, works.payment, works.ward_rollup, works.city_summary, works.contractor_rollup, governance.recommendation]
