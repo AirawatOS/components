@@ -1,6 +1,6 @@
 component_id: ds:janaagraha:driver/works-register-extractor
 kind: driver
-version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.fetch (brokered OpenCity egress) + ctx.write_many; was raw urllib (blocked at L1)
+version: 0.3.0                    # 0.3.0: trustworthy amounts — per-row gross−deduction==nett consistency gate populates works.payment paid_gross/paid_net ONLY from self-validating bills (IFMS by-ward files); banner-preamble header detection; source-agnostic column fallbacks. 0.2.0: aos SDK migration — ctx.fetch (brokered OpenCity egress); was raw urllib (blocked at L1)
 provider: ds:janaagraha:developer
 entrypoint: run.py
 confinement_min: L1
@@ -13,7 +13,7 @@ reads: []
 writes: [works.work_order, works.contract, works.contractor, works.payment]
 egress:
   - { host: data.opencity.in, rate_per_min: 30, user_agent: "AirawatOS/works-register-extractor (+https://airawat.org; manishsv@gmail.com)" }
-config: [OPENCITY_CSV_URL, MAX_ROWS]
+config: [OPENCITY_CSV_URL, WARD, MAX_ROWS]
 sources:
   - { ref: "ds:janaagraha:ref/source/opencity-bbmp", host: data.opencity.in, provides: [works.work_order, works.contract, works.contractor, works.payment] }
 scopes:
