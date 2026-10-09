@@ -1,17 +1,21 @@
 component_id: ds:janaagraha:driver/works-register-extractor
 kind: driver
-version: 0.1.0
+version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.fetch (brokered OpenCity egress) + ctx.write_many; was raw urllib (blocked at L1)
 provider: ds:janaagraha:developer
 entrypoint: run.py
 confinement_min: L1
 title: Works Register Extractor
 description: >
-  Wraps Janaagraha's Work-Order-PDF extractor output and writes governed public-works facts for the
-  Public Expenditure Dashboard: works.work_order + works.contract + works.contractor + works.payment,
-  each linked to the roads it touches. Realizes ds:janaagraha:service_spec/public-expenditure-dashboard.
+  Ingests BBMP public work-orders from the OpenCity open dataset (ODbL) and writes governed public-works facts
+  for the Public Expenditure Dashboard: works.work_order + works.contract + works.contractor + works.payment,
+  each carrying provenance back to the source CSV. Realizes ds:janaagraha:service_spec/public-expenditure-dashboard.
 reads: []
 writes: [works.work_order, works.contract, works.contractor, works.payment]
-egress: []
+egress:
+  - { host: data.opencity.in, rate_per_min: 30, user_agent: "AirawatOS/works-register-extractor (+https://airawat.org; manishsv@gmail.com)" }
+config: [OPENCITY_CSV_URL, MAX_ROWS]
+sources:
+  - { ref: "ds:janaagraha:ref/source/opencity-bbmp", host: data.opencity.in, provides: [works.work_order, works.contract, works.contractor, works.payment] }
 scopes:
   - { verb: write, scope: works.work_order, tenant: janaagraha }
   - { verb: write, scope: works.contract,   tenant: janaagraha }

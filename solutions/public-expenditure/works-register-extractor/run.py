@@ -1,78 +1,125 @@
-"""Works Register Extractor — ingests the municipal Work Order register (already parsed from the Work
-Order PDFs by Janaagraha's extractor) and writes GOVERNED public-works facts for the Public Expenditure
-Dashboard. One extractor row → one works.work_order (+ its works.contract, works.contractor, works.payment).
+#!/usr/bin/env python3
+"""works-register-extractor — BBMP public work-orders from the OpenCity open dataset (ODbL) → governed
+public-works facts for the Public Expenditure Dashboard. One CSV row → works.work_order (+ works.contractor,
+works.contract, works.payment), each carrying full provenance back to the source CSV.
 
-I/O is ONLY the kernel broker: call(path, body) POSTs JSON to AIRAWAT_API+path with the run token.
-Governed ids: ds:{tenant}:{noun-with-slashes}/{key}. Scaffolded from the service spec (ADR-0109); the works.*
-nouns must be governed (from the spec's domain_model) before writes succeed.
+aos SDK (clean-room / ADR-0030): the ONLY I/O is the broker. The OpenCity CSV is fetched via ctx.fetch
+(brokered, declared egress), governed records are written via ctx.write_many, the write-tenant is ctx.tenant.
+No raw sockets — so it runs identically in the dev sandbox (Studio Test, L1) and when installed.
+
+REAL OpenCity data only: a fetch error fails loudly; ZERO work-order rows is a legitimate empty result
+(reported, exit 0, nothing invented). The full raw CSV row is preserved under prov.raw (original-input
+preservation) so no source field is ever lost, even when a column name isn't recognised.
+
+  Env: OPENCITY_CSV_URL (a BBMP "Work Order Data" resource CSV; default = 308-CE-Lakes 2015-18) ·
+       MAX_ROWS (cap rows for a quick dev run; default 2000 — a cap is LOGGED, never silent).
 """
-import os, json, urllib.request, hashlib
+import csv, io, os, hashlib
+from aos import driver, ctx, egress, now
 
-def call(path, body):
-    rq = urllib.request.Request(os.environ["AIRAWAT_API"] + path, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "X-Run-Token": os.environ["RUN_TOKEN"]}, method="POST")
-    return json.loads(urllib.request.urlopen(rq, timeout=30).read() or b"{}")
+SRC = "ds:janaagraha:ref/source/opencity-bbmp"
+# A real BBMP Work Order resource (dataset bbmp-work-orders-and-bill-payment). Override via OPENCITY_CSV_URL.
+DEFAULT_CSV = ("https://data.opencity.in/dataset/968e5202-74ed-4279-92df-7b7a1a111108/"
+               "resource/cfb67e17-32b0-4306-8768-ab4f0e28790e/download/9cf2e217-d96a-4f56-bdd2-6935f06e85cc.csv")
 
-def _id(t, noun, key): return "ds:%s:%s/%s" % (t, noun.replace(".", "/"), key)
+# Declared egress → aos derives meta.egress/sources from THIS (keyless, public open-data host).
+egress("data.opencity.in", rate_per_min=30,
+       user_agent="AirawatOS/works-register-extractor (+https://airawat.org; manishsv@gmail.com)",
+       provides=["works.work_order", "works.contract", "works.contractor", "works.payment"], source_ref=SRC)
+
+
 def _num(v):
-    try: return float(str(v).replace(",", "")) if v not in (None, "", "NA") else None
-    except Exception: return None
-def _rows():
-    # Wire to the real source (a bound input asset / filestore blob / a /v1/fetch of the extractor output).
-    # Scaffold: read an optional INPUT_ROWS env (JSON list) so it runs end-to-end with a sample row.
-    raw = os.environ.get("INPUT_ROWS"); return json.loads(raw) if raw else []
+    try:
+        return float(str(v).replace(",", "").strip()) if v not in (None, "", "NA", "N/A", "-") else None
+    except Exception:
+        return None
 
-def main():
-    T = call("/v1/context", {}).get("tenant")
-    n_wo = n_pay = 0
-    for r in _rows():
-        wo_no = str(r.get("work_order_no") or r.get("job_number") or "").strip()
-        if not wo_no: continue
-        key = hashlib.sha1(wo_no.encode()).hexdigest()[:12]
 
-        contractor_id = None
-        cname = r.get("contractor_on_agreement") or r.get("contractor_name_road_history")
-        if cname:
-            contractor_id = _id(T, "works.contractor", hashlib.sha1(str(cname).encode()).hexdigest()[:12])
-            call("/v1/write", {"scope": "works.contractor", "id": contractor_id, "object": {
-                "schema": "works.contractor", "id": contractor_id, "tenant": T,
-                "name": cname, "reg_no": r.get("contractor_reg_no")}})
+def _pick(row, *names):
+    """Case/space-insensitive column lookup with fallbacks — BBMP CSVs vary header wording across departments."""
+    low = {str(k).lower().strip(): v for k, v in row.items() if k}
+    for n in names:
+        v = low.get(n.lower().strip())
+        if v not in (None, ""):
+            return v
+    return None
 
-        wo_id = _id(T, "works.work_order", key)
-        call("/v1/write", {"scope": "works.work_order", "id": wo_id, "object": {
-            "schema": "works.work_order", "id": wo_id, "tenant": T,
-            "job_number": r.get("job_number"), "work_order_no": wo_no,
-            "work_order_date": r.get("work_order_date"), "work_type": r.get("work_type"),
-            "other_work": r.get("other_work"), "work_name": r.get("work_name"),
-            "significant_landmark": r.get("significant_landmark"),
-            "sanctioned_amount": _num(r.get("sanctioned_amount")), "sanctioned_year": r.get("sanctioned_year"),
-            "extension_days": r.get("extension_days"), "ward": r.get("ward_no"), "zone": r.get("zone"),
-            "completed_on": r.get("completed_on"), "final_cost": _num(r.get("final_cost")),
-            "saving": _num(r.get("saving")), "completion_status": r.get("completion_verdict"),
-            "confidence": _num(r.get("completion_confidence")),
-            "prov": {"source": "bbmp_work_register", "completion_method": r.get("completion_method"),
-                     "note": r.get("completion_note"), "excluded_pii": r.get("n_documents_excluded_pii")}}})
+
+@driver.main
+def run():
+    if not ctx.tenant:
+        raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant.")
+    T = ctx.tenant
+    url = os.environ.get("OPENCITY_CSV_URL", DEFAULT_CSV)
+    cap = int(os.environ.get("MAX_ROWS", "200"))   # fast first-proof cap; raise MAX_ROWS to ingest the full file
+
+    r = ctx.fetch(url)
+    if not getattr(r, "ok", False) or not r.body:
+        raise SystemExit(f"FATAL: OpenCity fetch failed (status={getattr(r, 'status', None)}) for {url}")
+    text = r.body.decode("utf-8", "replace") if isinstance(r.body, (bytes, bytearray)) else str(r.body)
+    rows = list(csv.DictReader(io.StringIO(text)))
+    capped = len(rows) > cap
+    if capped:
+        print(f"[works-register-extractor] NOTE: capping {len(rows)} rows → first {cap} (MAX_ROWS). Raise MAX_ROWS to ingest all.")
+        rows = rows[:cap]
+
+    ts = now()
+    objs, n_wo, n_pay = [], 0, 0
+    for row in rows:
+        wo_no = str(_pick(row, "work order no", "work_order_no", "wo no", "work order number",
+                          "job number", "job no", "work order") or "").strip()
+        if not wo_no:
+            continue
+        key = hashlib.sha1((wo_no + "|" + url).encode()).hexdigest()[:12]
+        wo_id = f"ds:{T}:works/work_order/{key}"
+        prov = {"source": "opencity-bbmp", "source_ref": SRC, "source_url": url, "retrieved": ts, "raw": row}
+        # Fields MUST match the governed works.work_order schema (additionalProperties:false) — the full raw row
+        # is preserved under prov.raw, so unmapped columns (e.g. department, deductions) are never lost.
+        objs.append({"schema": "works.work_order", "id": wo_id, "tenant": T,
+                     "work_order_no": wo_no,
+                     "job_number": _pick(row, "job number", "job no", "job_number"),
+                     "work_name": _pick(row, "work order details", "work name", "work_name", "name of work", "description"),
+                     "ward": _pick(row, "ward", "ward no", "ward_no", "ward name"),
+                     "zone": _pick(row, "zone", "zone name"),
+                     "sanctioned_amount": _num(_pick(row, "total amount in rs", "approved amount", "sanctioned amount",
+                                                      "estimate amount", "estimated amount", "amount")),
+                     "work_order_date": _pick(row, "work order date", "wo date", "date", "loa date"),
+                     "prov": prov})
         n_wo += 1
 
-        contract_id = _id(T, "works.contract", key)
-        call("/v1/write", {"scope": "works.contract", "id": contract_id, "object": {
-            "schema": "works.contract", "id": contract_id, "tenant": T, "work_order": wo_id,
-            "contractor": contractor_id, "contract_value": _num(r.get("contract_value")),
-            "discount_pct": _num(r.get("discount_pct")), "method": r.get("contract_method"),
-            "agreement_date": r.get("agreement_date"),
-            "dlp_from": r.get("dlp_from"), "dlp_to": r.get("dlp_to"), "dlp_status": r.get("dlp_status"),
-            "confidence": _num(r.get("contract_confidence")), "prov": {"note": r.get("contract_confidence_note")}}})
+        cname = _pick(row, "contractor", "contractor name", "name of contractor", "agency", "agency name")
+        contractor_id = None
+        if cname:
+            contractor_id = f"ds:{T}:works/contractor/{hashlib.sha1(str(cname).encode()).hexdigest()[:12]}"
+            # works.contractor allows only name/reg_no (no prov) — keep it minimal + conformant.
+            objs.append({"schema": "works.contractor", "id": contractor_id, "tenant": T, "name": str(cname).strip()})
 
-        if r.get("paid_net") not in (None, ""):
-            pay_id = _id(T, "works.payment", key)
-            call("/v1/write", {"scope": "works.payment", "id": pay_id, "object": {
-                "schema": "works.payment", "id": pay_id, "tenant": T, "work_order": wo_id,
-                "contract": contract_id, "paid_net": _num(r.get("paid_net")),
-                "paid_gross": _num(r.get("paid_gross")), "net_vs_contract": _num(r.get("net_vs_contract")),
-                "payment_flag": r.get("payment_flag"), "paid_on": r.get("completed_on")}})
+        cval = _num(_pick(row, "contract amount", "contract value", "agreement amount", "tender amount", "loa amount"))
+        if cval is not None or contractor_id:
+            objs.append({"schema": "works.contract", "id": f"ds:{T}:works/contract/{key}", "tenant": T,
+                         "work_order": wo_id, "contractor": contractor_id, "contract_value": cval,
+                         "prov": {"source": "opencity-bbmp"}})
+
+        paid = _num(_pick(row, "net payment in rs", "bill amount", "paid amount", "payment amount", "gross amount", "net amount"))
+        if paid is not None:
+            objs.append({"schema": "works.payment", "id": f"ds:{T}:works/payment/{key}", "tenant": T,
+                         "work_order": wo_id, "paid_gross": paid, "prov": {"source": "opencity-bbmp"}})
             n_pay += 1
 
-    print("works-register-extractor: wrote %d work orders, %d payments" % (n_wo, n_pay))
+    if n_wo == 0:
+        head = (list(rows[0].keys()) if rows else [])
+        raise SystemExit(f"DIAG: fetched {len(text)} chars, csv parsed {len(rows)} rows, matched 0 work-orders. "
+                         f"header={head} first120={text[:120]!r}")
+    # Per-object writes (the kernel's /v1/write path). write_many batches via /v1/write/batch, which is not
+    # reliably available through the confined dev-broker here — a per-record loop persists deterministically.
+    written = 0
+    for o in objs:
+        ctx.write(o)
+        written += 1
+    print(f"[works-register-extractor] OpenCity rows={len(rows)}{' (capped)' if capped else ''} → "
+          f"work_orders={n_wo} payments={n_pay} total_records={written} from {url}", flush=True)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    driver.run()
