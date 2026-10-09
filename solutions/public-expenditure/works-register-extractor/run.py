@@ -51,73 +51,75 @@ def run():
         raise SystemExit("FATAL: TENANT not set — a driver runs in the context of exactly one tenant.")
     T = ctx.tenant
     url = os.environ.get("OPENCITY_CSV_URL", DEFAULT_CSV)
-    cap = int(os.environ.get("MAX_ROWS", "200"))   # fast first-proof cap; raise MAX_ROWS to ingest the full file
+    cap = int(os.environ.get("MAX_ROWS", "0") or 0)   # 0 = ingest the WHOLE file; set MAX_ROWS to cap for a quick run
 
     r = ctx.fetch(url)
     if not getattr(r, "ok", False) or not r.body:
         raise SystemExit(f"FATAL: OpenCity fetch failed (status={getattr(r, 'status', None)}) for {url}")
     text = r.body.decode("utf-8", "replace") if isinstance(r.body, (bytes, bytearray)) else str(r.body)
     rows = list(csv.DictReader(io.StringIO(text)))
-    capped = len(rows) > cap
+    capped = bool(cap) and len(rows) > cap          # MAX_ROWS=0 (default) ⇒ ingest the WHOLE file
     if capped:
-        print(f"[works-register-extractor] NOTE: capping {len(rows)} rows → first {cap} (MAX_ROWS). Raise MAX_ROWS to ingest all.")
+        print(f"[works-register-extractor] NOTE: MAX_ROWS={cap} — ingesting first {cap} of {len(rows)} rows.")
         rows = rows[:cap]
 
     ts = now()
-    objs, n_wo, n_pay = [], 0, 0
+    # These BBMP files are bill-payment REGISTERS — many bill lines per work order. So DEDUPE the work-order /
+    # contract / contractor entities (one record each) and AGGREGATE payment per work order (sum across its bill
+    # lines = total actually paid for that work). Keeps the write count ~#work-orders (fast, no timeout) and the
+    # full per-line detail stays in prov.raw on the work_order.
+    wo, ct, cr, pay = {}, {}, {}, {}
     for row in rows:
-        wo_no = str(_pick(row, "work order no", "work_order_no", "wo no", "work order number",
+        wo_no = str(_pick(row, "work order number", "work order no", "wo no", "work_order_no",
                           "job number", "job no", "work order") or "").strip()
         if not wo_no:
             continue
         key = hashlib.sha1((wo_no + "|" + url).encode()).hexdigest()[:12]
         wo_id = f"ds:{T}:works/work_order/{key}"
-        prov = {"source": "opencity-bbmp", "source_ref": SRC, "source_url": url, "retrieved": ts, "raw": row}
-        # Fields MUST match the governed works.work_order schema (additionalProperties:false) — the full raw row
-        # is preserved under prov.raw, so unmapped columns (e.g. department, deductions) are never lost.
-        objs.append({"schema": "works.work_order", "id": wo_id, "tenant": T,
-                     "work_order_no": wo_no,
-                     "job_number": _pick(row, "job number", "job no", "job_number"),
-                     "work_name": _pick(row, "work order details", "work name", "work_name", "name of work", "description"),
-                     "ward": _pick(row, "ward", "ward no", "ward_no", "ward name"),
-                     "zone": _pick(row, "zone", "zone name"),
-                     "sanctioned_amount": _num(_pick(row, "total amount in rs", "approved amount", "sanctioned amount",
-                                                      "estimate amount", "estimated amount", "amount")),
-                     "work_order_date": _pick(row, "work order date", "wo date", "date", "loa date"),
-                     "prov": prov})
-        n_wo += 1
+        if wo_id not in wo:
+            wo[wo_id] = {"schema": "works.work_order", "id": wo_id, "tenant": T, "work_order_no": wo_no,
+                         "job_number": _pick(row, "job number", "job no", "job_number"),
+                         "work_name": _pick(row, "work order details", "work name", "work_name", "name of work", "description"),
+                         "ward": _pick(row, "ward", "ward no", "ward_no", "ward name"),
+                         "zone": _pick(row, "zone", "zone name"),
+                         "sanctioned_amount": _num(_pick(row, "total amount in rs", "approved amount", "sanctioned amount",
+                                                          "estimate amount", "estimated amount", "amount")),
+                         "work_order_date": _pick(row, "work order date", "wo date", "date", "loa date"),
+                         "prov": {"source": "opencity-bbmp", "source_ref": SRC, "source_url": url, "retrieved": ts, "raw": row}}
 
         cname = _pick(row, "contractor", "contractor name", "name of contractor", "agency", "agency name")
         contractor_id = None
         if cname:
             contractor_id = f"ds:{T}:works/contractor/{hashlib.sha1(str(cname).encode()).hexdigest()[:12]}"
-            # works.contractor allows only name/reg_no (no prov) — keep it minimal + conformant.
-            objs.append({"schema": "works.contractor", "id": contractor_id, "tenant": T, "name": str(cname).strip()})
+            cr.setdefault(contractor_id, {"schema": "works.contractor", "id": contractor_id, "tenant": T, "name": str(cname).strip()})
 
-        cval = _num(_pick(row, "contract amount", "contract value", "agreement amount", "tender amount", "loa amount"))
-        if cval is not None or contractor_id:
-            objs.append({"schema": "works.contract", "id": f"ds:{T}:works/contract/{key}", "tenant": T,
-                         "work_order": wo_id, "contractor": contractor_id, "contract_value": cval,
-                         "prov": {"source": "opencity-bbmp"}})
+        cid = f"ds:{T}:works/contract/{key}"
+        if cid not in ct:
+            cval = _num(_pick(row, "contract amount", "contract value", "agreement amount", "tender amount", "loa amount"))
+            ct[cid] = {"schema": "works.contract", "id": cid, "tenant": T, "work_order": wo_id,
+                       "contractor": contractor_id, "contract_value": cval, "prov": {"source": "opencity-bbmp"}}
 
-        paid = _num(_pick(row, "net payment in rs", "bill amount", "paid amount", "payment amount", "gross amount", "net amount"))
-        if paid is not None:
-            objs.append({"schema": "works.payment", "id": f"ds:{T}:works/payment/{key}", "tenant": T,
-                         "work_order": wo_id, "paid_gross": paid, "prov": {"source": "opencity-bbmp"}})
-            n_pay += 1
+        pid = f"ds:{T}:works/payment/{key}"
+        p = pay.setdefault(pid, {"schema": "works.payment", "id": pid, "tenant": T, "work_order": wo_id,
+                                 "paid_net": 0.0, "paid_gross": 0.0,
+                                 "prov": {"source": "opencity-bbmp", "source_url": url, "bill_lines": 0}})
+        net = _num(_pick(row, "net payment in rs", "net amount", "paid amount"))
+        gross = _num(_pick(row, "total amount in rs", "bill amount", "gross amount"))
+        if net is not None:
+            p["paid_net"] += net
+        if gross is not None:
+            p["paid_gross"] += gross
+        p["prov"]["bill_lines"] += 1
 
-    if n_wo == 0:
+    if not wo:
         head = (list(rows[0].keys()) if rows else [])
-        raise SystemExit(f"DIAG: fetched {len(text)} chars, csv parsed {len(rows)} rows, matched 0 work-orders. "
-                         f"header={head} first120={text[:120]!r}")
-    # Per-object writes (the kernel's /v1/write path). write_many batches via /v1/write/batch, which is not
-    # reliably available through the confined dev-broker here — a per-record loop persists deterministically.
-    written = 0
+        raise SystemExit(f"DIAG: parsed {len(rows)} rows, matched 0 work-orders. header={head}")
+    objs = list(wo.values()) + list(cr.values()) + list(ct.values()) + list(pay.values())
     for o in objs:
         ctx.write(o)
-        written += 1
     print(f"[works-register-extractor] OpenCity rows={len(rows)}{' (capped)' if capped else ''} → "
-          f"work_orders={n_wo} payments={n_pay} total_records={written} from {url}", flush=True)
+          f"work_orders={len(wo)} contracts={len(ct)} contractors={len(cr)} payments={len(pay)} "
+          f"(payment = total paid across bill lines) total_records={len(objs)} from {url}", flush=True)
     return 0
 
 
