@@ -127,6 +127,70 @@
   document.getElementById('t-flags').onclick = () => setTab('flags');
   setTab('wards');
 
+  // ---- ✨ Ask the data (grounded assistant via /bridge/ai-assist) ----
+  const askBtn = document.createElement('button');
+  askBtn.textContent = '✨ Ask';
+  askBtn.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:70;background:#0e2a47;color:#fff;border:0;border-radius:24px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2)';
+  document.body.appendChild(askBtn);
+  const drawer = document.createElement('div');
+  drawer.style.cssText = 'position:fixed;top:0;right:0;width:min(460px,94vw);height:100%;background:#fff;z-index:71;box-shadow:-4px 0 20px rgba(0,0,0,.15);display:none;flex-direction:column';
+  drawer.innerHTML =
+    '<div style="padding:14px 18px;background:#0e2a47;color:#fff;display:flex;align-items:center;gap:10px">'
+    + '<b style="flex:1">✨ Ask the data</b><span id="ask-x" style="cursor:pointer;font-size:18px">✕</span></div>'
+    + '<div id="ask-log" style="flex:1 1 auto;overflow:auto;padding:14px 18px;font-size:14px;line-height:1.5;min-height:0"></div>'
+    + '<div style="padding:12px 18px;border-top:1px solid #e3e8ee;display:flex;gap:8px;flex:0 0 auto">'
+    + '<input id="ask-q" placeholder="e.g. which ward spent the most?" style="flex:1;padding:9px 12px;border:1px solid #cfd8e0;border-radius:8px;font-size:14px">'
+    + '<button id="ask-send" style="background:#0e2a47;color:#fff;border:0;border-radius:8px;padding:9px 14px;cursor:pointer">Ask</button></div>';
+  document.body.appendChild(drawer);
+  askBtn.onclick = () => { drawer.style.display = 'flex'; document.getElementById('ask-q').focus(); };
+  document.getElementById('ask-x').onclick = () => drawer.style.display = 'none';
+
+  let groundCache = null; const askHist = [];
+  async function grounding(){
+    if (groundCache) return groundCache;
+    let flags = flagsCache;
+    if (!flags){ try { flags = (await fetchAll('governance.recommendation')).filter(r => r.produced_by === FLAG_PRODUCER); } catch(e){ flags = []; } }
+    const C = city || {};
+    const L = [];
+    L.push('CITY TOTAL: ' + (C.works_count||'?') + ' works across ' + (C.wards_count||'?') + ' wards, '
+           + (C.contractors_count||'?') + ' contractors, ₹' + ((C.paid_net_total||0)/1e7).toFixed(0)
+           + ' cr net paid (BBMP ward works 2013-2022; source OpenCity, ODbL).');
+    if (flags && flags.length){
+      L.push('TRANSPARENCY FLAGS (AI-flagged for human review — not decisions):');
+      flags.slice(0,8).forEach(f => L.push(' - ' + (f.title||'') + ' — ' + (f.rationale||'').slice(0,170)));
+    }
+    L.push('TOP CONTRACTORS (name: ₹cr net | works):');
+    topc.slice(0,20).forEach(c => L.push(' ' + (c.name||c.contractor) + ': ₹' + ((c.paid_net_total||0)/1e7).toFixed(1) + ' cr | ' + (c.works_count||0)));
+    L.push('WARDS (ward: ₹cr net | works), highest first:');
+    wards.forEach(w => L.push(' ' + w.ward + ': ₹' + ((w.paid_net_total||0)/1e7).toFixed(1) + ' cr | ' + (w.works_count||0)));
+    groundCache = L.join('\n').slice(0, 8800);
+    return groundCache;
+  }
+  function say(role, text){
+    const log = document.getElementById('ask-log'); const d = document.createElement('div');
+    d.style.cssText = 'margin-bottom:14px';
+    d.innerHTML = '<div style="font-size:11px;color:#8a97a6;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">'
+      + (role==='user'?'You':'Assistant') + '</div><div class="msg" style="white-space:pre-wrap"></div>';
+    d.querySelector('.msg').textContent = text;
+    log.appendChild(d); log.scrollTop = log.scrollHeight; return d.querySelector('.msg');
+  }
+  async function ask(q){
+    if (!q) return; document.getElementById('ask-q').value = ''; say('user', q);
+    const tip = say('assistant', '…');
+    try {
+      const ctxData = await grounding();
+      const r = await fetch('/bridge/ai-assist', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ task:'assist', app_id: APPID, prompt: q, context: ctxData,
+          system: 'This is BBMP (Bengaluru) public-works spending. All ₹ are net amounts actually paid; "cr" = crore = 10,000,000. Answer ONLY from the DATA above; cite exact figures, wards or contractors; if it is not in the data, say so plainly. Note the flagged name variants (e.g. KRIDL appears under many spellings) when discussing contractor totals.',
+          history: askHist })}).then(x => x.json());
+      tip.textContent = r.content || r.error || 'No answer.';
+      askHist.push({role:'user', content:q}); askHist.push({role:'assistant', content: r.content || ''});
+    } catch(e){ tip.textContent = 'Error: ' + e; }
+  }
+  document.getElementById('ask-send').onclick = () => ask(document.getElementById('ask-q').value.trim());
+  document.getElementById('ask-q').onkeydown = e => { if (e.key === 'Enter') ask(e.target.value.trim()); };
+  say('assistant', 'Ask about BBMP public-works spending — e.g. "which ward spent the most?", "how much did KRIDL really receive?", "what are the top transparency flags?"');
+
   // ---- ward drill-down ----
   async function openWard(ward){
     let ov = document.getElementById('ward-drill');
