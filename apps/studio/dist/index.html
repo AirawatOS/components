@@ -466,7 +466,10 @@ async function testComp(ref){bottom('Running '+ref+' …');const r=await post('/
   if(ok){bottom('✓ ran OK\n'+detail);const m=memberFor(ref);if(m&&(m.status==='draft'||m.status==='scaffolded')){m.status='tested';await save(SEL);tree();}}
   else bottomFix('✗ '+(r.error||r.detail||r.status||'failed')+'\n'+detail, ref, detail);}
 async function publishComp(ref){bottom('Publishing '+ref+' …');const r=await post('/bridge/project-publish',{component:ref});
-  if(r.published){const m=memberFor(ref);if(m){m.status='published';await save(SEL);tree();}bottom('✓ certified (verified='+r.verified+') + published to the Marketplace');}
+  if(r.published){const m=memberFor(ref);if(m){m.status='published';await save(SEL);tree();}
+    bottom(r.sandbox
+      ? ('✓ certified (verified='+r.verified+') + published LOCALLY to your development sandbox — installed in your tenant.\n'+(r.note||"To promote to the Marketplace, use 'Submit for review' (a separate, gated step)."))
+      : ('✓ certified (verified='+r.verified+') + published to the Marketplace'));}
   else bottom('✗ '+(r.error||'publish failed')+(r.detail?'\n'+r.detail:''));}
 // ADR-0080: instead of publishing directly, a developer SUBMITS the (certified) component for network-steward
 // review; it goes LIVE in the Marketplace only when the steward approves it (Network Console → Publish Requests).
@@ -561,6 +564,10 @@ async function renameProject(){
 function briefPrompt(p){const b=p.brief||{};const j=a=>((a||[]).join(', ')||'—');
   return `Design the solution for "${p.title}". Goal: ${p.goal||'—'}. Users: ${j(b.users)}. Real-world things: ${j(b.entities)}. Data sources: ${j(b.data_sources)}. Decisions to answer: ${j(b.decisions)}. Triggers: ${j(b.triggers)}. Reuse existing components + specs first; propose the LAYERED component graph — drivers for the data sources (domain), engines/skills for the decisions (intelligence), an app for the users (interaction) — and flag any missing specs.`;}
 function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind===kind);
+  // ADR-0094: software is steward-owned. Default the new id to the PROJECT's own tenant (the project id is
+  // ds:<tenant>:studio/project/…) — when that tenant is itself a Developer participant (e.g. janaagraha) it
+  // owns its software; falls back to the reference developer participant only if no project is selected.
+  const stw=(SEL&&SEL.id&&SEL.id.split(':')[1])||'airawatdeveloper';
   const isAgent=(kind==='agent'); const skills=isAgent?(MARKET.components||[]).filter(c=>c.kind==='skill'):[];
   // AI Experts (kind=agent) are BUNDLES of Skills (INT-0002) — pick the member Skills the Expert brings; they
   // fan out on install. Software is authored under the airawatdeveloper vendor namespace (ADR-0094).
@@ -569,7 +576,7 @@ function addComponent(kind){const comps=(MARKET.components||[]).filter(c=>c.kind
   const m=modal(`<h3>Add ${isAgent?'AI Expert':pretty(kind)}</h3><div class="sub">Reuse an existing one (recommended) or create a new one to build.${isAgent?' An AI Expert is a domain-identity bundle of Skills — it does not reason itself; its Skills do.':''}</div>
     <label class="sub" style="margin-top:8px">Reuse existing</label><select class="in" id="ex"><option value="">— choose —</option>${comps.map(c=>`<option value="${esc(c.component_id)}">${esc(nameOf(c))}${c.certified?' ✓':''}</option>`).join('')}</select>
     <div style="text-align:right"><button class="btn primary sm" id="addex">Add (reuse)</button></div><hr style="border-color:var(--line)">
-    ${sklPick}<label class="sub">New — id <span class="sub">(published under the airawatdeveloper vendor namespace)</span></label><input class="in" id="nn" placeholder="ds:airawatdeveloper:${kind}/my-thing" value="ds:airawatdeveloper:${kind}/">
+    ${sklPick}<label class="sub">New — id <span class="sub">(stewarded by this project's owner — ${esc(stw)})</span></label><input class="in" id="nn" placeholder="ds:${esc(stw)}:${kind}/my-thing" value="ds:${esc(stw)}:${kind}/">
     <div style="text-align:right"><button class="btn" id="x">Cancel</button> <button class="btn" id="addnew">Add + scaffold</button></div>`);
   m.q('#x').onclick=m.close;
   m.q('#addex').onclick=async()=>{const ref=m.q('#ex').value;if(!ref)return;SEL.members=SEL.members||[];SEL.members.push({ref,kind,title:pretty(ref.split('/').pop()),origin:'existing',status:'published',layer:KIND_LAYER[kind]||'domain'});await save(SEL);m.close();OPENK['ly:'+(KIND_LAYER[kind]||'domain')]=true;tree();configureComponent(ref);};
