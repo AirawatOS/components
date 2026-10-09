@@ -1,0 +1,21 @@
+# A generic public-procurement ingest driver (ADR-0110). Reads an NDJSON/CSV procurement feed from a
+# configurable source and writes procurement.tender@0.2.0. No agency/city/portal is hardcoded — the
+# source URL, entity filter and topic filter are config, so a different city is a config change.
+component_id: ds:janaagraha:driver/procurement-tenders
+kind: driver
+version: 0.1.0
+provider: ds:janaagraha:developer
+entrypoint: run.py
+confinement_min: L1
+reads: []
+writes: [procurement.tender]
+# egress allow-list. For BBMP's first instance the upstream is the Karnataka e-procurement / KPPP data
+# as republished (TenderSir, Cloudflare R2). A Parquet source is converted to NDJSON by a source adapter
+# until a pyarrow runtime profile is stood up; point SOURCE_URL at the NDJSON the adapter produces.
+egress:
+  - { host: pub-37c5c5d356924d7d80e254639d875a14.r2.dev, rate_per_min: 60, user_agent: "AirawatOS/1.0 (+https://airawat.org; manishsv@gmail.com)" }
+config: [SOURCE_URL, SOURCE_FORMAT, SOURCE_REF, ENTITY_FILTER, TOPIC_FILTER, MAX_ROWS]
+sources:
+  - { ref: "ds:janaagraha:ref/source/kppp-eproc", host: pub-37c5c5d356924d7d80e254639d875a14.r2.dev, provides: [procurement.tender] }
+scopes:
+  - { verb: write, scope: procurement.tender, tenant: janaagraha }
