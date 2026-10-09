@@ -1,0 +1,19 @@
+component_id: ds:janaagraha:driver/works-flags
+kind: driver
+version: 0.1.0
+provider: ds:janaagraha:developer
+entrypoint: run.py
+confinement_min: L1
+title: Works Transparency Flags
+description: >
+  Transparency flags for the Public Expenditure Dashboard — reads governed works.* facts and writes
+  governance.recommendation records (AI flags, humans decide; ADR-0029). Never mutates data. Flags
+  contractor name-variant clusters (de-dup candidates) and high-deduction outliers, each citing evidence.
+reads: [works.contractor_rollup, works.work_order, works.payment]
+writes: [governance.recommendation]
+config: []
+scopes:
+  - { verb: read,  scope: works.contractor_rollup, tenant: janaagraha }
+  - { verb: read,  scope: works.work_order,        tenant: janaagraha }
+  - { verb: read,  scope: works.payment,           tenant: janaagraha }
+  - { verb: write, scope: governance.recommendation, tenant: janaagraha }
