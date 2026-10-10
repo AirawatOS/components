@@ -14,7 +14,8 @@ writes: [procurement.tender]
 # until a pyarrow runtime profile is stood up; point SOURCE_URL at the NDJSON the adapter produces.
 egress:
   - { host: pub-37c5c5d356924d7d80e254639d875a14.r2.dev, rate_per_min: 60, user_agent: "AirawatOS/1.0 (+https://airawat.org; manishsv@gmail.com)" }
-config: [SOURCE_URL, SOURCE_FORMAT, SOURCE_REF, ENTITY_FILTER, TOPIC_FILTER, MAX_ROWS]
+config: [SOURCE_FILE_ID, SOURCE_URL, SOURCE_FORMAT, SOURCE_REF, ENTITY_FILTER, TOPIC_FILTER, MAX_ROWS]
+files: [get]   # reads the NDJSON/CSV feed from the content-addressed filestore (ctx.file.get)
 sources:
   - { ref: "ds:janaagraha:ref/source/kppp-eproc", host: pub-37c5c5d356924d7d80e254639d875a14.r2.dev, provides: [procurement.tender] }
 scopes:

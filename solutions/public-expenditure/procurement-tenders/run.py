@@ -9,7 +9,9 @@ republished (TenderSir); a different city points SOURCE_URL at its own export. C
 are converted to NDJSON by a source adapter until a pyarrow runtime profile is available (see meta).
 
 Config (env / --set):
-  SOURCE_URL      the NDJSON (one JSON object per line) or CSV feed URL          [required]
+  SOURCE_FILE_ID  a filestore id (content-addressed) holding the NDJSON/CSV feed — the clean in-platform
+                  delivery path (digest-verified, no egress). Takes precedence over SOURCE_URL.
+  SOURCE_URL      the NDJSON (one JSON object per line) or CSV feed URL (external egress alternative)
   SOURCE_FORMAT   ndjson | csv                                                   [default: ndjson]
   SOURCE_REF      ref/source id for attribution                                  [default: generic]
   ENTITY_FILTER   case-insensitive substring an incoming record's entity/dept/location must contain
@@ -171,20 +173,26 @@ def _rows(body, fmt):
 @driver.main
 def run():
     T = ctx.tenant
+    file_id = (os.environ.get("SOURCE_FILE_ID") or "").strip()
     url = os.environ.get("SOURCE_URL")
-    if not url:
-        raise SystemExit("SOURCE_URL is required")
+    if not file_id and not url:
+        raise SystemExit("SOURCE_FILE_ID or SOURCE_URL is required")
     fmt = (os.environ.get("SOURCE_FORMAT") or "ndjson").strip().lower()
     source_ref = os.environ.get("SOURCE_REF") or "procurement-feed"
     entity_filter = (os.environ.get("ENTITY_FILTER") or "").strip()
     topic_filter = (os.environ.get("TOPIC_FILTER") or "").strip()
     max_rows = int(os.environ.get("MAX_ROWS") or "200000")
 
-    print(f"[procurement-tenders] tenant={T} src={url} fmt={fmt} entity={entity_filter!r} topic={topic_filter!r}", flush=True)
-    r = ctx.fetch(url)
-    if not getattr(r, "ok", False):
-        raise SystemExit(f"fetch failed: {getattr(r,'status','?')}")
-    body = r.body if isinstance(r.body, str) else r.body.decode("utf-8", "replace")
+    src = f"file:{file_id}" if file_id else url
+    print(f"[procurement-tenders] tenant={T} src={src} fmt={fmt} entity={entity_filter!r} topic={topic_filter!r}", flush=True)
+    if file_id:
+        raw = ctx.file.get(file_id)                       # content-addressed, digest-verified, no egress
+        body = raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
+    else:
+        r = ctx.fetch(url)
+        if not getattr(r, "ok", False):
+            raise SystemExit(f"fetch failed: {getattr(r,'status','?')}")
+        body = r.body if isinstance(r.body, str) else r.body.decode("utf-8", "replace")
 
     buf, written, seen = [], 0, 0
     for row in _rows(body, fmt):
