@@ -38,13 +38,15 @@
 <div class="types" id="types"><span class="lbl">Work type</span></div>
 <div id="main">
   <div style="display:flex;gap:6px;margin:8px 0 12px;flex:0 0 auto;flex-wrap:wrap">
+    <button class="tab" id="t-map">🗺 Ward map</button>
     <button class="tab" id="t-tenders">🧾 Tenders</button>
     <button class="tab" id="t-wards">Spend by ward</button>
     <button class="tab" id="t-contractors">Top contractors</button>
     <button class="tab" id="t-flags">🚩 Flags</button>
   </div>
   <div id="note" class="muted" style="font-size:12px;margin:-4px 0 10px;flex:0 0 auto;display:none"></div>
-  <div class="tablewrap"><table id="grid"></table></div>
+  <div class="tablewrap" id="tablewrap"><table id="grid"></table></div>
+  <div class="tablewrap" id="mapwrap" style="display:none;position:relative"></div>
 </div>
 <script>
 (async () => {
@@ -221,6 +223,54 @@
           + '<td style="text-align:right;padding:7px 8px;vertical-align:top">' + Math.round((f.confidence||0)*100) + '%</td></tr>').join('');
   }
 
+  // ═══ WARD MAP — self-contained SVG choropleth (no external tiles/libs). Ward is the finest real grain in
+  //     the data (works carry no coordinates); sub-ward (H3) refinement is a V2 step once road-segment GPS lands. ═══
+  let wardsGeo = null, mapMetric = 'spend';
+  function spendByWardNo(){ const m={}; wards.forEach(w=>{ const mm=/\((\d+)\)/.exec(w.ward||''); if(mm) m[+mm[1]]=w; }); return m; }
+  function projPaths(geos){
+    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+    const walk=(a,f)=>{ if(a&&typeof a[0]==='number'){f(a[0],a[1]);} else if(a){a.forEach(b=>walk(b,f));} };
+    geos.forEach(g=>walk((g.geometry||{}).coordinates,(x,y)=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}));
+    const W=1000, latMid=(minY+maxY)/2, k=Math.cos(latMid*Math.PI/180);
+    const lonSpan=(maxX-minX)*k||1, latSpan=(maxY-minY)||1, H=Math.max(300,Math.round(W*latSpan/lonSpan));
+    const px=x=>((x-minX)*k)/lonSpan*W, py=y=>(maxY-y)/latSpan*H;
+    const ring=r=>{ let d=''; r.forEach((p,i)=>d+=(i?'L':'M')+px(p[0]).toFixed(1)+' '+py(p[1]).toFixed(1)); return d+'Z'; };
+    const pathFor=g=>{ const c=(g.geometry||{}).coordinates||[], t=(g.geometry||{}).type; let d='';
+      if(t==='Polygon') c.forEach(r=>d+=ring(r)); else if(t==='MultiPolygon') c.forEach(poly=>poly.forEach(r=>d+=ring(r))); return d; };
+    return {W,H,pathFor};
+  }
+  function quantiles(vals,n){ const s=vals.filter(v=>v>0).sort((a,b)=>a-b); if(!s.length)return []; const q=[]; for(let i=1;i<n;i++) q.push(s[Math.floor(i/n*s.length)]); return q; }
+  const RAMP=['#e6eef5','#c5dcef','#8fc0e0','#4f97c9','#2b6ca8','#123d6b'];
+  async function renderMap(){
+    const wrap=document.getElementById('mapwrap');
+    if(!wardsGeo){ wrap.innerHTML='<div style="padding:16px" class="muted">Loading ward map…</div>'; wardsGeo=await fetchAll('space.ward'); }
+    const byNo=spendByWardNo();
+    const val=g=>{ const r=byNo[Math.round(g.ward_no)]; if(!r)return 0; return mapMetric==='spend'?(r.paid_net_total||0):(r.works_count||0); };
+    const {W,H,pathFor}=projPaths(wardsGeo);
+    const qs=quantiles(wardsGeo.map(val),RAMP.length);
+    const color=v=>{ if(!(v>0))return '#f0f3f7'; let i=0; while(i<qs.length&&v>=qs[i])i++; return RAMP[i]; };
+    const fmt=v=> mapMetric==='spend' ? ('₹'+(v/1e7).toFixed(1)+' cr') : (v.toLocaleString('en-IN')+' works');
+    const paths=wardsGeo.map(g=>{ const r=byNo[Math.round(g.ward_no)], v=val(g);
+      return '<path d="'+pathFor(g)+'" fill="'+color(v)+'" stroke="#fff" stroke-width="0.6" style="cursor:pointer" data-w="'+(r?encodeURIComponent(r.ward):'')+'">'
+        +'<title>'+esc((r?r.ward:(g.name||('Ward '+Math.round(g.ward_no))))+' — '+fmt(v))+'</title></path>'; }).join('');
+    const leg=RAMP.map((c,i)=>{ const lo=i===0?0:qs[i-1], hi=qs[i];
+      const lbl= mapMetric==='spend' ? ('₹'+(lo/1e7).toFixed(0)+(hi!=null?'–'+(hi/1e7).toFixed(0):'+')+' cr') : (Math.round(lo)+(hi!=null?'–'+Math.round(hi):'+'));
+      return '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:11px;color:#41505f"><span style="width:14px;height:12px;background:'+c+';border:1px solid #cfd8e0;display:inline-block"></span>'+lbl+'</span>'; }).join('');
+    wrap.innerHTML=
+      '<div style="position:sticky;top:0;background:#fff;padding:8px 10px;border-bottom:1px solid #eef1f4;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:2">'
+      +'<b style="font-size:13px">BBMP wards — colour by</b>'
+      +'<button class="tab" id="m-spend" style="padding:4px 10px;font-size:12px">Net paid</button>'
+      +'<button class="tab" id="m-works" style="padding:4px 10px;font-size:12px">Works count</button>'
+      +'<span style="flex:1"></span>'+leg+'</div>'
+      +'<div style="padding:8px"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;max-height:calc(100vh - 270px);display:block" role="img" aria-label="Choropleth of BBMP ward public-works spending">'+paths+'</svg></div>'
+      +'<div class="muted" style="padding:0 12px 10px;font-size:11px">198 BBMP wards (pre-2023 scheme) · boundaries: DataMeet (CC-BY), governed as space.ward · spend from the works ledger, joined on ward number · click a ward to drill in. Grain is ward; sub-ward (H3) needs work-location data (V2).</div>';
+    const act=id=>{ const b=document.getElementById(id); b.style.background='#0e2a47'; b.style.color='#fff'; b.style.borderColor='#0e2a47'; };
+    document.getElementById('m-spend').onclick=()=>{ mapMetric='spend'; renderMap(); };
+    document.getElementById('m-works').onclick=()=>{ mapMetric='works'; renderMap(); };
+    act(mapMetric==='spend'?'m-spend':'m-works');
+    wrap.querySelectorAll('path[data-w]').forEach(p=>{ if(p.dataset.w) p.onclick=()=>openWard(decodeURIComponent(p.dataset.w)); });
+  }
+
   const LEDGER_TYPE_NOTE = 'The works ledger (spend) is not yet tagged by work type — per-type spend arrives as work orders are classified (works lifecycle, ADR-0110 V2). Spend shown here spans all work types.';
   let curTab = 'tenders';
   function setNote(tab, text){
@@ -239,7 +289,10 @@
   async function setTab(t){
     curTab = t;
     const btn = (id,v)=>{ const b=document.getElementById(id); b.style.background=v?'#0e2a47':'#fff'; b.style.color=v?'#fff':'#1a2330'; b.style.borderColor=v?'#0e2a47':'#d6dde4'; };
-    btn('t-tenders', t==='tenders'); btn('t-wards', t==='wards'); btn('t-contractors', t==='contractors'); btn('t-flags', t==='flags');
+    btn('t-map', t==='map'); btn('t-tenders', t==='tenders'); btn('t-wards', t==='wards'); btn('t-contractors', t==='contractors'); btn('t-flags', t==='flags');
+    document.getElementById('tablewrap').style.display = (t==='map') ? 'none' : '';
+    document.getElementById('mapwrap').style.display   = (t==='map') ? '' : 'none';
+    if (t==='map'){ document.getElementById('note').style.display='none'; await renderMap(); return; }
     if (t==='tenders'){ await loadTenders(); renderTenders(); }
     else if (t==='wards'){ renderWards(); setNote('wards'); }
     else if (t==='contractors'){ renderContractors(); setNote('contractors'); }
@@ -251,11 +304,12 @@
     if (curTab==='tenders'){ await loadTenders(); renderTenders(); }
     else { setTab('tenders'); }
   }
+  document.getElementById('t-map').onclick = () => setTab('map');
   document.getElementById('t-tenders').onclick = () => setTab('tenders');
   document.getElementById('t-wards').onclick = () => setTab('wards');
   document.getElementById('t-contractors').onclick = () => setTab('contractors');
   document.getElementById('t-flags').onclick = () => setTab('flags');
-  setTab('tenders');
+  setTab('map');
 
   // ---- ✨ Ask the data (grounded assistant via /bridge/ai-assist) ----
   const askBtn = document.createElement('button');

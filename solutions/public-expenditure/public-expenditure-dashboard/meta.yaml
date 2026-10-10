@@ -12,5 +12,5 @@ sandboxed: true
 roles: []
 data_browser: false
 public: true
-public_read: [works.work_order, works.contract, works.contractor, works.payment, works.ward_rollup, works.city_summary, works.contractor_rollup, governance.recommendation, procurement.tender]
-required_schemas: [works.work_order, works.contract, works.contractor, works.payment, works.ward_rollup, works.city_summary, works.contractor_rollup, governance.recommendation, procurement.tender]
+public_read: [works.work_order, works.contract, works.contractor, works.payment, works.ward_rollup, works.city_summary, works.contractor_rollup, governance.recommendation, procurement.tender, space.ward]
+required_schemas: [works.work_order, works.contract, works.contractor, works.payment, works.ward_rollup, works.city_summary, works.contractor_rollup, governance.recommendation, procurement.tender, space.ward]
