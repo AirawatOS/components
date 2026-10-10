@@ -5,10 +5,17 @@
   body{font-family:system-ui,sans-serif;margin:0;background:var(--aos-bg,#f6f7f9);color:#1a2330;display:flex;flex-direction:column}
   header{padding:16px 24px;background:#0e2a47;color:#fff;flex:0 0 auto}
   header h1{margin:0;font-size:18px} header .sub{opacity:.8;font-size:12px;margin-top:3px}
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;padding:16px 24px 8px;flex:0 0 auto}
-  .kpi{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:14px 16px}
-  .kpi .n{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
-  .kpi .l{font-size:12px;color:#5f6b78;margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding:14px 24px 6px;flex:0 0 auto}
+  .kpi{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:12px 14px}
+  .kpi .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:11px;color:#5f6b78;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+  /* work-type facet (first-class dimension; roads is one type of many) */
+  .types{display:flex;gap:8px;flex-wrap:wrap;padding:6px 24px 2px;flex:0 0 auto;align-items:center}
+  .types .lbl{font-size:11px;color:#5f6b78;text-transform:uppercase;letter-spacing:.04em;margin-right:2px}
+  .chip{cursor:pointer;border:1px solid #d6dde4;background:#fff;padding:5px 11px;border-radius:999px;font-size:12.5px;font-weight:600;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+  .chip .c{font-variant-numeric:tabular-nums;color:#5f6b78;font-weight:500}
+  .chip.sel{background:#0e2a47;color:#fff;border-color:#0e2a47}.chip.sel .c{color:#aebfd1}
+  .chip.empty{opacity:.5;cursor:default}
   #main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;padding:4px 24px 20px}
   .tab{cursor:pointer;border:1px solid #d6dde4;background:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13px}
   .tablewrap{flex:1 1 auto;min-height:0;overflow:auto;border:1px solid #e3e8ee;border-radius:10px;background:#fff}
@@ -19,23 +26,24 @@
 </style>
 <header>
   <h1>🏗️ Public Expenditure Dashboard</h1>
-  <div class="sub">BBMP public works · source: OpenCity (ODbL) · amounts shown only where internally consistent</div>
+  <div class="sub">BBMP public works · procurement (KPPP/e-proc) + works ledger (OpenCity, ODbL) · amounts shown only where internally consistent</div>
 </header>
 <div class="kpis">
   <div class="kpi"><div class="n" id="k-works">…</div><div class="l">Work orders</div></div>
   <div class="kpi"><div class="n" id="k-wards">…</div><div class="l">Wards covered</div></div>
   <div class="kpi"><div class="n" id="k-contractors">…</div><div class="l">Contractors</div></div>
   <div class="kpi"><div class="n" id="k-paid">—</div><div class="l">Net paid (₹ cr)</div></div>
+  <div class="kpi"><div class="n" id="k-tenders">…</div><div class="l">Tenders</div></div>
 </div>
+<div class="types" id="types"><span class="lbl">Work type</span></div>
 <div id="main">
-  <div style="display:flex;gap:6px;margin:6px 0 12px;flex:0 0 auto">
+  <div style="display:flex;gap:6px;margin:8px 0 12px;flex:0 0 auto;flex-wrap:wrap">
+    <button class="tab" id="t-tenders">🧾 Tenders</button>
     <button class="tab" id="t-wards">Spend by ward</button>
     <button class="tab" id="t-contractors">Top contractors</button>
     <button class="tab" id="t-flags">🚩 Flags</button>
   </div>
-  <div id="note" class="muted" style="font-size:12px;margin:-4px 0 10px;flex:0 0 auto;display:none">
-    Names are as recorded in the source — the same agency can appear under spelling variants
-    (e.g. KRIDL / M/s KRIDL / kridl); de-duplication is a planned step.</div>
+  <div id="note" class="muted" style="font-size:12px;margin:-4px 0 10px;flex:0 0 auto;display:none"></div>
   <div class="tablewrap"><table id="grid"></table></div>
 </div>
 <script>
@@ -53,33 +61,137 @@
   const count = async (schema, extra) => (await q({schema, count:true, ...(extra||{})})).count ?? '—';
   const cr1 = v => '₹' + ((v||0)/1e7).toFixed(1) + ' cr';
   const cr2 = v => (v!=null) ? '₹' + (v/1e7).toFixed(2) + ' cr' : '—';
-  async function fetchAll(schema){
+  const lk  = v => (v!=null) ? '₹' + (v/1e5).toLocaleString('en-IN',{maximumFractionDigits:1}) + ' L' : '—';
+  const nf  = n => (typeof n === 'number') ? n.toLocaleString('en-IN') : n;
+  const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  async function fetchAll(schema, extra){
     let out = [], cursor = null;
-    do { const r = await q({schema, paginate:true, limit:5000, cursor});
+    do { const r = await q({schema, paginate:true, limit:5000, cursor, ...(extra||{})});
          (r.results||[]).forEach(x => out.push(x.object||x)); cursor = r.next_cursor;
     } while (cursor);
     return out;
   }
 
+  // ═══ WORK TYPE — a first-class, data-driven dimension. Roads is one type of many; the others light up
+  //     automatically as their data is added (buildings, drains, parks…). No type is hardcoded as "the" type. ═══
+  const WORK_TYPES = [
+    { key:'road',     label:'Roads',          icon:'🛣️', rx:/\b(road|asphalt|footpath|tar|black ?top|white ?top|pavement)\b/i },
+    { key:'drain',    label:'Drains & SWD',   icon:'💧', rx:/\b(drain|swd|storm ?water|culvert|nala)\b/i },
+    { key:'building', label:'Buildings',      icon:'🏢', rx:/\b(building|school|hospital|ward office|community hall|toilet|complex)\b/i },
+    { key:'park',     label:'Parks & lakes',  icon:'🌳', rx:/\b(park|lake|garden|playground|open space|tank)\b/i },
+    { key:'lighting', label:'Street lighting',icon:'💡', rx:/\b(light|led|lamp|illumination)\b/i },
+    { key:'other',    label:'Other',          icon:'📋', rx:/.*/ },
+  ];
+  function classify(text){
+    const t = String(text||'');
+    for (const wt of WORK_TYPES){ if (wt.key!=='other' && wt.rx.test(t)) return wt.key; }
+    return 'other';
+  }
+  let selType = 'road';            // default view = the type that has data today
+  const typeCounts = {};           // {key: nTenders} — filled once tenders load
+
+  function renderChips(){
+    const box = document.getElementById('types');
+    box.querySelectorAll('.chip').forEach(c=>c.remove());
+    const total = Object.values(typeCounts).reduce((a,b)=>a+(b||0),0);
+    const mk = (key,label,icon,n,sel) => {
+      const empty = (n===0);
+      const c = document.createElement('button');
+      c.className = 'chip' + (sel?' sel':'') + (empty&&key!=='all'?' empty':'');
+      c.innerHTML = (icon?icon+' ':'') + esc(label) + (n!=null?' <span class="c">'+nf(n)+'</span>':'');
+      if (!empty || key==='all') c.onclick = () => { selType = key; refresh(); };
+      if (empty && key!=='all') c.title = 'No data yet — ingest this work type to light it up';
+      return c;
+    };
+    box.appendChild(mk('all','All types','', total||null, selType==='all'));
+    WORK_TYPES.forEach(wt => box.appendChild(mk(wt.key, wt.label, wt.icon, typeCounts[wt.key]??null, selType===wt.key)));
+  }
+  renderChips();
+
   // ---- KPIs ----
-  const nf = n => (typeof n === 'number') ? n.toLocaleString('en-IN') : n;
   document.getElementById('k-works').textContent       = nf(await count('works.work_order'));
   document.getElementById('k-wards').textContent        = nf(await count('works.work_order', {distinct:'ward'}));
   document.getElementById('k-contractors').textContent  = nf(await count('works.contractor'));
+  let totalTenders = 0;
+  count('procurement.tender').then(n => { totalTenders = +n||0; document.getElementById('k-tenders').textContent = nf(n); });
   const cityRow = (await q({schema:'works.city_summary', paginate:true, limit:1})).results?.[0];
   const city = cityRow ? (cityRow.object || cityRow) : null;
   if (city) document.getElementById('k-paid').textContent = (city.paid_net_total/1e7).toLocaleString('en-IN',{maximumFractionDigits:0});
 
-  // ---- data for the two tabs ----
+  // ---- works-ledger tabs data ----
   const wards = (await fetchAll('works.ward_rollup')).sort((a,b)=>(b.paid_net_total||0)-(a.paid_net_total||0));
   const topc  = (await fetchAll('works.contractor_rollup')).sort((a,b)=>(b.paid_net_total||0)-(a.paid_net_total||0)).slice(0,50);
   const grid = document.getElementById('grid');
+
+  // ═══ TENDERS (procurement.tender — the procurement side; "what was advertised & awarded") ═══
+  let tenders = null;
+  async function loadTenders(){
+    if (tenders) return tenders;
+    grid.innerHTML = '<tr><td style="padding:14px" class="muted">Loading tenders…</td></tr>';
+    tenders = await fetchAll('procurement.tender');
+    tenders.forEach(t => { t._type = classify((t.title||'') + ' ' + ((t.topics||[]).join(' ')) + ' ' + (t.category||'')); });
+    WORK_TYPES.forEach(wt => typeCounts[wt.key] = tenders.filter(t => t._type===wt.key).length);
+    tenders.sort((a,b)=> String(b.published_at||'').localeCompare(String(a.published_at||'')));
+    renderChips();
+    return tenders;
+  }
+  function renderTenders(){
+    const list = (selType==='all') ? tenders : tenders.filter(t => t._type===selType);
+    const CAP = 500;
+    const head = '<tr><th style="text-align:left;padding:8px">Published</th><th style="text-align:left;padding:8px">Tender</th>'
+      + '<th style="text-align:right;padding:8px">EMD</th><th style="text-align:right;padding:8px">Est. value</th>'
+      + '<th style="text-align:right;padding:8px">Bidders</th><th style="text-align:left;padding:8px">Status</th></tr>';
+    grid.innerHTML = head + list.slice(0,CAP).map((t,i) =>
+      '<tr data-i="'+i+'" style="cursor:pointer;border-top:1px solid #eef1f4">'
+      + '<td style="padding:7px 8px;white-space:nowrap;color:#5f6b78">'+esc((t.published_at||'').slice(0,10))+'</td>'
+      + '<td style="padding:7px 8px"><span style="color:#0e5aa7;font-weight:600">'+esc((t.title||t.tender_ref||'—').slice(0,96))+'</span></td>'
+      + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">'+lk(t.emd)+'</td>'
+      + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">'+(t.estimated_value?lk(t.estimated_value):'—')+'</td>'
+      + '<td style="text-align:right;padding:7px 8px">'+(t.num_bidders??'—')+'</td>'
+      + '<td style="padding:7px 8px"><span class="muted">'+esc(t.status||'')+'</span></td></tr>').join('');
+    grid.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => openTender(list[+tr.dataset.i]));
+    const n = list.length;
+    const sampled = (tenders.length >= 5000 && tenders.length < totalTenders);
+    setNote('tenders', n + ' tender' + (n===1?'':'s') + (n>CAP?(' (showing first '+CAP+', newest first)'):'')
+      + ' · ' + (WORK_TYPES.find(w=>w.key===selType)?.label || 'All types')
+      + ' · procurement.tender, source KPPP / e-procurement (via TenderSir)'
+      + (sampled ? ' · type counts from the ' + nf(tenders.length) + ' most-recent of ' + nf(totalTenders) + ' tenders' : '') + '.');
+  }
+  function openTender(t){
+    let ov = document.getElementById('tender-detail');
+    if(!ov){ ov=document.createElement('div'); ov.id='tender-detail';
+      ov.style.cssText='position:fixed;inset:0;background:#f6f7f9;z-index:60;overflow:auto'; document.body.appendChild(ov); }
+    const docs = (t.documents||[]).filter(Boolean);
+    const bidders = (t.bidders||[]).filter(Boolean);
+    const field = (l,v) => '<tr><td style="padding:6px 10px;color:#5f6b78;white-space:nowrap;vertical-align:top">'+l+'</td><td style="padding:6px 10px">'+(v!=null&&v!==''?v:'—')+'</td></tr>';
+    ov.innerHTML =
+      '<div style="padding:16px 24px;background:#0e2a47;color:#fff;display:flex;align-items:center;gap:14px">'
+      + '<button id="tback" style="cursor:pointer;border:0;background:#1d60a8;color:#fff;border-radius:6px;padding:6px 12px">&larr; Back</button>'
+      + '<b style="font-size:15px">'+esc((t.title||t.tender_ref||'Tender').slice(0,120))+'</b></div>'
+      + '<div style="padding:20px 24px;max-width:980px">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">'
+      + '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:6px 8px"><div style="font-weight:600;padding:6px 10px">Tender</div><table>'
+      + field('Reference', esc(t.tender_ref)) + field('Work type', (WORK_TYPES.find(w=>w.key===t._type)?.icon||'')+' '+(WORK_TYPES.find(w=>w.key===t._type)?.label||t._type))
+      + field('Procuring entity', esc(t.procuring_entity)) + field('Location', esc(t.jurisdiction_ref))
+      + field('Category', esc(t.category)) + field('Topics', esc((t.topics||[]).join(', ')))
+      + field('Status', esc(t.status)) + '</table></div>'
+      + '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:6px 8px"><div style="font-weight:600;padding:6px 10px">Money &amp; dates</div><table>'
+      + field('EMD', lk(t.emd)) + field('Tender fee', t.tender_fee?lk(t.tender_fee):'—') + field('Estimated value', t.estimated_value?lk(t.estimated_value):'—')
+      + field('Published', esc((t.published_at||'').slice(0,16).replace('T',' '))) + field('Closing', esc((t.closing_at||'').slice(0,16).replace('T',' ')))
+      + field('Awarded', esc((t.awarded_at||'').slice(0,16).replace('T',' '))) + field('Bidders', (t.num_bidders??'—')) + '</table></div>'
+      + '</div>'
+      + (bidders.length ? '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:10px 14px;margin-top:16px"><div style="font-weight:600;margin-bottom:6px">Bidders ('+bidders.length+')</div><div style="font-size:13px;color:#41505f">'+bidders.map(b=>esc(typeof b==='string'?b:(b.name||''))).join(' · ')+'</div></div>' : '')
+      + (docs.length ? '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:10px 14px;margin-top:12px"><div style="font-weight:600;margin-bottom:6px">Documents ('+docs.length+')</div><ul style="margin:0;padding-left:18px;font-size:13px;color:#41505f">'+docs.slice(0,40).map(d=>'<li>'+esc(d.file_name||d.doc_type||'document')+(d.doc_type?' <span class="muted">('+esc(d.doc_type)+')</span>':'')+'</li>').join('')+'</ul></div>' : '')
+      + '<div class="muted" style="font-size:12px;margin-top:14px">Source: KPPP / e-procurement, republished by TenderSir. Mirrored with provenance; figures as published by the procuring entity.</div>'
+      + '</div>';
+    ov.querySelector('#tback').onclick = () => ov.remove();
+  }
 
   function renderWards(){
     grid.innerHTML =
       '<tr><th style="text-align:left;padding:8px">Ward</th><th style="text-align:right;padding:8px">Works</th><th style="text-align:right;padding:8px">Net paid</th></tr>'
       + wards.map(w => '<tr data-ward="' + encodeURIComponent(w.ward) + '" style="cursor:pointer;border-top:1px solid #eef1f4">'
-          + '<td style="padding:7px 8px;color:#0e5aa7;font-weight:600">' + w.ward + '</td>'
+          + '<td style="padding:7px 8px;color:#0e5aa7;font-weight:600">' + esc(w.ward) + '</td>'
           + '<td style="text-align:right;padding:7px 8px">' + w.works_count + '</td>'
           + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">' + cr1(w.paid_net_total) + '</td></tr>').join('');
     grid.querySelectorAll('tr[data-ward]').forEach(tr => tr.onclick = () => openWard(decodeURIComponent(tr.dataset.ward)));
@@ -89,11 +201,10 @@
       '<tr><th style="text-align:left;padding:8px">#</th><th style="text-align:left;padding:8px">Contractor</th><th style="text-align:right;padding:8px">Works</th><th style="text-align:right;padding:8px">Net paid</th></tr>'
       + topc.map((c,i) => '<tr style="border-top:1px solid #eef1f4">'
           + '<td style="padding:7px 8px;color:#8a97a6">' + (i+1) + '</td>'
-          + '<td style="padding:7px 8px">' + (c.name || c.contractor || '—') + '</td>'
+          + '<td style="padding:7px 8px">' + esc(c.name || c.contractor || '—') + '</td>'
           + '<td style="text-align:right;padding:7px 8px">' + (c.works_count||0) + '</td>'
           + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">' + cr1(c.paid_net_total) + '</td></tr>').join('');
   }
-  // ---- flags (governance.recommendation from works-flags) ----
   const FLAG_PRODUCER = 'ds:janaagraha:driver/works-flags';
   let flagsCache = null;
   async function renderFlags(){
@@ -105,27 +216,46 @@
     grid.innerHTML =
       '<tr><th style="text-align:left;padding:8px">Flag</th><th style="text-align:left;padding:8px">Why it matters</th><th style="text-align:right;padding:8px">Conf.</th></tr>'
       + flagsCache.map(f => '<tr style="border-top:1px solid #eef1f4">'
-          + '<td style="padding:7px 8px;font-weight:600;min-width:220px;vertical-align:top">🚩 ' + (f.title||'') + '</td>'
-          + '<td style="padding:7px 8px;color:#41505f;vertical-align:top">' + (f.rationale||'') + '</td>'
+          + '<td style="padding:7px 8px;font-weight:600;min-width:220px;vertical-align:top">🚩 ' + esc(f.title||'') + '</td>'
+          + '<td style="padding:7px 8px;color:#41505f;vertical-align:top">' + esc(f.rationale||'') + '</td>'
           + '<td style="text-align:right;padding:7px 8px;vertical-align:top">' + Math.round((f.confidence||0)*100) + '%</td></tr>').join('');
   }
 
+  const LEDGER_TYPE_NOTE = 'The works ledger (spend) is not yet tagged by work type — per-type spend arrives as work orders are classified (works lifecycle, ADR-0110 V2). Spend shown here spans all work types.';
+  let curTab = 'tenders';
+  function setNote(tab, text){
+    const note = document.getElementById('note');
+    let t = text || '';
+    if (!t && (tab==='wards'||tab==='contractors') && selType!=='all') t = LEDGER_TYPE_NOTE;
+    else if (!t) t = NOTE[tab] || '';
+    note.textContent = t; note.style.display = t ? '' : 'none';
+  }
   const NOTE = {
+    tenders: '',
     wards: '',
     contractors: 'Names are as recorded in the source — the same agency can appear under spelling variants (e.g. KRIDL / M/s KRIDL / kridl). See the Flags tab for consolidation candidates.',
     flags: 'AI-generated flags for human review (governance.recommendation, ADR-0029). The platform never auto-acts on these — a reviewer decides.'
   };
-  function setTab(t){
-    const on = (id,v)=>{ const b=document.getElementById(id); b.style.background=v?'#0e2a47':'#fff'; b.style.color=v?'#fff':'#1a2330'; b.style.borderColor=v?'#0e2a47':'#d6dde4'; };
-    on('t-wards', t==='wards'); on('t-contractors', t==='contractors'); on('t-flags', t==='flags');
-    const note = document.getElementById('note');
-    note.textContent = NOTE[t] || ''; note.style.display = NOTE[t] ? '' : 'none';
-    if (t==='wards') renderWards(); else if (t==='contractors') renderContractors(); else renderFlags();
+  async function setTab(t){
+    curTab = t;
+    const btn = (id,v)=>{ const b=document.getElementById(id); b.style.background=v?'#0e2a47':'#fff'; b.style.color=v?'#fff':'#1a2330'; b.style.borderColor=v?'#0e2a47':'#d6dde4'; };
+    btn('t-tenders', t==='tenders'); btn('t-wards', t==='wards'); btn('t-contractors', t==='contractors'); btn('t-flags', t==='flags');
+    if (t==='tenders'){ await loadTenders(); renderTenders(); }
+    else if (t==='wards'){ renderWards(); setNote('wards'); }
+    else if (t==='contractors'){ renderContractors(); setNote('contractors'); }
+    else { renderFlags(); setNote('flags'); }
   }
+  // selecting a work type re-renders the current view (and defaults you into Tenders, the type-aware view)
+  async function refresh(){
+    renderChips();
+    if (curTab==='tenders'){ await loadTenders(); renderTenders(); }
+    else { setTab('tenders'); }
+  }
+  document.getElementById('t-tenders').onclick = () => setTab('tenders');
   document.getElementById('t-wards').onclick = () => setTab('wards');
   document.getElementById('t-contractors').onclick = () => setTab('contractors');
   document.getElementById('t-flags').onclick = () => setTab('flags');
-  setTab('wards');
+  setTab('tenders');
 
   // ---- ✨ Ask the data (grounded assistant via /bridge/ai-assist) ----
   const askBtn = document.createElement('button');
@@ -154,7 +284,11 @@
     const L = [];
     L.push('CITY TOTAL: ' + (C.works_count||'?') + ' works across ' + (C.wards_count||'?') + ' wards, '
            + (C.contractors_count||'?') + ' contractors, ₹' + ((C.paid_net_total||0)/1e7).toFixed(0)
-           + ' cr net paid (BBMP ward works 2013-2022; source OpenCity, ODbL).');
+           + ' cr net paid (BBMP ward works; source OpenCity, ODbL).');
+    if (tenders){
+      const byType = WORK_TYPES.map(w=>w.label+': '+(typeCounts[w.key]||0)).join(', ');
+      L.push('TENDERS: ' + tenders.length + ' procurement tenders ingested (KPPP/e-proc). By work type — ' + byType + '.');
+    }
     if (flags && flags.length){
       L.push('TRANSPARENCY FLAGS (AI-flagged for human review — not decisions):');
       flags.slice(0,8).forEach(f => L.push(' - ' + (f.title||'') + ' — ' + (f.rationale||'').slice(0,170)));
@@ -174,24 +308,24 @@
     d.querySelector('.msg').textContent = text;
     log.appendChild(d); log.scrollTop = log.scrollHeight; return d.querySelector('.msg');
   }
-  async function ask(q){
-    if (!q) return; document.getElementById('ask-q').value = ''; say('user', q);
+  async function ask(qq){
+    if (!qq) return; document.getElementById('ask-q').value = ''; say('user', qq);
     const tip = say('assistant', '…');
     try {
       const ctxData = await grounding();
       const r = await fetch('/bridge/ai-assist', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ task:'assist', app_id: APPID, prompt: q, context: ctxData,
-          system: 'This is BBMP (Bengaluru) public-works spending. All ₹ are net amounts actually paid; "cr" = crore = 10,000,000. Answer ONLY from the DATA above; cite exact figures, wards or contractors; if it is not in the data, say so plainly. Note the flagged name variants (e.g. KRIDL appears under many spellings) when discussing contractor totals.',
+        body: JSON.stringify({ task:'assist', app_id: APPID, prompt: qq, context: ctxData,
+          system: 'This is BBMP (Bengaluru) public-works data: a procurement side (tenders, in ₹ lakh/crore) and a works-ledger side (net amounts paid, "cr"=crore=10,000,000). Work type is a dimension — roads is the type with data today; buildings/drains/parks follow. Answer ONLY from the DATA above; cite exact figures, wards, contractors or tender counts; if it is not in the data, say so. Note the flagged name variants (e.g. KRIDL) when discussing contractor totals.',
           history: askHist })}).then(x => x.json());
       tip.textContent = r.content || r.error || 'No answer.';
-      askHist.push({role:'user', content:q}); askHist.push({role:'assistant', content: r.content || ''});
+      askHist.push({role:'user', content:qq}); askHist.push({role:'assistant', content: r.content || ''});
     } catch(e){ tip.textContent = 'Error: ' + e; }
   }
   document.getElementById('ask-send').onclick = () => ask(document.getElementById('ask-q').value.trim());
   document.getElementById('ask-q').onkeydown = e => { if (e.key === 'Enter') ask(e.target.value.trim()); };
-  say('assistant', 'Ask about BBMP public-works spending — e.g. "which ward spent the most?", "how much did KRIDL really receive?", "what are the top transparency flags?"');
+  say('assistant', 'Ask about BBMP public works — e.g. "how many road tenders are there?", "which ward spent the most?", "how much did KRIDL really receive?", "top transparency flags?"');
 
-  // ---- ward drill-down ----
+  // ---- ward drill-down (works ledger) ----
   async function openWard(ward){
     let ov = document.getElementById('ward-drill');
     if(!ov){ ov = document.createElement('div'); ov.id='ward-drill';
@@ -199,31 +333,37 @@
     ov.innerHTML =
       '<div style="padding:16px 24px;background:#0e2a47;color:#fff;display:flex;align-items:center;gap:14px;flex:0 0 auto">'
       + '<button id="wback" style="cursor:pointer;border:0;background:#1d60a8;color:#fff;border-radius:6px;padding:6px 12px">&larr; Back</button>'
-      + '<b style="font-size:16px">Ward ' + ward + '</b></div>'
+      + '<b style="font-size:16px">Ward ' + esc(ward) + '</b></div>'
       + '<div style="padding:16px 24px;flex:1 1 auto;min-height:0;display:flex;flex-direction:column" id="wbody">Loading work orders…</div>';
     ov.querySelector('#wback').onclick = () => ov.remove();
 
-    const works = ((await q({schema:'works.work_order', filter:{ward}, paginate:true, limit:100})).results || []).map(x => x.object || x);
-    const pays = await Promise.all(works.map(w =>
+    const works = ((await q({schema:'works.work_order', filter:{ward}, paginate:true, limit:200})).results || []).map(x => x.object || x);
+    works.forEach(w => w._type = classify(w.work_name || w.work_type || ''));
+    const shown = (selType==='all') ? works : works.filter(w => w._type===selType);
+    const pays = await Promise.all(shown.map(w =>
       q({schema:'works.payment', filter:{work_order:w.id}, paginate:true, limit:1})
         .then(r => (r.results && r.results[0]) ? (r.results[0].object || r.results[0]) : null)));
-    const rows = works.map((w,i) => {
+    const tChip = wt => '<span style="font-size:11px">'+(WORK_TYPES.find(x=>x.key===wt)?.icon||'')+'</span>';
+    const rows = shown.map((w,i) => {
       const net = (pays[i] && pays[i].paid_net != null) ? cr2(pays[i].paid_net) : '—';
       return '<tr data-i="' + i + '" style="cursor:pointer;border-top:1px solid #eef1f4">'
-        + '<td style="padding:7px 8px;font-family:ui-monospace,monospace;white-space:nowrap">' + (w.work_order_no||'') + '</td>'
-        + '<td style="padding:7px 8px">' + (w.work_name||'').slice(0,90) + '</td>'
-        + '<td style="padding:7px 8px;white-space:nowrap">' + (w.work_order_date||'') + '</td>'
+        + '<td style="padding:7px 8px">'+tChip(w._type)+'</td>'
+        + '<td style="padding:7px 8px;font-family:ui-monospace,monospace;white-space:nowrap">' + esc(w.work_order_no||'') + '</td>'
+        + '<td style="padding:7px 8px">' + esc((w.work_name||'').slice(0,90)) + '</td>'
+        + '<td style="padding:7px 8px;white-space:nowrap">' + esc(w.work_order_date||'') + '</td>'
         + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">' + net + '</td></tr>';
     }).join('');
+    const typeLbl = (selType==='all')?'all types':(WORK_TYPES.find(w=>w.key===selType)?.label||selType);
     document.getElementById('wbody').innerHTML =
-      '<div class="muted" style="margin-bottom:10px;flex:0 0 auto">' + works.length + ' work orders' + (works.length===100?' (first 100)':'') + '</div>'
+      '<div class="muted" style="margin-bottom:10px;flex:0 0 auto">' + shown.length + ' of ' + works.length + ' work orders · ' + esc(typeLbl)
+      + (works.length===200?' · ledger capped at 200':'') + ' · <span style="font-style:italic">work type inferred from the work name</span></div>'
       + '<div style="flex:1 1 auto;min-height:0;overflow:auto;border:1px solid #e3e8ee;border-radius:10px;background:#fff"><table>'
-      + '<tr><th style="text-align:left;padding:8px">Work order</th><th style="text-align:left;padding:8px">Work</th>'
+      + '<tr><th style="text-align:left;padding:8px"></th><th style="text-align:left;padding:8px">Work order</th><th style="text-align:left;padding:8px">Work</th>'
       + '<th style="text-align:left;padding:8px">Date</th><th style="text-align:right;padding:8px">Net paid</th></tr>' + rows + '</table></div>';
-    document.querySelectorAll('#wbody tr[data-i]').forEach(tr => tr.onclick = () => openWork(works[+tr.dataset.i], pays[+tr.dataset.i]));
+    document.querySelectorAll('#wbody tr[data-i]').forEach(tr => tr.onclick = () => openWork(shown[+tr.dataset.i], pays[+tr.dataset.i]));
   }
 
-  // ---- work detail ----
+  // ---- work detail (works ledger) ----
   async function openWork(w, p){
     let ov = document.getElementById('work-detail');
     if(!ov){ ov = document.createElement('div'); ov.id='work-detail';
@@ -231,7 +371,7 @@
     ov.innerHTML =
       '<div style="padding:16px 24px;background:#0e2a47;color:#fff;display:flex;align-items:center;gap:14px">'
       + '<button id="dback" style="cursor:pointer;border:0;background:#1d60a8;color:#fff;border-radius:6px;padding:6px 12px">&larr; Back</button>'
-      + '<b style="font-size:16px">' + (w.work_order_no||'Work order') + '</b></div>'
+      + '<b style="font-size:16px">' + esc(w.work_order_no||'Work order') + '</b></div>'
       + '<div style="padding:20px 24px" id="dbody">Loading…</div>';
     ov.querySelector('#dback').onclick = () => ov.remove();
     const ct = ((await q({schema:'works.contract', filter:{work_order:w.id}, paginate:true, limit:1})).results||[]).map(x=>x.object||x)[0];
@@ -241,19 +381,20 @@
       if (cc && cc.name) contractor = cc.name;
     }
     const prov = w.prov || {}, pp = (p && p.prov) || {};
-    const src = prov.source_url ? '<a href="' + prov.source_url + '" target="_blank" rel="noopener">OpenCity source CSV &#8599;</a>' : '(source recorded)';
+    const src = prov.source_url ? '<a href="' + esc(prov.source_url) + '" target="_blank" rel="noopener">OpenCity source CSV &#8599;</a>' : '(source recorded)';
+    const wt = WORK_TYPES.find(x=>x.key===classify(w.work_name||''));
     const field = (l,v) => '<tr><td style="padding:6px 10px;color:#5f6b78;white-space:nowrap;vertical-align:top">' + l + '</td><td style="padding:6px 10px">' + (v!=null && v!=='' ? v : '—') + '</td></tr>';
     document.getElementById('dbody').innerHTML =
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:960px">'
       + '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:6px 8px"><div style="font-weight:600;padding:6px 10px">Work</div><table>'
-      + field('Work', w.work_name) + field('Job number', w.job_number) + field('Work order no', w.work_order_no)
-      + field('Ward', w.ward) + field('Zone', w.zone) + field('Date', w.work_order_date) + field('Contractor', contractor)
+      + field('Work', esc(w.work_name)) + field('Work type', (wt?wt.icon+' '+wt.label:'—')) + field('Job number', esc(w.job_number)) + field('Work order no', esc(w.work_order_no))
+      + field('Ward', esc(w.ward)) + field('Zone', esc(w.zone)) + field('Date', esc(w.work_order_date)) + field('Contractor', esc(contractor))
       + '</table></div>'
       + '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:6px 8px"><div style="font-weight:600;padding:6px 10px">Payment</div><table>'
       + field('Gross paid', p ? cr2(p.paid_gross) : '—') + field('Net paid', p ? cr2(p.paid_net) : '—')
       + field('Bill lines', pp.bill_lines!=null ? String(pp.bill_lines) : '—')
       + field('Consistent bills', pp.consistent_bills!=null ? String(pp.consistent_bills) : '—')
-      + (pp.amounts_note ? field('Amounts', '<span class="muted">' + pp.amounts_note + '</span>') : '')
+      + (pp.amounts_note ? field('Amounts', '<span class="muted">' + esc(pp.amounts_note) + '</span>') : '')
       + field('Source', src) + '</table></div></div>';
   }
 })();
