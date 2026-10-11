@@ -60,6 +60,23 @@ def run():
               f"status={getattr(r, 'status', None)} body={getattr(r, 'body', None)}")
         return
 
+    # SEND (MODE=send): the host's transactional agent already computed the reply (it holds conversation state +
+    # the write path); this adapter is a thin transport that just PUSHES that reply to Telegram with the Vault
+    # token the broker injects. The host never holds the token; the adapter never grounds in this mode.
+    if mode == "send":
+        chat_id = os.environ.get("CHAT_ID", "").strip()
+        try:
+            reply = base64.b64decode(os.environ.get("REPLY_B64", "")).decode("utf-8", "replace")[:4000]
+        except Exception:
+            reply = ""
+        if not chat_id or not reply:
+            print("telegram-concierge: send mode needs CHAT_ID + REPLY_B64"); return
+        body = {"chat_id": chat_id, "text": reply, "disable_web_page_preview": False}
+        r = ctx.fetch("https://api.telegram.org/bot{TOKEN}/sendMessage", method="POST", body=body, inject=INJECT)
+        print(f"telegram-concierge: SEND tenant={tenant} chat={chat_id} reply={len(reply)}c "
+              f"status={getattr(r, 'status', None)}")
+        return
+
     chat_id = os.environ.get("CHAT_ID", "").strip()
     try:
         text = base64.b64decode(os.environ.get("TEXT_B64", "")).decode("utf-8", "replace")[:600].strip()
