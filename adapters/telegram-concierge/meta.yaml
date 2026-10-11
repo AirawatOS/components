@@ -1,0 +1,25 @@
+# ADR-0111 L4 — CONVERSATIONAL MESSAGING ADAPTER (kind=adapter), fully confined by the Component Host (L1).
+# Inbound arrives at the host transport (/t/<tenant>/telegram/webhook); that thin edge hands THIS run the
+# {CHAT_ID, TEXT_B64}. The adapter reads the agency's GOVERNED capability index + experience + publications via
+# the broker, grounds a cited reply (broker model), and PUSHES it to the citizen via Telegram sendMessage — the
+# bot token is a PER-TENANT Vault secret the BROKER injects into the URL path (as: template, safe ':'); this code
+# NEVER sees the value, and it is set by the tenant admin in Settings -> Components (not in the host or compose).
+component_id: ds:airawatdeveloper:adapter/telegram-concierge
+kind: adapter
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Telegram Concierge
+icon: "💬"
+entrypoint: run.py
+confinement_min: L1
+reads: [platform.capability, platform.experience, platform.publication, platform.agency_profile]
+writes: []
+egress:
+  - { host: api.telegram.org, rate_per_min: 30, user_agent: "AirawatOS/telegram-concierge (+https://airawat.org)" }
+secrets: [TELEGRAM_BOT_TOKEN]            # BotFather token; set per-tenant in Settings -> Components -> Vault. Broker-injected into the URL path.
+config: [CHAT_ID, TEXT_B64]             # handed in by the host transport per inbound message
+scopes:
+  - { verb: read, scope: platform.capability }
+  - { verb: read, scope: platform.experience }
+  - { verb: read, scope: platform.publication }
+  - { verb: read, scope: platform.agency_profile }
