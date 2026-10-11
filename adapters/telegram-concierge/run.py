@@ -40,7 +40,7 @@ def _json(s):
 
 
 @driver.main
-def run(ctx):
+def run():
     tenant = ctx.tenant
     chat_id = os.environ.get("CHAT_ID", "").strip()
     try:
@@ -110,3 +110,7 @@ def run(ctx):
     r = ctx.fetch("https://api.telegram.org/bot{TOKEN}/sendMessage", method="POST", body=body, inject=INJECT)
     print(f"telegram-concierge: tenant={tenant} chat={chat_id} reply={len(reply)}c cites={len(cites)} "
           f"send_status={getattr(r, 'status', None)}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(driver.run())

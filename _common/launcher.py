@@ -248,6 +248,14 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     if not profile:                                      # IN-PROCESS (reference default) — host subprocess
         e = dict(os.environ, RUN_TOKEN=run_token,
                  AIRAWAT_API=os.environ.get("AIRAWAT_API", "http://localhost:8080"), **env)
+        # Put the `aos` SDK on the child's import path so a component that `import aos` works in the reference
+        # in-process runtime (no baked runtime image). The SDK dir is the FIRST of these that actually holds an
+        # `aos/` package — HERE (repo layout), the in-container install, or an explicit override — because this
+        # launcher may itself run from a materialised copy (rt-components) that doesn't sit beside the SDK.
+        # Runtime wiring only, not ambient authority (egress/reads stay broker-gated).
+        _sdk = next((d for d in (os.environ.get("AOS_SDK_PATH"), HERE, "/app/components/_common")
+                     if d and os.path.isdir(os.path.join(d, "aos"))), HERE)
+        e["PYTHONPATH"] = _sdk + ((os.pathsep + e["PYTHONPATH"]) if e.get("PYTHONPATH") else "")
         p = subprocess.run([sys.executable, os.path.join(component_dir, entry)],
                            env=e, capture_output=True, text=True, timeout=TIMEOUT)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
