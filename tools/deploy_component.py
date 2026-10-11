@@ -9,9 +9,11 @@ FILESTORE = os.environ.get("FILESTORE", "http://filestore:8095"); KERNEL = os.en
 APPDIR = os.environ["APPDIR"]
 
 def login(realm, user):
-    r = urllib.request.Request(f"{IDN}/realms/{realm}/login", data=json.dumps({"username": user}).encode(),
+    # passwordless kernel login: {username, tenant} → platform.steward (the /realms/<realm>/login path is gated)
+    r = urllib.request.Request(f"{IDN}/login", data=json.dumps({"username": user, "tenant": realm}).encode(),
                                headers={"Content-Type": "application/json"}, method="POST")
-    return json.loads(urllib.request.urlopen(r, timeout=15).read())["access_token"]
+    d = json.loads(urllib.request.urlopen(r, timeout=15).read())
+    return d.get("access_token") or d.get("token")
 
 def post(url, body, tok, ctype="application/json"):
     data = body if isinstance(body, (bytes, bytearray)) else json.dumps(body).encode()
@@ -29,17 +31,23 @@ def asl(v):
     return [x.strip() for x in v[1:-1].split(",") if x.strip()] if (v.startswith("[") and v.endswith("]")) else ([v] if v else [])
 
 cid = m["component_id"]; ver = m.get("version", "0.1.0"); steward = cid.split(":")[1]; name = cid.rsplit("/", 1)[-1]
-tok = login("airawatdeveloper", "devrick") if steward == "airawatdeveloper" else login("airawat", "steward")
+tok = login(steward, "steward")
 
-# 1) certify
-files = {}
+# 1) certify.  `files` = {relpath: sha256} (artifact digest); `sources` = {relpath: text} for TEXT files so the CA
+# can run source-aware checks (e.g. actions-handled: every declared post-config action mode is serviced in code).
+files, sources = {}, {}
+TEXT = (".py", ".yaml", ".yml", ".json", ".md", ".txt", ".html", ".js", ".css", ".sh")
 for base, _dd, names in os.walk(APPDIR):
     if "__pycache__" in base: continue
     for n in names:
         if n.endswith((".pyc", ".log")): continue
-        p = os.path.join(base, n); files[os.path.relpath(p, APPDIR)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
+        p = os.path.join(base, n); rel = os.path.relpath(p, APPDIR)
+        files[rel] = hashlib.sha256(open(p, "rb").read()).hexdigest()
+        if n.endswith(TEXT):
+            try: sources[rel] = open(p, encoding="utf-8").read()
+            except Exception: pass
 cert = post(f"{NET}/v1/certify", {"subject_id": cid, "subject_kind": "component",
-            "meta_yaml": open(APPDIR + "/meta.yaml").read(), "files": files}, tok)
+            "meta_yaml": open(APPDIR + "/meta.yaml").read(), "files": files, "sources": sources}, tok)
 print("certified verified=", cert.get("certificate", {}).get("conformance", {}).get("verified"))
 
 # 2) stage source → filestore + component_asset
