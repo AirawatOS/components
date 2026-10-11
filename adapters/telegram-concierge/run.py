@@ -80,24 +80,38 @@ def run():
     prof = (mine("platform.agency_profile") or [{}])[0]
     caps = mine("platform.capability")
     pubs = mine("platform.publication")
+    # LIVE service offerings (ADR-0067) — passed in by the host transport (OFFERINGS_B64), since a confined
+    # component can't reach the network directory. These are the real services a citizen can apply for.
+    try:
+        offs = json.loads(base64.b64decode(os.environ.get("OFFERINGS_B64", "")).decode("utf-8")) or []
+    except Exception:
+        offs = []
     name = prof.get("display_name") or tenant
     agency = prof.get("legal_name") or name
     cites = []   # list of (kind, record)
 
-    if not caps and not pubs:
+    def _svc_url(o):
+        return f"{BASE}/run?app=jan-seva&service=" + (o.get("service_id") or "") if BASE else None
+
+    if not caps and not pubs and not offs:
         reply = f"{name} has not published any public services yet."
     else:
         mat = {"agency": agency, "jurisdiction": prof.get("jurisdiction") or "",
+               "services": [{"ref": o.get("id"), "title": o.get("title"), "domain": o.get("domain"),
+                             "summary": o.get("description"), "apply_url": _svc_url(o)} for o in offs],
                "capabilities": [{"ref": c.get("id"), "title": c.get("title"), "type": c.get("type"),
                                  "summary": c.get("summary"), "topics": c.get("topics"), "open_url": _open(c)} for c in caps],
                "notices": [{"ref": p.get("id"), "title": p.get("title"), "summary": p.get("summary"),
                             "status": p.get("status")} for p in pubs]}
         sysp = (f"You are the public assistant for {agency} ({mat['jurisdiction']}). Answer the citizen's question "
-                "USING ONLY the AGENCY MATERIAL (capabilities = services/datasets; notices = announcements). Do NOT "
+                "USING ONLY the AGENCY MATERIAL (services = things a citizen can apply for, each with apply_url; "
+                "capabilities = datasets/maps/tools; notices = announcements). When the citizen asks what they can do "
+                "or wants to apply for something, list the relevant SERVICES by title with their apply_url. Do NOT "
                 "invent services, figures, dates, or links. If it is not covered, say so and point to what IS "
                 'available. Be concise (2-4 sentences). Return ONLY JSON: {"reply": string, "used": [refs]}.')
         by = {c.get("id"): ("capability", c) for c in caps}
         by.update({p.get("id"): ("publication", p) for p in pubs})
+        by.update({o.get("id"): ("service", o) for o in offs})
         try:
             raw = ctx.ai([{"role": "system", "content": sysp},
                           {"role": "user", "content": "AGENCY MATERIAL:\n" + json.dumps(mat, ensure_ascii=False)
@@ -111,13 +125,14 @@ def run():
             print(f"telegram-concierge: model unavailable ({str(e)[:80]}) — listing capabilities verbatim")
             reply = ""
         if not reply:   # grounded fallback: never fabricate — just name what the agency offers, from the records
-            reply = f"{agency} offers: " + "; ".join(c.get("title", "") for c in caps[:6]) + "."
-            cites = [("capability", c) for c in caps[:4]]
+            _names = [o.get("title", "") for o in offs[:6]] or [c.get("title", "") for c in caps[:6]]
+            reply = f"{agency} offers: " + "; ".join(n for n in _names if n) + "."
+            cites = [("service", o) for o in offs[:4]] or [("capability", c) for c in caps[:4]]
 
     parts = [html.escape(reply)]
     for kind, rec in cites:
         t = html.escape(rec.get("title") or "")
-        ou = _open(rec) if kind == "capability" else None
+        ou = _open(rec) if kind == "capability" else (_svc_url(rec) if kind == "service" else None)
         parts.append(f'🔗 <a href="{html.escape(ou)}">{t}</a>' if ou else (("📢 " if kind == "publication" else "🔗 ") + t))
     parts.append(f'<i>— {html.escape(agency)} · governed public data</i>')
     msg = "\n\n".join(p for p in parts if p)[:4000]

@@ -6,7 +6,7 @@
 # proposes an answer, it never writes or acts.
 component_id: ds:airawatdeveloper:engine/converse-engine
 kind: engine
-version: 0.1.0
+version: 0.1.1   # grounds on LIVE service offerings (ADR-0067) passed in body — lists real services, not just caps
 provider: ds:airawat:developer
 display_name: Converse Engine
 entrypoint: run.py

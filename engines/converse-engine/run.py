@@ -49,24 +49,34 @@ def converse(body):
     prof = (mine("platform.agency_profile", 5) or [{}])[0]
     caps = mine("platform.capability")
     pubs = mine("platform.publication")
+    # LIVE service offerings (ADR-0067) — passed in the body by the host (network-side, not registry facts). These
+    # are the real services a citizen can apply for; without them the bot only knows the capability index.
+    offs = [o for o in (body.get("offerings") or []) if isinstance(o, dict) and o.get("service_id")]
     name = prof.get("display_name") or (tenant[:1].upper() + tenant[1:])
-    if not caps and not pubs:
+    if not caps and not pubs and not offs:
         return {"reply": f"{name} has not published any public services yet.", "citations": [], "suggested": [],
                 "agency": prof.get("legal_name") or name}
 
     def open_url(c):
         return (base + "/run?app=" + c.get("target_ref")) if (base and c.get("target_kind") == "app" and c.get("target_ref")) else None
 
+    def svc_url(o):
+        return (base + "/run?app=jan-seva&service=" + (o.get("service_id") or "")) if base else None
+
     agency = prof.get("legal_name") or name
     mat = {"agency": agency, "jurisdiction": prof.get("jurisdiction") or "", "mandate": prof.get("mandate") or "",
+           "services": [{"ref": o.get("id"), "title": o.get("title"), "domain": o.get("domain"),
+                         "summary": o.get("description"), "apply_url": svc_url(o)} for o in offs],
            "capabilities": [{"ref": c.get("id"), "title": c.get("title"), "type": c.get("type"),
                              "summary": c.get("summary"), "topics": c.get("topics"), "open_url": open_url(c)} for c in caps],
            "notices": [{"ref": p.get("id"), "title": p.get("title"), "summary": p.get("summary"),
                         "status": p.get("status"), "effective_from": p.get("effective_from")} for p in pubs]}
     sysp = (
         f"You are the public assistant for {agency} ({mat['jurisdiction']}). Answer the citizen's question "
-        "USING ONLY the AGENCY MATERIAL provided (capabilities = services/datasets the agency offers; notices = "
-        "public announcements). Do NOT invent services, figures, dates, or links. If the material does not answer "
+        "USING ONLY the AGENCY MATERIAL provided (services = things a citizen can apply for, each with an apply_url; "
+        "capabilities = datasets/maps/tools; notices = public announcements). When the citizen asks what they can do "
+        "or wants to apply for something, list the relevant SERVICES by title with their apply_url. Do NOT invent "
+        "services, figures, dates, or links. If the material does not answer "
         "it, say so plainly and point to what IS available. Be concise (2-4 sentences). "
         f"Write in {'Hindi' if locale == 'hi' else 'English'}. "
         'Return ONLY strict JSON: {"reply": string, "used": [refs you relied on], '
@@ -78,6 +88,7 @@ def converse(body):
     reply = (out.get("reply") or "").strip() or "I don't have that information yet."
     by_ref = {c.get("id"): ("capability", c) for c in caps}
     by_ref.update({p.get("id"): ("publication", p) for p in pubs})
+    by_ref.update({o.get("id"): ("service", o) for o in offs})
     cites = []
     for ref in (out.get("used") or [])[:6]:
         kc = by_ref.get(ref)
@@ -85,8 +96,9 @@ def converse(body):
             continue                                                   # VALIDATE: drop any ref the model invented
         kind, rec = kc
         prov = rec.get("provenance_contract") if isinstance(rec.get("provenance_contract"), str) else None
+        url = open_url(rec) if kind == "capability" else (svc_url(rec) if kind == "service" else None)
         cites.append({"ref": ref, "kind": kind, "title": rec.get("title"),
-                      "open_url": open_url(rec) if kind == "capability" else None,
+                      "open_url": url,
                       "provenance": prov or rec.get("source") or ("governed " + kind)})
     sugg = [s for s in (out.get("suggested") or []) if isinstance(s, str)][:3]
     return {"reply": reply, "citations": cites, "suggested": sugg, "agency": agency}
