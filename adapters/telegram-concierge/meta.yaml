@@ -6,7 +6,7 @@
 # NEVER sees the value, and it is set by the tenant admin in Settings -> Components (not in the host or compose).
 component_id: ds:airawatdeveloper:adapter/telegram-concierge
 kind: adapter
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: Telegram Concierge
 icon: "💬"

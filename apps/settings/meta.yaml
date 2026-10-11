@@ -1,6 +1,6 @@
 component_id: ds:airawatdeveloper:app/settings
 kind: app
-version: 0.1.6   # Supply chain tab — /bridge/component-drift audit (Store-vs-host digest drift)
+version: 0.1.7   # Supply chain tab + generic component Actions (Activate) button
 provider: ds:airawatdeveloper:developer
 display_name: Settings
 entrypoint: index.html
