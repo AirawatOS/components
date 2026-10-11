@@ -486,10 +486,11 @@ function renderLog(c){
 // ============ Supply chain: drift audit (/bridge/component-drift) ============
 let supplyLoaded=false;
 const DRIFT_META={
-  drift:       {cls:'bad',  ic:'⚠️', hint:'running code ≠ certified — hot-patched or delivered out of band'},
-  unverifiable:{cls:'warn2',ic:'❔', hint:'published but no certified digest to compare against'},
-  unpublished: {cls:'m2',   ic:'•',  hint:'source is local-only — not in the marketplace'},
-  ok:          {cls:'ok2',  ic:'✓',  hint:'matches its certified digest'},
+  drift:            {cls:'bad',  ic:'⚠️', hint:'running code ≠ its certified version — hot-patched or delivered out of band'},
+  unverifiable:     {cls:'warn2',ic:'❔', hint:'published, but no certified digest for this version to compare against'},
+  'update-available':{cls:'warn2',ic:'↑', hint:'running an OLDER certified version — a newer one is published; benign, just update'},
+  unpublished:      {cls:'m2',   ic:'•',  hint:'source is local-only — not in the marketplace'},
+  ok:               {cls:'ok2',  ic:'✓',  hint:'matches the certified digest for its version'},
 };
 $('#drift-refresh').onclick=()=>{ supplyLoaded=false; loadSupply(); };
 async function loadSupply(){
@@ -502,7 +503,7 @@ async function loadSupply(){
 }
 function renderSupply(rep){
   const rows=rep.components||[], sum=rep.summary||{};
-  const order=['drift','unverifiable','unpublished','ok'];
+  const order=['drift','unverifiable','update-available','unpublished','ok'];
   $('#drift-sum').innerHTML = rep.count!=null
     ? order.filter(k=>sum[k]).map(k=>`<span class="${DRIFT_META[k].cls}" style="font-weight:600">${sum[k]} ${k}</span>`).join(' <span class="m2">·</span> ')+` <span class="m2">of ${rep.count} on-host</span>`
     : '';
