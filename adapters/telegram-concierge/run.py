@@ -42,6 +42,24 @@ def _json(s):
 @driver.main
 def run():
     tenant = ctx.tenant
+
+    # ACTIVATION (MODE=setwebhook): point Telegram at THIS tenant's webhook, using the Vault token the broker
+    # injects — so the agency admin never handles the token in a shell. One-shot; the host triggers it after the
+    # token is set in Settings. The webhook URL is deployment-derived (PUBLIC_BASE), never hardcoded.
+    mode = os.environ.get("MODE", "").strip().lower()
+    if mode == "setwebhook":
+        if not BASE:
+            print("telegram-concierge: setwebhook needs PUBLIC_BASE (the deployment URL)"); return
+        hook = f"{BASE}/t/{tenant}/telegram/webhook"
+        wbody = {"url": hook, "allowed_updates": ["message"]}
+        sec = os.environ.get("WEBHOOK_SECRET", "").strip()
+        if sec:
+            wbody["secret_token"] = sec
+        r = ctx.fetch("https://api.telegram.org/bot{TOKEN}/setWebhook", method="POST", body=wbody, inject=INJECT)
+        print(f"telegram-concierge: setWebhook tenant={tenant} url={hook} "
+              f"status={getattr(r, 'status', None)} body={getattr(r, 'body', None)}")
+        return
+
     chat_id = os.environ.get("CHAT_ID", "").strip()
     try:
         text = base64.b64decode(os.environ.get("TEXT_B64", "")).decode("utf-8", "replace")[:600].strip()
