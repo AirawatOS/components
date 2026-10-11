@@ -1,0 +1,18 @@
+# ADR-0111 L4 — the CONVERSE ENGINE: the governed, certified grounding "brain" for every public channel.
+# Graduates the hardcoded host _converse_core into a component. Given (tenant, question) it reads the tenant's
+# GOVERNED public capability index + experience + publications, grounds the model STRICTLY on them, and returns
+# a cited reply. Every public channel (web 'Ask' widget, Telegram, future WhatsApp/IVR) calls this ONE engine, so
+# the provenance rule (cite only real records) is enforced once, not re-implemented per adapter. Reads only; it
+# proposes an answer, it never writes or acts.
+component_id: ds:airawatdeveloper:engine/converse-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Converse Engine
+entrypoint: run.py
+confinement_min: L1
+implements: [platform.converse@0.1.0]
+verbs:
+  converse: platform.converse@0.1.0
+reads: [platform.agency_profile, platform.capability, platform.experience, platform.publication]
+writes: []
