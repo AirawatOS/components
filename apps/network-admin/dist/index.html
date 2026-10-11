@@ -101,10 +101,57 @@ async function publishReqs(){
     ${R.length?`<table><tr><th>component</th><th>ver</th><th>kind</th><th>submitted by</th><th>certified</th><th></th></tr>
     ${R.map(q=>{const cid=q.component_id||q.subject||''; const cert=q.certified?'<span class="chip" style="color:#5fd08a">✓ certified</span>':'<span class="chip" style="color:#e5a23d">not certified</span>';
       return `<tr><td class="mono">${esc(String(cid).split(':').pop())}</td><td class="mono">${esc(q.version||'')}</td><td>${esc(q.component_kind||q.kind||'')}</td><td class="muted">${esc(String(q.requested_by||q.on_behalf_of||'—').split('/').pop())}</td><td>${cert}</td>
-      <td style="text-align:right"><button class="btn sm" data-ap="${esc(q.subject||'')}"${q.certified?'':' disabled title="certify first"'}>Approve</button> <button class="btn sm danger" data-rj="${esc(q.subject||'')}">Reject</button></td></tr>`;}).join('')}
+      <td style="text-align:right"><button class="btn sm" data-rv="${esc(q.subject||'')}">Review</button> <button class="btn sm" data-ap="${esc(q.subject||'')}"${q.certified?'':' disabled title="certify first"'}>Approve</button> <button class="btn sm danger" data-rj="${esc(q.subject||'')}">Reject</button></td></tr>`;}).join('')}
     </table>`:'<div class="empty">no pending publish requests</div>'}`;
+  W.querySelectorAll('[data-rv]').forEach(b=>b.onclick=()=>reviewPub(R.find(x=>String(x.subject)===b.dataset.rv)));
   W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decidePub('approve',b.dataset.ap));
   W.querySelectorAll('[data-rj]').forEach(b=>b.onclick=()=>decidePub('reject',b.dataset.rj));
+}
+
+// REVIEW a publish request in full BEFORE deciding — shows what the component DOES and the exact capability
+// surface approval GRANTS it (reads/writes/egress/secrets/scopes), plus the conformance result + certified
+// digest. The steward signs the publish on the standards body's authority, so they must see what they sign.
+function reviewPub(q){
+  if(!q) return;
+  const dec=q.declares||{}, cf=q.conformance||{};
+  const chips=(arr,cls)=>{const a=(arr||[]).filter(Boolean); return a.length
+      ?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:3px 0 8px">${a.map(x=>`<span class="chip${cls?' '+cls:''}">${esc(typeof x==='object'?(x.host||x.scope||((x.verb||'')+' '+(x.scope||'')).trim()||JSON.stringify(x)):x)}</span>`).join('')}</div>`
+      :'<div class="muted" style="margin:3px 0 8px">none</div>';};
+  const sec=(label,arr,cls)=>`<div class="sec">${label}</div>${chips(arr,cls)}`;
+  const cid=q.component_id||q.subject||'';
+  const desc=(q.description||q.title||q.notes)
+      ?`<div class="sec">What it does</div><div class="hint" style="max-width:76ch">${esc(q.description||q.title||q.notes)}</div>`
+      :'<div class="muted" style="margin:4px 0">⚠ The submitter provided no description — consider rejecting with "add a description" if the grant isn\'t self-evident.</div>';
+  const conf=`<div class="sec">Conformance</div><div class="hint">${cf.verified?'✓ verified by the certifier':'✗ NOT verified'}`
+      +`${cf.checks?(' · '+cf.checks+' checks passed'):''}`
+      +`${(cf.schemas_checked&&cf.schemas_checked.length)?(' · governed vocab: '+cf.schemas_checked.map(esc).join(', ')):''}</div>`;
+  const dig=q.evidence_digest?`<div class="sec">Certified bytes (approval binds to exactly this)</div><div class="mono" style="font-size:11px;word-break:break-all">${esc(q.evidence_digest)}</div>`:'';
+  const actions=q.status==='pending'
+      ?`<button class="btn no" id="rj">Reject</button> <button class="btn ok" id="ap"${q.certified?'':' disabled title="not certified"'}>Approve + publish</button>`
+      :`<span class="muted mono">${esc(q.published||q.reason||'')}</span>`;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:22px';
+  ov.innerHTML=`<div style="background:var(--panel,#131a22);border:1px solid var(--line,#233);border-radius:10px;max-width:800px;width:100%;max-height:88vh;overflow:auto;padding:18px">
+    <div class="lbl">Review publish request</div>
+    <div class="meta" style="margin:6px 0"><span class="mono">${esc(cid)}</span> <span>· v${esc(q.version||'')}</span> <span>· ${esc(q.component_kind||q.kind||'')}</span> <span>· by ${esc(String(q.requested_by||q.on_behalf_of||'').split('/').pop())}</span>${q.requested_at?` <span>· ${esc(String(q.requested_at).slice(0,10))}</span>`:''} ${q.certified?'<span class="chip" style="color:#5fd08a">✓ certified</span>':'<span class="chip" style="color:#e5a23d">not certified</span>'}</div>
+    ${desc}
+    <div class="sec" style="margin-top:12px;color:#e5a23d">⚖ Approving GRANTS this component the surface below, for every tenant that installs it:</div>
+    ${sec('📥 Reads — governed data it may read', dec.reads)}
+    ${sec('📤 Writes — governed data it may write', dec.writes)}
+    ${sec('🌐 Egress — external hosts it may call', (dec.egress||[]).map(e=>e&&(e.host||e)), 'warn')}
+    ${sec('🔑 Secrets — Vault keys each tenant must supply', dec.secrets, 'warn')}
+    ${sec('⚖ Scopes — verb · scope grants', (dec.scopes||[]).map(s=>s&&(typeof s==='object'?((s.verb||'')+' '+(s.scope||'')).trim():s)))}
+    ${(dec.config&&dec.config.length)?sec('⚙ Config — per-tenant settings', dec.config):''}
+    ${conf}
+    ${dig}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">${actions} <button class="btn" id="cl">Close</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  ov.querySelector('#cl').onclick=close; ov.onclick=(e)=>{if(e.target===ov)close();};
+  const ap=ov.querySelector('#ap'), rj=ov.querySelector('#rj');
+  if(ap)ap.onclick=()=>{close();decidePub('approve',q.subject);};
+  if(rj)rj.onclick=()=>{close();decidePub('reject',q.subject);};
 }
 async function decidePub(decision,subject){
   let reason='';
