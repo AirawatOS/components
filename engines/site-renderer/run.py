@@ -16,27 +16,56 @@ its legacy render for a not-yet-migrated tenant (non-breaking).
 import json, html as _h
 from aos import engine, ctx
 
-# Per-archetype presentation defaults. The GOVERNMENT archetype is fully realised (the Gov theme); the others
-# carry sensible identity + palette defaults so any participant renders coherently, and are refined later.
+# Per-archetype presentation defaults. The GOVERNMENT + NGO archetypes are fully realised; the others carry
+# sensible identity + palette defaults so any participant renders coherently, and are refined later. `lead_types`
+# orders the capability groups so each hat leads with its signature content; `short` labels the hat in a multi-hat
+# masthead. A participant can wear SEVERAL hats (`agency_profile.archetypes`) — e.g. an NGO that also develops
+# components; the primary (`archetype`) sets theme + chrome, and every hat's capability types surface as groups.
 ARCHETYPES = {
-    "government": {"eyebrow": "Official public portal", "primary": "#0b3d6b", "accent": "#b4121b",
+    "government": {"eyebrow": "Official public portal", "short": "Government", "primary": "#0b3d6b", "accent": "#b4121b",
                    "cue": "An official portal. Public services and open data, with provenance.",
-                   "default_section": "Services & open data"},
-    "developer":  {"eyebrow": "Developer on the Airawat Network", "primary": "#1b1f3b", "accent": "#5b8def",
-                   "cue": "Published components and documentation.", "default_section": "Published components"},
-    "operator":   {"eyebrow": "Certified platform operator", "primary": "#14312a", "accent": "#2fa37c",
-                   "cue": "Certified runtimes and operational status.", "default_section": "Runtimes & status"},
-    "provider":   {"eyebrow": "Service provider on the Network", "primary": "#1d3a5f", "accent": "#e0872a",
-                   "cue": "Services offered to agencies, with terms.", "default_section": "Services offered"},
-    "aggregator": {"eyebrow": "Data aggregator", "primary": "#2a2140", "accent": "#8a63d2",
-                   "cue": "Aggregated datasets and methodology, with lineage.", "default_section": "Datasets"},
-    "ngo":        {"eyebrow": "Civil society organisation", "primary": "#3a1f2b", "accent": "#d2594b",
-                   "cue": "Our mission, programmes and open data.", "default_section": "Programmes & data"},
-    "network":    {"eyebrow": "Network standards body", "primary": "#111820", "accent": "#5a7fa0",
-                   "cue": "The governed catalog, participant directory and governance.", "default_section": "Catalog"},
+                   "default_section": "Services & open data", "lead_types": ["service", "information", "dataset"]},
+    "developer":  {"eyebrow": "Developer on the Airawat Network", "short": "Developer", "primary": "#1b1f3b", "accent": "#5b8def",
+                   "cue": "Published components and documentation, certified on the Network.",
+                   "default_section": "Published components", "lead_types": ["component", "solution", "model"]},
+    "operator":   {"eyebrow": "Certified platform operator", "short": "Operator", "primary": "#14312a", "accent": "#2fa37c",
+                   "cue": "Certified runtimes and operational status.",
+                   "default_section": "Runtimes & status", "lead_types": ["runtime", "service"]},
+    "provider":   {"eyebrow": "Service provider on the Network", "short": "Provider", "primary": "#1d3a5f", "accent": "#e0872a",
+                   "cue": "Services offered to agencies, with terms.",
+                   "default_section": "Services offered", "lead_types": ["service", "dataset"]},
+    "aggregator": {"eyebrow": "Data aggregator", "short": "Aggregator", "primary": "#2a2140", "accent": "#8a63d2",
+                   "cue": "Aggregated datasets and methodology, with lineage.",
+                   "default_section": "Datasets", "lead_types": ["dataset", "model"]},
+    "ngo":        {"eyebrow": "Civil society organisation", "short": "NGO", "primary": "#3a1f2b", "accent": "#d2594b",
+                   "cue": "Our mission, programmes and open data for citizen accountability.",
+                   "default_section": "Programmes & data", "lead_types": ["information", "dataset", "service"]},
+    "network":    {"eyebrow": "Network standards body", "short": "Network", "primary": "#111820", "accent": "#5a7fa0",
+                   "cue": "The governed catalog, participant directory and governance.",
+                   "default_section": "Catalog", "lead_types": ["service", "component", "dataset"]},
 }
+# capability.type → human section heading (falls back to the title-cased type).
+TYPE_SECTIONS = {"service": "Services", "dataset": "Open data & datasets", "information": "Notices & updates",
+                 "component": "Published components", "model": "Models", "solution": "Solutions",
+                 "runtime": "Runtimes & status", "app": "Apps"}
+# Infer the archetype from a legacy `agency_type` string when `archetype`/`archetypes` is not set (non-breaking).
+_INFER = {"civil society organisation": "ngo", "civil-society": "ngo", "non-profit": "ngo", "ngo": "ngo",
+          "municipal corporation": "government", "urban local body": "government", "city": "government",
+          "government": "government", "department": "government", "ministry": "government", "court": "government",
+          "developer": "developer", "operator": "operator", "provider": "provider",
+          "aggregator": "aggregator", "network": "network", "standards body": "network"}
 # schema.org @type for the organization, per archetype (GovernmentOrganization only for government).
 _ORG_TYPE = {"government": "GovernmentOrganization", "ngo": "NGO"}
+
+
+def _resolve_archetype(prof):
+    a = (prof.get("archetype") or "").lower()
+    if a in ARCHETYPES:
+        return a
+    al = [str(x).lower() for x in (prof.get("archetypes") or [])]
+    if al and al[0] in ARCHETYPES:
+        return al[0]
+    return _INFER.get((prof.get("agency_type") or "").lower().strip(), "government")
 
 _CSS = """
   :root{--bg:#f5f7fa;--card:#ffffff;--ink:#14212e;--soft:#55657a;--line:#e0e6ee;--primary:__PRIMARY__;--accent:__ACCENT__;--on-primary:#ffffff}
@@ -106,8 +135,12 @@ def render_site(body):
     if not caps and not exp:
         return {}                                              # not migrated → host falls back to legacy SSR
 
-    arch = (prof.get("archetype") or "government").lower()
+    arch = _resolve_archetype(prof)
     A = ARCHETYPES.get(arch, ARCHETYPES["government"])
+    # all hats this participant wears; primary first. Secondary hats surface as extra capability groups + a
+    # masthead "· also <hat>" note (e.g. an NGO that also publishes components).
+    hats = [arch] + [h for h in (str(x).lower() for x in (prof.get("archetypes") or [])) if h in ARCHETYPES and h != arch]
+    eyebrow = A["eyebrow"] + (" · also " + ", ".join(ARCHETYPES[h]["short"] for h in hats[1:]) if len(hats) > 1 else "")
     name = prof.get("display_name") or (tenant[:1].upper() + tenant[1:])
     legal = prof.get("legal_name") or name
     desc = prof.get("mandate") or A["cue"]
@@ -151,7 +184,26 @@ def render_site(body):
                 if ou else '<div class="card">%s</div>' % inner)
 
     cap_by_id = {c.get("id"): c for c in caps}
-    flat = "".join(capcard(c) for c in caps) or '<div class="empty">Nothing has been published yet.</div>'
+
+    def by_type():
+        # No governed experience → auto-group the index by capability.type into labelled sections, ordered by the
+        # union of all hats' lead_types (so each hat leads with its signature content), remaining types alpha-sorted.
+        lead = []
+        for h in hats:
+            for t in ARCHETYPES.get(h, {}).get("lead_types", []):
+                if t not in lead:
+                    lead.append(t)
+        present = sorted({(c.get("type") or "other") for c in caps},
+                         key=lambda t: (lead.index(t) if t in lead else 999, t))
+        out = ""
+        for t in present:
+            grp = [c for c in caps if (c.get("type") or "other") == t]
+            if not grp:
+                continue
+            title = TYPE_SECTIONS.get(t, t.replace("_", " ").title())
+            out += '<h2>%s</h2><div class="grid">%s</div>' % (_h.escape(title), "".join(capcard(c) for c in grp))
+        return out or '<div class="empty">Nothing has been published yet.</div>'
+
     if exp:
         sections = ""
         for sec in (exp.get("sections") or []):
@@ -160,9 +212,9 @@ def render_site(body):
                 continue
             note = ('<p class="about">%s</p>' % _h.escape(sec.get("note") or "")) if sec.get("note") else ""
             sections += '<h2>%s</h2>%s<div class="grid">%s</div>' % (_h.escape(sec.get("title") or ""), note, cards_in)
-        body_html = sections or ('<h2>%s</h2><div class="grid">%s</div>' % (_h.escape(A["default_section"]), flat))
+        body_html = sections or by_type()
     else:
-        body_html = '<h2>%s</h2><div class="grid">%s</div>' % (_h.escape(A["default_section"]), flat)
+        body_html = by_type()
 
     title = "%s — %s" % (name, A["default_section"])
     ident = (('<img class="logo" src="%s" alt="">' % _h.escape(prof["logo_url"], quote=True)) if prof.get("logo_url")
@@ -184,7 +236,7 @@ def render_site(body):
         + '<div class="masthead"><div class="bar"></div><div class="inner">%s'
           '<div class="id"><p class="eyebrow">%s</p><h1>%s</h1><div class="ju">%s</div></div>'
           '<a class="si" href="/login">Sign in</a></div></div>\n'
-          % (ident, _h.escape(A["eyebrow"]), _h.escape(name), _h.escape(prof.get("jurisdiction") or ""))
+          % (ident, _h.escape(eyebrow), _h.escape(name), _h.escape(prof.get("jurisdiction") or ""))
         + '<div class="cue"><div class="inner"><b>%s</b></div></div>\n' % _h.escape(A["cue"])
         + '<div class="wrap">\n' + mandate + about + body_html + "\n</div>\n"
         + '<footer><div class="inner"><span>%s</span><span class="sp">·</span><span>open civic data, with provenance</span>'

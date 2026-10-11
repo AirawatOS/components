@@ -5,7 +5,7 @@
 # Because it's a component it is swappable/themeable per agency (sets up Gov-theme/archetypes) and auditable.
 component_id: ds:airawatdeveloper:engine/site-renderer
 kind: engine
-version: 0.2.0   # archetype-aware Gov theme (government + developer/operator/provider/aggregator/ngo/network)
+version: 0.2.1   # multi-hat archetypes (archetypes[]) + capability-type auto-grouping + agency_type inference
 provider: ds:airawat:developer
 display_name: Site Renderer
 entrypoint: run.py
