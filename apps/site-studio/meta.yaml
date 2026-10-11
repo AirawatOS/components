@@ -1,0 +1,14 @@
+# Site Studio (ADR-0111 L3) — an agency admin composes its public site: order sections, pick which governed
+# capabilities each shows. Writes platform.experience (the web adapter at /t/<tenant> renders it). Admin-only.
+component_id: ds:janaagraha:app/site-studio
+kind: app
+version: 0.1.0
+provider: ds:janaagraha:developer
+display_name: Site Studio
+icon: 🧩
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+roles: []
+writes: [platform.experience]
+required_schemas: [platform.capability, platform.experience, platform.agency_profile]
