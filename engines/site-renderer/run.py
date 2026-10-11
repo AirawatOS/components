@@ -42,12 +42,13 @@ ARCHETYPES = {
                    "default_section": "Programmes & data", "lead_types": ["information", "dataset", "service"]},
     "network":    {"eyebrow": "Network standards body", "short": "Network", "primary": "#111820", "accent": "#5a7fa0",
                    "cue": "The governed catalog, participant directory and governance.",
-                   "default_section": "Catalog", "lead_types": ["service", "component", "dataset"]},
+                   "default_section": "Catalog", "lead_types": ["directory", "service", "component", "dataset"]},
 }
 # capability.type → human section heading (falls back to the title-cased type).
 TYPE_SECTIONS = {"service": "Services", "dataset": "Open data & datasets", "information": "Notices & updates",
                  "component": "Published components", "model": "Models", "solution": "Solutions",
-                 "runtime": "Runtimes & status", "app": "Apps"}
+                 "runtime": "Runtimes & status", "agent": "AI agents", "directory": "Directory",
+                 "disclosure": "Disclosures", "grievance": "Grievances", "map": "Maps", "app": "Apps"}
 # Infer the archetype from a legacy `agency_type` string when `archetype`/`archetypes` is not set (non-breaking).
 _INFER = {"civil society organisation": "ngo", "civil-society": "ngo", "non-profit": "ngo", "ngo": "ngo",
           "municipal corporation": "government", "urban local body": "government", "city": "government",
@@ -132,7 +133,10 @@ def render_site(body):
     caps = sorted(mine("platform.capability"), key=lambda c: (c.get("type") or "", c.get("title") or ""))
     exps = mine("platform.experience", 10)
     exp = next((e for e in exps if (e.get("status") or "published") == "published" and e.get("sections")), None)
-    if not caps and not exp:
+    # the tenant's LIVE service offerings (ADR-0067), passed in by the host from the network directory (they are
+    # network-side, not registry facts). These are the real services citizens can start — rendered first.
+    offerings = [o for o in (body.get("offerings") or []) if isinstance(o, dict) and o.get("service_id")]
+    if not caps and not exp and not offerings:
         return {}                                              # not migrated → host falls back to legacy SSR
 
     arch = _resolve_archetype(prof)
@@ -170,6 +174,13 @@ def render_site(body):
                       "name": c.get("title"), "url": u, "provider": {"@id": home + "#org"},
                       "availableChannel": {"@type": "ServiceChannel", "serviceUrl": u}})
         svc_items.append({"@type": "ListItem", "position": i + 1, "url": u, "name": c.get("title")})
+    for j, o in enumerate(offerings):
+        ou = base + "/run?app=jan-seva&service=" + (o.get("service_id") or "")
+        graph.append({"@type": "GovernmentService" if arch == "government" else "Service", "@id": ou + "#svc",
+                      "name": o.get("title"), "url": ou, "serviceType": o.get("domain") or "Public service",
+                      "provider": {"@id": home + "#org"},
+                      "availableChannel": {"@type": "ServiceChannel", "serviceUrl": ou}})
+        svc_items.append({"@type": "ListItem", "position": len(app_caps) + j + 1, "url": ou, "name": o.get("title")})
     if svc_items:
         graph.append({"@type": "ItemList", "@id": home + "#services", "name": "%s %s" % (name, A["default_section"]),
                       "itemListElement": svc_items})
@@ -184,6 +195,23 @@ def render_site(body):
                 if ou else '<div class="card">%s</div>' % inner)
 
     cap_by_id = {c.get("id"): c for c in caps}
+
+    # ---- the LIVE services section (ADR-0067 offerings) — the real services a citizen can start ----
+    _SVC_ICON = {"civic": "📄", "finance": "💰", "safety": "🚨", "health": "🏥", "education": "🎓", "welfare": "🤝",
+                 "transport": "🚌", "environment": "🌳", "water": "💧", "energy": "⚡", "housing": "🏠", "justice": "⚖️"}
+
+    def svccard(o):
+        sid = o.get("service_id") or ""
+        icon = _SVC_ICON.get((o.get("domain") or "").lower(), "🏛️")
+        t = o.get("title") or sid
+        s = o.get("description") or (((o.get("domain") or "").title() + " service") if o.get("domain") else "Public service")
+        href = base + "/run?app=jan-seva&service=" + sid
+        return ('<a class="card" href="%s"><div class="ic">%s</div><div class="nm">%s</div>'
+                '<div class="sm">%s</div><div class="go">Start &rarr;</div></a>'
+                % (_h.escape(href, quote=True), _h.escape(icon), _h.escape(t), _h.escape(s)))
+
+    svc_html = ('<h2>Services</h2><div class="grid">%s</div>'
+                % "".join(svccard(o) for o in sorted(offerings, key=lambda o: (o.get("domain") or "", o.get("title") or "")))) if offerings else ""
 
     def by_type():
         # No governed experience → auto-group the index by capability.type into labelled sections, ordered by the
@@ -238,7 +266,7 @@ def render_site(body):
           '<a class="si" href="/login">Sign in</a></div></div>\n'
           % (ident, _h.escape(eyebrow), _h.escape(name), _h.escape(prof.get("jurisdiction") or ""))
         + '<div class="cue"><div class="inner"><b>%s</b></div></div>\n' % _h.escape(A["cue"])
-        + '<div class="wrap">\n' + mandate + about + body_html + "\n</div>\n"
+        + '<div class="wrap">\n' + mandate + about + svc_html + body_html + "\n</div>\n"
         + '<footer><div class="inner"><span>%s</span><span class="sp">·</span><span>open civic data, with provenance</span>'
           '<span class="sp">·</span><a href="%s">sitemap</a><span class="sp">·</span><a href="%s">for AI assistants</a>'
           '<span class="sp">·</span><span>Powered by AirawatOS</span></div></footer>\n'
