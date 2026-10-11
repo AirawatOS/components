@@ -11,7 +11,7 @@
   .dev-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:1px 8px;border-radius:20px;color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 55%,transparent);background:color-mix(in srgb,var(--warn) 13%,transparent);white-space:nowrap}
   .dev-badge::before{content:"🚧"}
   .body{flex:1;display:flex;min-height:0}
-  .left{width:230px;background:var(--panel2);border-right:1px solid var(--line);overflow:auto;flex:0 0 auto;padding:4px 0}
+  .left{width:260px;min-width:190px;max-width:620px;resize:horizontal;background:var(--panel2);border-right:1px solid var(--line);overflow:auto;flex:0 0 auto;padding:4px 0}
   .left.collapsed{display:none}
   .center{flex:1;display:flex;flex-direction:column;min-width:0}
   .right{width:340px;background:var(--panel2);border-left:1px solid var(--line);flex:0 0 auto;display:flex;flex-direction:column}
@@ -203,7 +203,7 @@ function tree(){
     html+=`<div class="node lyr" data-lfolder="${ly}" style="padding-left:6px" title="right-click to add to this group"><span class="tw">${open?'▾':'▸'}</span>${LAYER_ICON[ly]||''} <b>${esc(LAYER_NAME[ly])}</b> <span class="sub">· ${esc(LAYER_HINT[ly])} (${mem.length})</span></div>`;
     if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 26px">— empty —</div>`;
       mem.forEach((m)=>{const key='c:'+m.ref; const co=OPENK[key]; const spec=(m.kind==='schema'||m.kind==='interface');
-        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${spec?'view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${spec?'📐':'📦'}</span><span class="nm">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
+        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${esc(nameOf(m))} · ${esc(m.ref)}${spec?' — view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${spec?'📐':'📦'}</span><span class="nm" title="${esc(nameOf(m))}">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
         if(co&&!spec){ const fs=FILES[m.ref];
           if(!fs) html+=`<div class="sub" style="padding-left:44px">loading…</div>`;
           else if(!Object.keys(fs).length) html+=`<div class="sub" style="padding:2px 0 2px 44px">— source not available (component may have been renamed or not yet built) —</div>`;
