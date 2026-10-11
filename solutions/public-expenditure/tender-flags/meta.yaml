@@ -1,0 +1,18 @@
+# A pure governed read→write flag driver (ADR-0029): reads procurement.tender, writes
+# governance.recommendation (AI flags, humans decide). No egress. Agency-neutral.
+component_id: ds:janaagraha:driver/tender-flags
+kind: driver
+version: 0.1.0
+provider: ds:janaagraha:developer
+entrypoint: run.py
+confinement_min: L1
+title: Tender Transparency Flags
+description: >
+  Procurement transparency flags for the Public Expenditure Dashboard — reads governed procurement.tender
+  and writes governance.recommendation records (AI flags, humans decide; ADR-0029). Surfaces competition and
+  completion signals: single recorded bid, retendered, recalled, no-bids. Never mutates data.
+reads: [procurement.tender]
+writes: [governance.recommendation]
+egress: []
+scopes:
+  - { verb: write, scope: governance.recommendation, tenant: janaagraha }

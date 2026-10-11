@@ -137,8 +137,13 @@
     renderChips();
     return tenders;
   }
+  let flaggedOnly = false;
+  const FLAGMETA = {single:{c:'#b42318',t:'Single bid'},recalled:{c:'#b4690e',t:'Recalled'},retender:{c:'#b4690e',t:'Retendered'},nobid:{c:'#5f6b78',t:'No bids'}};
+  const flagBadges = t => tenderFlags(t).map(f=>'<span title="'+FLAGMETA[f.k].t+'" style="font-size:10px;font-weight:700;color:#fff;background:'+FLAGMETA[f.k].c+';border-radius:4px;padding:1px 5px;margin-left:6px;white-space:nowrap">'+esc(f.t)+'</span>').join('');
   function renderTenders(){
-    const list = (selType==='all') ? tenders : tenders.filter(t => t._type===selType);
+    let list = (selType==='all') ? tenders : tenders.filter(t => t._type===selType);
+    const flaggedN = list.filter(t=>tenderFlags(t).length).length;
+    if (flaggedOnly) list = list.filter(t=>tenderFlags(t).length);
     const CAP = 500;
     const head = '<tr><th style="text-align:left;padding:8px">Published</th><th style="text-align:left;padding:8px">Tender</th>'
       + '<th style="text-align:right;padding:8px">EMD</th><th style="text-align:right;padding:8px">Est. value</th>'
@@ -146,18 +151,21 @@
     grid.innerHTML = head + list.slice(0,CAP).map((t,i) =>
       '<tr data-i="'+i+'" style="cursor:pointer;border-top:1px solid #eef1f4">'
       + '<td style="padding:7px 8px;white-space:nowrap;color:#5f6b78">'+esc((t.published_at||'').slice(0,10))+'</td>'
-      + '<td style="padding:7px 8px"><span style="color:#0e5aa7;font-weight:600">'+esc((t.title||t.tender_ref||'—').slice(0,96))+'</span></td>'
+      + '<td style="padding:7px 8px"><span style="color:#0e5aa7;font-weight:600">'+esc((t.title||t.tender_ref||'—').slice(0,88))+'</span>'+flagBadges(t)+'</td>'
       + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">'+lk(t.emd)+'</td>'
       + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">'+(t.estimated_value?lk(t.estimated_value):'—')+'</td>'
       + '<td style="text-align:right;padding:7px 8px">'+(t.num_bidders??'—')+'</td>'
       + '<td style="padding:7px 8px"><span class="muted">'+esc(t.status||'')+'</span></td></tr>').join('');
     grid.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => openTender(list[+tr.dataset.i]));
-    const n = list.length;
-    const sampled = (tenders.length >= 5000 && tenders.length < totalTenders);
-    setNote('tenders', n + ' tender' + (n===1?'':'s') + (n>CAP?(' (showing first '+CAP+', newest first)'):'')
-      + ' · ' + (WORK_TYPES.find(w=>w.key===selType)?.label || 'All types')
+    const n = list.length, sampled = (tenders.length >= 5000 && tenders.length < totalTenders);
+    const note = document.getElementById('note'); note.style.display='';
+    note.innerHTML = nf(n) + ' tender' + (n===1?'':'s') + (n>CAP?(' (showing first '+CAP+')'):'')
+      + ' · ' + esc(WORK_TYPES.find(w=>w.key===selType)?.label || 'All types')
+      + ' · <span id="flagtog" style="cursor:pointer;font-weight:600;color:'+(flaggedOnly?'#b42318':'#0e5aa7')+'">⚑ '
+      + (flaggedOnly ? 'Showing flagged — show all' : ('Flagged only ('+nf(flaggedN)+')')) + '</span>'
       + ' · procurement.tender, source KPPP / e-procurement (via TenderSir)'
-      + (sampled ? ' · type counts from the ' + nf(tenders.length) + ' most-recent of ' + nf(totalTenders) + ' tenders' : '') + '.');
+      + (sampled ? ' · from the ' + nf(tenders.length) + ' most-recent of ' + nf(totalTenders) : '') + '.';
+    const tg = document.getElementById('flagtog'); if (tg) tg.onclick = () => { flaggedOnly=!flaggedOnly; renderTenders(); };
   }
   function openTender(t){
     let ov = document.getElementById('tender-detail');
@@ -207,20 +215,32 @@
           + '<td style="text-align:right;padding:7px 8px">' + (c.works_count||0) + '</td>'
           + '<td style="text-align:right;padding:7px 8px;font-variant-numeric:tabular-nums">' + cr1(c.paid_net_total) + '</td></tr>').join('');
   }
-  const FLAG_PRODUCER = 'ds:janaagraha:driver/works-flags';
+  const FLAG_PRODUCERS = ['ds:janaagraha:driver/works-flags', 'ds:janaagraha:driver/tender-flags'];
+  const flagSrc = pb => (pb||'').indexOf('tender-flags')>=0 ? {i:'🧾',l:'Procurement'} : {i:'📄',l:'Works ledger'};
   let flagsCache = null;
   async function renderFlags(){
     if(!flagsCache){
       grid.innerHTML = '<tr><td style="padding:14px" class="muted">Loading flags…</td></tr>';
-      flagsCache = (await fetchAll('governance.recommendation')).filter(r => r.produced_by === FLAG_PRODUCER)
-                     .sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+      flagsCache = (await fetchAll('governance.recommendation')).filter(r => FLAG_PRODUCERS.indexOf(r.produced_by)>=0)
+                     // procurement (competition) flags first, then by confidence
+                     .sort((a,b)=> (flagSrc(b.produced_by).i==='🧾') - (flagSrc(a.produced_by).i==='🧾') || (b.confidence||0)-(a.confidence||0));
     }
     grid.innerHTML =
-      '<tr><th style="text-align:left;padding:8px">Flag</th><th style="text-align:left;padding:8px">Why it matters</th><th style="text-align:right;padding:8px">Conf.</th></tr>'
-      + flagsCache.map(f => '<tr style="border-top:1px solid #eef1f4">'
+      '<tr><th style="text-align:left;padding:8px">Flag</th><th style="text-align:left;padding:8px">Why it matters</th><th style="text-align:left;padding:8px">Source</th><th style="text-align:right;padding:8px">Conf.</th></tr>'
+      + flagsCache.map(f => { const s=flagSrc(f.produced_by); return '<tr style="border-top:1px solid #eef1f4">'
           + '<td style="padding:7px 8px;font-weight:600;min-width:220px;vertical-align:top">🚩 ' + esc(f.title||'') + '</td>'
           + '<td style="padding:7px 8px;color:#41505f;vertical-align:top">' + esc(f.rationale||'') + '</td>'
-          + '<td style="text-align:right;padding:7px 8px;vertical-align:top">' + Math.round((f.confidence||0)*100) + '%</td></tr>').join('');
+          + '<td style="padding:7px 8px;vertical-align:top;white-space:nowrap;color:#5f6b78">' + s.i + ' ' + s.l + '</td>'
+          + '<td style="text-align:right;padding:7px 8px;vertical-align:top">' + Math.round((f.confidence||0)*100) + '%</td></tr>'; }).join('');
+  }
+  // per-tender red-flags (computed from fields already present; same signals the tender-flags driver aggregates)
+  function tenderFlags(t){
+    const st=(t.status||'').toLowerCase(), out=[];
+    if(t.num_bidders===1) out.push({k:'single',t:'Single bid'});
+    if(st.indexOf('recall')>=0) out.push({k:'recalled',t:'Recalled'});
+    if(st.indexOf('retender')>=0||st.indexOf('re-tender')>=0) out.push({k:'retender',t:'Retendered'});
+    if(st.indexOf('no bid')>=0) out.push({k:'nobid',t:'No bids'});
+    return out;
   }
 
   // ═══ WARD MAP — self-contained SVG choropleth (no external tiles/libs). Ward is the finest real grain in
@@ -333,7 +353,7 @@
   async function grounding(){
     if (groundCache) return groundCache;
     let flags = flagsCache;
-    if (!flags){ try { flags = (await fetchAll('governance.recommendation')).filter(r => r.produced_by === FLAG_PRODUCER); } catch(e){ flags = []; } }
+    if (!flags){ try { flags = (await fetchAll('governance.recommendation')).filter(r => FLAG_PRODUCERS.indexOf(r.produced_by)>=0); } catch(e){ flags = []; } }
     const C = city || {};
     const L = [];
     L.push('CITY TOTAL: ' + (C.works_count||'?') + ' works across ' + (C.wards_count||'?') + ' wards, '
