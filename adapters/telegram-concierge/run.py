@@ -12,7 +12,10 @@ CHAT_ID + TEXT_B64 (base64 so arbitrary text survives the --set env channel).
 import base64, html, json, os
 from aos import driver, ctx, egress
 
-BASE = "https://airos.airawat.org"
+# The public base URL for building capability links (/run?app=…) is DEPLOYMENT-specific — a confined component
+# can't see the inbound request's Host, so the host transport passes it in as PUBLIC_BASE. Never hardcoded; if
+# absent, citations are emitted WITHOUT a link rather than a wrong-host link.
+BASE = os.environ.get("PUBLIC_BASE", "").rstrip("/")
 # Telegram puts the token in the URL PATH (bot<id>:<hash>); the broker substitutes the Vault secret into {TOKEN},
 # keeping ':' intact (safe=':'), and this component never sees the value.
 INJECT = {"name": "TELEGRAM_BOT_TOKEN", "as": "template", "placeholder": "{TOKEN}", "safe": ":"}
@@ -21,7 +24,7 @@ egress("api.telegram.org", rate_per_min=30,
 
 
 def _open(c):
-    return (BASE + "/run?app=" + c.get("target_ref")) if c.get("target_kind") == "app" and c.get("target_ref") else None
+    return (BASE + "/run?app=" + c.get("target_ref")) if (BASE and c.get("target_kind") == "app" and c.get("target_ref")) else None
 
 
 def _json(s):
