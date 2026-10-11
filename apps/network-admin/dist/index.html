@@ -93,16 +93,25 @@ function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()
 // --- Publish Requests: ADR-0080 developer submits → network steward approves → LIVE in the marketplace ----
 async function publishReqs(){
   const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
-  let d; try{ const r=await jpost('/bridge/publish-requests',{status:'pending'}); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
+  let d; try{ const r=await jpost('/bridge/publish-requests',{}); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
   catch(e){ W.innerHTML='<div class="empty">could not load publish requests ('+esc(String(e))+')</div>'; return; }
-  const R=(d.requests||[]).slice().sort((a,b)=>String(b.requested_at||'').localeCompare(String(a.requested_at||'')));
+  const ALL=(d.requests||[]).slice().sort((a,b)=>String(b.requested_at||'').localeCompare(String(a.requested_at||'')));
+  const R=ALL.filter(q=>(q.status||'pending')==='pending');                 // awaiting a decision
+  const DEC=ALL.filter(q=>(q.status||'pending')!=='pending').slice(0,25);    // recently decided — so approvals leave a trace
+  const decBadge=s=>s==='approved'?'<span class="chip" style="color:#5fd08a">✓ approved</span>':'<span class="chip" style="color:#e07a5f">✗ '+esc(s)+'</span>';
   W.innerHTML=`<div class="lbl">Publish requests</div>
     <div class="hint">A developer submits a certified component for review; it goes LIVE in the marketplace only when the network steward approves. Approval verifies the certificate + version discipline, then publishes on the standards body's authority (ADR-0080).</div>
     ${R.length?`<table><tr><th>component</th><th>ver</th><th>kind</th><th>submitted by</th><th>certified</th><th></th></tr>
     ${R.map(q=>{const cid=q.component_id||q.subject||''; const cert=q.certified?'<span class="chip" style="color:#5fd08a">✓ certified</span>':'<span class="chip" style="color:#e5a23d">not certified</span>';
       return `<tr><td class="mono">${esc(String(cid).split(':').pop())}</td><td class="mono">${esc(q.version||'')}</td><td>${esc(q.component_kind||q.kind||'')}</td><td class="muted">${esc(String(q.requested_by||q.on_behalf_of||'—').split('/').pop())}</td><td>${cert}</td>
       <td style="text-align:right"><button class="btn sm" data-rv="${esc(q.subject||'')}">Review</button> <button class="btn sm" data-ap="${esc(q.subject||'')}"${q.certified?'':' disabled title="certify first"'}>Approve</button> <button class="btn sm danger" data-rj="${esc(q.subject||'')}">Reject</button></td></tr>`;}).join('')}
-    </table>`:'<div class="empty">no pending publish requests</div>'}`;
+    </table>`:'<div class="empty">no pending publish requests</div>'}
+    ${DEC.length?`<div class="lbl" style="margin-top:22px">Recently decided</div>
+    <div class="hint">What was already approved or rejected — so a decision leaves a visible trace (a pending item moves here once you act on it).</div>
+    <table><tr><th>component</th><th>ver</th><th>status</th><th>decided by</th><th>when</th></tr>
+    ${DEC.map(q=>{const cid=q.component_id||q.subject||'';
+      return `<tr><td class="mono">${esc(String(cid).split(':').pop())}</td><td class="mono">${esc(q.version||'')}</td><td>${decBadge(q.status)}</td><td class="muted">${esc(String(q.decided_by||'—').split('/').pop())}</td><td class="muted">${esc(String(q.decided_at||'').replace('T',' ').slice(0,16))}</td></tr>`;}).join('')}
+    </table>`:''}`;
   W.querySelectorAll('[data-rv]').forEach(b=>b.onclick=()=>reviewPub(R.find(x=>String(x.subject)===b.dataset.rv)));
   W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decidePub('approve',b.dataset.ap));
   W.querySelectorAll('[data-rj]').forEach(b=>b.onclick=()=>decidePub('reject',b.dataset.rj));
