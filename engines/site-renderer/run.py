@@ -213,6 +213,38 @@ def render_site(body):
     svc_html = ('<h2>Services</h2><div class="grid">%s</div>'
                 % "".join(svccard(o) for o in sorted(offerings, key=lambda o: (o.get("domain") or "", o.get("title") or "")))) if offerings else ""
 
+    # ---- the LIVE network directory (network archetype): participants + the certified component catalog ----
+    _KIND_ICON = {"app": "📱", "engine": "⚙️", "driver": "🔌", "agent": "🤖", "adapter": "📨", "solution": "📦",
+                  "model": "🧠", "pipeline": "🧬", "skill": "✨"}
+    _PER_KIND = 24                                              # cap shown per kind; the rest are "+N in the Marketplace"
+
+    def dir_html():
+        d = body.get("directory") or {}
+        parts = d.get("participants") or []
+        comps = d.get("components") or []
+        out = ""
+        if parts:
+            cards = "".join(
+                '<a class="card" href="%s"><div class="ic">🏛️</div><div class="nm">%s</div>'
+                '<div class="sm">%s</div><div class="go">Visit &rarr;</div></a>'
+                % (_h.escape(base + "/t/" + p.get("tenant", ""), quote=True), _h.escape(p.get("name") or p.get("tenant", "")),
+                   _h.escape(p.get("jurisdiction") or "On the Airawat Network")) for p in parts)
+            out += '<h2>Participants (%d)</h2><div class="grid">%s</div>' % (len(parts), cards)
+        if comps:
+            bykind = {}
+            for c in comps:
+                bykind.setdefault(c.get("kind") or "component", []).append(c)
+            for kind in sorted(bykind):
+                grp = sorted(bykind[kind], key=lambda c: c.get("title") or "")
+                shown, more = grp[:_PER_KIND], max(0, len(grp) - _PER_KIND)
+                cards = "".join(
+                    '<div class="card"><div class="ic">%s</div><div class="nm">%s</div><div class="sm">%s</div></div>'
+                    % (_h.escape(_KIND_ICON.get(kind, "🧩")), _h.escape(c.get("title") or ""),
+                       _h.escape((c.get("provider") or "") + (" · v" + c["version"] if c.get("version") else ""))) for c in shown)
+                note = ('<p class="about">+%d more in the Marketplace.</p>' % more) if more else ""
+                out += '<h2>%ss (%d)</h2>%s<div class="grid">%s</div>' % (_h.escape(kind.title()), len(grp), note, cards)
+        return out
+
     def by_type():
         # No governed experience → auto-group the index by capability.type into labelled sections, ordered by the
         # union of all hats' lead_types (so each hat leads with its signature content), remaining types alpha-sorted.
@@ -266,7 +298,7 @@ def render_site(body):
           '<a class="si" href="/login">Sign in</a></div></div>\n'
           % (ident, _h.escape(eyebrow), _h.escape(name), _h.escape(prof.get("jurisdiction") or ""))
         + '<div class="cue"><div class="inner"><b>%s</b></div></div>\n' % _h.escape(A["cue"])
-        + '<div class="wrap">\n' + mandate + about + svc_html + body_html + "\n</div>\n"
+        + '<div class="wrap">\n' + mandate + about + svc_html + dir_html() + body_html + "\n</div>\n"
         + '<footer><div class="inner"><span>%s</span><span class="sp">·</span><span>open civic data, with provenance</span>'
           '<span class="sp">·</span><a href="%s">sitemap</a><span class="sp">·</span><a href="%s">for AI assistants</a>'
           '<span class="sp">·</span><span>Powered by AirawatOS</span></div></footer>\n'
