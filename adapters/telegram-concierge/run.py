@@ -72,6 +72,9 @@ def run():
         if not chat_id or not reply:
             print("telegram-concierge: send mode needs CHAT_ID + REPLY_B64"); return
         body = {"chat_id": chat_id, "text": reply, "disable_web_page_preview": False}
+        btn_url = os.environ.get("BTN_URL", "").strip()        # optional tappable inline button (e.g. sign-in)
+        if btn_url:
+            body["reply_markup"] = {"inline_keyboard": [[{"text": os.environ.get("BTN_TEXT", "Open"), "url": btn_url}]]}
         r = ctx.fetch("https://api.telegram.org/bot{TOKEN}/sendMessage", method="POST", body=body, inject=INJECT)
         print(f"telegram-concierge: SEND tenant={tenant} chat={chat_id} reply={len(reply)}c "
               f"status={getattr(r, 'status', None)}")

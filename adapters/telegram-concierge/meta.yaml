@@ -6,7 +6,7 @@
 # NEVER sees the value, and it is set by the tenant admin in Settings -> Components (not in the host or compose).
 component_id: ds:airawatdeveloper:adapter/telegram-concierge
 kind: adapter
-version: 0.1.3   # thin SEND transport (MODE=send pushes host-agent reply); brain + state now host-side (transactional)
+version: 0.1.4   # SEND mode renders an optional inline button (BTN_URL/BTN_TEXT) — e.g. the account-link sign-in
 provider: ds:airawat:developer
 display_name: Telegram Concierge
 icon: "💬"
