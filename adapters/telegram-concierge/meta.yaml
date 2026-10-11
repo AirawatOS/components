@@ -23,3 +23,8 @@ scopes:
   - { verb: read, scope: platform.experience }
   - { verb: read, scope: platform.publication }
   - { verb: read, scope: platform.agency_profile }
+# Post-config ACTIONS — the tenant admin clicks these in Settings -> Components after setting the token. Each
+# fires a confined run with env MODE=<mode> (the SAME broker-confined path); `needs` gates the button until the
+# secret is set. `setwebhook` points Telegram at THIS tenant's webhook using the Vault token (admin never shells).
+actions:
+  - { id: setwebhook, label: "Activate Telegram (set webhook)", mode: setwebhook, needs: TELEGRAM_BOT_TOKEN, confirm: "Point your Telegram bot at this agency's webhook now?" }

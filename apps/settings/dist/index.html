@@ -307,6 +307,35 @@ function paintConfigure(P, c, ct){
   const card=document.createElement('div'); card.className='card';
   c.fields.forEach(f=> card.appendChild(fieldRow(c.component, f)));
   P.appendChild(card);
+  paintActions(P, c);
+}
+// ---- Generic component ACTIONS (meta-declared; fire the confined run with env MODE=<mode>) ----
+function paintActions(P, c){
+  const acts=(c.actions||[]); if(!acts.length) return;
+  P.insertAdjacentHTML('beforeend',`<div class="lbl2">Actions</div>`);
+  const wrap=document.createElement('div'); wrap.className='card';
+  acts.forEach(a=>{
+    const row=document.createElement('div'); row.className='row';
+    const need=(a.needs||[]).join(', ');
+    const hint=a.ready?'':('set '+(need||'the required key')+' first');
+    row.innerHTML=`<div class="lbl"><b>${esc(a.label)}</b>${need?`<small>needs ${esc(need)}</small>`:''}</div>
+      <button class="act" ${a.ready?'':'disabled'} title="${esc(hint)}">${esc(a.label)}</button>
+      <span class="astat m2" style="min-width:60px"></span>`;
+    const btn=row.querySelector('button'), st=row.querySelector('.astat');
+    btn.onclick=async()=>{
+      if(a.confirm && !confirm(a.confirm)) return;
+      btn.disabled=true; st.textContent='running…';
+      const env={MODE:a.mode, PUBLIC_BASE:location.origin};
+      const r=await API('run',{component:c.component, env});
+      btn.disabled=false;
+      const ok=r&&!r.error&&(r.status==='ok'||r.exit===0);
+      st.textContent=ok?'done':'failed';
+      toast(ok?(a.label+' ✓'):((r&&(r.error||r.log))||'action failed'), ok?0:1);
+      loadRuns(c);
+    };
+    wrap.appendChild(row);
+  });
+  P.appendChild(wrap);
 }
 function chips(a){ return (a&&a.length)?a.map(x=>`<span class="chip">${esc(typeof x==='object'?(x.host||JSON.stringify(x)):x)}</span>`).join(''):'<span class="m2">none</span>'; }
 
