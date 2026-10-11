@@ -1,7 +1,7 @@
 # ingest-utilities (kind=driver) — load electricity/water connections as util.connection (a proxy that a property is
 # occupied/built). Uses a row's lat/long directly if present, else geocodes the address_string (real geocoder, egress-
 # gated). Optionally ingests a utility CSV asset first (UTIL_FILE_ID). Unresolved addresses get no point (never guessed).
-component_id: ds:airawat:driver/ingest-utilities
+component_id: ds:airawatdeveloper:driver/ingest-utilities
 kind: driver
 version: 0.2.0   # fix broker file-read contract ({id}->content_b64) + batch writes + optional parcel_id link
 provider: ds:airawat:developer

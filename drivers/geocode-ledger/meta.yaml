@@ -1,7 +1,7 @@
 # geocode-ledger (kind=driver) — geocode a property-tax ledger (address strings → lat/long) into tax.assessment.
 # Optionally ingests a ledger CSV asset first (LEDGER_FILE_ID). Real geocoder (Nominatim by default), egress-gated
 # through the broker; an unresolved address is left WITHOUT a point (never guessed). Confined — only I/O is the broker.
-component_id: ds:airawat:driver/geocode-ledger
+component_id: ds:airawatdeveloper:driver/geocode-ledger
 kind: driver
 version: 0.2.0                    # 0.2.0: aos SDK migration — ctx.facts/write + ctx.file.get (ledger blob)
 provider: ds:airawat:developer
