@@ -1,0 +1,17 @@
+# ADR-0111 L4 — the SITE RENDERER: the governed, certified web presentation adapter for the public agency site.
+# Graduates the hardcoded host /t/<tenant> SSR into a component. Given (tenant, path) it reads the tenant's
+# GOVERNED agency_profile + capability index + experience + publications and returns the rendered artifact
+# (HTML home page with SEO head + schema.org JSON-LD). Reads only — it renders governed facts, it never writes.
+# Because it's a component it is swappable/themeable per agency (sets up Gov-theme/archetypes) and auditable.
+component_id: ds:airawatdeveloper:engine/site-renderer
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Site Renderer
+entrypoint: run.py
+confinement_min: L1
+implements: [platform.render_site@0.1.0]
+verbs:
+  render-site: platform.render_site@0.1.0
+reads: [platform.agency_profile, platform.capability, platform.experience, platform.publication]
+writes: []
