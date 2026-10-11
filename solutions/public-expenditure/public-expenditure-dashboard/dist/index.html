@@ -43,6 +43,7 @@
     <button class="tab" id="t-wards">Spend by ward</button>
     <button class="tab" id="t-contractors">Top contractors</button>
     <button class="tab" id="t-flags">🚩 Flags</button>
+    <button class="tab" id="t-csv" style="margin-left:auto;border-color:#1f8a4c;color:#1f8a4c" title="Download the current view as CSV">⬇ CSV</button>
   </div>
   <div id="note" class="muted" style="font-size:12px;margin:-4px 0 10px;flex:0 0 auto;display:none"></div>
   <div class="tablewrap" id="tablewrap"><table id="grid"></table></div>
@@ -324,6 +325,35 @@
     if (curTab==='tenders'){ await loadTenders(); renderTenders(); }
     else { setTab('tenders'); }
   }
+  // ---- CSV export (Concept Note §5.2 downloadable datasets) — client-side, exports the active view ----
+  function toCSV(rows, cols){
+    const q = v => { v=(v==null?'':String(v)); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
+    return [cols.map(c=>q(c.h)).join(',')].concat(rows.map(r=>cols.map(c=>q(c.f(r))).join(','))).join('\n');
+  }
+  function dl(name, text){
+    const b=new Blob([text],{type:'text/csv;charset=utf-8'}), u=URL.createObjectURL(b), a=document.createElement('a');
+    a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),3000);
+  }
+  function exportCSV(){
+    if (curTab==='tenders' && tenders){
+      let list=(selType==='all')?tenders:tenders.filter(t=>t._type===selType);
+      if (flaggedOnly) list=list.filter(t=>tenderFlags(t).length);
+      const cols=[{h:'published',f:t=>(t.published_at||'').slice(0,10)},{h:'tender_ref',f:t=>t.tender_ref},{h:'title',f:t=>t.title},
+        {h:'procuring_entity',f:t=>t.procuring_entity},{h:'location',f:t=>t.jurisdiction_ref},{h:'category',f:t=>t.category},
+        {h:'status',f:t=>t.status},{h:'emd',f:t=>t.emd},{h:'estimated_value',f:t=>t.estimated_value},{h:'num_bidders',f:t=>t.num_bidders},
+        {h:'flags',f:t=>tenderFlags(t).map(x=>x.t).join('; ')},{h:'source',f:()=>'KPPP/e-proc (via TenderSir)'}];
+      dl('bbmp-tenders-'+selType+'.csv', toCSV(list, cols));
+    } else if (curTab==='wards'){
+      dl('bbmp-ward-spend.csv', toCSV(wards, [{h:'ward',f:w=>w.ward},{h:'works',f:w=>w.works_count},{h:'paid_net',f:w=>w.paid_net_total},{h:'paid_gross',f:w=>w.paid_gross_total}]));
+    } else if (curTab==='contractors'){
+      dl('bbmp-top-contractors.csv', toCSV(topc, [{h:'contractor',f:c=>c.name||c.contractor},{h:'works',f:c=>c.works_count},{h:'paid_net',f:c=>c.paid_net_total},{h:'paid_gross',f:c=>c.paid_gross_total}]));
+    } else if (curTab==='flags' && flagsCache){
+      dl('bbmp-flags.csv', toCSV(flagsCache, [{h:'flag',f:f=>f.title},{h:'why_it_matters',f:f=>f.rationale},{h:'source',f:f=>flagSrc(f.produced_by).l},{h:'confidence',f:f=>Math.round((f.confidence||0)*100)+'%'}]));
+    } else {
+      alert('Open a data tab (Tenders, Spend by ward, Top contractors, or Flags), then download it as CSV. The ward map isn’t a table.');
+    }
+  }
+  document.getElementById('t-csv').onclick = exportCSV;
   document.getElementById('t-map').onclick = () => setTab('map');
   document.getElementById('t-tenders').onclick = () => setTab('tenders');
   document.getElementById('t-wards').onclick = () => setTab('wards');
