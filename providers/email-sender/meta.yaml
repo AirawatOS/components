@@ -15,17 +15,30 @@
 # (SendGrid/Mailgun/Postmark/self-hosted/Workspace) works the same way — only these fields change.
 component_id: ds:airawatdeveloper:provider/email-sender   # ADR-0094: software stewarded by the developer participant
 kind: provider
-version: 0.1.0
+version: 0.2.0   # 0.2.0 adds the Zoho CPaaS Email API backend (HTTPS) alongside SMTP; backend auto-selected by which key is set
 provider: ds:airawatdeveloper:developer
-display_name: Email sender (SMTP)
+display_name: Email sender
 icon: "✉️"
 description: >-
   Makes outbound transactional email pluggable for a tenant. It is a credential + config holder — install it
-  and set the SMTP connection in the Components app; a trusted sender (the AirawatNetwork service for the
-  public join email-verification) then reads these values from the per-tenant secret store and delivers mail
-  over SMTP. Works with Amazon SES SMTP or any SMTP relay. The values stay in the per-component secret store —
-  confined components and agents never see them.
+  and set the connection in the Components app; a trusted sender (the AirawatNetwork service, for the public
+  join email-verification) reads these values from the per-tenant secret store and delivers the mail. Two
+  backends, auto-selected by which key you set: the Zoho CPaaS Email API (set ZOHO_API_KEY) or SMTP (set
+  SMTP_HOST — Amazon SES or any relay). The values stay in the per-component secret store — confined components
+  and agents never see them.
+egress:
+  - { host: cpaas.zoho.com, user_agent: "AirawatOS/email-sender (+https://airawat.org)" }
 secrets:
+  - name: ZOHO_API_KEY
+    label: Zoho CPaaS API key
+    description: "Zoho CPaaS email agent API key — if set, mail is sent via the Zoho Email API (header Authorization Zoho-enczapikey). Leave blank to use SMTP instead."
+    url: https://www.zoho.com/cpaas/
+  - name: EMAIL_FROM
+    label: From address
+    description: Verified sender address mail is sent from — e.g. no-reply@airawat.org (must be a verified sender/domain at the provider)
+  - name: EMAIL_FROM_NAME
+    label: From name
+    description: "Display name on the From line (default: AirawatNetwork)"
   - name: SMTP_HOST
     label: SMTP host
     description: SMTP server hostname — e.g. email-smtp.ap-south-1.amazonaws.com (Amazon SES, Mumbai region)
@@ -39,9 +52,6 @@ secrets:
     label: SMTP password
     description: SMTP login password / API key — for Amazon SES this is the SES SMTP password
     url: https://console.aws.amazon.com/ses/
-  - name: SMTP_FROM
-    label: From address
-    description: Verified sender address mail is sent from — e.g. no-reply@airawat.org (must be verified at the provider)
   - name: SMTP_STARTTLS
     label: Use STARTTLS
     description: "1 to upgrade the connection with STARTTLS (default), 0 to disable (rarely needed)"
