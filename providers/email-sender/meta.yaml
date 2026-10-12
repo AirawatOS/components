@@ -1,0 +1,47 @@
+# An EMAIL PROVIDER component (kind=provider). Like airawat-hosted/anthropic it DOESN'T run — it is a
+# credential + config holder that makes outbound transactional email pluggable per-tenant. Install it into a
+# tenant, then the tenant admin sets the SMTP connection in the Components app (Settings → Components →
+# Email sender). The values live in the per-tenant component secret store (Vault at
+# secret/<tenant>/email-sender/<FIELD>) — the same path every component key uses.
+#
+# WHO SENDS: the clean-room broker is HTTP-only (it cannot open an SMTP socket), so the actual send is done by
+# a TRUSTED service that already holds a Vault token and reads this provider's secret path — today the
+# AirawatNetwork service, for the public /network/join email-verification flow (it reads the network-authority
+# tenant's email-sender config). Any other trusted sender can read the same per-tenant path. Confined
+# components and agents never see these values.
+#
+# SES over SMTP: use the SES SMTP endpoint (email-smtp.<region>.amazonaws.com, port 587, STARTTLS) with the
+# SES SMTP username/password as SMTP_USER/SMTP_PASS and a verified sender as SMTP_FROM. Any other SMTP relay
+# (SendGrid/Mailgun/Postmark/self-hosted/Workspace) works the same way — only these fields change.
+component_id: ds:airawatdeveloper:provider/email-sender   # ADR-0094: software stewarded by the developer participant
+kind: provider
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Email sender (SMTP)
+icon: "✉️"
+description: >-
+  Makes outbound transactional email pluggable for a tenant. It is a credential + config holder — install it
+  and set the SMTP connection in the Components app; a trusted sender (the AirawatNetwork service for the
+  public join email-verification) then reads these values from the per-tenant secret store and delivers mail
+  over SMTP. Works with Amazon SES SMTP or any SMTP relay. The values stay in the per-component secret store —
+  confined components and agents never see them.
+secrets:
+  - name: SMTP_HOST
+    label: SMTP host
+    description: SMTP server hostname — e.g. email-smtp.ap-south-1.amazonaws.com (Amazon SES, Mumbai region)
+  - name: SMTP_PORT
+    label: SMTP port
+    description: SMTP port (default 587 for STARTTLS submission)
+  - name: SMTP_USER
+    label: SMTP username
+    description: SMTP login username — for Amazon SES this is the SES SMTP username (not an AWS access key)
+  - name: SMTP_PASS
+    label: SMTP password
+    description: SMTP login password / API key — for Amazon SES this is the SES SMTP password
+    url: https://console.aws.amazon.com/ses/
+  - name: SMTP_FROM
+    label: From address
+    description: Verified sender address mail is sent from — e.g. no-reply@airawat.org (must be verified at the provider)
+  - name: SMTP_STARTTLS
+    label: Use STARTTLS
+    description: "1 to upgrade the connection with STARTTLS (default), 0 to disable (rarely needed)"
