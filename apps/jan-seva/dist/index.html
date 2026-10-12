@@ -84,6 +84,8 @@ function renderJoin(){
     <h3>${esc(AI18n.t('js.signin_title'))}</h3>
     <div class="muted">${esc(AI18n.t('js.signin_desc'))}</div>
     <label>${esc(AI18n.t('js.username'))}</label><input id="li" placeholder="e.g. asha.patil"/>
+    <label>Password <span class="muted" style="text-transform:none">(leave blank if you have none)</span></label>
+    <input id="lp" type="password" autocomplete="current-password" placeholder="Password"/>
     <button class="btn" id="loginBtn" style="margin-top:10px">${esc(AI18n.t('js.signin'))}</button>
     <div id="loginOut" class="muted" style="margin-top:8px"></div>
     <div style="margin-top:14px;border-top:1px solid #21262d;padding-top:12px;font-size:14px">
@@ -95,10 +97,14 @@ function renderJoin(){
 }
 async function doLogin(){
   const u=document.getElementById('li').value.trim(), out=document.getElementById('loginOut');
+  const pw=(document.getElementById('lp')||{}).value||'';
   if(!u){ out.innerHTML='<span class="err">'+esc(AI18n.t('js.enter_username'))+'</span>'; return; }
   out.textContent=AI18n.t('js.signing_in');
-  let r={}; try{ r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({realm:'citizens',username:u.toLowerCase()})}).then(x=>x.json()); }catch(e){}
+  // SAME mechanism as the platform /login (reference IdP, citizens realm) — now carries a password so a
+  // password-protected citizen can sign in; a passwordless citizen just leaves it blank.
+  let r={},status=0; try{ const x=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({realm:'citizens',username:u.toLowerCase(),password:pw})}); status=x.status; r=await x.json(); }catch(e){}
   if(r && r.ok){ notifyShell(); setTimeout(()=>{ try{ top.location='/'; }catch(e){ location.href='/'; } }, 300); }
+  else if(status===401){ out.innerHTML='<span class="err">'+esc(r.error||'Wrong username or password. If you have no password, leave it blank; new here? Create an account.')+'</span>'; }
   else out.innerHTML='<span class="err">'+esc(AI18n.t('js.no_citizen'))+'</span>';
 }
 // ---- create an account (self-signup) ----
