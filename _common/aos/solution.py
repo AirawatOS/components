@@ -127,6 +127,9 @@ class InMemoryBackend:
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
+    def write_project(self, rec):
+        self.log.append(("studio-project", rec["id"], f"{len(rec.get('members', []))} members (offline — not written)"))
+
     # ── teardown (ADR-0106 S5) — reverse the closure, idempotent ──
     def unseed_viz(self, layer, tenant):
         found = layer in self.viz; self.viz.discard(layer)
@@ -363,6 +366,14 @@ class BrokerBackend:
     def open_urls(self, solution_name, tenant):
         return [f"https://…/{tenant}/{solution_name}"]
 
+    def write_project(self, rec):
+        # Register (upsert) the Studio project workspace in the dev tenant so `aos`-built solutions appear in
+        # Studio (which lists studio.project records) — editable, since build members' source is delivered to
+        # filestore by _publish_bundle (Studio's editor loads it via /bridge/component-read). Dev-token write,
+        # own-tenant (id prefix ds:<tenant>:) — no authority round-trip.
+        self._kwrite(rec["id"], rec)
+        self.log.append(("studio-project", rec["id"], f"{len(rec.get('members', []))} members"))
+
     # ── teardown (ADR-0106 S5) — reverse the closure over the live services, dev-confined ──
     def _kretract(self, oid):
         # KERNEL registry retract (tombstone). Unlike /v1/write (a broker run-token path), retract is
@@ -479,6 +490,33 @@ class Deployer:
         rep["marking"] = policy.dev_marking({"environment": env})
         rep["open"] = self.b.open_urls(sol.name, tenant)
         return rep
+
+    def push_studio_project(self, sol: Solution, tenant):
+        """Register (upsert) a studio.project for this solution so it appears in Studio — the bridge between
+        the CLI and the in-browser workspace. Members map 1:1 from the manifest: BUILD members are `new`
+        (yours to edit + re-publish; their source was delivered to filestore by build_member), REUSE members
+        are `existing` (configure, not rebuild). Idempotent: the id is derived from the solution name, so
+        re-running updates the same project. Needs the live backend (writes a real registry record)."""
+        slug = (re.sub(r"[^a-z0-9]+", "-", str(sol.name).lower()).strip("-") or "project")[:40]
+        pid = f"ds:{tenant}:studio/project/{slug}"
+        layer_of = {"app": "interaction", "driver": "domain", "engine": "intelligence",
+                    "skill": "intelligence", "pipeline": "intelligence", "agent": "intelligence",
+                    "adapter": "domain", "provider": "domain"}
+
+        def _member(ref, origin):
+            cid = _canon_member(ref, tenant)
+            kind = cid.split(":", 2)[2].split("/", 1)[0] if cid.startswith("ds:") else "engine"
+            title = cid.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+            return {"ref": cid, "kind": kind, "title": title, "origin": origin,
+                    "status": "published", "layer": layer_of.get(kind, "domain"), "reads": [], "writes": []}
+
+        members = [_member(m, "new") for m in sol.build] + [_member(m, "existing") for m in sol.reuse]
+        rec = {"schema": "studio.project", "id": pid, "tenant": tenant,
+               "title": str(sol.name).replace("-", " ").title(),
+               "goal": sol.d.get("goal") or "", "brief": {}, "status": "active", "members": members}
+        self.b.write_project(rec)
+        return {"id": pid, "members": len(members),
+                "build": [m["ref"] for m in members if m["origin"] == "new"]}
 
     def destroy_sandbox(self, sol: Solution, tenant):
         """ADR-0106 §S5: tear the sandbox closure down in REVERSE — unseed → uninstall (revoke grants) →

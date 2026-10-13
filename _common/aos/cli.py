@@ -270,7 +270,8 @@ def cmd_deploy(args):
     from .solution import Deployer
     sol = _load_solution(args)
     backend = _backend_for(args)
-    rep = Deployer(backend).deploy_sandbox(sol, args.tenant)
+    dep = Deployer(backend)
+    rep = dep.deploy_sandbox(sol, args.tenant)
     print(f"→ deploy '{sol.name}' → sandbox tenant '{args.tenant}' (environment: {rep['environment']})")
     print(f"  governance auto-approved in dev: {policy.can_govern_in_place('development')}")
     for step, ref in rep["steps"]:
@@ -282,6 +283,15 @@ def cmd_deploy(args):
     if rep.get("unpinned"):
         print(f"   ⚠ unpinned reuse (floats to LATEST until pinned): {', '.join(sorted(rep['unpinned']))}")
         print("     → pin them as name@x.y.z in solution.yaml for a reproducible bundle (ADR-0098).")
+    if getattr(args, "studio", False):
+        # Register the Studio project so the CLI-built solution appears in the in-browser workspace (editable).
+        if not args.live:
+            print("   ⚠ --studio needs --live (the studio.project record is written to the real registry) — skipped.")
+        else:
+            pr = dep.push_studio_project(sol, args.tenant)
+            print(f"   🎛  Studio project registered: {pr['id']} ({pr['members']} members)")
+            print(f"      open Studio → Project menu → “{sol.name}” to edit"
+                  + (f"; editable: {', '.join(r.split('/')[-1] for r in pr['build'])}" if pr['build'] else ""))
     if args.live:
         print("✓ whole solution stood up LIVE in the dev tenant over the dev-token "
               "(govern auto-approved · certified · installed · seeded — all confined to development).")
@@ -318,7 +328,7 @@ def main(argv=None):
     p = sub.add_parser("check"); p.add_argument("dir", nargs="?", default="."); p.set_defaults(f=cmd_check)
     p = sub.add_parser("test"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_test)
     p = sub.add_parser("meta"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--write", action="store_true", help="regenerate meta.yaml from code (derived fields), preserving curated ones"); p.set_defaults(f=cmd_meta)
-    p = sub.add_parser("deploy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="drive real services over the dev-token (BrokerBackend); default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_deploy)
+    p = sub.add_parser("deploy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="drive real services over the dev-token (BrokerBackend); default is offline"); p.add_argument("--studio", action="store_true", help="also register a studio.project so the solution appears in Studio (editable); needs --live"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_deploy)
     p = sub.add_parser("destroy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="tear down the LIVE dev-tenant closure over the dev-token; default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_destroy)
     p = sub.add_parser("publish"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--target", required=True, choices=["marketplace", "service-directory"]); p.add_argument("--env", default="development"); p.set_defaults(f=cmd_publish)
     p = sub.add_parser("login"); p.add_argument("--issuer"); p.add_argument("--client-id", dest="client_id"); p.add_argument("--device", action="store_true", help="device-code flow (headless; no loopback browser)"); p.set_defaults(f=cmd_login)
