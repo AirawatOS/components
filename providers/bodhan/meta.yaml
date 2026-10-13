@@ -1,0 +1,29 @@
+# A speech-to-text PROVIDER component (kind=provider). Like anthropic / airawat-hosted it DOESN'T run — it is a
+# credential + config holder that makes a transcription endpoint pluggable: install it into a tenant, then set
+# its API key in the Components app (Settings → Components → Bodhan AI, or the Voice Settings screen). The
+# model-gateway routes /transcribe (task "transcribe") to this provider's base_url (OpenAI-compatible
+# multipart /audio/transcriptions contract) and reads THIS key from the per-component secret path — the
+# confined component/app calling /bridge/transcribe never sees it. The matching intelligence.provider record
+# carries the routing (base_url, models + their task). app-host's 🎤 Dictate (Court Console order dictation,
+# the AI Assist drawer, civic intake) all flow through here. This promotes the former on-gateway env-bootstrap
+# (STT_BASE_URL / STT_* defaults) into a governed, swappable provider — swap Bodhan for any other STT by
+# editing the intelligence.provider record, no code change (model_gateway._stt_provider TODO, now done).
+component_id: ds:airawatdeveloper:provider/bodhan   # ADR-0094: software stewarded by the developer participant
+kind: provider
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Bodhan AI (speech-to-text)
+icon: "🎤"
+description: >-
+  Makes Bodhan's Indic speech-to-text available to the platform through the model-gateway. It is a
+  credential + routing holder — install it and set the Bodhan API key in the Components app; the gateway
+  then serves the "transcribe" task (voice dictation — Court Console order dictation, the AI Assist drawer,
+  civic intake) from Bodhan over the OpenAI-compatible transcription contract. The key stays in the
+  per-component secret store — confined components and apps never see it. Transcription-only.
+egress:
+  - { host: api.bodhan.ai, user_agent: "AirawatOS/bodhan (+https://airawat.org)" }
+secrets:
+  - name: BODHAN_API_KEY
+    label: Bodhan API key
+    description: Key for the Bodhan speech-to-text API (serves the indic-transcribe model via /audio/transcriptions)
+    url: https://api.bodhan.ai
