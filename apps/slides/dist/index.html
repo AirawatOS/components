@@ -101,8 +101,8 @@ function renderWork(){
   const W=$('work');
   W.innerHTML=`<div class="rail" id="rail"></div>
     <div class="editor"><div class="canvas">
-      <div class="slideedit"><input class="st" id="st" placeholder="Slide title"><textarea class="sb" id="sb" placeholder="One bullet per line"></textarea></div>
-      <div class="notes"><div class="lbl">Speaker notes</div><textarea id="notes" rows="2" placeholder="Notes for this slide (not shown when presenting)"></textarea></div>
+      <div class="slideedit"><input class="st" id="st" placeholder="Slide title"><textarea class="sb" id="sb" data-voice placeholder="One bullet per line"></textarea></div>
+      <div class="notes"><div class="lbl">Speaker notes</div><textarea id="notes" data-voice rows="2" placeholder="Notes for this slide (not shown when presenting)"></textarea></div>
     </div></div>`;
   renderRail();
   const s=slides[idx]||blankSlide();
@@ -135,7 +135,7 @@ function present(){let p=idx;const ov=document.createElement('div');ov.className
 // ---- AI: topic → deck ----
 function aiDeck(){const m=modal(`<h3>✨ Generate a deck with AI</h3>
     <div class="sub">Describe the presentation — the AI drafts the slides (replaces the current deck).</div>
-    <textarea class="in" id="p" placeholder="e.g. A 6-slide briefing on the ward drainage upgrade programme for the city council"></textarea>
+    <textarea class="in" id="p" data-voice placeholder="e.g. A 6-slide briefing on the ward drainage upgrade programme for the city council"></textarea>
     <div style="text-align:right;margin-top:10px"><span class="sub" id="s"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="go">Generate</button></div>`);
   m.q('#x').onclick=m.close;
   m.q('#go').onclick=async()=>{const p=(m.q('#p').value||'').trim();if(!p)return;m.q('#s').innerHTML='<span class="spin"></span> drafting…';
@@ -154,3 +154,4 @@ function parseDeck(txt){const blocks=txt.split(/\n\s*---+\s*\n/);const out=[];
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>
+<script src="/shared/voice.js" defer></script>

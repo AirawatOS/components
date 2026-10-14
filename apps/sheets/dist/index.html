@@ -187,7 +187,7 @@ function gridKey(e){
 function aiFill(){
   const m=modal(`<h3>✨ Generate a table with AI</h3>
     <div class="sub">Describe the data — the AI returns rows that fill in from the selected cell (${esc(sel)}).</div>
-    <textarea class="in" id="p" placeholder="e.g. A monthly budget for a small ward office: category, planned, actual for 6 months"></textarea>
+    <textarea class="in" id="p" data-voice placeholder="e.g. A monthly budget for a small ward office: category, planned, actual for 6 months"></textarea>
     <div style="text-align:right;margin-top:10px"><span class="sub" id="s"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="go">Generate</button></div>`);
   m.q('#x').onclick=m.close;
   m.q('#go').onclick=async()=>{const p=(m.q('#p').value||'').trim();if(!p)return;
@@ -209,3 +209,4 @@ function parseCSVLine(line){const out=[];let cur='',q=false;
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>
+<script src="/shared/voice.js" defer></script>

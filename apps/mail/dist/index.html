@@ -120,7 +120,7 @@ function compose(pf){pf=pf||{};
     ${rrow('Cc','cc','style="display:none"')}
     ${rrow('Bcc','bcc','style="display:none"')}
     <div class="row"><span class="lbl">Subject</span><input class="in" id="subj" value="${esc(pf.subject||'')}"></div>
-    <textarea class="in" id="bodyx" placeholder="Write your message…">${esc(pf.body||'')}</textarea>
+    <textarea class="in" id="bodyx" data-voice placeholder="Write your message…">${esc(pf.body||'')}</textarea>
     <div class="row"><button class="btn" id="attach">📎 Attach</button><input type="file" id="fileinp" multiple style="display:none"><span class="atts" id="atts"></span></div>
     <div class="row"><button class="aiBtn" id="ai">✨ ${pf.replyCtx?'Draft reply':'Draft with AI'}</button><span class="sub" id="s"></span><span style="flex:1"></span>
       <button class="btn" id="x">Cancel</button><button class="btn primary" id="send">Send</button></div>`);
@@ -170,3 +170,4 @@ function compose(pf){pf=pf||{};
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>
+<script src="/shared/voice.js" defer></script>

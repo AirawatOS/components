@@ -92,7 +92,7 @@ async function openChan(id){
   $('main').innerHTML=`<div class="chhead">${avatar((c.members||[]).includes(AI)?AI:(c.members||[]).find(m=>m!==ME)||ME,'av')}
       <div><div class="t">${esc(chTitle(c))}</div><div class="sub">${esc((c.members||[]).map(uname).join(', '))}</div></div></div>
     <div class="thread" id="thread"></div>
-    <div class="composer"><textarea id="msg" rows="1" placeholder="Message…"></textarea><button class="send" id="send">Send</button></div>`;
+    <div class="composer"><textarea id="msg" data-voice rows="1" placeholder="Message…"></textarea><button class="send" id="send">Send</button></div>`;
   const ta=$('msg');
   ta.oninput=()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';};
   ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}};
@@ -148,3 +148,4 @@ async function createChan(spec){
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return {q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>
+<script src="/shared/voice.js" defer></script>

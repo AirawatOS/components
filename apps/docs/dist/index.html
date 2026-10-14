@@ -85,7 +85,7 @@
       <button class="tb" data-cmd="removeFormat" title="Clear formatting">✕</button>
       <button class="aiBtn" id="aiToggle">✨ AI</button>
     </div>
-    <div class="scroll"><div class="paper" id="editor" contenteditable="true" spellcheck="true" data-ph="Start writing, or press ✨ AI to draft something…"></div></div>
+    <div class="scroll"><div class="paper" id="editor" data-voice contenteditable="true" spellcheck="true" data-ph="Start writing, or press ✨ AI to draft something…"></div></div>
     <div class="foot"><span id="wc">0 words</span><span id="docid" class="sub"></span></div>
   </div>
   <div class="ai hidden" id="aipanel">
@@ -93,7 +93,7 @@
     <div class="sc">
       <div class="sub">Acts on your selection — or the whole document if nothing is selected.</div>
       <div class="chips" id="chips"></div>
-      <textarea id="aiprompt" placeholder="Or tell the AI what to write… e.g. 'Draft a project kickoff note for the drainage upgrade'"></textarea>
+      <textarea id="aiprompt" data-voice placeholder="Or tell the AI what to write… e.g. 'Draft a project kickoff note for the drainage upgrade'"></textarea>
       <button class="go" id="aigo">Generate</button>
       <div id="airesWrap" style="display:none">
         <div class="sub">Result</div>
@@ -226,3 +226,4 @@ function insertAI(replace){
 }
 boot();
 </script>
+<script src="/shared/voice.js" defer></script>
