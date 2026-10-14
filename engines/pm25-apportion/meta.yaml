@@ -1,0 +1,25 @@
+# AN ENGINE (kind=engine) — PM2.5 SOURCE APPORTIONMENT, Slice 1 (SHAP-proxy). ADR-0073 follow-on.
+# Attributes each cell's modelled PM2.5 to likely SOURCE categories (traffic, industry, construction/road dust,
+# residential, secondary, regional/transboundary background), by loading the SAME champion `air.model` and the
+# SAME `air.feature_matrix` snapshot the nowcast uses, then computing EXACT per-cell TreeSHAP contributions via
+# XGBoost `pred_contribs=True` (no external shap lib) and grouping features → source categories via a governed
+# feature→source map. Meteorology (boundary-layer, rainfall) and terrain are reported SEPARATELY as MODULATORS,
+# not emission sources — they disperse/retain, they don't emit. HONEST LIMITATION: this is association via model
+# inputs, not measured source mass; biomass/stubble burning is only weakly covered until `cell.fire` is joined
+# into the feature matrix. method is stamped `shap-xgb-proxy` on every output. No synthetic fill.
+component_id: ds:airawatdeveloper:engine/pm25-apportion
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: PM2.5 Source Apportionment (SHAP-proxy, Slice 1)
+entrypoint: run.py
+confinement_min: L2
+reads: [air.feature_matrix, air.model]     # the snapshot matrix + the champion model blob (same as pm25-model INFER)
+writes: [air.source_apportionment, air.source_mix]
+required_schemas: [air.feature_matrix, air.model, air.source_apportionment, air.source_mix]
+config: [FEATURE_SET, SNAPSHOT_FEATURE_SET, SNAPSHOT_FILE_ID, MODEL_FILE_ID, MIN_SHARE, WRITE_MIX]
+scopes:
+  - { verb: read,  scope: air.feature_matrix }
+  - { verb: read,  scope: air.model }
+  - { verb: write, scope: air.source_apportionment }
+  - { verb: write, scope: air.source_mix }
