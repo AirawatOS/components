@@ -63,7 +63,7 @@ def _isoz(ts):
 def run():
     import h3                                    # lazy (heavy dep) — keeps import-time clean for aos check
     AOI_ID = os.environ.get("AOI_ID", "")      # explicit AOI, else discovered for THIS run's tenant — NEVER a hardcoded city
-    IDSS = os.environ.get("IDSS_BASE", "http://13.205.88.131:3001")
+    IDSS = os.environ.get("IDSS_BASE", "http://13.205.88.131:4000")
     DISTRICT = os.environ.get("IDSS_DISTRICT", "").strip()   # the vendor district id — configuration, no hardcoded city
     WINDOW_H = int(os.environ.get("IDSS_WINDOW_HOURS", "6"))
     AS_OF = os.environ.get("AS_OF_DATE", "").strip()          # YYYY-MM-DD: that whole day's REAL readings (daily mean/sensor)

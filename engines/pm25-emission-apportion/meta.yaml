@@ -1,0 +1,33 @@
+# AN ENGINE (kind=engine) — PM2.5 SOURCE APPORTIONMENT, Slice 2: BOTTOM-UP EMISSION INVENTORY. ADR-0073 follow-on.
+# Attributes each cell's PM2.5 to sources from PHYSICAL EMISSION POTENTIAL, not model correlation: activity proxy ×
+# emission factor per source, per H3 cell. Proxies = the governed city layers (buildings→people→cooking/heating;
+# roads+junctions→traffic; nightlight→industry; built-area→construction; road length×dryness→resuspended dust).
+# Emission factors are GOVERNED, citable config (ref.emission_factor records; built-in Delhi priors as fallback).
+# Honestly separates EMISSION from CONCENTRATION: PM2.5 = regional_background (cell.cams) + local_enhancement; only
+# the local enhancement is split across local sources by their emission shares. Writes the SAME schemas as the SHAP
+# engine (air.source_apportionment/air.source_mix) with method="bottom-up-inventory" so surfacing is shared. EFs are
+# UNCALIBRATED priors until Slice 2.5 constrains them with low-cost sensor observations. No synthetic fill.
+component_id: ds:airawatdeveloper:engine/pm25-emission-apportion
+kind: engine
+version: 0.1.2   # 0.1.2: read ONLY latest-hour air.quality (paginated) + drop cell.cams read → run completes fast (was hanging on ~250k-row full-scope reads)
+provider: ds:airawat:developer
+display_name: PM2.5 Source Apportionment (bottom-up emission inventory, Slice 2)
+entrypoint: run.py
+confinement_min: L2
+reads: [air.quality, cell.cams, cell.buildings, demographics.population, cell.roads, econ.nightlight, cell.builtup, cell.greencover, cell.rainfall, ref.emission_factor]
+writes: [air.source_apportionment, air.source_mix]
+required_schemas: [air.quality, cell.cams, air.source_apportionment, air.source_mix]
+config: [REGIONAL_SOURCE, MIN_SHARE, WRITE_MIX, SEASON]
+scopes:
+  - { verb: read,  scope: air.quality }
+  - { verb: read,  scope: cell.cams }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: read,  scope: demographics.population }
+  - { verb: read,  scope: cell.roads }
+  - { verb: read,  scope: econ.nightlight }
+  - { verb: read,  scope: cell.builtup }
+  - { verb: read,  scope: cell.greencover }
+  - { verb: read,  scope: cell.rainfall }
+  - { verb: read,  scope: ref.emission_factor }
+  - { verb: write, scope: air.source_apportionment }
+  - { verb: write, scope: air.source_mix }
