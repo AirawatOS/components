@@ -1,4 +1,4 @@
-<title>City Scan — City Digital Baseline</title>
+<title>Visualize</title>
 <link rel="stylesheet" href="./vendor/maplibre-gl.css" onerror="this.remove()">
 <style>
   :root{                                   /* DARK — default; theme flows in via [data-theme] (ADR-0077) */
@@ -204,7 +204,7 @@
 </style>
 
 <header>
-  <h1><b>City Scan</b> — City Digital Baseline</h1>
+  <h1><b>Visualize</b></h1>
   <div class="sub" id="sub">loading…</div>
 </header>
 
@@ -219,6 +219,7 @@
         <p class="rail-h" style="margin-bottom:4px">Legend</p>
         <div class="bar" id="legbar"></div>
         <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
+        <div id="legmeta" style="margin-top:7px;color:var(--muted);font-size:11px;line-height:1.5"></div>
       </div>
       <div class="explain" id="explain"></div>
     </div>
@@ -324,12 +325,20 @@ async function qAll(schema,cap=400000,statusKey){  // PAGINATE the full set — 
 // just a few projected fields in ONE response — instead of paging the full cells×hours set and grouping client-side
 // (which made the PM2.5 layer very slow to load). History (the time scrubber) stays available via qAll, lazily.
 const SURFACE=new Set(["air.quality","air.hotspot","cell.cams","cell.aod","cell.boundary_layer"]);
+const SURFMETA={};   // per-surface-layer provenance summary (freshness/confidence/method) shown in the legend
 async function qLatest(schema,vf,statusKey){
   const top=String(vf||"").split(".")[0];
-  const fields=["space","cell_ref","id","source"]; if(top) fields.push(top);
+  const fields=["space","cell_ref","id","source","observed_at","confidence","method","prov"]; if(top) fields.push(top);
   const body={app_id:APPID,schema,reduce:"latest_per_cell",cell_field:"space.h3",time_field:"observed_at",fields};
   let d; try{ d=await bridge("/bridge/query",body); }catch(e){ if(statusKey&&LAYER_STAT[statusKey])Object.assign(LAYER_STAT[statusKey],{err:true}); return []; }
   const rows=(d.results||d.objects||d||[]).map(x=>x.object||x);
+  // provenance summary for the legend: newest observed_at, mean confidence, and the method/model
+  const ts=rows.map(r=>r.observed_at).filter(Boolean).sort();
+  const cs=rows.map(r=>r.confidence).filter(v=>typeof v==="number");
+  const mr=rows.find(r=>r.method||(r.prov&&(r.prov.method||r.prov.model)))||{};
+  SURFMETA[schema]={freshness:ts.length?ts[ts.length-1]:null,
+    confidence:cs.length?(cs.reduce((a,b)=>a+b,0)/cs.length):null,
+    method:(mr.method)||((mr.prov||{}).method)||((mr.prov||{}).model)||null, n:rows.length};
   if(statusKey&&LAYER_STAT[statusKey]) Object.assign(LAYER_STAT[statusKey],{fetched:rows.length,loaded:rows.length,complete:true});
   return rows;
 }
@@ -422,7 +431,7 @@ function parseCells(rows,L){                                    // rows → H3 h
   }
   // ---- (B) dated snapshots → group records by observed_at into frames ---------------------------
   let times=[...new Set(rows.map(o=>o.observed_at).filter(Boolean))].sort();
-  if(times.length>1){
+  if(times.length>1 && !(L&&L.surface)){   // a reduced SURFACE layer is one-value-per-cell → render as a single frame, not animated
     if(times.length>MAX_FRAMES) times=times.slice(-MAX_FRAMES);   // bound client memory — keep the most recent frames
     const ti=Object.fromEntries(times.map((t,i)=>[t,i])), byH3={};
     for(const o of rows){ const g=geom(o), v=dget(o,vf);
@@ -448,7 +457,7 @@ async function ensureLayer(L){                                 // fetch a chorop
   L._loading=true;
   LAYER_STAT[L.key]={loading:true,loaded:0,fetched:0,complete:false,err:false,capped:false,unit:"cells"}; ovProgress(L.key);
   const rows = (L.key==="geo.osm_feature") ? await q(L.key)
-             : SURFACE.has(L.key) ? await qLatest(L.key,L.vf,L.key)        // current surface = latest value per cell, reduced server-side (fast)
+             : SURFACE.has(L.key) ? (L.surface=true, await qLatest(L.key,L.vf,L.key))   // current surface = latest value per cell, reduced server-side (fast)
              : await qAll(L.key,400000,L.key);  // other cell layers: paginate the full set
   DATA.data[L.key] = (L.key==="geo.osm_feature")
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
@@ -866,6 +875,14 @@ function render(){
     $("legbar").style.background=rampCSS(L.ramp);
     if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=L.fmt(d.thi); }
     else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi); }
+    // per-layer provenance: freshness (newest observation in THIS layer), mean confidence, method/model.
+    const m=SURFMETA[L.key]; const lm=$("legmeta");
+    if(lm){ if(m){ const parts=[];
+        if(m.freshness) parts.push('Fresh: '+esc(String(m.freshness).slice(0,16).replace("T"," ")));
+        if(m.confidence!=null) parts.push('Confidence: '+Math.round(m.confidence*100)+'%');
+        if(m.method) parts.push('Method: '+esc(m.method));
+        lm.innerHTML=parts.join(' · ')+(m.n?(' · '+m.n+' cells'):''); }
+      else lm.innerHTML=''; }
   } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
   updateScrubber();
@@ -1162,9 +1179,10 @@ function fitView(bbox){
   if(!window.deck||!deck.Deck){ $("mapload").textContent="map engine failed to load"; return; }
   DATA=await load();
   active=(LAYERS[0]||{}).key;
-  const fresh=(DATA.coverage||[]).map(c=>c.freshness||c.assessed_at).filter(Boolean).sort().pop();
-  $("sub").innerHTML=`${esc((DATA.aoi||{}).name||"AOI")}<span class="dot">·</span>${LAYERS.length} indicator layers`
-    +`<span class="dot">·</span>${(DATA.coverage||[]).length} assessed<span class="dot">·</span>as of ${esc((fresh||"—").slice(0,10))}`;
+  // The header names the place + how many layers are available. Data recency is NOT a single city-wide date
+  // (each layer has its own freshness) — so we show it per-layer in the legend when a layer is active, instead
+  // of a misleading one-size "as of" (which previously reflected only the stale baseline-coverage assessment).
+  $("sub").innerHTML=`${esc((DATA.aoi||{}).name||"AOI")}<span class="dot">·</span>${LAYERS.length} indicator layers`;
   if(!LAYERS.length){ $("mapload").remove(); $("map").innerHTML='<div class="empty">No baseline data for this workspace yet.</div>'; drawTrust(); return; }
   view=fitView(DATA.aoi.bbox||DATA.scope||[72.8,18.9,72.99,19.28]);
   deckgl=new deck.Deck({
