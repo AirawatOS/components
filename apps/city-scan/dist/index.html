@@ -319,6 +319,20 @@ async function qAll(schema,cap=400000,statusKey){  // PAGINATE the full set — 
   if(statusKey&&LAYER_STAT[statusKey]) Object.assign(LAYER_STAT[statusKey],{fetched:out.length,complete:complete&&!err,err,capped});
   return out;
 }
+// SURFACE schemas accumulate many hourly observed_at frames per cell. For the default map we want the CURRENT
+// surface = one value per cell (latest), so we ask the host to reduce server-side (latest_per_cell) and return
+// just a few projected fields in ONE response — instead of paging the full cells×hours set and grouping client-side
+// (which made the PM2.5 layer very slow to load). History (the time scrubber) stays available via qAll, lazily.
+const SURFACE=new Set(["air.quality","air.hotspot","cell.cams","cell.aod","cell.boundary_layer"]);
+async function qLatest(schema,vf,statusKey){
+  const top=String(vf||"").split(".")[0];
+  const fields=["space","cell_ref","id","source"]; if(top) fields.push(top);
+  const body={app_id:APPID,schema,reduce:"latest_per_cell",cell_field:"space.h3",time_field:"observed_at",fields};
+  let d; try{ d=await bridge("/bridge/query",body); }catch(e){ if(statusKey&&LAYER_STAT[statusKey])Object.assign(LAYER_STAT[statusKey],{err:true}); return []; }
+  const rows=(d.results||d.objects||d||[]).map(x=>x.object||x);
+  if(statusKey&&LAYER_STAT[statusKey]) Object.assign(LAYER_STAT[statusKey],{fetched:rows.length,loaded:rows.length,complete:true});
+  return rows;
+}
 async function qf(schema,filter){                              // server-side filtered query (e.g. one cell's footprints)
   try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,filter,limit:20000});
        return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; }
@@ -433,7 +447,9 @@ async function ensureLayer(L){                                 // fetch a chorop
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
   LAYER_STAT[L.key]={loading:true,loaded:0,fetched:0,complete:false,err:false,capped:false,unit:"cells"}; ovProgress(L.key);
-  const rows = (L.key==="geo.osm_feature") ? await q(L.key) : await qAll(L.key,400000,L.key);  // paginate the FULL set (temporal layers accumulate hours)
+  const rows = (L.key==="geo.osm_feature") ? await q(L.key)
+             : SURFACE.has(L.key) ? await qLatest(L.key,L.vf,L.key)        // current surface = latest value per cell, reduced server-side (fast)
+             : await qAll(L.key,400000,L.key);  // other cell layers: paginate the full set
   DATA.data[L.key] = (L.key==="geo.osm_feature")
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
     : parseCells(rows,L);
