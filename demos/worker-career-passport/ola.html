@@ -1,0 +1,181 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Ola Partner — powered by Avsar</title>
+<!--
+  A GENUINELY THIRD-PARTY embedding app (ADR-0112). This page is hosted on Ola's OWN origin — serve it from
+  your machine on a separate origin and open that URL:
+
+      cd components/demos/worker-career-passport && python3 -m http.server 8777
+      open http://localhost:8777/ola.html
+
+  It loads the Airawat embed SDK cross-origin and calls https://airos.airawat.org/embed/* cross-origin —
+  which only works because app-host now sends scoped CORS for the 'ola' client's registered origin
+  (http://localhost:8777). Override the backend with ?api=https://host if needed.
+-->
+<style>
+:root{--amber:#f5a623;--ola:#0b6b3a;--ola-d:#064d29;--ink:#15202b;--dim:#5f7183;--line:#e4e9ef;--bg:#f5f7f8;--card:#fff}
+*{box-sizing:border-box} body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+.host-top{display:flex;align-items:center;gap:18px;padding:14px 24px;background:#000;color:#fff;position:sticky;top:0;z-index:5}
+.host-brand{font-weight:800;font-size:18px} .host-brand b{color:var(--amber)}
+.host-nav{display:flex;gap:18px;color:#b9c2cc;font-size:14px;flex:1}
+.host-cta{padding:9px 15px;border:0;border-radius:9px;background:var(--amber);color:#2a1c00;font-weight:800;cursor:pointer;font-size:14px}
+.host-user{display:none;align-items:center;gap:10px}
+.host-user .av{width:30px;height:30px;border-radius:50%;background:var(--amber);color:#2a1c00;display:grid;place-items:center;font-weight:800;font-size:13px}
+.host-user .nm{font-size:14px;font-weight:600;color:#fff}
+.hero{max-width:980px;margin:0 auto;padding:48px 24px 10px}
+.hero h1{font-size:38px;line-height:1.1;margin:0 0 12px;letter-spacing:-1px}
+.hero p.sub{font-size:18px;color:var(--dim);margin:0 0 24px;max-width:60ch}
+.origin-note{max-width:980px;margin:0 auto;padding:6px 24px;color:#8a97a3;font-size:12px}
+.benefit{max-width:980px;margin:8px auto 0;padding:18px 20px;background:linear-gradient(90deg,#eafaf0,#fff);border:1px solid #c7e8d4;border-radius:16px;display:flex;align-items:center;gap:16px}
+.benefit .big{font-size:30px} .benefit h3{margin:0 0 2px;font-size:16px;color:var(--ola-d)} .benefit p{margin:0;color:#3a6b52;font-size:14px}
+.benefit .go{margin-left:auto;padding:10px 16px;border:0;border-radius:10px;background:var(--ola);color:#fff;font-weight:700;cursor:pointer;white-space:nowrap}
+.tiles{max-width:980px;margin:22px auto;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+.tile .ic{font-size:24px} .tile h3{margin:8px 0 3px;font-size:15px} .tile p{margin:0;color:var(--dim);font-size:13px}
+.host-note{max-width:980px;margin:22px auto 40px;padding:14px 18px;background:#eef5f1;border:1px solid #cfe6db;border-radius:12px;color:#2a5f4c;font-size:13px}
+.host-note b{color:var(--ola-d)}
+.overlay{position:fixed;inset:0;background:rgba(10,14,26,.55);backdrop-filter:blur(3px);display:none;place-items:center;z-index:20;padding:16px}
+.overlay.show{display:grid}
+.panel{width:min(420px,96vw);max-height:92vh;overflow:auto;background:#0f1220;color:#e8eaf2;border:1px solid #2a2f45;border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.5);font-size:15px}
+.panel .chrome{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid #222842;position:sticky;top:0;background:#0f1220;border-radius:18px 18px 0 0}
+.panel .mark{font-weight:800;color:#6ee7a0} .panel .pill{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:#7f8bb0;border:1px solid #2a2f45;border-radius:999px;padding:2px 8px}
+.panel .sp{flex:1}
+.icn{background:transparent;border:0;color:#9aa0b8;font-size:16px;cursor:pointer;padding:4px 6px}
+.body{padding:16px}
+.applaunch{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
+.app{background:#171a2b;border:1px solid #2a2f45;border-radius:14px;padding:18px;text-align:center;cursor:pointer}
+.app:hover{border-color:#2f9e63;background:#16241c} .app .ic{font-size:30px} .app .lbl{margin-top:8px;font-weight:600;font-size:14px} .app .sub{color:#7f8bb0;font-size:11px;margin-top:2px}
+.greet{color:#9aa0b8;font-size:13px;margin:0 0 14px} .greet b{color:#e8eaf2}
+.viewhdr{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+.viewhdr .bk{background:transparent;border:0;color:#6ee7a0;cursor:pointer;font-size:13px;padding:0}
+.viewhdr h2{font-size:15px;margin:0}
+.row{background:#171a2b;border:1px solid #2a2f45;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.row .t{font-weight:600} .row .m{color:#6ee7a0;font-size:12px;margin-top:2px}
+.chip{display:inline-block;background:#1d2b22;color:#8fe0b0;border-radius:999px;padding:1px 8px;font-size:11px;margin-left:6px}
+.btn{padding:8px 14px;border:0;border-radius:8px;background:#2f9e63;color:#fff;font-weight:600;cursor:pointer;font-size:13px}
+.btn.sec{background:#222842;color:#cfd6f0}
+.kv{background:#0b0e1a;border:1px solid #222842;border-radius:8px;padding:8px 10px;font-size:12px;color:#c7cbe0;margin-top:8px;white-space:pre-wrap;word-break:break-word}
+.ok{color:#6ee7a0} .muted{color:#7f8bb0;font-size:12px} .err{color:#ff8a8a;font-size:13px}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;margin:4px 0} .check .m{color:#6ee7a0} .check .x{color:#ff8a8a}
+.secured{border-top:1px solid #222842;padding:10px 16px;color:#6a7596;font-size:11px;display:flex;gap:8px;flex-wrap:wrap} .secured b{color:#8aecb6;font-weight:600}
+</style></head><body>
+<header class=host-top>
+  <div class=host-brand>🛺 Ola <b>Partner</b></div>
+  <nav class=host-nav><span>Home</span><span>Earnings</span><span>Trips</span><span>Help</span></nav>
+  <button id=aos-signin class=host-cta>अवसर&nbsp; Register into Avsar</button>
+  <div id=host-user class=host-user></div>
+</header>
+<main class=hero>
+  <h1>Drive with Ola. Build your livelihood.</h1>
+  <p class=sub>Earn on your schedule — and turn every trip into a verifiable work record you own.</p>
+</main>
+<p class=origin-note id=origin-note></p>
+<div class=benefit>
+  <div class=big>🪪</div>
+  <div><h3>Unlock government benefits — verify once with Avsar</h3>
+    <p>Your skill, work &amp; payment proofs sit in one portable wallet. Enrol in insurance &amp; find better jobs without leaving the app.</p></div>
+  <button class=go id=benefit-cta>Open Avsar</button>
+</div>
+<div class=tiles>
+  <div class=tile><div class=ic>💰</div><h3>Weekly earnings</h3><p>Paid out every Monday, tracked trip by trip.</p></div>
+  <div class=tile><div class=ic>📜</div><h3>Experience &amp; payment proofs</h3><p>Ola issues signed work &amp; payment certificates to your Avsar wallet.</p></div>
+  <div class=tile><div class=ic>🛡️</div><h3>Accident cover &amp; pension</h3><p>Enrol in worker schemes right here — eligibility proven from your wallet.</p></div>
+</div>
+<p class=host-note>This app is operated by <b>Ola</b>, a participant on the network, served from <b id=origin-host>its own origin</b>. Sign-in, benefits, and credentials are <b>powered by Avsar</b> — Ola never sees your password, and your work identity travels with you across every platform.</p>
+<div id=aos-overlay class=overlay><div id=aos-panel class=panel></div></div>
+<script>
+  // Backend (Avsar / app-host) — a DIFFERENT origin from this page. That's the whole point: real cross-origin.
+  var API = new URLSearchParams(location.search).get('api') || 'https://airos.airawat.org';
+  var s=document.createElement('script'); s.src=API+'/embed/sdk.js';
+  s.onload=function(){ boot(); };
+  s.onerror=function(){ document.getElementById('aos-panel').innerHTML='could not load the Avsar SDK from '+API; };
+  document.head.appendChild(s);
+  document.getElementById('origin-note').textContent='This page origin: '+location.origin+'  ·  Avsar backend: '+API+'  (cross-origin, CORS-gated)';
+  document.getElementById('origin-host').textContent=location.origin;
+  function boot(){
+  var aos=AirawatOS.init({clientId:'ola',redirectUri:location.origin+'/ola.html',scope:'profile service:invoke',authBase:API});
+  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  var overlay=document.getElementById('aos-overlay'), panel=document.getElementById('aos-panel');
+  var view={name:'home'}, svcCache=null;
+  function chrome(){return '<div class=chrome><span class=mark>अवसर Avsar</span><span class=pill>Your livelihood wallet</span><span class=sp></span><button class=icn id=aos-close title=Close>✕</button></div>';}
+  function render(inner){panel.innerHTML=chrome()+'<div class=body>'+inner+'</div><div class=secured>🔒 <b>Signed in with Avsar · cross-origin + CORS-gated · every credential issuer-signed</b></div>';
+    var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});}
+  function openOverlay(){overlay.classList.add('show');view={name:'home'};draw();}
+  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else drawHome();}
+  function drawHome(){
+    render('<p class=greet>Namaste · <b>'+esc((aos.citizen&&aos.citizen.name)||'')+'</b> — your Avsar passport</p>'+
+      '<div class=applaunch>'+
+       '<div class=app data-go=wallet><div class=ic>📜</div><div class=lbl>My Passport</div><div class=sub>All your credentials</div></div>'+
+       '<div class=app data-go=services><div class=ic>🛡️</div><div class=lbl>Benefits &amp; Jobs</div><div class=sub>Enrol / find work</div></div>'+
+       '<div class=app data-go=prove><div class=ic>🪪</div><div class=lbl>Prove</div><div class=sub>Share a credential</div></div>'+
+      '</div>');
+    Array.prototype.forEach.call(panel.querySelectorAll('.app'),function(a){a.addEventListener('click',function(){view={name:a.getAttribute('data-go')};draw();});});
+  }
+  function hdr(t){return '<div class=viewhdr><button class=bk id=bk>‹ Back</button><h2>'+esc(t)+'</h2></div>';}
+  function back(to){document.getElementById('bk').addEventListener('click',function(){view={name:to};draw();});}
+  async function drawWallet(){
+    render(hdr('My Passport')+'<div id=list>Loading…</div>'); back('home');
+    var creds; try{creds=await aos.wallet();}catch(e){document.getElementById('list').innerHTML='<span class=err>'+esc(e.message)+'</span>';return;}
+    var list=document.getElementById('list');
+    if(!creds||!creds.length){list.innerHTML='<p class=muted>Your passport is empty yet. Enrol in a benefit to start building it.</p>';return;}
+    list.innerHTML='<p class=muted>'+creds.length+' verifiable credential(s) — portable, each signed by its issuer</p>'+creds.map(function(c){
+      return '<div class=row><div class=t>'+esc(c.title||c.type)+'<span class=chip>'+esc(c.issuer||c.issuer_tenant||'')+'</span></div>'+
+        '<div class=kv>'+esc(JSON.stringify(c.claims||{},null,2))+'</div><div class=m style="margin-top:6px">🔏 '+esc(c.signature_key||c.type)+'</div></div>';}).join('');
+  }
+  async function drawServices(){
+    render(hdr('Benefits & Jobs')+'<p class=muted>Published across the network — discoverable right here</p><div id=list>Loading…</div>'); back('home');
+    var svcs; try{svcs=svcCache=await aos.discover();}catch(e){document.getElementById('list').innerHTML='<span class=err>'+esc(e.message)+'</span>';return;}
+    var list=document.getElementById('list');
+    list.innerHTML=(svcs||[]).map(function(x,i){return '<div class=row><div class=t>'+esc(x.title||x.service_id)+'<span class=chip>'+esc(x.provider)+'</span></div>'+
+      (x.description?'<div class=muted>'+esc(x.description)+'</div>':'')+'<div style="margin-top:8px"><button class=btn data-i="'+i+'">Enrol / Apply</button></div></div>';}).join('')||'<p class=muted>No services yet.</p>';
+    Array.prototype.forEach.call(list.querySelectorAll('.btn'),function(b){b.addEventListener('click',function(){doRequest(svcs[+b.getAttribute('data-i')]);});});
+  }
+  async function doRequest(x){
+    render(hdr(x.title||x.service_id)+'<p class=muted>Requesting… verifying your eligibility from your wallet</p>'); back('services');
+    var r; try{r=await aos.request(x.service_id,{full_name:(aos.citizen&&aos.citizen.name)||''});}
+    catch(e){render(hdr(x.title||x.service_id)+'<p class=err>'+esc(e.message)+'</p>');back('services');return;}
+    view={name:'result',data:{s:x,r:r}};draw();
+  }
+  function drawResult(d){
+    var r=d.r, cred=r.receipt&&r.receipt.credential;
+    render(hdr(d.s.title||d.s.service_id)+'<p class=ok>✓ Fulfilled by '+esc(r.receipt&&r.receipt.provider)+'</p>'+
+      (cred?'<div class=row><div class=t>📜 '+esc(cred.title||cred.type)+'</div><div class=m>Issued to your Avsar wallet · by '+esc(cred.issuer)+'</div></div>':'')+
+      '<div style="margin-top:12px"><button class=btn id=gw>Open passport</button></div>');
+    back('services'); document.getElementById('gw').addEventListener('click',function(){view={name:'wallet'};draw();});
+  }
+  function drawProve(){
+    render(hdr('Prove')+'<div class=row><p class=t>🪪 A lender wants proof you are a registered worker</p>'+
+      '<p class=muted>Your eShram Worker credential will be shared — you sign it, consent is recorded.</p>'+
+      '<div style="margin-top:10px"><button class=btn id=ap>Approve &amp; share</button> <button class="btn sec" id=dn>Not now</button></div></div>');
+    back('home'); document.getElementById('dn').addEventListener('click',function(){view={name:'home'};draw();});
+    document.getElementById('ap').addEventListener('click',doProve);
+  }
+  async function doProve(){
+    render(hdr('Prove')+'<p class=muted>Signing &amp; verifying…</p>'); back('home');
+    try{
+      var req=await aos.requestProof({type:'credential.eshram_worker',purpose:'loan eligibility',verifier:'acme-lender'});
+      var vp=await aos.present(req.request_id);
+      var res=await aos.verifyPresentation(vp);
+      view={name:'proofresult',data:{res:res}};draw();
+    }catch(e){ render(hdr('Prove')+'<p class=err>'+esc(e.message)+'</p>'); back('home'); }
+  }
+  function drawProofResult(d){
+    var r=d.res, c=r.checks||{};
+    function row(ok,label){return '<div class=check><span class="'+(ok?'m':'x')+'">'+(ok?'✓':'✕')+'</span> '+esc(label)+'</div>';}
+    render(hdr('Prove')+'<p class="'+(r.valid?'ok':'err')+'">'+(r.valid?'✓ Verified — proof accepted':'✕ Verification failed')+'</p>'+
+      row(c.holder_signature,'Your signature (holder)')+row(c.issuer_signature,'Issuer signature (eShram)')+
+      row(c.challenge_fresh,'Fresh & single-use')+row(c.holder_binding,'Holder binding')+
+      (r.valid?'<div class=kv>'+esc(JSON.stringify(r.claims||{},null,2))+'</div>':'')); back('home');
+  }
+  function renderHostUser(){
+    var hu=document.getElementById('host-user'), si=document.getElementById('aos-signin');
+    if(aos.citizen){ si.style.display='none'; hu.style.display='flex';
+      var nm=aos.citizen.name||''; hu.innerHTML='<div class=av>'+esc((nm.trim()[0]||'?').toUpperCase())+'</div><span class=nm>'+esc(nm)+'</span><button class=host-cta id=open-aos>Open Avsar</button>';
+      document.getElementById('open-aos').addEventListener('click',openOverlay);
+    } else { si.style.display='inline-flex'; hu.style.display='none'; }
+  }
+  document.getElementById('aos-signin').addEventListener('click',function(){aos.login();});
+  var bc=document.getElementById('benefit-cta'); if(bc)bc.addEventListener('click',function(){ aos.citizen?openOverlay():aos.login(); });
+  (async function(){ try{ await aos.handleCallback(); }catch(e){} renderHostUser(); if(aos.citizen) openOverlay(); })();
+  }
+</script>
+</body></html>
