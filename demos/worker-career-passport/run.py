@@ -76,6 +76,19 @@ for sid, props in CRED_SCHEMAS.items():
     post(NET + "/v1/schemas", {"schema_id": sid, "version": "0.1.0", "definition": defn, "sensitivity": "internal"})
     ok(f"governed {sid}")
 
+# ---------- 1b. Govern the `identity` domain + the UIDAI Aadhaar ENROLMENT record schema ----------
+# The prerequisite layer: UIDAI enrols a worker (identity.aadhaar) BEFORE any Avsar account; eKYC verifies it.
+section("1b. Govern identity domain + identity.aadhaar (UIDAI enrolment record)")
+try:
+    post(NET + "/v1/domains", {"domain": "identity", "label": "Identity & eKYC"}, tok=steward)
+    ok("governed domain 'identity'")
+except RuntimeError as e:
+    ok("domain 'identity' (already governed)" if "already" in str(e) or "422" in str(e) else "domain identity: " + str(e)[:60])
+post(NET + "/v1/schemas", {"schema_id": "identity.aadhaar", "version": "0.1.0", "sensitivity": "sensitive",
+     "definition": {"type": "object", "properties": {p: {"type": "string"} for p in
+                    ["uid", "name", "dob", "gender", "address", "mobile", "status"]}, "required": ["uid", "name"]}})
+ok("governed identity.aadhaar (UIDAI enrolment / CIDR record)")
+
 # ---------- 2. Create the 7 issuer tenants (each auto-gets a Vault steward signing key) ----------
 section("2. Register the issuer tenants (each gets a Vault signing key)")
 TENANTS = {

@@ -1,0 +1,66 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>UIDAI — Aadhaar Enrolment Kiosk</title>
+<!--
+  The PREREQUISITE surface: UIDAI Aadhaar enrolment (what every downstream step assumes already happened).
+  A worker with no Aadhaar enrols here; UIDAI issues an Aadhaar number + stores an identity.aadhaar record,
+  which eKYC later verifies against. Serve from the SAME origin as ola.html (so CORS to airos is allowed):
+      cd components/demos/worker-career-passport && python3 -m http.server 8777
+      open http://localhost:8777/uidai-enrol.html
+  DEMO: open kiosk + simulated biometrics. Real UIDAI enrolment is operator-assisted with biometric de-dup.
+  ?api=https://host overrides the backend.
+-->
+<style>
+:root{--uidai:#b8232f;--uidai-d:#8c1a24;--ink:#15202b;--dim:#5f7183;--line:#e4e9ef;--bg:#f5f7f8;--card:#fff}
+*{box-sizing:border-box} body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+.top{display:flex;align-items:center;gap:12px;padding:14px 24px;background:#fff;border-bottom:1px solid var(--line)}
+.top .seal{width:34px;height:34px;border-radius:50%;background:var(--uidai);color:#fff;display:grid;place-items:center;font-weight:800}
+.top b{font-size:17px} .top .sub{color:var(--dim);font-size:13px}
+.wrap{max-width:560px;margin:28px auto;padding:0 20px}
+h1{font-size:24px;margin:0 0 6px} p.lede{color:var(--dim);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+label{display:block;font-size:12px;color:var(--dim);margin:12px 0 4px}
+input,select{width:100%;box-sizing:border-box;padding:10px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.bio{margin:16px 0 4px;padding:12px;border:1px dashed #c9ced6;border-radius:10px;color:var(--dim);font-size:13px;display:flex;align-items:center;gap:10px}
+button{margin-top:18px;padding:12px 16px;border:0;border-radius:10px;background:var(--uidai);color:#fff;font-weight:700;cursor:pointer;width:100%}
+.note{color:#8a97a3;font-size:12px;margin-top:14px}
+.result{margin-top:16px;padding:16px;border-radius:12px;background:#eef7f0;border:1px solid #cfe6d7}
+.result .uid{font-family:ui-monospace,monospace;font-size:22px;letter-spacing:2px;color:var(--uidai-d);font-weight:700}
+.err{color:#b8232f;font-size:13px;margin-top:10px}
+</style></head><body>
+<header class=top><div class=seal>●</div><div><b>UIDAI</b> <span class=sub>Aadhaar Enrolment Kiosk</span></div></header>
+<div class=wrap>
+  <h1>Enrol for Aadhaar</h1>
+  <p class=lede>Enrolment is the one‑time prerequisite. Once enrolled, your Aadhaar can be eKYC‑verified by any app — including your Avsar livelihood account.</p>
+  <div class=card id=form>
+    <label>Full name</label><input id=name placeholder="Ravi Kumar">
+    <label>Date of birth</label><input id=dob type=date>
+    <label>Gender</label><select id=gender><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select>
+    <label>Address</label><input id=address placeholder="Ward 12, …">
+    <label>Mobile (for OTP)</label><input id=mobile inputmode=numeric placeholder="10-digit mobile">
+    <div class=bio>🫆 Biometric capture (fingerprint + iris) — <b>simulated for demo</b></div>
+    <button id=enrol>Enrol &amp; issue Aadhaar</button>
+    <div id=msg></div>
+    <p class=note>Demonstration only — no real UIDAI call. Real enrolment is operator‑assisted with biometric de‑duplication.</p>
+  </div>
+</div>
+<script>
+  var API = new URLSearchParams(location.search).get('api') || 'https://airos.airawat.org';
+  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  document.getElementById('enrol').addEventListener('click',async function(){
+    var msg=document.getElementById('msg');
+    var name=document.getElementById('name').value.trim();
+    if(!name){ msg.innerHTML='<p class=err>Name is required.</p>'; return; }
+    msg.innerHTML='<p class=note>Enrolling &amp; running de‑duplication (simulated)…</p>';
+    try{
+      var body={name:name, dob:document.getElementById('dob').value, gender:document.getElementById('gender').value,
+                address:document.getElementById('address').value, mobile:document.getElementById('mobile').value};
+      var r=await fetch(API+'/embed/uidai-enrol',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      var d=await r.json(); if(d.error) throw new Error(d.error);
+      var u=d.uid, pretty=u.replace(/(\d{4})(\d{4})(\d{4})/,'$1 $2 $3');
+      msg.innerHTML='<div class=result><div class=note>Enrolment complete — your Aadhaar number</div>'+
+        '<div class=uid>'+esc(pretty)+'</div>'+
+        '<p class=note style="margin-top:10px">Keep this number. Use it to verify (eKYC) when you create your Avsar account in any app.</p></div>';
+    }catch(e){ msg.innerHTML='<p class=err>'+esc(e.message)+'</p>'; }
+  });
+</script>
+</body></html>

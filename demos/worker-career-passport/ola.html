@@ -103,21 +103,24 @@
   async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: verified?'home':'ekyc'}; draw();}
   function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else drawHome();}
   function drawEkyc(){
-    // eKYC step: a NEW/unverified Avsar account must verify with UIDAI to get its foundational identity credential.
+    // eKYC step: a NEW/unverified Avsar account verifies against UIDAI's enrolment records to get its identity credential.
+    var ist='width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px';
     render(hdr('Verify your identity')+
       '<div class=row><p class=t>🪪 UIDAI eKYC <span class=chip>demo · simulated</span></p>'+
-      '<p class=muted>Your Avsar account is <b>not verified yet</b>. Verify once with Aadhaar eKYC to activate it — UIDAI issues a signed <b>Verified Identity</b> credential into your wallet, reusable across every app.</p>'+
-      '<div class=kv>Aadhaar: •••• •••• 1234  ·  OTP sent to •••••• (demo)</div>'+
-      '<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">Enter OTP</label>'+
-      '<input id=otp inputmode=numeric placeholder="any 6 digits (demo)" style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px">'+
+      '<p class=muted>Your Avsar account is <b>not verified yet</b>. Enter your <b>Aadhaar number</b> and verify with OTP — UIDAI checks its enrolment records and issues a signed <b>Verified Identity</b> into your wallet.</p>'+
+      '<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">Aadhaar number</label>'+
+      '<input id=aad inputmode=numeric placeholder="12-digit Aadhaar (from your enrolment)" style="'+ist+'">'+
+      '<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">OTP</label>'+
+      '<input id=otp inputmode=numeric placeholder="any 6 digits (demo)" style="'+ist+'">'+
       '<div style="margin-top:12px"><button class=btn id=ekg>Verify &amp; activate</button></div>'+
-      '<p class=muted style="margin-top:10px">Real deployment plugs a licensed Aadhaar KUA in here — the worker is present for a one-time step.</p></div>');
+      '<p class=muted style="margin-top:10px">No Aadhaar yet? <a href="/uidai-enrol.html" style="color:#8fe0b0">Enrol with UIDAI →</a> &middot; real deployment plugs a licensed Aadhaar KUA in here.</p></div>');
     back('home'); document.getElementById('ekg').addEventListener('click',doEkyc);
   }
   async function doEkyc(){
+    var aad=((document.getElementById('aad')||{}).value||'').trim();
     render(hdr('Verify your identity')+'<p class=muted>Verifying with UIDAI &amp; issuing your identity credential…</p>'); back('home');
     try{
-      var r=await fetch(API+'/embed/ekyc-issue',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+aos.token},body:JSON.stringify({aadhaar_last4:'1234'})});
+      var r=await fetch(API+'/embed/ekyc-issue',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+aos.token},body:JSON.stringify({aadhaar:aad})});
       var d=await r.json(); if(d.error) throw new Error(d.error);
       verified=true;
       render(hdr('Verify your identity')+'<p class=ok>✓ Identity verified — Avsar account activated</p>'+
