@@ -96,9 +96,13 @@
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   var overlay=document.getElementById('aos-overlay'), panel=document.getElementById('aos-panel');
   var view={name:'home'}, svcCache=null, verified=false;
-  function chrome(){return '<div class=chrome><span class=mark>अवसर Avsar</span><span class=pill>Your livelihood wallet</span><span class=sp></span><button class=icn id=aos-close title=Close>✕</button></div>';}
+  function chrome(){return '<div class=chrome><span class=mark>अवसर Avsar</span><span class=pill>Your livelihood wallet</span><span class=sp></span>'+
+    '<button class=icn id=aos-signout title="Sign out of Avsar" style="font-size:12px">Sign out</button>'+
+    '<button class=icn id=aos-close title=Close>✕</button></div>';}
+  function signOut(){ aos.logout(); verified=false; svcCache=null; overlay.classList.remove('show'); renderHostUser(); }
   function render(inner){panel.innerHTML=chrome()+'<div class=body>'+inner+'</div><div class=secured>🔒 <b>Signed in with Avsar · cross-origin + CORS-gated · every credential issuer-signed</b></div>';
-    var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});}
+    var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});
+    var so=document.getElementById('aos-signout'); if(so)so.addEventListener('click',signOut);}
   async function refreshVerified(){ try{ var c=await aos.wallet(); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;}); }catch(e){} }
   async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: verified?'home':'ekyc'}; draw();}
   function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else if(n=='onboard')drawOnboard(); else drawHome();}
@@ -227,8 +231,11 @@
   function renderHostUser(){
     var hu=document.getElementById('host-user'), si=document.getElementById('aos-signin');
     if(aos.citizen){ si.style.display='none'; hu.style.display='flex';
-      var nm=aos.citizen.name||''; hu.innerHTML='<div class=av>'+esc((nm.trim()[0]||'?').toUpperCase())+'</div><span class=nm>'+esc(nm)+'</span><button class=host-cta id=open-aos>Open Avsar</button>';
+      var nm=aos.citizen.name||''; hu.innerHTML='<div class=av>'+esc((nm.trim()[0]||'?').toUpperCase())+'</div><span class=nm>'+esc(nm)+'</span>'+
+        '<button class=host-cta id=open-aos>Open Avsar</button>'+
+        '<button class=host-cta id=signout-aos style="background:#2a2f45;color:#cfd6f0">Sign out</button>';
       document.getElementById('open-aos').addEventListener('click',openOverlay);
+      document.getElementById('signout-aos').addEventListener('click',signOut);
     } else { si.style.display='inline-flex'; hu.style.display='none'; }
   }
   document.getElementById('aos-signin').addEventListener('click',function(){aos.login();});
