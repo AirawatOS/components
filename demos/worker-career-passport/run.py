@@ -208,20 +208,25 @@ issue("ncs", "credential.job_placement", "Placed — Facility Electrician",
 
 # ---------- 6. Publish benefit/job SERVICE offerings (so an embedding app can DISCOVER them) ----------
 section("6. Publish services into the federation (discoverable from any embedding app)")
-def offer(tenant, sid, title, domain, issues, requires, ctitle, cclaims):
+def offer(tenant, sid, title, domain, issues, requires, ctitle, cclaims, cvalues=None):
+    # credential_values = the facts the PROVIDER asserts on the issued credential (not from the citizen's form),
+    # so an enrolment credential carries real content; `*_on` fields auto-fill with today at issue time.
     post(NET + "/v1/service-offerings",
          {"tenant": tenant, "service_id": sid, "domain": domain, "title": title,
           "interaction": ["search", "init", "route"], "audience": "civic.resident",
           "required_credentials": requires,
-          "fulfillment": {"issues_credential": issues, "credential_title": ctitle, "credential_claims": cclaims}},
+          "fulfillment": {"issues_credential": issues, "credential_title": ctitle, "credential_claims": cclaims,
+                          "credential_values": cvalues or {}}},
          tok=ADMINS[tenant])
     ok(f"{tenant:7s} published service '{title}'")
 offer("esic", "gig-accident-cover", "Gig Worker Accident Cover", "welfare",
       "credential.insurance_enrolled", ["credential.identity_verified", "credential.eshram_worker"],
-      "Accident Cover (ESIC)", ["scheme", "cover_inr", "enrolled_on", "policy_no"])
+      "Accident Cover (ESIC)", ["scheme", "cover_inr", "enrolled_on", "policy_no"],
+      {"scheme": "PMSBY-gig", "cover_inr": "200000", "policy_no": "ESIC-GIG-55123"})
 offer("ncs", "better-job-match", "Better Job Match", "employment",
       "credential.job_placement", ["credential.skill_certificate", "credential.work_experience"],
-      "Job Placement", ["employer", "role", "wage_band", "placed_on", "channel"])
+      "Job Placement", ["employer", "role", "wage_band", "placed_on", "channel"],
+      {"employer": "Acme Facilities Pvt Ltd", "role": "Facility Electrician", "wage_band": "18-22k", "channel": "NCS match"})
 
 # ---------- 7. The passport: everything the worker now holds, from one sub ----------
 section("7. The AVSAR career passport (one wallet, keyed to the sub)")
