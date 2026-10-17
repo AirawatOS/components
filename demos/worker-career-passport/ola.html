@@ -92,7 +92,7 @@
   document.getElementById('origin-note').textContent='This page origin: '+location.origin+'  ·  Avsar backend: '+API+'  (cross-origin, CORS-gated)';
   document.getElementById('origin-host').textContent=location.origin;
   function boot(){
-  var aos=AirawatOS.init({clientId:'ola',redirectUri:location.origin+'/ola.html',scope:'profile service:invoke',authBase:API});
+  var aos=AirawatOS.init({clientId:'ola',redirectUri:location.origin+location.pathname,scope:'profile service:invoke',authBase:API});
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   var overlay=document.getElementById('aos-overlay'), panel=document.getElementById('aos-panel');
   var view={name:'home'}, svcCache=null, verified=false;
@@ -137,7 +137,7 @@
       '<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">OTP</label>'+
       '<input id=otp inputmode=numeric placeholder="any 6 digits (demo)" style="'+ist+'">'+
       '<div style="margin-top:12px"><button class=btn id=ekg>Verify &amp; activate</button></div>'+
-      '<p class=muted style="margin-top:10px">No Aadhaar yet? <a href="/uidai-enrol.html" style="color:#8fe0b0">Enrol with UIDAI →</a> &middot; real deployment plugs a licensed Aadhaar KUA in here.</p></div>');
+      '<p class=muted style="margin-top:10px">No Aadhaar yet? <a href="uidai-enrol.html" style="color:#8fe0b0">Enrol with UIDAI →</a> &middot; real deployment plugs a licensed Aadhaar KUA in here.</p></div>');
     back('home'); document.getElementById('ekg').addEventListener('click',doEkyc);
   }
   async function doEkyc(){

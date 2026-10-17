@@ -60,7 +60,18 @@ signing key, genuinely signed credentials, real signature + holder verification,
 embedding. **Stood in for:** Aadhaar enrolment + the eKYC OTP are simulated (production plugs a licensed
 AUA/KUA into the IdP slot + real biometric capture; enrolment/issuer‑admin endpoints would be operator‑gated).
 
-## Run the demo
+## Try it (public, hosted on EC2)
+
+Anyone can try the worker journey here — app‑host serves the pages at `/demo/` on the live network:
+
+- **https://airos.airawat.org/demo/** — landing (links both pages)
+- **https://airos.airawat.org/demo/uidai-enrol.html** — UIDAI Aadhaar enrolment (get an Aadhaar number)
+- **https://airos.airawat.org/demo/ola.html** — Ola Partner → Register into Avsar → eKYC → Drive with Ola → Benefits
+
+> The public `/demo/` pages are **same‑origin** with the backend (so CORS isn't exercised there); the
+> `localhost:8777` version below is the genuinely **cross‑origin** variant that proves the CORS path.
+
+## Run the demo (local, cross-origin variant)
 
 ```bash
 # backend chain (idempotent): governs schemas, creates issuer tenants, issues the full passport to one worker

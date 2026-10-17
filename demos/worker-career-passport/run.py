@@ -130,7 +130,8 @@ for tid in TENANTS:
 # tenant) with the steward token.
 section("3b. Register the Ola embedding app (governed platform.app_client)")
 KERNEL = os.environ.get("KERNEL_URL", "http://kernel:8080")
-OLA_REDIRECTS = ["http://localhost:8777/ola.html", "http://127.0.0.1:8777/ola.html"]
+OLA_REDIRECTS = ["http://localhost:8777/ola.html", "http://127.0.0.1:8777/ola.html",
+                 "https://airos.airawat.org/demo/ola.html"]   # public EC2-hosted demo (served by app-host at /demo/)
 _ola_rec = {"schema": "platform.app_client", "id": "ds:airawat:app_client/ola", "client_id": "ola",
             "name": "Ola Partner", "participant": "ola", "redirect_uris": OLA_REDIRECTS,
             "scopes": ["profile", "service:invoke"], "status": "active", "brand": "Avsar",  # hosted page: "Sign in with Avsar"

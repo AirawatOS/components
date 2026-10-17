@@ -1,0 +1,49 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Avsar — Worker Passport Demo</title>
+<style>
+:root{--bg:#f7f4ee;--card:#fff;--ink:#1b2430;--dim:#5d6b7a;--line:#e8e2d6;--amber:#d9791a;--ola:#0b6b3a;--uidai:#b23140}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#171b24;--ink:#e9ecf2;--dim:#9aa6b4;--line:#272d3a;--amber:#f0932f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:grid;place-items:center;min-height:100vh}
+.wrap{width:min(680px,92vw);padding:40px 22px}
+.k{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:700;margin:0 0 10px}
+h1{font-size:30px;line-height:1.12;margin:0 0 10px;letter-spacing:-.02em}
+p.l{color:var(--dim);margin:0 0 26px;font-size:17px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:560px){.cards{grid-template-columns:1fr}}
+a.card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;transition:.15s}
+a.card:hover{border-color:var(--amber);transform:translateY(-1px)}
+a.card .ic{font-size:26px}
+a.card h2{font-size:17px;margin:8px 0 4px}
+a.card p{margin:0;color:var(--dim);font-size:14px}
+.badge{display:inline-block;font-size:11px;border-radius:999px;padding:2px 9px;margin-top:10px;background:var(--line);color:var(--dim)}
+.steps{margin:26px 0 0;padding:16px 18px;background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--dim);font-size:14px}
+.steps b{color:var(--ink)} ol{margin:8px 0 0;padding-left:20px} li{margin:3px 0}
+.foot{color:#8a95a2;font-size:12.5px;margin-top:22px}
+</style></head><body>
+<div class=wrap>
+  <p class=k>अवसर · Avsar — worker livelihood passport</p>
+  <h1>Try the worker passport demo</h1>
+  <p class=l>A gig worker goes from an Aadhaar number to a verified identity, a job, insurance and benefits — carrying one portable wallet, no database merged.</p>
+  <div class=cards>
+    <a class=card href="uidai-enrol.html">
+      <div class=ic>🪪</div><h2>1 · UIDAI Enrolment</h2>
+      <p>No Aadhaar yet? Enrol here first and get an Aadhaar number.</p>
+      <span class=badge>start here if new</span>
+    </a>
+    <a class=card href="ola.html">
+      <div class=ic>🛺</div><h2>2 · Ola Partner (Avsar)</h2>
+      <p>Register into Avsar, eKYC with your Aadhaar, onboard as a driver, enrol in benefits.</p>
+      <span class=badge>the main demo</span>
+    </a>
+  </div>
+  <div class=steps>
+    <b>Suggested flow</b>
+    <ol>
+      <li>Open <b>UIDAI Enrolment</b> → enrol → copy your 12‑digit Aadhaar number.</li>
+      <li>Open <b>Ola Partner</b> → <b>Register into Avsar</b> → <b>eKYC</b> with that Aadhaar number.</li>
+      <li>Try <b>Drive with Ola</b> (document verification) and <b>Benefits &amp; Jobs</b> (enrol in accident cover).</li>
+    </ol>
+  </div>
+  <p class=foot>Reference demo on AirawatOS · ADR‑0112 participant‑embed + ADR‑0049 verifiable credentials. eKYC &amp; biometrics are simulated.</p>
+</div>
+</body></html>
