@@ -68,6 +68,9 @@ CRED_SCHEMAS = {
     "credential.proof_of_payment":  ["employer", "amount_inr", "period", "mode"],
     "credential.insurance_enrolled":["scheme", "cover_inr", "enrolled_on", "policy_no"],
     "credential.job_placement":     ["employer", "role", "wage_band", "placed_on", "channel"],
+    # onboarding-verification credentials (what a gig platform VERIFIES to hire a driver)
+    "credential.driving_license":   ["dl_no", "holder_name", "vehicle_class", "valid_till", "issued_on", "issuing_rto"],
+    "credential.police_verification":["holder_name", "status", "verified_on", "reference_no", "jurisdiction"],
 }
 for sid, props in CRED_SCHEMAS.items():
     defn = {"type": "object",
@@ -99,6 +102,8 @@ TENANTS = {
     "swiggy": "Swiggy (gig platform / employer)",
     "esic":   "Employees' State Insurance (worker cover)",
     "ncs":    "National Career Service",
+    "parivahan": "Parivahan / RTO (driving licences)",   # onboarding-verification issuers
+    "police":    "State Police (background verification)",
 }
 for tid, name in TENANTS.items():
     r = post(NET + "/v1/tenants", {"tenant_id": tid, "name": name, "environment": "production",
@@ -179,7 +184,15 @@ skill = issue("iti", "credential.skill_certificate", "Electrician — NSQF Level
 issue("labour", "credential.eshram_worker", "eShram Worker (UAN)",
       {"uan": "UAN-33-0099-7788", "occupation": "Electrician", "category": "gig", "registered_on": TODAY})
 
-print("\n-- GET A JOB + GET PAID (Ola hires; gig work becomes verifiable history) --")
+print("\n-- ONBOARDING DOCUMENTS (what a gig platform VERIFIES to hire a driver) --")
+issue("parivahan", "credential.driving_license", "Driving Licence (LMV)",
+      {"dl_no": "DL-33-20210012345", "holder_name": "Ravi Kumar", "vehicle_class": "LMV",
+       "valid_till": "2031-06-30", "issued_on": "2021-06-30", "issuing_rto": "RTO Kanpur"})
+issue("police", "credential.police_verification", "Police Verification — Clear",
+      {"holder_name": "Ravi Kumar", "status": "clear", "verified_on": TODAY,
+       "reference_no": "PV-UP-2026-88123", "jurisdiction": "Uttar Pradesh"})
+
+print("\n-- GET A JOB + GET PAID (Ola verifies the above, hires; gig work becomes verifiable history) --")
 exp90 = issue("ola", "credential.work_experience", "Work Experience (90-day) — Ola",
               {"employer": "Ola", "role": "Delivery/Install Partner", "from": "2026-07-01", "to": "2026-09-29",
                "days": 90, "kind": "ninety_day"})

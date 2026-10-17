@@ -101,7 +101,27 @@
     var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});}
   async function refreshVerified(){ try{ var c=await aos.wallet(); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;}); }catch(e){} }
   async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: verified?'home':'ekyc'}; draw();}
-  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else drawHome();}
+  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else if(n=='onboard')drawOnboard(); else drawHome();}
+  // PLATFORM-AS-VERIFIER: Ola onboards a driver by VERIFYING 3 credentials from the wallet (identity + licence +
+  // police) — the real incentive for a gig platform to adopt this (cheap, fraud-free onboarding; reuse across apps).
+  var ONBOARD=[['credential.identity_verified','Identity (UIDAI eKYC)'],['credential.driving_license','Driving licence (RTO)'],['credential.police_verification','Police verification']];
+  function drawOnboard(){ doOnboard(); }
+  async function doOnboard(){
+    render(hdr('Drive with Ola')+'<p class=muted>Ola is verifying your documents from your Avsar wallet…</p><div id=ob></div>'); back('home');
+    var ob=document.getElementById('ob'), rows='', allok=true;
+    for(var i=0;i<ONBOARD.length;i++){ var t=ONBOARD[i][0], lbl=ONBOARD[i][1], ok=false;
+      try{ var req=await aos.requestProof({type:t,purpose:'driver onboarding',verifier:'ola'});
+           var vp=await aos.present(req.request_id); var res=await aos.verifyPresentation(vp); ok=!!res.valid;
+           rows+='<div class=check><span class="'+(ok?'m':'x')+'">'+(ok?'✓':'✕')+'</span> '+esc(lbl)+(ok?' — verified':' — invalid')+'</div>'; }
+      catch(e){ rows+='<div class=check><span class=x>✕</span> '+esc(lbl)+' — not in your wallet</div>'; }
+      allok=allok&&ok; if(ob)ob.innerHTML=rows;
+    }
+    render(hdr('Drive with Ola')+
+      '<p class="'+(allok?'ok':'err')+'">'+(allok?'✓ Onboarded as an Ola driver — all documents verified':'Onboarding incomplete — a document is missing or invalid')+'</p>'+rows+
+      (allok?'<p class=muted style="margin-top:12px">Signatures checked: UIDAI (identity), RTO (licence), Police (verification) — no manual document chase. <b>Swiggy would accept the same proofs from your wallet — no re-verification.</b></p>'
+            :'<p class=muted style="margin-top:12px">Obtain the missing credential from the issuing authority (RTO / Police) into your wallet, then onboard.</p>'));
+    back('home');
+  }
   function drawEkyc(){
     // eKYC step: a NEW/unverified Avsar account verifies against UIDAI's enrolment records to get its identity credential.
     var ist='width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px';
@@ -138,6 +158,7 @@
         '<div style="margin-top:8px"><button class=btn id=goekyc>Verify now</button></div></div>';
     render(banner+
       '<div class=applaunch>'+
+       '<div class=app data-go=onboard><div class=ic>🛺</div><div class=lbl>Drive with Ola</div><div class=sub>Onboard as a driver</div></div>'+
        '<div class=app data-go=wallet><div class=ic>📜</div><div class=lbl>My Passport</div><div class=sub>All your credentials</div></div>'+
        '<div class=app data-go=services><div class=ic>🛡️</div><div class=lbl>Benefits &amp; Jobs</div><div class=sub>Enrol / find work</div></div>'+
        '<div class=app data-go=prove><div class=ic>🪪</div><div class=lbl>Prove</div><div class=sub>Share a credential</div></div>'+
