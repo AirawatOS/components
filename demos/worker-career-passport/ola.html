@@ -95,19 +95,51 @@
   var aos=AirawatOS.init({clientId:'ola',redirectUri:location.origin+'/ola.html',scope:'profile service:invoke',authBase:API});
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   var overlay=document.getElementById('aos-overlay'), panel=document.getElementById('aos-panel');
-  var view={name:'home'}, svcCache=null;
+  var view={name:'home'}, svcCache=null, verified=false;
   function chrome(){return '<div class=chrome><span class=mark>अवसर Avsar</span><span class=pill>Your livelihood wallet</span><span class=sp></span><button class=icn id=aos-close title=Close>✕</button></div>';}
   function render(inner){panel.innerHTML=chrome()+'<div class=body>'+inner+'</div><div class=secured>🔒 <b>Signed in with Avsar · cross-origin + CORS-gated · every credential issuer-signed</b></div>';
     var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});}
-  function openOverlay(){overlay.classList.add('show');view={name:'home'};draw();}
-  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else drawHome();}
+  async function refreshVerified(){ try{ var c=await aos.wallet(); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;}); }catch(e){} }
+  async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: verified?'home':'ekyc'}; draw();}
+  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else drawHome();}
+  function drawEkyc(){
+    // eKYC step: a NEW/unverified Avsar account must verify with UIDAI to get its foundational identity credential.
+    render(hdr('Verify your identity')+
+      '<div class=row><p class=t>🪪 UIDAI eKYC <span class=chip>demo · simulated</span></p>'+
+      '<p class=muted>Your Avsar account is <b>not verified yet</b>. Verify once with Aadhaar eKYC to activate it — UIDAI issues a signed <b>Verified Identity</b> credential into your wallet, reusable across every app.</p>'+
+      '<div class=kv>Aadhaar: •••• •••• 1234  ·  OTP sent to •••••• (demo)</div>'+
+      '<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">Enter OTP</label>'+
+      '<input id=otp inputmode=numeric placeholder="any 6 digits (demo)" style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px">'+
+      '<div style="margin-top:12px"><button class=btn id=ekg>Verify &amp; activate</button></div>'+
+      '<p class=muted style="margin-top:10px">Real deployment plugs a licensed Aadhaar KUA in here — the worker is present for a one-time step.</p></div>');
+    back('home'); document.getElementById('ekg').addEventListener('click',doEkyc);
+  }
+  async function doEkyc(){
+    render(hdr('Verify your identity')+'<p class=muted>Verifying with UIDAI &amp; issuing your identity credential…</p>'); back('home');
+    try{
+      var r=await fetch(API+'/embed/ekyc-issue',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+aos.token},body:JSON.stringify({aadhaar_last4:'1234'})});
+      var d=await r.json(); if(d.error) throw new Error(d.error);
+      verified=true;
+      render(hdr('Verify your identity')+'<p class=ok>✓ Identity verified — Avsar account activated</p>'+
+        '<div class=row><div class=t>📜 '+esc((d.credential&&(d.credential.title||d.credential.type))||'Verified Identity')+'</div>'+
+        '<div class=m>Issued by UIDAI into your Avsar wallet</div></div>'+
+        '<div style="margin-top:12px"><button class=btn id=gw>Open passport</button></div>');
+      back('home'); document.getElementById('gw').addEventListener('click',function(){view={name:'wallet'};draw();});
+    }catch(e){ render(hdr('Verify your identity')+'<p class=err>'+esc(e.message)+'</p>'+'<div style="margin-top:12px"><button class=btn id=rt>Try again</button></div>'); back('home'); document.getElementById('rt').addEventListener('click',drawEkyc); }
+  }
   function drawHome(){
-    render('<p class=greet>Namaste · <b>'+esc((aos.citizen&&aos.citizen.name)||'')+'</b> — your Avsar passport</p>'+
+    var banner = verified
+      ? '<p class=greet>Namaste · <b>'+esc((aos.citizen&&aos.citizen.name)||'')+'</b> · <span class=ok>Verified ✓</span></p>'
+      : '<div class=row style="border-color:#6b5a1f;background:#241f10"><div class=t>⚠ Verify your identity</div>'+
+        '<div class=muted>Activate your Avsar account with UIDAI eKYC to unlock benefits.</div>'+
+        '<div style="margin-top:8px"><button class=btn id=goekyc>Verify now</button></div></div>';
+    render(banner+
       '<div class=applaunch>'+
        '<div class=app data-go=wallet><div class=ic>📜</div><div class=lbl>My Passport</div><div class=sub>All your credentials</div></div>'+
        '<div class=app data-go=services><div class=ic>🛡️</div><div class=lbl>Benefits &amp; Jobs</div><div class=sub>Enrol / find work</div></div>'+
        '<div class=app data-go=prove><div class=ic>🪪</div><div class=lbl>Prove</div><div class=sub>Share a credential</div></div>'+
       '</div>');
+    var ge=document.getElementById('goekyc'); if(ge)ge.addEventListener('click',function(){view={name:'ekyc'};draw();});
     Array.prototype.forEach.call(panel.querySelectorAll('.app'),function(a){a.addEventListener('click',function(){view={name:a.getAttribute('data-go')};draw();});});
   }
   function hdr(t){return '<div class=viewhdr><button class=bk id=bk>‹ Back</button><h2>'+esc(t)+'</h2></div>';}
@@ -116,7 +148,9 @@
     render(hdr('My Passport')+'<div id=list>Loading…</div>'); back('home');
     var creds; try{creds=await aos.wallet();}catch(e){document.getElementById('list').innerHTML='<span class=err>'+esc(e.message)+'</span>';return;}
     var list=document.getElementById('list');
-    if(!creds||!creds.length){list.innerHTML='<p class=muted>Your passport is empty yet. Enrol in a benefit to start building it.</p>';return;}
+    if(!creds||!creds.length){list.innerHTML='<p class=muted>Your passport is empty. Verify your identity to activate your Avsar account — that issues your first credential.</p>'+
+      '<div style="margin-top:10px"><button class=btn id=gv>Verify with UIDAI eKYC</button></div>';
+      var gv=document.getElementById('gv'); if(gv)gv.addEventListener('click',function(){view={name:'ekyc'};draw();}); return;}
     list.innerHTML='<p class=muted>'+creds.length+' verifiable credential(s) — portable, each signed by its issuer</p>'+creds.map(function(c){
       return '<div class=row><div class=t>'+esc(c.title||c.type)+'<span class=chip>'+esc(c.issuer||c.issuer_tenant||'')+'</span></div>'+
         '<div class=kv>'+esc(JSON.stringify(c.claims||{},null,2))+'</div><div class=m style="margin-top:6px">🔏 '+esc(c.signature_key||c.type)+'</div></div>';}).join('');
