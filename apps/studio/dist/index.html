@@ -148,6 +148,8 @@ const roleLabel=r=>((STUDIO_ROLES.find(x=>x[0]===r)||[])[1]||r);
 const bareSub=s=>String(s||'').split('/').pop();
 const isOwner=p=>!!p&&(p.owner===SUB||bareSub(p.owner)===bareSub(SUB));
 const isAdmin=()=>ROLES.some(r=>['admin','platform.tenant-admin','platform.steward'].includes(r));
+// ADR-0113: a "lead" (admin or product/project manager) may CREATE a project + SUBMIT for publish. Developers build.
+const isLead=()=>isAdmin()||ROLES.some(r=>['studio.product-manager','studio.project-manager'].includes(r));
 
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;if(s&&s.sub)SUB=s.sub;if(s&&Array.isArray(s.roles))ROLES=s.roles;}catch(e){}  // build in the DEVELOPER's own tenant
@@ -162,16 +164,16 @@ async function boot(){
   // traditional menu bar — each label opens a (viewport-clamped) dropdown; items computed at click so they
   // reflect whether a project is open. Everything lives under Project / Contracts / View / Help.
   const at=(id,itemsFn)=>{const el=$(id); if(!el)return; el.onclick=()=>{const r=el.getBoundingClientRect();menu(r.left,r.bottom+4,itemsFn());};};
-  at('mProject',()=>{const has=!!SEL;return [
-    ['＋ New Project…',newProject],
+  at('mProject',()=>{const has=!!SEL, lead=isLead();return [
+    ['＋ New Project…',lead?newProject:null],
     ['📂 Open Project…',openProjectPicker],
     ['---'],
     ['✎ Rename Project…',has?renameProject:null],
     ['👥 Team & roles…',has?openTeam:null],
     ['🗑 Archive / Delete Project…',has?deleteProject:null],
     ['---'],
-    ['⬆ Publish as Solution',has?composeSolution:null],
-    ['🌐 Publish as Service',has?publishAsService:null],
+    ['⬆ Publish as Solution',(has&&lead)?composeSolution:null],
+    ['🌐 Publish as Service',(has&&lead)?publishAsService:null],
   ];});
   at('mContracts',()=>[['✍️ Author a spec (AI)',authorSpec],['📐 Browse specs',specsBrowser],['＋ Request a schema',requestSchema],['📥 My requests',myRequests]]);
   at('mView',()=>[['🗺 Architecture',toggleArch],['☰ Toggle explorer',()=>$('left').classList.toggle('collapsed')]]);
