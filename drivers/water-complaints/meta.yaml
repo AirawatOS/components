@@ -1,0 +1,24 @@
+# water-complaints (kind=driver) — load ANY water board's GRIEVANCE/COMPLAINTS export into the canonical
+# `water.complaint` schema. Source-agnostic: column mapping is auto-detected (env-overridable), the board's complaint
+# vocabulary is crosswalked onto the SHARED canonical taxonomy via TAXONOMY_MAP (keyword classifier as fallback,
+# original label always kept in raw_category), and the board's own admin hierarchy is declared by ADMIN_COLUMNS.
+# Analytics ingest — maps ONLY non-personal fields; DROPS all citizen PII. No coordinates produced (geocoding is a
+# separate name-join step). Confined — only I/O is the broker (CSV blob via ctx.file.get, writes via ctx.write).
+component_id: ds:airawatdeveloper:driver/water-complaints
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Water Complaints Ingest
+entrypoint: run.py
+confinement_min: L1
+reads: [water.complaint]
+writes: [water.complaint]
+files: [get]                     # reads the complaints CSV blob from the filestore (ctx.file.get)
+# config: which file, per-run cap, source label, the taxonomy crosswalk + admin hierarchy, and OPTIONAL column
+# overrides (auto-detected from the header otherwise).
+config: [COMPLAINTS_FILE_ID, MAX, SOURCE, TAXONOMY_MAP, ADMIN_COLUMNS,
+         ID_FIELD, CHANNEL_FIELD, CATEGORY_FIELD, SUBCATEGORY_FIELD, PRIORITY_FIELD, STATUS_FIELD,
+         REGISTERED_FIELD, REGISTERED_TIME_FIELD, CLOSED_FIELD, REOPENS_FIELD]
+scopes:
+  - { verb: read,  scope: water.complaint }
+  - { verb: write, scope: water.complaint }

@@ -1,0 +1,38 @@
+{
+  "_comment": "DJB (Delhi Jal Board) INSTANCE config for the Water Intelligence solution. This is CONFIG, not code — the",
+  "_comment2": "generic water-complaints driver ingests any board's feed; a board supplies a file like this one. The",
+  "_comment3": "crosswalk maps DJB's own 'Complaint Type' labels onto the shared canonical taxonomy. admin_columns declares",
+  "_comment4": "DJB's hierarchy. Column names are auto-detected from the DJB export header, so no *_FIELD overrides are needed.",
+  "board": "djb",
+  "source": "djb-1916-grievance",
+  "admin_columns": {
+    "colony": "Colony",
+    "ward": "Ward",
+    "ac": "A.C. Name",
+    "zone": "Zone"
+  },
+  "taxonomy_map": {
+    "sewer blockage / overflow/leakage": "sewer_overflow",
+    "sewer garbage": "sewer_overflow",
+    "water logging": "sewer_overflow",
+    "unauthorized sewer connection": "other",
+    "dirty water (contamination)": "contamination",
+    "no water": "no_water",
+    "short supply of water": "no_water",
+    "low pressure water": "low_pressure",
+    "low pressure of water": "low_pressure",
+    "water tanker required": "tanker_request",
+    "water tankers- missed trip": "tanker_request",
+    "leakages of water pipe line": "pipeline_leakage",
+    "repairing  manholes cover": "manhole",
+    "repairing manholes cover": "manhole",
+    "missing of manholes cover": "manhole",
+    "pits on road - sewer": "road_restoration",
+    "pits on road - jal board": "road_restoration",
+    "pits on road sewer / road construction sewer": "road_restoration",
+    "pits on road/road construction": "road_restoration",
+    "unauthorized water connection": "other",
+    "wastage of water": "other",
+    "call from je / officers": "other"
+  }
+}
