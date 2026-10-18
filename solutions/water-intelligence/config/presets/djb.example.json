@@ -1,5 +1,5 @@
 {
-  "_comment": "DJB (Delhi Jal Board) INSTANCE config for the Water Intelligence solution. This is CONFIG, not code — the",
+  "_comment": "EXAMPLE preset — Delhi Jal Board's config for Water Intelligence. NOT read by the driver or at install; it is a",
   "_comment2": "generic water-complaints driver ingests any board's feed; a board supplies a file like this one. The",
   "_comment3": "crosswalk maps DJB's own 'Complaint Type' labels onto the shared canonical taxonomy. admin_columns declares",
   "_comment4": "DJB's hierarchy. Column names are auto-detected from the DJB export header, so no *_FIELD overrides are needed.",
