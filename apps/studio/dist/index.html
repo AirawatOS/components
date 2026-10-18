@@ -243,8 +243,8 @@ function tree(){
     const mem=byLayer[ly]||[]; const open=(OPENK['ly:'+ly]===undefined)?(ly!=='platform'):(OPENK['ly:'+ly]!==false);   // open by default; Advanced collapsed
     html+=`<div class="node lyr" data-lfolder="${ly}" style="padding-left:6px" title="right-click to add to this group"><span class="tw">${open?'▾':'▸'}</span>${LAYER_ICON[ly]||''} <b>${esc(LAYER_NAME[ly])}</b> <span class="sub">· ${esc(LAYER_HINT[ly])} (${mem.length})</span></div>`;
     if(open){ if(!mem.length) html+=`<div class="sub" style="padding:2px 0 2px 26px">— empty —</div>`;
-      mem.forEach((m)=>{const key='c:'+m.ref; const co=OPENK[key]; const spec=(m.kind==='schema'||m.kind==='interface');
-        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${esc(nameOf(m))} · ${esc(m.ref)}${spec?' — view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${spec?'📐':'📦'}</span><span class="nm" title="${esc(nameOf(m))}">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
+      mem.forEach((m)=>{const key='c:'+m.ref; const co=OPENK[key]; const spec=(m.kind==='schema'||m.kind==='interface'||m.kind==='role');
+        html+=`<div class="node" data-comp="${esc(m.ref)}" style="padding-left:22px" title="${esc(nameOf(m))} · ${esc(m.ref)}${spec?' — view this spec’s contract':''}"><span class="tw">${spec?'':(co?'▾':'▸')}</span><span class="ig">${m.kind==='role'?'🎭':m.kind==='interface'?'⚡':spec?'📐':'📦'}</span><span class="nm" title="${esc(nameOf(m))}">${esc(nameOf(m))}</span><span class="k">${esc(m.kind)}</span>${m.origin==='existing'?'<span class="k" title="reused platform component — configure it">reuse</span>':''}${m.configured?' <span title="installed & configured">⚙</span>':''}<span class="st st-${m.status||'draft'}" title="${m.status||'draft'}"></span></div>`;
         if(co&&!spec){ const fs=FILES[m.ref];
           if(!fs) html+=`<div class="sub" style="padding-left:44px">loading…</div>`;
           else if(!Object.keys(fs).length) html+=`<div class="sub" style="padding:2px 0 2px 44px">— source not available (component may have been renamed or not yet built) —</div>`;
@@ -255,7 +255,7 @@ function tree(){
   L.innerHTML=html;
   L.querySelectorAll('[data-lfolder]').forEach(el=>{el.onclick=()=>{const k='ly:'+el.dataset.lfolder;OPENK[k]=(OPENK[k]===false)?true:false;tree();};
     el.oncontextmenu=e=>{e.preventDefault();ctxLayer(el.dataset.lfolder,e);};});
-  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&(m.kind==='schema'||m.kind==='interface')){openSpec(m);return;}OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
+  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&m.kind==='role'){roleView(m);return;}if(m&&(m.kind==='schema'||m.kind==='interface')){openSpec(m);return;}OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
     el.oncontextmenu=e=>{e.preventDefault();ctxComp(el.dataset.comp,e);};});
   L.querySelectorAll('[data-file]').forEach(el=>{el.onclick=()=>{const [ref,fp]=el.dataset.file.split('::');openFile(ref,fp);};});
 }
@@ -316,6 +316,14 @@ async function openFile(ref,path){
 }
 // Click a spec (noun/verb) in the tree → show its GOVERNED CONTRACT read-only in the main pane. A spec isn't
 // edited here (it's a network-signed contract); to change it, file a schema change-request ("Request schema").
+function roleView(m){
+  const id=m.ref, lab=(m.title&&m.title!==id)?m.title:'';
+  const mm=modal(`<h3>🎭 ${esc(id)}</h3>
+    <div class="sub">a ROLE (actor, ADR-0028)${lab?' · '+esc(lab):''} — a governed actor this solution routes work to.</div>
+    <div class="sub" style="margin-top:8px">This is a reference to a governed role. Who <b>holds</b> it is assigned per tenant in <b>Admin → Roles</b>; the solution just declares it uses the role. Right-click it in the tree to remove it from the project.</div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Close</button></div>`);
+  mm.q('#x').onclick=mm.close;
+}
 async function openSpec(m){
   VIEW='spec'; ACTIVE=null; renderTabs();
   const isIf=(m.kind==='interface');
@@ -793,12 +801,12 @@ async function specsBrowser(){
   <h3 style="margin:0 0 2px">📐 Network Specifications</h3>
   <div class="sub" style="flex:0 0 auto">The governed vocabulary every component speaks — <b>NOUNS</b> (data schemas) and <b>VERBS</b> (interfaces). Search a name, or a <b>field</b> like “threshold” to find every spec that carries it.</div>
   <div style="display:flex;gap:8px;margin:8px 0;align-items:center;flex:0 0 auto">
-    <input id="specq" placeholder="Search nouns, verbs, or a field (e.g. threshold)…" autocomplete="off">
-    <div id="seg" class="seg"><button data-k="all" class="on">All</button><button data-k="noun">📄 Nouns</button><button data-k="verb">⚡ Verbs</button></div>
+    <input id="specq" placeholder="Search nouns, verbs, roles, or a field (e.g. threshold)…" autocomplete="off">
+    <div id="seg" class="seg"><button data-k="all" class="on">All</button><button data-k="noun">📄 Nouns</button><button data-k="verb">⚡ Verbs</button><button data-k="role">🎭 Roles</button></div>
   </div>
   <div style="display:flex;gap:0;flex:1 1 auto;min-height:0;flex-wrap:nowrap;align-items:stretch">
     <div id="slist" style="flex:0 0 38%;min-height:0;overflow:auto;border-right:1px solid var(--line);padding-right:10px">loading…</div>
-    <div id="sdet" style="flex:1 1 auto;min-height:0;overflow:auto;padding-left:12px"><div class="sub">Select a noun or verb — or search a field to see where it appears.</div></div>
+    <div id="sdet" style="flex:1 1 auto;min-height:0;overflow:auto;padding-left:12px"><div class="sub">Select a noun, verb, or role — or search a field to see where it appears.</div></div>
   </div>
   <div style="text-align:right;margin-top:10px;flex:0 0 auto"><button class="btn" id="x">Close</button></div>`);
   // Widen the shared .sheet for this browser + make ONLY the panes scroll (no double-scroll).
@@ -808,11 +816,13 @@ async function specsBrowser(){
   let d={schemas:[],pending:[]}; try{d=await post('/bridge/schemas',{});}catch(e){}
   let ifs=[]; try{ifs=(await post('/bridge/interfaces',{})).interfaces||[];}catch(e){}
   const iid=f=>f.interface_id||f.id||f.name||'';
+  let rawroles=[]; try{rawroles=(((await (await fetch('/bridge/catalog?kind=roles')).json())||{}).roles)||[];}catch(e){}
   const nouns=(d.schemas||[]).map(s=>({kind:'noun',id:s.schema_id||'',version:s.version||'',sens:s.sensitivity||'internal',domain:(s.schema_id||'').split('.')[0]||'other'}));
   const verbs=ifs.map(f=>({kind:'verb',id:iid(f),version:f.version||'',modality:f.modality||'request',status:f.status||'active',domain:(iid(f).split('.')[0])||'other'}));
+  const roles=rawroles.map(x=>{const rid=(x.role||x.id||x.name||'');return {kind:'role',id:rid,label:x.label||'',version:'',domain:rid.split('.')[0]||'other'};});
   const pend=(d.pending||[]);
   let kind='all', deep=null;   // deep = {id: matched_in[]} from /bridge/spec-search (null when not deep-searching)
-  const pool=()=> kind==='noun'?nouns : kind==='verb'?verbs : nouns.concat(verbs);
+  const pool=()=> kind==='noun'?nouns : kind==='verb'?verbs : kind==='role'?roles : nouns.concat(verbs).concat(roles);
 
   function render(){
     const q=(m.q('#specq').value||'').trim().toLowerCase();
@@ -820,16 +830,16 @@ async function specsBrowser(){
     if(q) items=items.filter(it=> it.id.toLowerCase().includes(q) || (deep&&deep[it.id]));
     const by={}; items.forEach(it=>{(by[it.domain]=by[it.domain]||[]).push(it);});
     const fieldHits=deep?Object.keys(deep).filter(id=>(deep[id]||[]).some(x=>x!=='id')).length:0;
-    let html=`<div class="sub" style="margin-bottom:6px">${nouns.length} nouns · ${verbs.length} verbs${q&&deep!==null?` · <b>${items.length}</b> match${fieldHits?` (${fieldHits} by field)`:''}`:` · ${pend.length} pending`}</div>`;
+    let html=`<div class="sub" style="margin-bottom:6px">${nouns.length} nouns · ${verbs.length} verbs · ${roles.length} roles${q&&deep!==null?` · <b>${items.length}</b> match${fieldHits?` (${fieldHits} by field)`:''}`:` · ${pend.length} pending`}</div>`;
     if(!items.length) html+=`<div class="sub" style="padding:6px 2px">No ${kind==='all'?'specs':kind+'s'} match “${esc(q)}”.</div>`;
     Object.keys(by).sort().forEach(dom=>{
       html+=`<div style="font-weight:600;margin:6px 0 2px;color:var(--accent)">${esc(dom)}</div>`;
       by[dom].sort((a,b)=>a.id>b.id?1:-1).forEach(it=>{
-        const ic=it.kind==='noun'?'📄':'⚡';
+        const ic=it.kind==='noun'?'📄':it.kind==='verb'?'⚡':'🎭';
         const fm=(deep&&deep[it.id]||[]).filter(x=>x!=='id');
         const badge=fm.length?` <span class="sub" title="matched in: ${esc((deep[it.id]||[]).join(', '))}">🔍 ${esc(fm[0])}</span>`:'';
-        const tail=it.kind==='noun'?`<span class="st st-${it.sens}" title="${it.sens}"></span>`:'';
-        html+=`<div class="node xitem" data-id="${esc(it.id)}" data-kind="${it.kind}" style="padding:3px 4px;cursor:pointer">${ic} ${esc(it.id)} <span class="sub">v${esc(it.version)}</span> ${tail}${badge}</div>`;
+        const tail=it.kind==='noun'?`<span class="st st-${it.sens}" title="${it.sens}"></span>`:(it.kind==='role'&&it.label?`<span class="sub">${esc(it.label)}</span>`:'');
+        html+=`<div class="node xitem" data-id="${esc(it.id)}" data-kind="${it.kind}" style="padding:3px 4px;cursor:pointer">${ic} ${esc(it.id)} ${it.version?`<span class="sub">v${esc(it.version)}</span>`:''} ${tail}${badge}</div>`;
       });
     });
     if(kind!=='verb' && !q) pend.forEach(p=>{html+=`<div class="node" style="padding:3px 4px;color:var(--muted)">⏳ ${esc(p.schema_id)} <span class="sub">pending approval</span></div>`;});
@@ -840,12 +850,16 @@ async function specsBrowser(){
   async function showDetail(id, k){
     const q=(m.q('#specq').value||'').trim();
     m.q('#sdet').innerHTML='<div class="sub">resolving…</div>';
-    let r={}; try{r=await post(k==='noun'?'/bridge/schema-resolve':'/bridge/interface-resolve', k==='noun'?{schema_id:id}:{interface_id:id});}catch(e){}
+    let r={};
+    if(k==='role'){ const rr=roles.find(x=>x.id===id)||{}; r={definition:{role:id,label:rr.label||'',domain:rr.domain||''}}; }
+    else{ try{r=await post(k==='noun'?'/bridge/schema-resolve':'/bridge/interface-resolve', k==='noun'?{schema_id:id}:{interface_id:id});}catch(e){} }
     let pre=JSON.stringify(r.definition||r,null,2); pre=esc(pre);
     if(q){ const rx=new RegExp('('+q.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')+')','ig'); pre=pre.replace(rx,'<mark>$1</mark>'); }
-    const ic=k==='noun'?'📄':'⚡';
+    const ic=k==='noun'?'📄':k==='verb'?'⚡':'🎭';
+    const rlab=(roles.find(x=>x.id===id)||{}).label;
     const meta=k==='noun'?`a NOUN (data schema) · sensitivity ${esc(r.sensitivity||'internal')} · status ${esc(r.status||'active')}`
-                         :`a VERB (interface, ADR-0058) · modality ${esc(r.modality||'request')} · status ${esc(r.status||'active')}`;
+             : k==='verb'?`a VERB (interface, ADR-0058) · modality ${esc(r.modality||'request')} · status ${esc(r.status||'active')}`
+                         :`a ROLE (actor, ADR-0028)${rlab?' · '+esc(rlab):''}`;
     const mi=(deep&&deep[id])?`<div class="sub" style="margin-top:4px">🔍 matched in: <b>${esc(deep[id].join(', '))}</b></div>`:'';
     // Link this governed spec INTO the open project (it becomes an 'existing' member — the contract the
     // project's components speak, ADR-0113). Owner or lead only; the save hits /bridge/save (studio.project).
@@ -864,7 +878,7 @@ async function specsBrowser(){
       ab.disabled=true; ab.textContent='adding…';
       const reset=()=>{ab.disabled=false;ab.textContent='＋ Add to “'+SEL.title+'”';};
       // A spec IS a contract — it belongs in the Contracts (network) layer, regardless of its domain prefix.
-      const member={ref:id, kind:k==='noun'?'schema':'interface', title:id, origin:'existing', status:'published', layer:'network'};
+      const member={ref:id, kind:k==='noun'?'schema':k==='verb'?'interface':'role', title:id, origin:'existing', status:'published', layer:'network'};
       const next=Object.assign({}, SEL, {members:[...(SEL.members||[]), member]});
       let res={}; try{res=await save(next);}catch(e){res={error:String(e)};}
       if(res&&res.error){ reset();
