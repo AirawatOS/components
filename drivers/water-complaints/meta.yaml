@@ -22,3 +22,11 @@ config: [COMPLAINTS_FILE_ID, MAX, SOURCE, TAXONOMY_MAP, ADMIN_COLUMNS,
 scopes:
   - { verb: read,  scope: water.complaint }
   - { verb: write, scope: water.complaint }
+# DEFAULT SCHEDULE (auto-scheduled on install): re-ingest nightly at 02:00. Idempotent + delta-only, so a
+# re-run only writes new/changed complaints. The installing board's admin can change the frequency or pause it
+# in Settings → Schedules (platform.schedule). overlap:skip = never start a run while the previous is still going.
+schedule:
+  cron: "0 2 * * *"
+  enabled: true
+  overlap: skip
+  name: Water complaints ingest
