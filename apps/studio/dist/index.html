@@ -761,10 +761,29 @@ async function configureComponent(ref){
   m.q('#cfg').querySelectorAll('[data-setsec]').forEach(b=>b.onclick=async()=>{const name=b.dataset.setsec;const el=m.q('[data-sec="'+name+'"]');const val=(el&&el.value||'').trim();if(!val)return;b.textContent='…';let r={};try{r=await post('/bridge/secret',{action:'set',component:ref,name,value:val});}catch(e){}b.textContent=r.error?'✗':'✓ set';if(el&&!r.error)el.value='';});
   if(m.q('#setcron'))m.q('#setcron').onclick=async()=>{const cron=m.q('#cron').value;if(!cron){m.q('#crons').textContent='pick an interval';return;}let r={};try{r=await post('/bridge/schedule',{component:ref,cron});}catch(e){}m.q('#crons').textContent=r.error?('✗ '+r.error):'✓ scheduled';};
 }
+// Specs the project declares that are NOT governed yet — local drafts (origin:new) or filed-but-pending. The
+// Marketplace only ships GOVERNED contracts, so certify-time conformance (kernel/network) will reject a publish
+// until each is Filed to Network and approved. We warn UP FRONT so the developer isn't surprised by a server 422.
+function ungovernedSpecs(){
+  return (SEL&&SEL.members||[]).filter(m=>(m.kind==='schema'||m.kind==='interface'||m.kind==='role')
+    && (m.origin==='new' || ['draft','proposed','pending'].includes(m.status)));
+}
+function confirmUngoverned(onProceed){
+  const u=ungovernedSpecs();
+  if(!u.length){onProceed();return;}
+  const rows=u.map(m=>`<li>${m.kind==='role'?'🎭':m.kind==='interface'?'⚡':'📄'} <b>${esc(m.ref)}</b> <span class="sub">· ${esc(m.origin==='new'?'local draft (not filed)':(m.status||'pending')+' at the Network')}</span></li>`).join('');
+  const mm=modal(`<h3>⚠ ${u.length} spec${u.length>1?'s':''} not governed yet</h3>
+    <div class="sub">The Marketplace only ships <b>governed</b> contracts. These are still local drafts or awaiting the standards body — publishing now will fail certify-time conformance until each is <b>Filed to Network</b> and approved.</div>
+    <ul style="margin:10px 0 0 18px;line-height:1.9">${rows}</ul>
+    <div class="sub" style="margin-top:8px">File each from <b>Contracts</b> (open the draft, then <b>File to Network</b>), then publish once they’re approved.</div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Cancel</button> <button class="btn" id="go" title="Server-side certify will still block it until the specs are governed">Publish anyway</button></div>`);
+  mm.q('#x').onclick=mm.close; mm.q('#go').onclick=()=>{mm.close();onProceed();};
+}
 async function composeSolution(){if(!SEL)return;const pub=(SEL.members||[]).filter(x=>x.status==='published').length;if(!pub){bottom('Publish at least one component before composing.');return;}
-  bottom('Composing '+SEL.title+' → solution …');const r=await post('/bridge/project-compose',{project:SEL.id});
-  if(r.solution){SEL.target_solution=r.solution;bottom('✓ composed '+r.solution+' ('+r.members.length+' members, verified='+r.verified+') → published to the Marketplace (one install brings all members)');}
-  else bottom('✗ '+(r.error||'compose failed'));}
+  confirmUngoverned(async()=>{
+    bottom('Composing '+SEL.title+' → solution …');const r=await post('/bridge/project-compose',{project:SEL.id});
+    if(r.solution){SEL.target_solution=r.solution;bottom('✓ composed '+r.solution+' ('+r.members.length+' members, verified='+r.verified+') → published to the Marketplace (one install brings all members)');}
+    else bottom('✗ '+(r.error||'compose failed'));});}
 // ADR-0097 W5 — publish this solution's WORKFLOW as a citizen SERVICE on the Network. The offering is an
 // envelope (form + discovery/entitlement) that REFERENCES a platform.workflow GRAPH (workflow_ref) fulfilled by
 // this project's CERTIFIED solution — the developer path, distinct from Service Studio's no-code declarative path.
