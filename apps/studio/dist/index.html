@@ -177,7 +177,7 @@ async function boot(){
     ['⬆ Publish as Solution',(has&&lead)?composeSolution:null],
     ['🌐 Publish as Service',(has&&lead)?publishAsService:null],
   ];});
-  at('mContracts',()=>{const ca=isContractAuthor();return [['📄 New Spec',ca?authorSpec:null],['📐 Browse specs',specsBrowser],['＋ Request a schema',ca?requestSchema:null],['📥 My requests',myRequests]];});
+  at('mContracts',()=>{const ca=isContractAuthor();return [['📄 New Spec',ca?newSpec:null],['✍️ Service spec (AI)',ca?authorSpec:null],['📐 Browse specs',specsBrowser],['📥 My requests',myRequests]];});
   at('mView',()=>[['🗺 Architecture',toggleArch],['☰ Toggle explorer',()=>$('left').classList.toggle('collapsed')]]);
   at('mHelp',()=>[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
   buildRight();
@@ -867,6 +867,82 @@ async function specsBrowser(){
   }
   render();
 }
+// ── New Spec chooser (ADR-0058/0060/0028): a spec has three legs — a NOUN (schema/data contract), a
+// VERB (interface/interaction contract) and a ROLE (actor). Each opens a simple editor seeded with an
+// extendable template; the ✨ assistant is optional support, never the only path. Contract-author gated.
+async function newSpec(){
+  const card=(icon,t,sub)=>`<div class="card specpick" style="cursor:pointer;flex:1;min-width:180px"><div style="font-size:22px">${icon}</div><b>${t}</b><div class="sub" style="margin-top:3px">${sub}</div></div>`;
+  const m=modal(`<div style="min-width:min(680px,88vw)"><h3>📄 New Spec</h3>
+    <div class="sub">What kind of spec are you authoring? A spec has three legs — pick one. You'll get a simple editor seeded with a template you can extend; the ✨ assistant is optional.</div>
+    <div class="row" style="gap:10px;margin:12px 0;flex-wrap:wrap">
+      ${card('🧱','Noun','A <b>schema</b> — a data contract (an entity, measure, event or record). ADR-0060.')}
+      ${card('⚡','Verb','An <b>interface</b> — a request/response (or event) interaction contract. ADR-0058.')}
+      ${card('🎭','Role','An <b>actor</b> — a governed role in a domain (&lt;domain&gt;.&lt;name&gt;). ADR-0028.')}
+    </div>
+    <div style="text-align:right"><button class="btn" id="x">Cancel</button></div></div>`);
+  m.q('#x').onclick=m.close;
+  const picks=m.q('#x').closest('.sheet').querySelectorAll('.specpick');
+  picks[0].onclick=()=>{m.close();requestSchema();};
+  picks[1].onclick=()=>{m.close();requestInterface();};
+  picks[2].onclick=()=>{m.close();requestRole();};
+}
+
+// VERB spec — an interface (interaction contract, ADR-0058). The verb NAME is one of the platform's
+// canonical plane verbs (ADR-0108); the domain action lives in the request/response contract + an x-ref
+// to the workflow/declaration, not in the verb name. Seeded with a request-modality template.
+async function requestInterface(prefill){prefill=prefill||{};
+  const CANON=["lifecycle.request","lifecycle.decide","lifecycle.update","lifecycle.withdraw","lifecycle.status","compute.run","decision.route","governance.evaluate","governance.decide","registry.query","registry.read","registry.write","registry.retract"];
+  const tmpl=()=>JSON.stringify({
+    "modality":"request",
+    "description":"What this interaction does, and when a caller invokes it.",
+    "request":{"type":"object","description":"the input contract",
+      "properties":{"workflow":{"type":"string","description":"x-ref → the platform.lifecycle / workflow this acts on"},
+        "record":{"type":"object","description":"the governed domain noun being acted on"}},
+      "required":["workflow"]},
+    "response":{"type":"object","description":"the output contract",
+      "properties":{"id":{"type":"string"},"status":{"type":"string"}}}
+  },null,2);
+  const initDef=prefill.definition?JSON.stringify(prefill.definition,null,2):tmpl();
+  const m=modal(`<div style="min-width:min(760px,88vw)"><h3>⚡ New Verb (interface)</h3>
+    <div class="sub">An interaction contract — a request/response (or event) shape, ADR-0058. The verb <b>name</b> is a canonical plane verb (ADR-0108); carry the domain action in the contract + an x-ref to your workflow, not in the name.</div>
+    <div class="row" style="gap:8px;margin-top:8px"><div style="flex:2"><label class="sub">verb (interface id)</label><input class="in" id="iid" list="canon" placeholder="lifecycle.request" value="${esc(prefill.interface_id||'')}"><datalist id="canon">${CANON.map(v=>`<option value="${v}">`).join('')}</datalist></div><div style="flex:1"><label class="sub">version</label><input class="in" id="iver" value="${esc(prefill.version||'0.1.0')}"></div></div>
+    <label class="sub" style="margin-top:8px;display:block">definition <span class="sub">· modality request|event|stream · edit freely</span></label>
+    <textarea class="in" id="idef" rows="14" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(initDef)}</textarea>
+    <label class="sub" style="margin-top:6px;display:block">why (justification)</label><input class="in" id="ijust" placeholder="what need this interaction serves">
+    <div style="text-align:right;margin-top:10px"><span class="sub" id="irm"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="ifile">File request</button></div></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#ifile').onclick=async()=>{
+    let d;try{d=JSON.parse(m.q('#idef').value);}catch(e){m.q('#irm').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
+    const viol=[];const mod=d.modality;
+    if(!mod)viol.push('declare a modality (request | event | stream)');else if(!['request','event','stream'].includes(mod))viol.push("modality must be request|event|stream");
+    if(!d.description)viol.push('declare a description');
+    if(mod==='request'){if(!('request'in d))viol.push('a request verb must declare its request contract');if(!('response'in d))viol.push('a request verb must declare its response contract');}
+    if(mod==='event'&&!('event'in d))viol.push('an event verb must declare its event payload');
+    if(viol.length){m.q('#irm').innerHTML='<span style="color:var(--err)">fix: '+esc(viol.join('; '))+'</span>';return;}
+    const iid=m.q('#iid').value.trim();if(!iid){m.q('#irm').innerHTML='<span style="color:var(--err)">verb id required</span>';return;}
+    if(!CANON.includes(iid))m.q('#irm').innerHTML='<span style="color:#f0b429">⚠ not a canonical plane verb — the standards body may ask you to use one (ADR-0108). Filing anyway…</span>';
+    const r=await post('/bridge/interface-request',{interface_id:iid,version:m.q('#iver').value.trim()||'0.1.0',definition:d,justification:m.q('#ijust').value.trim()});
+    m.q('#irm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};
+}
+
+// ROLE spec — a governed actor (ADR-0028). role reads <domain>.<name> in kebab-case; the domain must
+// already be governed. A simple form (label + definition + justification).
+async function requestRole(prefill){prefill=prefill||{};
+  const m=modal(`<div style="min-width:min(620px,88vw)"><h3>🎭 New Role (actor)</h3>
+    <div class="sub">A governed role in a domain — the actor leg of a spec, ADR-0028. The id reads <b>&lt;domain&gt;.&lt;name&gt;</b> in kebab-case; the domain must already be governed.</div>
+    <div class="row" style="gap:8px;margin-top:8px"><div style="flex:1"><label class="sub">role id</label><input class="in" id="rid" placeholder="water.field-inspector" value="${esc(prefill.role||'')}"></div><div style="flex:1"><label class="sub">label</label><input class="in" id="rlabel" placeholder="Field Inspector" value="${esc(prefill.label||'')}"></div></div>
+    <label class="sub" style="margin-top:8px;display:block">definition <span class="sub">· what this actor is responsible for</span></label>
+    <textarea class="in" id="rdef" rows="4" placeholder="Describe the actor: its responsibilities and the decisions/actions it owns.">${esc(prefill.definition||'')}</textarea>
+    <label class="sub" style="margin-top:6px;display:block">why (justification)</label><input class="in" id="rjust" placeholder="what need this role serves">
+    <div style="text-align:right;margin-top:10px"><span class="sub" id="rrm"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="rfile">File request</button></div></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#rfile').onclick=async()=>{
+    const role=m.q('#rid').value.trim();
+    if(!/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/.test(role)){m.q('#rrm').innerHTML='<span style="color:var(--err)">role must read &lt;domain&gt;.&lt;name&gt; in kebab-case</span>';return;}
+    const r=await post('/bridge/role-request',{role,label:m.q('#rlabel').value.trim(),definition:m.q('#rdef').value.trim(),justification:m.q('#rjust').value.trim()});
+    m.q('#rrm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||r.detail||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};
+}
+
 async function requestSchema(prefill){prefill=prefill||{};
   // The template is a COMPLETE, house-rule-compliant ENVELOPE for its x-kind — not a bare {schema,id} stub.
   // It mirrors network lint_house_rules + the ent()/meas() convention: every fact-like noun carries observed_at
