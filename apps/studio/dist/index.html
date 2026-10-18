@@ -210,34 +210,16 @@ async function openTeam(){
   const roleOpts=STUDIO_ROLES.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('');
   const invite=owner
     ? `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
-         <label class="sub">Invite a teammate <span class="sub">(a user in this workspace — they'll see this solution in their Studio)</span></label>
-         <div style="display:flex;gap:8px;margin-top:6px"><input class="in" id="iv" placeholder="username (e.g. ravi)" style="flex:1"><select class="in" id="ir" style="max-width:180px">${roleOpts}</select><button class="btn primary" id="go">Invite</button></div>
+         <label class="sub">Add an existing teammate <span class="sub">(a user already in this workspace — they'll see this solution in their Studio. New users are created by an admin in the Admin app.)</span></label>
+         <div style="display:flex;gap:8px;margin-top:6px"><input class="in" id="iv" placeholder="existing username (e.g. ravi)" style="flex:1"><select class="in" id="ir" style="max-width:180px">${roleOpts}</select><button class="btn primary" id="go">Add to project</button></div>
          <div class="sub" id="ivmsg" style="margin-top:6px"></div></div>`
-    : `<div class="sub" style="margin-top:10px">Only the project owner or a project manager can invite members.</div>`;
-  const adminAdd=isAdmin()
-    ? `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
-         <label class="sub">➕ Add a new user to this workspace <span class="sub">(tenant admin — creates a password-gated login they can sign in with)</span></label>
-         <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><input class="in" id="nu" placeholder="new username" style="flex:1;min-width:120px"><input class="in" id="npw" type="password" placeholder="initial password (min 6)" style="flex:1;min-width:120px"><select class="in" id="nr" style="max-width:170px"><option value="">(no role)</option>${roleOpts}</select><button class="btn" id="addu">Create user</button></div>
-         <div class="sub" id="numsg" style="margin-top:6px"></div></div>`
-    : '';
+    : `<div class="sub" style="margin-top:10px">Only the project owner or a project manager can add members.</div>`;
   const m=modal(`<h3>Team &amp; roles — ${esc(SEL.title)}</h3>
     <div class="sub">Owner: <b>${esc(bareSub(SEL.owner)||'—')}</b>. Members work on components they own or are granted (ADR-0113).</div>
-    <div style="margin:12px 0;max-height:36vh;overflow:auto">${rows}</div>
+    <div style="margin:12px 0;max-height:40vh;overflow:auto">${rows}</div>
     ${invite}
-    ${adminAdd}
     <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Close</button></div>`);
   m.q('#x').onclick=m.close;
-  if(isAdmin()){const ab=m.q('#addu');ab.onclick=async()=>{
-    const username=(m.q('#nu').value||'').trim().toLowerCase(), password=m.q('#npw').value||'', role=m.q('#nr').value;
-    if(!username){m.q('#numsg').textContent='Enter a username.';return;}
-    if(password.length<6){m.q('#numsg').textContent='Password must be at least 6 characters.';return;}
-    ab.disabled=true;m.q('#numsg').textContent='Creating…';
-    const r=await post('/bridge/user-create',{username,password,roles:role?[role]:[]});
-    if(r&&r.error){m.q('#numsg').innerHTML='<span style="color:var(--err)">'+esc(r.error)+'</span>';ab.disabled=false;return;}
-    m.q('#numsg').innerHTML='<span style="color:var(--ok,#1f7a4d)">✓ created '+esc(username)+(r.existed?' (existed)':'')+' — now invite them above.</span>';
-    if(m.q('#iv'))m.q('#iv').value=username;  // prefill the invite box
-    ab.disabled=false;
-  };}
   if(owner){const b=m.q('#go');b.onclick=async()=>{
     const sub=(m.q('#iv').value||'').trim(), role=m.q('#ir').value;
     if(!sub){m.q('#ivmsg').textContent='Enter a username.';return;}
