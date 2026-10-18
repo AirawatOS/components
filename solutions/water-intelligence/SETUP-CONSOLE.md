@@ -36,7 +36,11 @@ sees it work before trusting the nightly schedule.
   typed form for the simple keys (SOURCE, MAX, SLA) + file upload → `COMPLAINTS_FILE_ID`; Save → component_config;
   Run-now + status. (Gets a board ingesting with a hand-mapped file.)
 - **S2 — taxonomy crosswalk editor:** label→canonical two-column UI; canonical list from the governed schema;
-  writes `TAXONOMY_MAP`. Seedable from a preset.
+  writes `TAXONOMY_MAP`. Seedable from a preset. **✨ Auto-map with AI** — the console sends the board's DISTINCT
+  labels + the canonical list to kimi-k3 (ONE call over the vocabulary, not per row) via `POST /bridge/suggest-crosswalk`
+  {labels[], canonical[], hint} → {map, unmapped}; the admin reviews/edits, then saves as config. (Same logic is
+  available to a driver author as `aos.ingest.suggest_crosswalk(labels, canonical)`.) BUILT + proven: live kimi mapped
+  all 21 real DJB labels sensibly. Ingest stays deterministic exact-match — the LLM only proposes the config.
 - **S3 — column auto-detect + admin hierarchy:** parse the uploaded header; map `*_FIELD` + `ADMIN_COLUMNS`.
 - **S4 — presets + cadence:** preset picker (DJB/Nashik) to pre-fill; cron control folded in.
 - **S5 (future) — live source:** `SOURCE_URL`/SFTP/API config once the driver supports egress pull.

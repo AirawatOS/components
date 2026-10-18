@@ -118,6 +118,62 @@ def crosswalk(*, canonical=None, env=None, keywords=None, enum=None):
     return classify
 
 
+def _crosswalk_prompt(labels, canonical, hint=""):
+    """The (shared) prompt that maps a board's DISTINCT labels onto the canonical categories. One call for the whole
+    vocabulary — NOT per row. Kept identical to the app_host /bridge/suggest-crosswalk prompt (this is the canonical copy)."""
+    cats = ", ".join(canonical)
+    lab = "\n".join(f"{i+1}. {l}" for i, l in enumerate(labels))
+    return (f"You map a source system's complaint/category labels onto a FIXED set of canonical categories.\n"
+            + (f"Domain context: {hint}\n" if hint else "")
+            + f"Canonical categories — choose EXACTLY ONE per label (the closest fit; only use \"other\" if truly none fit):\n  {cats}\n\n"
+            + f"Labels to map:\n{lab}\n\n"
+            + "Return ONLY a JSON object mapping EACH label (verbatim) to one canonical category, e.g. "
+            + "{\"No water\": \"no_water\"}. No prose, no code fences, every label present as a key.")
+
+
+def _parse_crosswalk(text, labels, canonical):
+    """Parse the model's reply into {label: canonical} — keeping ONLY labels present with a valid canonical target.
+    Everything else goes to `unmapped` (the human fills those in). Never fabricates a label the model didn't return."""
+    canon_set = set(canonical)
+    out, unmapped = {}, []
+    try:
+        i, j = text.index("{"), text.rindex("}")
+        m = json.loads(text[i:j + 1])
+    except Exception:
+        m = {}
+    low = {str(k).strip().lower(): k for k in m}
+    for lab in labels:
+        v = m.get(lab)
+        if v is None:
+            v = m.get(low.get(lab.strip().lower(), ""))        # case-insensitive match on the returned key
+        v = str(v).strip() if v is not None else ""
+        if v in canon_set:
+            out[lab] = v
+        else:
+            unmapped.append(lab)
+    return {"map": out, "unmapped": unmapped}
+
+
+def suggest_crosswalk(labels, canonical, *, hint="", ctx=None, ai=None, max_tokens=1200):
+    """Use the confined model (kimi-k3 via ctx.ai) to PROPOSE a taxonomy crosswalk for a board's DISTINCT labels →
+    canonical categories — ONCE, over the vocabulary (tens of labels), NOT per row (idempotency- and cost-safe). The
+    result is a SUGGESTION a human reviews before it becomes config (TAXONOMY_MAP); it never touches the ingest hot
+    path. `ai` lets a caller inject the completion fn (tests); otherwise ctx.ai / the module ctx is used.
+    Returns {"map": {label: canonical}, "unmapped": [labels the model didn't map — fill these in by hand]}."""
+    labels = [str(l).strip() for l in labels if str(l).strip()]
+    if not labels:
+        return {"map": {}, "unmapped": []}
+    _ai = ai or (ctx or _ctx).ai
+    prompt = _crosswalk_prompt(labels, canonical, hint)
+    try:
+        text = _ai([{"role": "user", "content": prompt}], max_tokens)
+        text = text if isinstance(text, str) else (text or {}).get("content", "")
+    except Exception as e:
+        print(f"[ingest.suggest_crosswalk] model call failed: {e}", flush=True)
+        return {"map": {}, "unmapped": labels}
+    return _parse_crosswalk(text or "", labels, canonical)
+
+
 class Row:
     """A header-resolved, case-insensitive row accessor passed to map_row.
       r.get("category")  → value of the logical field (resolved via the `columns` spec), stripped
