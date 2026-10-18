@@ -871,7 +871,7 @@ async function specsBrowser(){
         m.q('#sdet').insertAdjacentHTML('afterbegin','<div class="sub" style="color:var(--err)">✗ '+esc(res.error)+'</div>'); return; }
       // SELF-VERIFY: reload from the server so the tree shows ONLY what actually persisted (a silent
       // backend failure can never masquerade as success).
-      PROJECTS=await q('studio.project'); SEL=PROJECTS.find(p=>p.id===next.id)||next;
+      PROJECTS=((await post('/bridge/query',{app_id:'studio',schema:'studio.project'}))||{}).results||[]; SEL=PROJECTS.find(p=>p.id===next.id)||next;
       tree();
       if(!(SEL.members||[]).some(x=>x.ref===id)){ reset();
         m.q('#sdet').insertAdjacentHTML('afterbegin','<div class="sub" style="color:var(--err)">✗ it didn’t save — you may not have edit rights on this project</div>'); return; }
