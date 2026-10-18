@@ -26,7 +26,7 @@ Design notes:
 """
 import os, json, time, base64, hashlib, contextvars, urllib.request, urllib.error
 
-__all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now", "egress"]
+__all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now", "egress", "ingest"]
 
 # ── observed vocabulary (populated at runtime by Ctx; consumed by aos.meta.derive) ──
 # READS/WRITES → scopes; FILES (put/get) → the meta `files:` declaration; EGRESS → external hosts reached via
@@ -622,3 +622,5 @@ class _Driver:
 
 
 driver = _Driver()
+
+from . import ingest   # aos.ingest — generic tabular-ingest primitive (additive; imported last so ctx/Reject exist)
