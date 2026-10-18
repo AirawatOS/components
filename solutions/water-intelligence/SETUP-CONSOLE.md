@@ -32,9 +32,14 @@ A **"Run ingest now"** button + a last-run panel (rows written new/changed, % ma
 sees it work before trusting the nightly schedule.
 
 ## Slices
-- **S1 — shell + simple keys:** scaffold the app (solution member); read the config contract + current values;
-  typed form for the simple keys (SOURCE, MAX, SLA) + file upload → `COMPLAINTS_FILE_ID`; Save → component_config;
-  Run-now + status. (Gets a board ingesting with a hand-mapped file.)
+- **S1 — shell + simple keys: ✅ BUILT** (`components/apps/water-setup`, app `ds:airawatdeveloper:app/water-setup`).
+  Resolves the installed water-complaints driver (via `/bridge/settings` list), reads its config contract + current
+  values, and gives a 3-step form: ① Source — file upload (`/bridge/file-upload`, ≤25 MB) → `COMPLAINTS_FILE_ID` +
+  `SOURCE` + `MAX`, saved via `/bridge/settings-set` (→ platform.component_config); ② Mapping — `TAXONOMY_MAP` +
+  `ADMIN_COLUMNS` JSON (S2 replaces with the visual editor + ✨ Auto-map); ③ Run — `/bridge/run` + recent runs
+  (`/bridge/runs`). Admin-gated (board admin). On the tenant shelf. Caveats: 25 MB upload cap (full historical file
+  via CLI / chunked upload later); new app serves from the overlay + shelf — a proper Studio Publish registers it in
+  the certified set for role-gated serving across tenants.
 - **S2 — taxonomy crosswalk editor:** label→canonical two-column UI; canonical list from the governed schema;
   writes `TAXONOMY_MAP`. Seedable from a preset. **✨ Auto-map with AI** — the console sends the board's DISTINCT
   labels + the canonical list to kimi-k3 (ONE call over the vocabulary, not per row) via `POST /bridge/suggest-crosswalk`

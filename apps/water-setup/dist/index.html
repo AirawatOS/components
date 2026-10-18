@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Water Intelligence — Setup</title>
+<style>
+  :root{--bg:#f6f8fa;--card:#fff;--line:#e3e8ee;--ink:#0f172a;--muted:#64748b;--accent:#0369a1;--good:#0f7b3f;--err:#b4232c}
+  @media (prefers-color-scheme:dark){:root{--bg:#0c1116;--card:#141b22;--line:#243140;--ink:#e6edf3;--muted:#9fb0c0;--accent:#38bdf8;--good:#3fb950;--err:#ff9b9b}}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:20px}
+  h1{font-size:20px;margin:0 0 2px} .sub{color:var(--muted);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
+  .card h2{font-size:15px;margin:0 0 4px} label{display:block;font-size:12px;color:var(--muted);margin:10px 0 3px}
+  input,textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:transparent;color:inherit;font:inherit}
+  textarea{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap} .row>div{flex:1;min-width:140px}
+  .btn{border:1px solid var(--line);background:transparent;color:inherit;padding:8px 14px;border-radius:7px;cursor:pointer;font:inherit}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff} .btn:disabled{opacity:.5;cursor:default}
+  .msg{font-size:12px;margin-left:8px} .ok{color:var(--good)} .bad{color:var(--err)}
+  pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:10px;font-size:12px;max-height:240px;overflow:auto}
+  .step{display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;margin-right:8px}
+  .runrow{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0;font-size:12px}
+</style></head>
+<body><div class="wrap">
+  <h1>💧 Water Intelligence — Setup</h1>
+  <div class="sub">Configure this board's complaints ingest, then run it. Settings are saved for your tenant; the nightly schedule keeps it current.</div>
+  <div id="resolve" class="sub" style="margin-top:8px">Finding the complaints driver…</div>
+
+  <div class="card" id="srcCard" style="display:none">
+    <h2><span class="step">1</span>Source — your complaints export</h2>
+    <div class="sub">Upload your grievance/complaints CSV. (S1 cap: 25&nbsp;MB — use a recent export or a sample; the full historical file loads via the CLI for now.)</div>
+    <label>Complaints file</label>
+    <div class="row"><div style="flex:3"><input type="file" id="file" accept=".csv,text/csv"></div>
+      <div style="flex:1"><button class="btn" id="upBtn">Upload</button></div></div>
+    <div id="upMsg" class="msg"></div>
+    <div class="row">
+      <div><label>COMPLAINTS_FILE_ID</label><input id="fid" placeholder="set by Upload, or paste an id"></div>
+      <div><label>SOURCE (label)</label><input id="source" placeholder="djb-grievance"></div>
+      <div><label>MAX (0 = all)</label><input id="max" type="number" value="0"></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn primary" id="saveSrc">Save source</button><span id="srcMsg" class="msg"></span></div>
+  </div>
+
+  <div class="card" id="mapCard" style="display:none">
+    <h2><span class="step">2</span>Mapping — taxonomy &amp; admin hierarchy</h2>
+    <div class="sub">Paste your board's crosswalk (raw label → canonical category) and admin-column mapping as JSON. <b>S2 will replace this with a visual editor + ✨ Auto-map (AI).</b></div>
+    <label>TAXONOMY_MAP <span id="canonHint" class="sub"></span></label>
+    <textarea id="tax" rows="8" placeholder='{"no water":"no_water","dirty water (contamination)":"contamination"}'></textarea>
+    <label>ADMIN_COLUMNS (level → column)</label>
+    <textarea id="admin" rows="3" placeholder='{"colony":"Colony","ward":"Ward","zone":"Zone"}'></textarea>
+    <div style="margin-top:12px"><button class="btn primary" id="saveMap">Save mapping</button><span id="mapMsg" class="msg"></span></div>
+  </div>
+
+  <div class="card" id="runCard" style="display:none">
+    <h2><span class="step">3</span>Run &amp; verify</h2>
+    <div class="sub">Runs the ingest once now (idempotent — only new/changed complaints are written).</div>
+    <div style="margin:10px 0"><button class="btn primary" id="runBtn">▶ Run ingest now</button><span id="runMsg" class="msg"></span></div>
+    <pre id="runOut" style="display:none"></pre>
+    <h2 style="margin-top:14px;font-size:13px">Recent runs</h2>
+    <div id="runs" class="sub">—</div>
+  </div>
+
+<script>
+const $=s=>document.querySelector(s);
+async function j(p,b,m){try{const r=await fetch(p,{method:m||'POST',headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});return await r.json();}catch(e){return{error:String(e)};}}
+let CID='', CANON=[];
+
+async function boot(){
+  // resolve the water-complaints driver installed in THIS tenant (generic — no hardcoded tenant)
+  const list=await j('/bridge/settings',{});
+  const comps=(list.components||list.items||list.list||[]);
+  let hit=(Array.isArray(comps)?comps:[]).map(c=>c.component||c.id||c).find(x=>String(x).endsWith('/water-complaints'));
+  if(!hit){ // fallback: the known id
+    hit='ds:'+((list.tenant)||'airawatdeveloper')+':driver/water-complaints';
+  }
+  CID=hit;
+  const s=await j('/bridge/settings',{component:CID});
+  if(s.error){$('#resolve').innerHTML='<span class="bad">Could not load the driver config: '+s.error+' (are you a tenant admin?)</span>';return;}
+  $('#resolve').innerHTML='Configuring <b>'+(s.name||CID)+'</b> <span class="sub">· '+CID+'</span>';
+  // canonical categories from the driver's declared write schema (shown as a hint); values prefill from current config
+  const vals={}; (s.fields||[]).forEach(f=>{ if(f.value!==undefined&&f.value!==null) vals[f.name]=f.value; });
+  $('#fid').value=vals.COMPLAINTS_FILE_ID||''; $('#source').value=vals.SOURCE||''; $('#max').value=vals.MAX||'0';
+  $('#tax').value=vals.TAXONOMY_MAP||''; $('#admin').value=vals.ADMIN_COLUMNS||'';
+  ['#srcCard','#mapCard','#runCard'].forEach(x=>$(x).style.display='');
+  loadRuns();
+}
+async function setVal(name,value){ return j('/bridge/settings-set',{component:CID,kind:'value',name,value}); }
+
+$('#upBtn').onclick=async()=>{
+  const f=$('#file').files[0]; if(!f){$('#upMsg').innerHTML='<span class="bad">pick a file</span>';return;}
+  if(f.size>25*1024*1024){$('#upMsg').innerHTML='<span class="bad">over 25 MB — use a smaller sample for now</span>';return;}
+  $('#upMsg').textContent='uploading…'; $('#upBtn').disabled=true;
+  const r=await fetch('/bridge/file-upload?name='+encodeURIComponent(f.name)+'&type=text/csv',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f}).then(x=>x.json()).catch(e=>({error:String(e)}));
+  $('#upBtn').disabled=false;
+  if(r.file_id){$('#fid').value=r.file_id;$('#upMsg').innerHTML='<span class="ok">✓ uploaded ('+Math.round((r.size||f.size)/1024)+' KB)</span>';}
+  else $('#upMsg').innerHTML='<span class="bad">✗ '+(r.error||'upload failed')+'</span>';
+};
+$('#saveSrc').onclick=async()=>{
+  $('#srcMsg').textContent='saving…';
+  for(const [n,v] of [['COMPLAINTS_FILE_ID',$('#fid').value.trim()],['SOURCE',$('#source').value.trim()],['MAX',$('#max').value.trim()||'0']]){
+    if(v!==''){const r=await setVal(n,v); if(r.error){$('#srcMsg').innerHTML='<span class="bad">✗ '+r.error+'</span>';return;}}
+  }
+  $('#srcMsg').innerHTML='<span class="ok">✓ saved</span>';
+};
+$('#saveMap').onclick=async()=>{
+  $('#mapMsg').textContent='saving…';
+  for(const [n,el] of [['TAXONOMY_MAP','#tax'],['ADMIN_COLUMNS','#admin']]){
+    const v=$(el).value.trim(); if(!v)continue;
+    try{JSON.parse(v);}catch(e){$('#mapMsg').innerHTML='<span class="bad">✗ '+n+' is not valid JSON</span>';return;}
+    const r=await setVal(n,v); if(r.error){$('#mapMsg').innerHTML='<span class="bad">✗ '+r.error+'</span>';return;}
+  }
+  $('#mapMsg').innerHTML='<span class="ok">✓ saved</span>';
+};
+$('#runBtn').onclick=async()=>{
+  if(!$('#fid').value.trim()){$('#runMsg').innerHTML='<span class="bad">set a source file first</span>';return;}
+  $('#runMsg').textContent='running… (reads your stored config)'; $('#runBtn').disabled=true;
+  const r=await j('/bridge/run',{component:CID});
+  $('#runBtn').disabled=false;
+  const ok=r.status==='ok';
+  $('#runMsg').innerHTML=ok?'<span class="ok">✓ ran</span>':'<span class="bad">✗ '+(r.error||r.status||'failed')+'</span>';
+  const out=$('#runOut'); out.style.display=''; out.textContent=(r.log||r.detail||JSON.stringify(r,null,2)||'').slice(0,4000);
+  loadRuns();
+};
+async function loadRuns(){
+  const r=await fetch('/bridge/runs?component='+encodeURIComponent(CID)).then(x=>x.json()).catch(()=>({}));
+  const rows=(r.runs||r.results||[]).slice(0,8);
+  $('#runs').innerHTML=rows.length?rows.map(x=>`<div class="runrow"><span>${(x.at||x.started||x.ts||'').slice(0,19).replace('T',' ')}</span><span>${x.status||x.outcome||''}</span></div>`).join(''):'<span class="sub">no runs yet</span>';
+}
+boot();
+</script>
+</div></body></html>

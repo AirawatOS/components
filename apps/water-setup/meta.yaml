@@ -1,0 +1,11 @@
+# water-setup (kind=app) — Water Intelligence Setup Console. A board admin configures the installed solution here:
+# point the complaints driver at the board's data file, set source/label/cap, paste the taxonomy + admin mapping,
+# then run the ingest and watch it land in water.complaint. Writes per-tenant platform.component_config via the
+# unified Settings bridges (ADR-0092) — no code, no Studio. S1: source file + simple keys + run-now + status.
+component_id: ds:airawatdeveloper:app/water-setup
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Water Intelligence Setup
+entrypoint: dist/index.html
+roles: [platform.tenant-admin]          # a board admin configures the solution
