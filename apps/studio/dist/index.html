@@ -177,7 +177,7 @@ async function boot(){
     ['⬆ Publish as Solution',(has&&lead)?composeSolution:null],
     ['🌐 Publish as Service',(has&&lead)?publishAsService:null],
   ];});
-  at('mContracts',()=>{const ca=isContractAuthor();return [['✍️ Author a spec (AI)',ca?authorSpec:null],['📐 Browse specs',specsBrowser],['＋ Request a schema',ca?requestSchema:null],['📥 My requests',myRequests]];});
+  at('mContracts',()=>{const ca=isContractAuthor();return [['📄 New Spec',ca?authorSpec:null],['📐 Browse specs',specsBrowser],['＋ Request a schema',ca?requestSchema:null],['📥 My requests',myRequests]];});
   at('mView',()=>[['🗺 Architecture',toggleArch],['☰ Toggle explorer',()=>$('left').classList.toggle('collapsed')]]);
   at('mHelp',()=>[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
   buildRight();
@@ -955,22 +955,23 @@ function modal(html){const w=document.createElement('div');w.className='modal';w
 async function authorSpec(){
   let mode='new', base='', doc='', messages=[], draft=null;
   const m=modal(`<div style="min-width:min(840px,86vw)">
-    <h3>✍️ Author a service spec with AI</h3>
-    <div class="sub">Shape a solution brief with the assistant (or upload one), then compile it to a governed service spec — the first step of the AI-native loop (ADR-0109).</div>
+    <h3>📄 New Spec</h3>
+    <div class="sub">Write the spec directly below, then Compile → review → Govern. Need a hand? Open the ✨ assistant — optional, not required (ADR-0109).</div>
     <div style="display:flex;gap:16px;margin:10px 0 8px;align-items:center;flex-wrap:wrap">
       <label><input type="radio" name="spmode" value="new" checked> New solution</label>
       <label><input type="radio" name="spmode" value="modify"> Modify existing</label>
       <select class="in" id="spbase" style="flex:1;min-width:200px;display:none"><option value="">— pick a spec —</option></select>
       <label class="btn sm" style="cursor:pointer">⬆ Upload brief<input type="file" id="spfile" accept=".md,.txt,.markdown" style="display:none"></label>
     </div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap">
-      <div style="flex:1;min-width:280px;display:flex;flex-direction:column">
-        <label class="sub">Solution brief (markdown)</label>
-        <textarea class="in" id="spdoc" rows="13" style="font-family:ui-monospace,Menlo,monospace;font-size:12px" placeholder="Describe the solution here, or chat with the assistant → to build it."></textarea>
-      </div>
-      <div style="flex:1;min-width:280px;display:flex;flex-direction:column">
-        <label class="sub">Assistant — refine the brief</label>
-        <div id="spchat" style="flex:1;min-height:210px;max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px"></div>
+    <div style="display:flex;flex-direction:column">
+      <label class="sub">Spec (markdown) — write it directly</label>
+      <textarea class="in" id="spdoc" rows="14" style="font-family:ui-monospace,Menlo,monospace;font-size:12px" placeholder="Describe the service spec — capability, nouns (schemas), operations, apps, rules, acceptance criteria. Or open the ✨ assistant below to draft it for you."></textarea>
+    </div>
+    <div style="margin-top:8px">
+      <button class="btn sm" id="sptoggle">✨ Assistant (optional)</button>
+      <div id="spassist" style="display:none;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px">
+        <div class="sub" style="margin-bottom:4px">Describe what you want and the assistant drafts / refines the spec above — you can always edit it by hand.</div>
+        <div id="spchat" style="min-height:140px;max-height:220px;overflow:auto;font-size:13px"></div>
         <div style="display:flex;gap:6px;margin-top:6px">
           <input class="in" id="spmsg" placeholder="e.g. A grievance redressal service for a city" style="flex:1">
           <button class="btn sm" id="spsend">Send</button>
@@ -999,6 +1000,7 @@ async function authorSpec(){
   q('#spfile').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{doc=String(rd.result||'');q('#spdoc').value=doc;setStatus('Loaded '+f.name+' — refine it or Compile.');};rd.readAsText(f);};
   function renderChat(){q('#spchat').innerHTML=messages.map(x=>`<div style="margin:5px 0"><b>${x.role==='user'?'You':'AI'}:</b> ${esc(x.content)}</div>`).join('')||'<span class="sub">Start by describing the solution you want.</span>';q('#spchat').scrollTop=1e9;}
   renderChat();
+  q('#sptoggle').onclick=()=>{const a=q('#spassist');const open=a.style.display!=='none';a.style.display=open?'none':'';q('#sptoggle').textContent=open?'✨ Assistant (optional)':'✨ Hide assistant';};
   async function send(){
     const t=(q('#spmsg').value||'').trim(); if(!t)return;
     messages.push({role:'user',content:t}); q('#spmsg').value=''; renderChat(); setStatus('Thinking… (~15s)');
