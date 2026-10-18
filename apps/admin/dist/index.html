@@ -232,11 +232,42 @@ function masterDetail(cfg){
 // ---- By User: pick a user → edit their granted roles --------------------------------------------
 function byUser(){
   masterDetail({
-    placeholder:'search users…', hint:'Select a user to manage their roles.',
+    placeholder:'search users…', hint:'Select a user to manage their roles — or ➕ Add user to create one.',
     list:(q,p)=>`/bridge/users?q=${enc(q)}&page=${p}&page_size=25`,
     rows:d=>(d.users||[]).map(u=>({key:u.subject,name:u.username,sub:u.subject,roles:u.roles})),
     open:u=>userDetail(u)
   });
+  // ADR-0113: tenant-admin "Add user" — creates a password-gated login in THIS tenant (own-tenant, server-gated).
+  const col=document.querySelector('.col');
+  if(col && !document.getElementById('adduserbtn')){
+    const btn=document.createElement('button');
+    btn.id='adduserbtn'; btn.className='pbtn'; btn.textContent='➕ Add user';
+    btn.style.cssText='margin:0 0 8px;width:100%;color:var(--ink)';
+    btn.onclick=addUserForm;
+    col.insertBefore(btn, col.querySelector('.items'));
+  }
+}
+function addUserForm(){
+  const D=document.getElementById('detail');
+  const roles=['studio.product-manager','studio.project-manager','studio.business-analyst','studio.developer','studio.test-engineer','platform.tenant-admin'];
+  D.innerHTML=`<div style="font-weight:600;font-size:15px">Add a new user</div>
+    <div class="sub" style="color:#5f6b78">Creates a password-gated login in this tenant. They sign in with the password you set here.</div>
+    <div class="lbl">Username</div><input id="nu" class="search" placeholder="e.g. ravi" autocomplete="off">
+    <div class="lbl">Initial password <span class="muted">(min 6 — share it with them)</span></div><input id="npw" type="password" class="search" autocomplete="new-password">
+    <div class="lbl">Role <span class="muted">(optional)</span></div>
+    <select id="nr" class="search"><option value="">(no role)</option>${roles.map(r=>`<option value="${r}">${esc(r)}</option>`).join('')}</select>
+    <div style="margin-top:12px"><button class="pbtn" id="create" style="color:var(--ink)">Create user</button></div>
+    <div class="sub" id="msg" style="margin-top:8px"></div>`;
+  D.querySelector('#create').onclick=async()=>{
+    const username=(D.querySelector('#nu').value||'').trim().toLowerCase(), password=D.querySelector('#npw').value||'', role=D.querySelector('#nr').value;
+    const msg=D.querySelector('#msg');
+    if(!username){msg.textContent='Enter a username.';return;}
+    if(password.length<6){msg.textContent='Password must be at least 6 characters.';return;}
+    msg.textContent='Creating…';
+    const r=await jpost('/bridge/user-create',{username,password,roles:role?[role]:[]});
+    if(r.ok){toast('✓ created '+username+(r.j&&r.j.existed?' (existed)':''));byUser();}
+    else{msg.textContent=(r.j&&r.j.error)||'failed';}
+  };
 }
 async function userDetail(u){
   const D=document.getElementById('detail'); D.innerHTML='<div class="empty">loading…</div>';
