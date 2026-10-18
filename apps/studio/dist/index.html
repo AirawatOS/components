@@ -141,10 +141,15 @@ async function q(schema){try{return (await fetch('/bridge/query',{method:'POST',
 async function save(obj){return fetch('/bridge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:obj.id,object:obj})}).then(r=>r.json());}
 async function post(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
-let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},DECLARED={},TABS=[],ACTIVE=null,TENANT='kmc',VIEW='files';
+let PROJECTS=[],SEL=null,MARKET={components:[]},OPENK={},FILES={},DECLARED={},TABS=[],ACTIVE=null,TENANT='kmc',SUB='',VIEW='files';
+// ADR-0113: the governed Studio-v2 project roles (value → label).
+const STUDIO_ROLES=[['studio.product-manager','Product Manager'],['studio.project-manager','Project Manager'],['studio.business-analyst','Business Analyst'],['studio.developer','Developer'],['studio.test-engineer','Test Engineer']];
+const roleLabel=r=>((STUDIO_ROLES.find(x=>x[0]===r)||[])[1]||r);
+const bareSub=s=>String(s||'').split('/').pop();
+const isOwner=p=>!!p&&(p.owner===SUB||bareSub(p.owner)===bareSub(SUB));
 
 async function boot(){
-  try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;}catch(e){}  // build in the DEVELOPER's own tenant
+  try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;if(s&&s.sub)SUB=s.sub;}catch(e){}  // build in the DEVELOPER's own tenant
   PROJECTS=await q('studio.project');
   try{MARKET=await fetch('/bridge/market').then(r=>r.json());}catch(e){}
   SEL = PROJECTS[0] || null;
@@ -161,6 +166,7 @@ async function boot(){
     ['📂 Open Project…',openProjectPicker],
     ['---'],
     ['✎ Rename Project…',has?renameProject:null],
+    ['👥 Team & roles…',has?openTeam:null],
     ['🗑 Archive / Delete Project…',has?deleteProject:null],
     ['---'],
     ['⬆ Publish as Solution',has?composeSolution:null],
@@ -192,6 +198,36 @@ function openProjectPicker(){
   m.q('#x').onclick=m.close;
   m.q('#np').onclick=()=>{m.close();newProject();};
   m.q('.sheet').querySelectorAll('.xitem').forEach(el=>el.onclick=()=>{m.close();selectProject(el.dataset.id);});
+}
+// ---------- TEAM & ROLES (ADR-0113 S1) — the owner invites members; the solution then lists in their Studio ----------
+async function openTeam(){
+  if(!SEL){bottom('Open a project first.');return;}
+  const owner=isOwner(SEL), team=SEL.team||[];
+  const rows=team.length
+    ? team.map(t=>`<div class="xitem">👤 <b>${esc(bareSub(t.sub))}</b> <span class="sub">· ${esc(roleLabel(t.role))}${bareSub(t.sub)===bareSub(SEL.owner)?' · owner':''}</span></div>`).join('')
+    : '<div class="sub" style="padding:8px">No team members yet.</div>';
+  const roleOpts=STUDIO_ROLES.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('');
+  const invite=owner
+    ? `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+         <label class="sub">Invite a teammate <span class="sub">(a user in this workspace — they'll see this solution in their Studio)</span></label>
+         <div style="display:flex;gap:8px;margin-top:6px"><input class="in" id="iv" placeholder="username (e.g. ravi)" style="flex:1"><select class="in" id="ir" style="max-width:180px">${roleOpts}</select><button class="btn primary" id="go">Invite</button></div>
+         <div class="sub" id="ivmsg" style="margin-top:6px"></div></div>`
+    : `<div class="sub" style="margin-top:10px">Only the project owner or a project manager can invite members.</div>`;
+  const m=modal(`<h3>Team &amp; roles — ${esc(SEL.title)}</h3>
+    <div class="sub">Owner: <b>${esc(bareSub(SEL.owner)||'—')}</b>. Members work on components they own or are granted (ADR-0113).</div>
+    <div style="margin:12px 0;max-height:40vh;overflow:auto">${rows}</div>
+    ${invite}
+    <div style="text-align:right;margin-top:12px"><button class="btn" id="x">Close</button></div>`);
+  m.q('#x').onclick=m.close;
+  if(owner){const b=m.q('#go');b.onclick=async()=>{
+    const sub=(m.q('#iv').value||'').trim(), role=m.q('#ir').value;
+    if(!sub){m.q('#ivmsg').textContent='Enter a username.';return;}
+    b.disabled=true;m.q('#ivmsg').textContent='Inviting…';
+    const r=await post('/bridge/project-invite',{project_id:SEL.id,sub,role});
+    if(r&&r.error){m.q('#ivmsg').innerHTML='<span style="color:var(--err)">'+esc(r.error)+'</span>';b.disabled=false;return;}
+    PROJECTS=await q('studio.project');SEL=PROJECTS.find(p=>p.id===SEL.id)||SEL;
+    m.close();openTeam();bottom('✓ invited '+sub+' as '+roleLabel(role));
+  };}
 }
 // ---------- LEFT TREE ----------
 function tree(){
@@ -531,7 +567,9 @@ function newProject(){const m=modal(`<h3>New Project — tell me what you're bui
     const id='ds:'+TENANT+':studio/project/'+t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);
     const brief={users:lines('#who'),entities:lines('#ent'),data_sources:lines('#src'),decisions:lines('#dec'),triggers:lines('#trg')};
     const design=m.q('#design').checked;
-    await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),brief,status:'active',members:[],tenant:TENANT});
+    const _me=bareSub(SUB);
+    await save({schema:'studio.project',id,title:t,goal:m.q('#g').value.trim(),brief,status:'active',members:[],
+      owner:SUB,team:[{sub:_me,role:'studio.product-manager',added_by:_me,added_at:new Date().toISOString()}],tenant:TENANT});
     m.close(); PROJECTS=await q('studio.project'); selectProject(id);
     if(design&&SEL){expandAI();setTimeout(()=>aiSend(briefPrompt(SEL)),150);}
   };}
