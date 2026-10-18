@@ -153,6 +153,26 @@ const isLead=()=>isAdmin()||ROLES.some(r=>['studio.product-manager','studio.proj
 // ADR-0113: the CONTRACT (schemas/interfaces) is authored by the BA + leads; developers/testers consume it.
 const isContractAuthor=()=>isLead()||ROLES.includes('studio.business-analyst');
 
+// ADR-0113 / sandbox: upsert a project member (by ref) + persist + self-verify against the server. Used to
+// add an existing governed spec, to save a LOCAL DRAFT spec you keep iterating, and to update either.
+async function addOrUpdateMember(member){
+  if(!SEL) return {error:'open a project first'};
+  if(!(isOwner(SEL)||isLead())) return {error:'only the project owner or a lead can edit this project'};
+  const others=(SEL.members||[]).filter(x=>x.ref!==member.ref);
+  const next=Object.assign({},SEL,{members:[...others, member]});
+  let res={}; try{res=await save(next);}catch(e){res={error:String(e)};}
+  if(res&&res.error) return {error:res.error};
+  PROJECTS=((await post('/bridge/query',{app_id:'studio',schema:'studio.project'}))||{}).results||[];
+  SEL=PROJECTS.find(p=>p.id===next.id)||next; tree();
+  return (SEL.members||[]).some(x=>x.ref===member.ref)?{ok:true}:{error:'it didn’t save — check your edit rights'};
+}
+// Reopen a LOCAL DRAFT spec (origin:new) back in its editor so the developer can keep iterating, then File when ready.
+function editDraft(m){
+  if(m.kind==='schema') requestSchema({schema_id:m.ref,version:m.version,x_kind:m.x_kind,definition:m.definition,draft:true});
+  else if(m.kind==='interface') requestInterface({interface_id:m.ref,version:m.version,definition:m.definition,draft:true});
+  else if(m.kind==='role') requestRole({role:m.ref,label:m.label,definition:m.def_text,draft:true});
+}
+
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;if(s&&s.sub)SUB=s.sub;if(s&&Array.isArray(s.roles))ROLES=s.roles;}catch(e){}  // build in the DEVELOPER's own tenant
   PROJECTS=await q('studio.project');
@@ -255,7 +275,7 @@ function tree(){
   L.innerHTML=html;
   L.querySelectorAll('[data-lfolder]').forEach(el=>{el.onclick=()=>{const k='ly:'+el.dataset.lfolder;OPENK[k]=(OPENK[k]===false)?true:false;tree();};
     el.oncontextmenu=e=>{e.preventDefault();ctxLayer(el.dataset.lfolder,e);};});
-  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&m.kind==='role'){roleView(m);return;}if(m&&(m.kind==='schema'||m.kind==='interface')){openSpec(m);return;}OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
+  L.querySelectorAll('[data-comp]').forEach(el=>{el.onclick=async()=>{const ref=el.dataset.comp;const m=memberFor(ref);if(m&&(m.kind==='schema'||m.kind==='interface'||m.kind==='role')){ if(m.origin==='new'){editDraft(m);} else if(m.kind==='role'){roleView(m);} else {openSpec(m);} return; }OPENK['c:'+ref]=!OPENK['c:'+ref];if(OPENK['c:'+ref]&&!FILES[ref]){tree();const r=await post('/bridge/component-read',{component:ref});FILES[ref]=r.files||{};}tree();};
     el.oncontextmenu=e=>{e.preventDefault();ctxComp(el.dataset.comp,e);};});
   L.querySelectorAll('[data-file]').forEach(el=>{el.onclick=()=>{const [ref,fp]=el.dataset.file.split('::');openFile(ref,fp);};});
 }
@@ -949,7 +969,7 @@ async function requestInterface(prefill){prefill=prefill||{};
     <label class="sub" style="margin-top:8px;display:block">definition <span class="sub">· modality request|event|stream · edit freely</span></label>
     <textarea class="in" id="idef" rows="14" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(initDef)}</textarea>
     <label class="sub" style="margin-top:6px;display:block">why (justification)</label><input class="in" id="ijust" placeholder="what need this interaction serves">
-    <div style="text-align:right;margin-top:10px"><span class="sub" id="irm"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="ifile">File request</button></div></div>`);
+    <div style="text-align:right;margin-top:10px"><span class="sub" id="irm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="idraft" title="Keep it as a local draft in this project — iterate without filing to the Network">💾 Save draft</button> <button class="btn primary" id="ifile" title="Propose this verb to the Network standards body">File to Network</button></div></div>`);
   m.q('#x').onclick=m.close;
   m.q('#ifile').onclick=async()=>{
     let d;try{d=JSON.parse(m.q('#idef').value);}catch(e){m.q('#irm').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
@@ -963,6 +983,11 @@ async function requestInterface(prefill){prefill=prefill||{};
     if(!CANON.includes(iid))m.q('#irm').innerHTML='<span style="color:#f0b429">⚠ not a canonical plane verb — the standards body may ask you to use one (ADR-0108). Filing anyway…</span>';
     const r=await post('/bridge/interface-request',{interface_id:iid,version:m.q('#iver').value.trim()||'0.1.0',definition:d,justification:m.q('#ijust').value.trim()});
     m.q('#irm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};
+  m.q('#idraft').onclick=async()=>{
+    let d;try{d=JSON.parse(m.q('#idef').value);}catch(e){m.q('#irm').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
+    const iid=m.q('#iid').value.trim();if(!iid){m.q('#irm').innerHTML='<span style="color:var(--err)">verb id required</span>';return;}
+    const r=await addOrUpdateMember({ref:iid,kind:'interface',title:iid,origin:'new',status:'draft',layer:'network',version:m.q('#iver').value.trim()||'0.1.0',definition:d});
+    m.q('#irm').innerHTML=r.ok?'<span style="color:var(--good)">✓ saved as a draft in the project (not filed) — File to Network when ready</span>':'<span style="color:var(--err)">'+esc(r.error)+'</span>';if(r.ok)setTimeout(m.close,1200);};
 }
 
 // ROLE spec — a governed actor (ADR-0028). role reads <domain>.<name> in kebab-case; the domain must
@@ -974,13 +999,18 @@ async function requestRole(prefill){prefill=prefill||{};
     <label class="sub" style="margin-top:8px;display:block">definition <span class="sub">· what this actor is responsible for</span></label>
     <textarea class="in" id="rdef" rows="4" placeholder="Describe the actor: its responsibilities and the decisions/actions it owns.">${esc(prefill.definition||'')}</textarea>
     <label class="sub" style="margin-top:6px;display:block">why (justification)</label><input class="in" id="rjust" placeholder="what need this role serves">
-    <div style="text-align:right;margin-top:10px"><span class="sub" id="rrm"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="rfile">File request</button></div></div>`);
+    <div style="text-align:right;margin-top:10px"><span class="sub" id="rrm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="rdraft" title="Keep it as a local draft in this project — iterate without filing to the Network">💾 Save draft</button> <button class="btn primary" id="rfile" title="Propose this role to the Network standards body">File to Network</button></div></div>`);
   m.q('#x').onclick=m.close;
   m.q('#rfile').onclick=async()=>{
     const role=m.q('#rid').value.trim();
     if(!/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/.test(role)){m.q('#rrm').innerHTML='<span style="color:var(--err)">role must read &lt;domain&gt;.&lt;name&gt; in kebab-case</span>';return;}
     const r=await post('/bridge/role-request',{role,label:m.q('#rlabel').value.trim(),definition:m.q('#rdef').value.trim(),justification:m.q('#rjust').value.trim()});
     m.q('#rrm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||r.detail||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};
+  m.q('#rdraft').onclick=async()=>{
+    const role=m.q('#rid').value.trim();
+    if(!/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/.test(role)){m.q('#rrm').innerHTML='<span style="color:var(--err)">role must read &lt;domain&gt;.&lt;name&gt; in kebab-case</span>';return;}
+    const r=await addOrUpdateMember({ref:role,kind:'role',title:m.q('#rlabel').value.trim()||role,origin:'new',status:'draft',layer:'network',label:m.q('#rlabel').value.trim(),def_text:m.q('#rdef').value.trim()});
+    m.q('#rrm').innerHTML=r.ok?'<span style="color:var(--good)">✓ saved as a draft in the project (not filed) — File to Network when ready</span>':'<span style="color:var(--err)">'+esc(r.error)+'</span>';if(r.ok)setTimeout(m.close,1200);};
 }
 
 async function requestSchema(prefill){prefill=prefill||{};
@@ -1010,7 +1040,7 @@ async function requestSchema(prefill){prefill=prefill||{};
     <div class="row" style="gap:8px"><div style="flex:2"><label class="sub">schema id</label><input class="in" id="sid" placeholder="geo.osm_feature" value="${esc(prefill.schema_id||'')}"></div><div style="flex:1"><label class="sub">version</label><input class="in" id="ver" value="${esc(prefill.version||'0.1.0')}"></div></div>
     <label class="sub">definition <span class="sub">· x-kind: ${esc(prefill.x_kind||'record')} · edit freely, then Advise before filing</span></label><textarea class="in" id="def" rows="12" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(initDef)}</textarea>
     <div id="adv" class="sub" style="margin-top:6px">${prefill.reason?'<span class="sub">'+esc(prefill.reason)+'</span>':''}</div>
-    <div style="text-align:right;margin-top:6px"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="advise">🤖 Advise</button> <button class="btn primary" id="file">File request</button></div>`);
+    <div style="text-align:right;margin-top:6px"><span class="sub" id="rm"></span> <button class="btn" id="x">Cancel</button> <button class="btn" id="advise">🤖 Advise</button> <button class="btn" id="sdraft" title="Keep it as a local draft in this project — iterate without filing to the Network">💾 Save draft</button> <button class="btn primary" id="file" title="Propose this schema to the Network standards body">File to Network</button></div>`);
   // A supplied definition (or one the developer has edited) is never clobbered when the schema id changes.
   if(prefill.definition)m.q('#def').dataset.t='1';
   m.q('#sid').oninput=()=>{if(!m.q('#def').dataset.t)m.q('#def').value=tmpl(m.q('#sid').value.trim(),prefill.x_kind,prefill.attributes);};m.q('#def').oninput=()=>m.q('#def').dataset.t='1';
@@ -1027,7 +1057,12 @@ async function requestSchema(prefill){prefill=prefill||{};
     if((a.house_rule_violations||[]).length){m.q('#rm').innerHTML='<span style="color:var(--err)">fix the house-rule violations first</span>';return;}
     const d=JSON.parse(m.q('#def').value);
     const r=await post('/bridge/schema-request',{schema_id:m.q('#sid').value.trim(),version:m.q('#ver').value.trim(),definition:d,x_kind:prefill.x_kind||d['x-kind']});
-    m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};}
+    m.q('#rm').innerHTML=r.filed?'<span style="color:var(--good)">✓ filed — track it in My Requests</span>':'<span style="color:var(--err)">'+esc(r.error||'failed')+'</span>';if(r.filed)setTimeout(m.close,1400);};
+  m.q('#sdraft').onclick=async()=>{
+    let d;try{d=JSON.parse(m.q('#def').value);}catch(e){m.q('#rm').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
+    const sid=m.q('#sid').value.trim();if(!sid){m.q('#rm').innerHTML='<span style="color:var(--err)">schema id required</span>';return;}
+    const r=await addOrUpdateMember({ref:sid,kind:'schema',title:sid,origin:'new',status:'draft',layer:'network',version:m.q('#ver').value.trim()||'0.1.0',x_kind:prefill.x_kind||d['x-kind'],definition:d});
+    m.q('#rm').innerHTML=r.ok?'<span style="color:var(--good)">✓ saved as a draft in the project (not filed) — File to Network when ready</span>':'<span style="color:var(--err)">'+esc(r.error)+'</span>';if(r.ok)setTimeout(m.close,1200);};}
 
 async function gitSettings(){
   const st=await post('/bridge/git-binding',{mode:'get'}).catch(()=>({})); const b=st.binding||{};
