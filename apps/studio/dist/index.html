@@ -150,6 +150,8 @@ const isOwner=p=>!!p&&(p.owner===SUB||bareSub(p.owner)===bareSub(SUB));
 const isAdmin=()=>ROLES.some(r=>['admin','platform.tenant-admin','platform.steward'].includes(r));
 // ADR-0113: a "lead" (admin or product/project manager) may CREATE a project + SUBMIT for publish. Developers build.
 const isLead=()=>isAdmin()||ROLES.some(r=>['studio.product-manager','studio.project-manager'].includes(r));
+// ADR-0113: the CONTRACT (schemas/interfaces) is authored by the BA + leads; developers/testers consume it.
+const isContractAuthor=()=>isLead()||ROLES.includes('studio.business-analyst');
 
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());if(s&&s.tenant)TENANT=s.tenant;if(s&&s.sub)SUB=s.sub;if(s&&Array.isArray(s.roles))ROLES=s.roles;}catch(e){}  // build in the DEVELOPER's own tenant
@@ -175,7 +177,7 @@ async function boot(){
     ['⬆ Publish as Solution',(has&&lead)?composeSolution:null],
     ['🌐 Publish as Service',(has&&lead)?publishAsService:null],
   ];});
-  at('mContracts',()=>[['✍️ Author a spec (AI)',authorSpec],['📐 Browse specs',specsBrowser],['＋ Request a schema',requestSchema],['📥 My requests',myRequests]]);
+  at('mContracts',()=>{const ca=isContractAuthor();return [['✍️ Author a spec (AI)',ca?authorSpec:null],['📐 Browse specs',specsBrowser],['＋ Request a schema',ca?requestSchema:null],['📥 My requests',myRequests]];});
   at('mView',()=>[['🗺 Architecture',toggleArch],['☰ Toggle explorer',()=>$('left').classList.toggle('collapsed')]]);
   at('mHelp',()=>[['❓ Guide',guide],['⎇ Git settings',gitSettings]]);
   buildRight();
