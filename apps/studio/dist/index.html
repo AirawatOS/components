@@ -847,10 +847,30 @@ async function specsBrowser(){
     const meta=k==='noun'?`a NOUN (data schema) · sensitivity ${esc(r.sensitivity||'internal')} · status ${esc(r.status||'active')}`
                          :`a VERB (interface, ADR-0058) · modality ${esc(r.modality||'request')} · status ${esc(r.status||'active')}`;
     const mi=(deep&&deep[id])?`<div class="sub" style="margin-top:4px">🔍 matched in: <b>${esc(deep[id].join(', '))}</b></div>`:'';
+    // Link this governed spec INTO the open project (it becomes an 'existing' member — the contract the
+    // project's components speak, ADR-0113). Owner or lead only; the save hits /bridge/save (studio.project).
+    const inProj = !!(SEL && (SEL.members||[]).some(x=>x.ref===id));
+    const addRow = !SEL ? `<span class="sub">Open a project (left panel) to add this spec to it.</span>`
+      : inProj ? `<span class="sub" style="color:var(--good)">✓ already in “${esc(SEL.title)}”</span>`
+      : (isOwner(SEL)||isLead()) ? `<button class="btn sm primary" id="addspec">＋ Add to “${esc(SEL.title)}”</button>`
+      : `<span class="sub">Only the project owner or a lead can add specs.</span>`;
     m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">${ic} ${esc(id)} <span class="sub">v${esc(r.version||'')}</span></h4>
       <div class="sub">${meta}</div>${mi}
+      <div style="margin-top:8px">${addRow}</div>
       <div class="sub" style="margin-top:6px">definition</div>
       <pre>${pre}</pre>`;
+    const ab=m.q('#addspec');
+    if(ab) ab.onclick=async()=>{
+      ab.disabled=true; ab.textContent='adding…';
+      SEL.members=SEL.members||[];
+      SEL.members.push({ref:id, kind:k==='noun'?'schema':'interface', title:id, origin:'existing',
+                        status:'published', layer:k==='noun'?schemaLayer(id):'network'});
+      let res={}; try{res=await save(SEL);}catch(e){res={error:String(e)};}
+      if(res&&res.error){ SEL.members=SEL.members.filter(x=>x.ref!==id);
+        ab.disabled=false; ab.textContent='＋ Add to “'+SEL.title+'”';
+        m.q('#sdet').insertAdjacentHTML('afterbegin','<div class="sub" style="color:var(--err)">✗ '+esc(res.error)+'</div>'); return; }
+      tree(); showDetail(id,k);   // redraw explorer + re-render detail → now shows ✓ in project
+    };
   }
 
   m.q('#seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
