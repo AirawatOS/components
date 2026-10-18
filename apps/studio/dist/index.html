@@ -530,10 +530,32 @@ async function runGen(ref,req,fixError,spec){
     bottom('✓ '+(fixError?'fixed':'generated')+' by '+(g.model||'AI')+'. Review the code, then Test.');renderTabs();
   }else bottom('✗ '+(g.error||'generation failed'));
 }
-async function testComp(ref){bottom('Running '+ref+' …');const r=await post('/bridge/project-test',{component:ref});
+// Fire the component's CURRENT dev source once (same confined path the scheduler uses), optionally with run config.
+async function _runComp(ref, env){
+  bottom('Running '+ref+' …');
+  const r=await post('/bridge/project-test', env?{component:ref,env}:{component:ref});
   const ok=r.status==='ok'; const detail=(r.log||r.detail||r.error||'');
   if(ok){bottom('✓ ran OK\n'+detail);const m=memberFor(ref);if(m&&(m.status==='draft'||m.status==='scaffolded')){m.status='tested';await save(SEL);tree();}}
   else bottomFix('✗ '+(r.error||r.detail||r.status||'failed')+'\n'+detail, ref, detail);}
+// "Run now" dev loop: a component that declares `config:` keys gets a dialog to supply them (prefilled from the
+// meta's schedule.env defaults + last run, remembered per component). A no-config component one-clicks as before.
+async function testComp(ref){
+  let declared={}; try{declared=(await post('/bridge/component-read',{component:ref})).declared||{};}catch(e){}
+  const keys=Array.isArray(declared.config)?declared.config:[];
+  const schedEnv=(declared.schedule&&declared.schedule.env)||{};
+  let last={}; try{last=JSON.parse(localStorage.getItem('runenv:'+ref)||'{}');}catch(e){}
+  if(!keys.length && !Object.keys(last).length) return _runComp(ref, null);   // no declared config → one-click
+  const seed={}; keys.forEach(k=>{seed[k]=(last[k]!==undefined?last[k]:(schedEnv[k]!==undefined?String(schedEnv[k]):''));});
+  Object.keys(last).forEach(k=>{if(seed[k]===undefined)seed[k]=last[k];});
+  const m=modal(`<div style="min-width:min(640px,88vw)"><h3>▶ Run now — ${esc(ref.split('/').pop())}</h3>
+    <div class="sub">Runs the component's CURRENT source once in your dev sandbox — the same confined path a schedule uses. Set the run config below (the keys it declares in <code>config:</code>); values are remembered per component. A file-backed driver needs its file already in the filestore — put its id here.</div>
+    <label class="sub" style="margin-top:8px;display:block">run config · env (JSON)</label>
+    <textarea class="in" id="renv" rows="10" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(JSON.stringify(seed,null,2))}</textarea>
+    <div style="text-align:right;margin-top:10px"><span class="sub" id="rmsg"></span> <button class="btn" id="x">Cancel</button> <button class="btn primary" id="go">▶ Run</button></div></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#go').onclick=()=>{let env;try{env=JSON.parse(m.q('#renv').value||'{}');}catch(e){m.q('#rmsg').innerHTML='<span style="color:var(--err)">bad JSON</span>';return;}
+    try{localStorage.setItem('runenv:'+ref,JSON.stringify(env));}catch(e){}
+    m.close(); _runComp(ref, env);};}
 async function publishComp(ref){bottom('Publishing '+ref+' …');const r=await post('/bridge/project-publish',{component:ref});
   if(r.published){const m=memberFor(ref);if(m){m.status='published';await save(SEL);tree();}
     bottom(r.sandbox
