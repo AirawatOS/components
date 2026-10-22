@@ -112,10 +112,12 @@
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const pretty=s=>(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const pretty=s=>(s||'').replace(/@.*$/,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 const KINDLABEL={app:'Apps',driver:'Drivers',engine:'Engines',skill:'Skills',agent:'AI Experts',pipeline:'Pipelines'};
 const KINDS=['app','driver','engine','skill','agent','pipeline'];
-const nameOf=o=>o.title||pretty((o.component_id||o.ref||'').split('/').pop());
+// A member's label: use an explicit human title ONLY when it differs from the raw id/ref (older adds
+// defaulted title to the bare id like "water-hotspots"); otherwise prettify the id → consistent nav.
+const nameOf=o=>{const raw=((o.component_id||o.ref||'').split('/').pop()||'').split('@')[0];const t=(o.title||'').trim();return (t&&t!==raw&&t!==(o.ref||''))?t:pretty(raw);};
 // ---- ADR-0055 LAYERS: a solution is layered components that talk through specs (Studio DX Slice 1) ----
 // Task-language nav (keeps the ADR-0055 layer KEYS internally; only the labels/hints/order change). Order:
 // Apps → Data In → Logic & AI → Rules & Automation → Contracts → Advanced.
@@ -129,7 +131,9 @@ function schemaLayer(n){const d=(n||'').split('.')[0];return ({network:'network'
 // A real component's layer is DEFINED by its kind (ADR-0055): an app is always Interaction, a driver always
 // Domain, etc. Trust KIND_LAYER over any stale stored m.layer (older projects mis-stamped app members 'domain').
 // Only schemas/interfaces genuinely vary — there, honour an explicit m.layer, else derive from the dotted prefix.
-function layerOf(m){if(m.kind==='interface')return 'network';if(m.kind==='schema')return m.layer||schemaLayer(m.ref);return KIND_LAYER[m.kind]||m.layer||'domain';}
+// A spec IS a contract → schemas live in the Contracts (network) layer regardless of domain prefix
+// (matches the spec-browser add path, which stamps layer:'network'). schemaLayer kept for legacy callers.
+function layerOf(m){if(m.kind==='interface')return 'network';if(m.kind==='schema')return m.layer||'network';return KIND_LAYER[m.kind]||m.layer||'domain';}
 // pull reads/writes from a member (set at scaffold) or lazily from its meta.yaml — the wiring the graph draws.
 function metaList(meta,key){if(!meta)return[];let m=meta.match(new RegExp('^'+key+':\\s*\\[([^\\]]*)\\]','m'));if(m)return m[1].split(',').map(s=>s.trim().replace(/['"]/g,'')).filter(Boolean);
   m=meta.match(new RegExp('^'+key+':\\s*\\n((?:[ \\t]*-[ \\t]*.+\\n?)+)','m'));if(m)return m[1].split('\n').map(l=>l.replace(/^[ \t]*-[ \t]*/,'').trim().replace(/['"]/g,'')).filter(Boolean);return[];}
@@ -927,8 +931,8 @@ async function specsBrowser(){
     const inProj = !!(SEL && (SEL.members||[]).some(x=>x.ref===id));
     const addRow = !SEL ? `<span class="sub">Open a project (left panel) to add this spec to it.</span>`
       : inProj ? `<span class="sub" style="color:var(--good)">✓ already in “${esc(SEL.title)}”</span>`
-      : (isOwner(SEL)||isLead()) ? `<button class="btn sm primary" id="addspec">＋ Add to “${esc(SEL.title)}”</button>`
-      : `<span class="sub">Only the project owner or a lead can add specs.</span>`;
+      : (isOwner(SEL)||isContractAuthor()) ? `<button class="btn sm primary" id="addspec">＋ Add to “${esc(SEL.title)}”</button>`
+      : `<span class="sub">Only the project owner, a lead, or a business analyst can add specs.</span>`;
     m.q('#sdet').innerHTML=`<h4 style="margin:0 0 4px">${ic} ${esc(id)} <span class="sub">v${esc(r.version||'')}</span></h4>
       <div class="sub">${meta}</div>${mi}
       <div style="margin-top:8px">${addRow}</div>

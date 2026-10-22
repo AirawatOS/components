@@ -1,0 +1,24 @@
+# console (kind=app) — the AirOS Console: an in-platform command line.
+#
+# A terminal UI whose command parser dispatches each typed command to the SAME governed bridges the GUI
+# apps use — nothing privileged, no new backend. Every read runs under the signed-in user's own token, so
+# a command returns exactly what that user is allowed to see (the kernel tenant-scopes + RBAC-gates every
+# read; `run` is authorized by the component's grants). This is the OPERATE/EXPLORE surface for a live
+# tenant (list files, browse governed data, run components, check runs) — complementary to the laptop `aos`
+# CLI, which is the BUILD/SHIP surface.
+#
+# Audience: EVERYONE. `roles` is intentionally omitted (like the Data app) — any signed-in user may open it;
+# the real gate is the per-bridge, per-user authorization at the kernel boundary.
+component_id: ds:airawatdeveloper:app/console
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Console
+icon: ⌨️
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+# data_browser relaxes the app-level read allow-list so `query <schema>` can address ANY governed schema;
+# the REAL gate is unchanged — the kernel tenant-scopes + RBAC-gates every read under the user's token.
+data_browser: true
+required_schemas: [platform.file]

@@ -1,0 +1,1016 @@
+<!doctype html><meta charset="utf-8"><title>Console</title>
+<style>
+  :root{--bg:#0b0f14;--ink:#c9d7e4;--dim:#6b7a8c;--accent:#4ea1ff;--good:#3fb950;--warn:#d29922;--err:#f85149;--line:#1b2430}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+  #scroll{position:absolute;top:0;left:0;right:0;bottom:46px;overflow:auto;padding:14px 16px}
+  .ln{white-space:pre-wrap;word-break:break-word}
+  .cmd{color:var(--ink)} .cmd .ps{color:var(--good)} .cmd .in{color:#fff}
+  .out{color:var(--dim)} .ok{color:var(--good)} .warn{color:var(--warn)} .err{color:var(--err)} .acc{color:var(--accent)}
+  .hd{color:var(--accent)} .k{color:var(--dim)}
+  .lbl2{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;display:block;margin:6px 0 2px}
+  table.t{border-collapse:collapse;margin:2px 0 6px}
+  table.t td,table.t th{padding:1px 14px 1px 0;text-align:left;vertical-align:top;white-space:pre}
+  table.t th{color:var(--dim);font-weight:400;border-bottom:1px solid var(--line)}
+  table.t td{color:var(--ink)}
+  a{color:var(--accent)}
+  #bar{position:absolute;left:0;right:0;bottom:0;height:46px;border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:8px;padding:0 14px;background:#0c1118}
+  #ps{color:var(--good);white-space:nowrap}
+  #cl{flex:1;background:none;border:0;color:#fff;font:inherit;outline:none}
+  .hint{color:var(--dim)}
+  ::selection{background:#214a7a;color:#fff}
+</style>
+<div id="scroll"></div>
+<div id="bar"><span id="ps">$</span><input id="cl" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a command — try: help"></div>
+<script>
+// AirOS Console — a terminal over the governed bridges. Each command = one bridge call under the user's
+// own session; the kernel decides what comes back. No privileged path, no new backend.
+const S=document.getElementById('scroll'), CL=document.getElementById('cl'), PSb=document.getElementById('ps');
+let APPID='console', SESS={}, HIST=[], HI=0, BUSY=false;
+
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function atBottom(){return S.scrollHeight-S.scrollTop-S.clientHeight<40;}
+function emit(html,cls){const d=document.createElement('div');d.className='ln '+(cls||'out');d.innerHTML=html;const b=atBottom();S.appendChild(d);if(b)S.scrollTop=S.scrollHeight;return d;}
+function line(text,cls){emit(esc(text),cls);}
+function echo(cmd){emit('<span class="ps">'+esc(prompt())+'</span> <span class="in">'+esc(cmd)+'</span>','cmd');}
+function prompt(){const t=SESS.tenant||'…', u=(SESS.sub||'').split('/').pop()||'anon';return u+'@'+t+' $';}
+function setPrompt(){PSb.textContent=prompt();}
+
+async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+  let j={};try{j=await r.json();}catch(e){} return {ok:r.ok,status:r.status,j};}
+async function jget(p){const r=await fetch(p);let j={};try{j=await r.json();}catch(e){} return {ok:r.ok,status:r.status,j};}
+
+// ADR-0114 VFS: a current working directory + path resolution (absolute / relative / . / ..).
+let cwd='/';
+function vpath(arg){
+  let p=(arg==null||arg==='')?cwd:String(arg);
+  if(p[0]!=='/') p=(cwd==='/'?'':cwd)+'/'+p;            // relative to cwd
+  const parts=[];for(const seg of p.split('/')){if(!seg||seg==='.')continue;if(seg==='..')parts.pop();else parts.push(seg);}
+  return '/'+parts.join('/');
+}
+// ADR-0114 S3b: project authoring helpers
+function slug(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+function curProject(){const m=/^\/projects\/([^/]+)/.exec(cwd);return m?m[1]:null;}
+function myTenant(){return (typeof SESS!=='undefined'&&SESS&&SESS.tenant)||'airawatdeveloper';}
+// shared by head/tail: server returns only N lines, so a huge file never crosses the wire.
+async function lineScan(action,args){
+  if(!args[0]){line('usage: '+action+' <path> [N]','err');return;}
+  const p=vpath(args[0]);const n=(args[1]&&/^\d+$/.test(args[1]))?args[1]:'20';
+  const {ok,j,status}=await jget('/bridge/vfs?action='+action+'&lines='+n+'&path='+encodeURIComponent(p));
+  if(!ok){line(action+': '+(j.error||status),'err');return;}
+  (j.lines||[]).forEach(l=>line(l,'out'));
+  if(action==='tail'&&j.total_lines)line('— last '+(j.lines||[]).length+' of '+j.total_lines+' lines','out');
+  else if(action==='head'&&(j.shown||0)>=parseInt(n))line('— first '+n+' lines (raise N, or `grep <text> '+p+'`)','out');
+}
+// ADR-0114 Slice 3: a minimal modal source editor (textarea) — Save POSTs to /bridge/vfs (= Studio component-save).
+function openEditor(title, content, onSave){
+  // onSave(text) → {ok, msg?, err?} (async). Default (no onSave): save a file via /bridge/vfs.
+  const ov=document.createElement('div');
+  ov.className='cons-ov';   // marker so the global click-to-refocus-prompt handler never steals focus from this editor
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;z-index:9999;padding:3vh 3vw';
+  const bar=document.createElement('div');
+  bar.style.cssText='display:flex;gap:10px;align-items:center;color:#cdd;font:13px monospace;padding:6px 2px';
+  bar.innerHTML='<b style="color:#7fd">edit</b> '+esc(title)+' <span style="flex:1"></span>';
+  const save=document.createElement('button'), cancel=document.createElement('button');
+  save.textContent='Save (Ctrl/⌘-S)'; cancel.textContent='Cancel (Esc)';
+  for(const b of [save,cancel])b.style.cssText='font:12px monospace;padding:5px 12px;cursor:pointer;background:#223;color:#cdd;border:1px solid #456;border-radius:4px';
+  bar.appendChild(save); bar.appendChild(cancel);
+  const ta=document.createElement('textarea');
+  ta.value=content; ta.spellcheck=false;
+  ta.style.cssText='flex:1;width:100%;box-sizing:border-box;background:#0b0f14;color:#dfe;border:1px solid #345;border-radius:6px;padding:12px;font:13px/1.45 monospace;resize:none;white-space:pre;overflow:auto';
+  ov.appendChild(bar); ov.appendChild(ta); document.body.appendChild(ov);
+  ta.focus();
+  const close=()=>{document.body.removeChild(ov);CL.focus();};
+  async function doSave(){
+    let res;
+    if(onSave){ try{res=await onSave(ta.value);}catch(e){res={ok:false,err:String(e.message||e)};} }
+    else { const {ok,j,status}=await jpost('/bridge/vfs',{path:title,content:ta.value});
+           res=ok?{ok:true,msg:'saved '+(j.path||title)+'  ('+(j.bytes!=null?j.bytes:ta.value.length)+' bytes)'}:{ok:false,err:(j.error||status)}; }
+    if(!res.ok){bar.querySelector('span').textContent=' — '+(res.err||'save failed');bar.querySelector('span').style.color='#f88';return;}
+    close(); line(res.msg||('saved '+title),'out');
+  }
+  save.onclick=doSave; cancel.onclick=close;
+  ta.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){e.preventDefault();close();}
+    else if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();doSave();}
+    else if(e.key==='Tab'){e.preventDefault();const s=ta.selectionStart,en=ta.selectionEnd;ta.value=ta.value.slice(0,s)+'  '+ta.value.slice(en);ta.selectionStart=ta.selectionEnd=s+2;}
+  });
+}
+
+// installed components (cids) — cached; used to resolve a short tail to a full component id
+let _INST=null;
+async function installed(){
+  if(_INST)return _INST;
+  const {ok,j}=await jget('/bridge/market');
+  _INST = ok ? (j.installed||[]) : [];
+  return _INST;
+}
+// resolve "water-complaints" → "ds:…:driver/water-complaints". A full id (has ':') passes through.
+async function resolveComp(name){
+  if(!name)return {error:'no component given'};
+  if(name.indexOf(':')>=0)return {cid:name};
+  const list=await installed();
+  const hits=list.filter(c=>c.split('/').pop()===name || c.endsWith('/'+name));
+  if(hits.length===1)return {cid:hits[0]};
+  if(hits.length>1)return {candidates:hits};
+  // not in the marketplace installed set (e.g. a Studio dev component) — try the common dev-tenant ids
+  for(const kind of ['driver','engine','app','model','skill']){
+    const guess='ds:'+(SESS.tenant||'airawatdeveloper')+':'+kind+'/'+name;
+    const probe=await jpost('/bridge/component-read',{component:guess});
+    if(probe.ok)return {cid:guess};
+  }
+  return {error:'no component named "'+name+'" — try: components, or pass the full ds:… id'};
+}
+function kindOf(cid){const m=/:([a-z]+)\//.exec(cid);return m?m[1]:'';}
+function tailOf(cid){return cid.split('/').pop();}
+
+// a run is backgrounded server-side (it can take minutes) — detect its OUTCOME by polling /bridge/runs for a
+// run outcome newer than the latest one that existed BEFORE we fired it.
+async function _latestRunAt(cid){
+  try{const {ok,j}=await jget('/bridge/runs?component='+encodeURIComponent(cid));
+    const rs=(ok&&(j.runs||j.results||j.items))||[]; let mx=''; rs.forEach(x=>{const a=x.at||x.started_at||''; if(a>mx)mx=a;}); return mx;}catch(e){return '';}
+}
+async function _pollRun(cid, before, tries, delayMs){
+  for(let i=0;i<tries;i++){
+    await new Promise(r=>setTimeout(r,delayMs));
+    try{const {ok,j}=await jget('/bridge/runs?component='+encodeURIComponent(cid));
+      const rs=(ok&&(j.runs||j.results||j.items))||[];
+      const fresh=rs.filter(x=>(x.at||x.started_at||'')>before);
+      if(fresh.length)return fresh.sort((a,b)=>String(b.at||b.started_at||'').localeCompare(String(a.at||a.started_at||'')))[0];
+    }catch(e){}
+  }
+  return null;
+}
+// Resolve a human FILE PATH (e.g. /inbox/complaints.csv) → its content-addressed file_id, by matching your
+// platform.file records (owner-scoped by the host). Tolerant: matches by name, disambiguating by folder; a
+// leading owner segment (/manish/inbox/…) is allowed. Returns the file_id, or null if nothing matches.
+async function resolveFileRef(val){
+  const p=String(val).replace(/^@/,'');
+  const segs=p.split('/').filter(Boolean);
+  if(!segs.length)return null;
+  const name=segs.pop();
+  const wantFolder='/'+segs.join('/');
+  const {ok,j}=await jpost('/bridge/query',{app_id:APPID,schema:'platform.file',paginate:true,limit:300});
+  let rows=((ok&&j.results)||[]).filter(r=>r.kind!=='folder'&&r.name===name&&r.file_id);
+  if(rows.length>1){
+    const want=wantFolder.replace(/\/$/,'');
+    const exact=rows.filter(r=>(r.folder||'/')===wantFolder);
+    const ends=rows.filter(r=>String(r.folder||'/').replace(/\/$/,'').endsWith(want));
+    rows=exact.length?exact:(ends.length?ends:rows);
+  }
+  return rows.length?rows[0].file_id:null;
+}
+
+// render an array of flat objects as a column-aligned table (first N keys)
+function table(rows,cols){
+  if(!rows.length){line('(no rows)','out');return;}
+  if(!cols){const seen=[];rows.forEach(r=>Object.keys(r||{}).forEach(k=>{if(!k.startsWith('_')&&seen.indexOf(k)<0&&seen.length<7)seen.push(k);}));cols=seen;}
+  const cell=v=>{if(v==null)return '';if(typeof v==='object')return JSON.stringify(v);const s=String(v);if(s.slice(0,3)==='ds:')return s;return s.length>42?s.slice(0,41)+'…':s;};  // never truncate a ds: id — you need it whole to get/update/rm
+  let h='<table class="t"><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>';
+  rows.forEach(r=>{h+='<tr>'+cols.map(c=>'<td>'+esc(cell(r?.[c]))+'</td>').join('')+'</tr>';});
+  h+='</table>';emit(h,'out');
+}
+
+// ---- commands -------------------------------------------------------------
+const CMDS={
+  help(){
+    emit('<span class="hd">AirOS Console</span> — explore files &amp; data, run components. Everything runs under your session.','out');
+    const rows=[
+      ['help','this help'],
+      ['whoami','your identity, tenant, and roles'],
+      ['data','list the governed datasets installed in your tenant'],
+      ['query &lt;schema&gt; [N]','read up to N rows of a schema you can see (default 25)'],
+      ['get &lt;record-id&gt;','fetch one record by its ds:… id (resolves local / cross-tenant refs)'],
+      ['history &lt;record-id&gt;','bitemporal version lineage of a record — every version, who wrote it, tombstones'],
+      ['requests','the schema/interface/role change-requests you filed + their approve/reject status'],
+      ['put &lt;schema&gt; field=value …','write a record (dev sandbox) — `put <schema> {json}` also works; auto-ids if no id'],
+      ['update &lt;record-id&gt; field=value …','patch fields on an existing record (dev sandbox) — new bitemporal version'],
+      ['rm &lt;record-id&gt;','retract a record (dev sandbox soft-delete; history preserved)'],
+      ['files [folder]','list your files (flat) — shows name · folder · file_id'],
+      ['fetch &lt;url&gt; [as &lt;path&gt;]','import a public https file into your filestore (→ /inbox) — then pass its path to a run'],
+      ['aoi','show your tenant’s area(s) of interest (space.aoi)'],
+      ['aoi set from &lt;tenant&gt; | bbox …','set/replace your AOI — copy another tenant’s, or give a bbox (developers re-scope often)'],
+      ['secret set &lt;component&gt; &lt;NAME&gt;','store a component key (e.g. a GEE key) in the vault — opens an editor; value never logged'],
+      ['ls [path]','list a folder in your virtual filesystem (ADR-0114) — folders + files at path/cwd'],
+      ['cd [path]','change the current folder (supports / , .. , relative paths)'],
+      ['pwd','print the current folder'],
+      ['cat &lt;path&gt;','preview a (small) text file at a path'],
+      ['head &lt;path&gt; [N]','first N lines (default 20) — server-side, safe on huge files'],
+      ['tail &lt;path&gt; [N]','last N lines (default 20)'],
+      ['grep [-i] &lt;pattern&gt; &lt;path&gt;','lines matching pattern (server-side scan; -i = case-insensitive)'],
+      ['wc &lt;path&gt;','count lines + bytes'],
+      ['stat &lt;path&gt;','show a node’s type · size · file_id · updated'],
+      ['find &lt;name&gt; [path]','find files/folders by name substring under a folder'],
+      ['components [filter]','list installed drivers/engines you can run'],
+      ['describe &lt;component&gt;','show a component’s config contract — what to pass on run'],
+      ['project new &lt;name&gt;','create a Studio project (and cd into it) — opens in Studio too'],
+      ['project add &lt;component&gt;','attach an EXISTING component (driver/engine/app) to the current project — then ls/edit/publish it'],
+      ['project ls / use &lt;name&gt;','list your projects / set the current project'],
+      ['new &lt;driver|engine|app&gt; &lt;name&gt;','scaffold a component into the current project (meta.yaml + run.py)'],
+      ['edit &lt;path&gt;','open a component source file (meta.yaml · run.py · dist/index.html) in a modal editor — Ctrl/⌘-S saves'],
+      ['write &lt;path&gt; &lt;text&gt;','quick one-line write to a component source file'],
+      ['run &lt;component&gt; [K=V …]','run a component (file keys take a path: run water-complaints COMPLAINTS_FILE_ID=/inbox/complaints.csv)'],
+      ['publish &lt;component&gt;','certify + list a component to the Marketplace (needs a green run first) — same as Studio Publish'],
+      ['schema new &lt;domain.subject&gt;','define a LOCAL schema in your dev sandbox (opens a JSON editor; no network approval; promotable later)'],
+      ['schema propose &lt;domain.subject&gt;','file a new governed noun (opens a JSON editor; standards body approves)'],
+      ['iface propose &lt;id&gt;','file a new governed verb/interface contract (opens a JSON editor)'],
+      ['contract ls [query]','browse governed contracts — NOUNS (schemas), VERBS (interfaces), ROLES — optionally filtered'],
+      ['contract show &lt;id&gt;','view a governed contract’s definition (the schema/interface JSON), read-only'],
+      ['contract add &lt;id&gt; […]','attach one or more EXISTING governed contracts to the current project (shows under 🔗 Contracts in Studio)'],
+      ['compose [project]','bundle the project’s PUBLISHED components into a solution (certifies + publishes it)'],
+      ['install &lt;id&gt;','install a solution/component into your tenant (needs a tenant-admin)'],
+      ['runs &lt;component&gt;','recent runs + status for a component'],
+      ['logs &lt;component&gt; [N]','show the last run’s output (stdout+stderr) — your print()/errors, for debugging'],
+      ['ask &lt;question&gt;','chat with your AirawatOS agent (alias: ai, chat) — it answers + proposes actions'],
+      ['confirm / cancel','run (or drop) the action the agent just proposed'],
+      ['⇥ (empty prompt)','accept the AI’s next-command suggestion (the dim ⇥ line) — then Enter to run it'],
+      ['clear','clear the screen'],
+    ];
+    let h='<table class="t">';rows.forEach(r=>h+='<tr><td class="acc">'+r[0]+'</td><td class="k">'+r[1]+'</td></tr>');h+='</table>';
+    emit(h,'out');
+    emit('<span class="k">Tip: component names accept a short tail — e.g. <span class="acc">run water-complaints</span> matches <span class="acc">ds:…:driver/water-complaints</span>.</span>','out');
+  },
+
+  async whoami(){
+    const {j}=await jget('/session');
+    if(!j||!j.authenticated){line('not logged in','warn');return;}
+    emit('<span class="k">sub   </span> '+esc(j.sub||''),'out');
+    emit('<span class="k">tenant</span> '+esc(j.tenant||''),'out');
+    emit('<span class="k">roles </span> '+esc((j.roles||[]).join(', ')||'—'),'out');
+  },
+
+  async data(){
+    line('discovering datasets…','out');
+    const {ok,j,status}=await jpost('/bridge/data-schemas',{});
+    if(!ok){line('could not list datasets ('+status+')','err');return;}
+    const list=(j.schemas||[]).slice().sort((a,b)=>String(a.schema).localeCompare(String(b.schema)));
+    if(j.building)line('(the dataset index is still cataloguing — list may be partial)','warn');
+    if(!list.length){line('no governed data in this tenant yet.','out');return;}
+    table(list.map(d=>({schema:d.schema,domain:d.domain||String(d.schema).split('.')[0],rows:d.count==null?'':d.count})),['schema','domain','rows']);
+    line(list.length+' dataset'+(list.length===1?'':'s')+'. Use: query <schema>','k');
+  },
+
+  async query(args){
+    const schema=args[0];
+    if(!schema){line('usage: query <schema> [N]','warn');return;}
+    const limit=Math.max(1,Math.min(200,parseInt(args[1],10)||25));
+    const {ok,j,status}=await jpost('/bridge/query',{app_id:APPID,schema,paginate:true,limit});
+    if(!ok){line('query failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+    const rows=j.results||j.records||j.items||[];
+    const total=(j.total!=null?j.total:(j.count!=null?j.count:rows.length));
+    table(rows);
+    line(rows.length+' shown'+(total!=null?' of '+total:'')+(j.next_cursor?' · more available':''),'k');
+  },
+
+  async files(args){
+    const folder=args[0];
+    const {ok,j,status}=await jpost('/bridge/query',{app_id:APPID,schema:'platform.file',paginate:true,limit:100});
+    if(!ok){line('could not list files ('+status+')','err');return;}
+    let rows=(j.results||[]);
+    rows=rows.map(r=>{const name=r.name||r.filename||r.title||'';const fol=r.folder||r.path||'/';
+      return {name,folder:fol,path:(fol==='/'?'':fol.replace(/\/$/,''))+'/'+name,
+              bytes:r.size||r.size_bytes||r.bytes||'',file_id:r.file_id||r.blob_id||r.id||'',kind:r.kind||'file'};});
+    rows=rows.filter(r=>r.kind!=='folder');
+    if(folder)rows=rows.filter(r=>String(r.folder).indexOf(folder)>=0);
+    if(!rows.length){line('no files'+(folder?' in '+folder:'')+'. Upload via the Files app (or `aos upload`), then: run <driver> COMPLAINTS_FILE_ID=/inbox/<file>.csv','out');return;}
+    table(rows,['name','path','bytes','file_id']);
+    line(rows.length+' file'+(rows.length===1?'':'s')+'. Pass a PATH to a run, e.g. run <driver> COMPLAINTS_FILE_ID='+(rows[0]?rows[0].path:'/inbox/complaints.csv'),'k');
+  },
+
+  async components(args){
+    const list=await installed();
+    let runnable=list.filter(c=>['driver','engine'].includes(kindOf(c)));
+    if(args[0])runnable=runnable.filter(c=>c.indexOf(args[0])>=0);
+    if(!runnable.length){line('no runnable components installed'+(args[0]?' matching "'+args[0]+'"':'')+'.','out');return;}
+    table(runnable.sort().map(c=>({name:tailOf(c),kind:kindOf(c),component:c})),['name','kind','component']);
+    line(runnable.length+' runnable. Use: describe <name>  ·  run <name> KEY=val','k');
+  },
+
+  async describe(args){
+    const r=await resolveComp(args[0]);
+    if(r.error){line(r.error,'warn');return;}
+    if(r.candidates){line('ambiguous — matches:','warn');r.candidates.forEach(c=>line('  '+c,'out'));return;}
+    const {ok,j,status}=await jpost('/bridge/component-read',{component:r.cid});
+    if(status===403){line('describe needs a Studio role (developer / PM / BA / admin).','warn');return;}
+    if(!ok){line('could not read component ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+    const d=j.declared||{};
+    emit('<span class="hd">'+esc(tailOf(r.cid))+'</span> <span class="k">'+esc(r.cid)+'</span>','out');
+    const keys=d.config||[];
+    if(keys.length){
+      emit('<span class="lbl2">config — pass these as KEY=val on run</span>','out');
+      const rows=keys.map(k=>{
+        const isFile=/_FILE_ID$|_FILE$/.test(k);
+        return {key:k, note: isFile ? '← upload a file in Files, then pass its file_id' :
+          /^MAX$/.test(k)?'per-run row cap (optional)':
+          /^SOURCE$/.test(k)?'a label for where the data came from':
+          /_MAP$|_COLUMNS$/.test(k)?'JSON map (optional — has a fallback)':
+          /_FIELD$/.test(k)?'column override (optional — auto-detected from the header)':''};
+      });
+      let h='<table class="t">';rows.forEach(x=>h+='<tr><td class="acc">'+esc(x.key)+'</td><td class="k">'+esc(x.note)+'</td></tr>');h+='</table>';
+      emit(h,'out');
+      const fk=keys.find(k=>/_FILE_ID$|_FILE$/.test(k));
+      if(fk)emit('<span class="k">file input: <span class="acc">'+esc(fk)+'</span> — pass a path (run <span class="acc">files</span> to see them), e.g. <span class="acc">'+esc(fk)+'=/inbox/your-file.csv</span>.</span>','out');
+    } else line('(no declared config — this component takes no run-time input)','out');
+    if((d.reads||[]).length||(d.writes||[]).length)
+      emit('<span class="k">reads <span class="acc">'+esc((d.reads||[]).join(', ')||'—')+'</span> · writes <span class="acc">'+esc((d.writes||[]).join(', ')||'—')+'</span></span>','out');
+    if(d.schedule&&d.schedule.cron)emit('<span class="k">auto-schedule: <span class="acc">'+esc(d.schedule.cron)+'</span>'+(d.schedule.enabled?'':' (disabled)')+'</span>','out');
+    emit('<span class="k">run it: <span class="acc">run '+esc(tailOf(r.cid))+(keys.find(k=>/_FILE_ID$/.test(k))?' '+keys.find(k=>/_FILE_ID$/.test(k))+'=/inbox/your-file.csv':'')+'</span></span>','out');
+  },
+
+  async run(args){
+    const r=await resolveComp(args[0]);
+    if(r.error){line(r.error,'warn');return;}
+    if(r.candidates){line('ambiguous — matches:','warn');r.candidates.forEach(c=>line('  '+c,'out'));return;}
+    const comp=r.cid;
+    const env={};
+    for(const a of args.slice(1)){
+      const i=a.indexOf('='); if(i<=0)continue;
+      const k=a.slice(0,i); let v=a.slice(i+1);
+      if(v && (v[0]==='/' || v[0]==='@')){            // a FILE PATH (e.g. /inbox/complaints.csv) → resolve → file_id
+        const fid=await resolveFileRef(v);
+        if(!fid){line('no file matches "'+v+'" — run `files` to see your paths','err');return;}
+        line('  '+v+' → '+fid.slice(0,20)+'…','k'); v=fid;
+      }
+      env[k]=v;
+    }
+    const nenv=Object.keys(env).length;
+    const before=await _latestRunAt(comp);             // remember the newest existing outcome, to spot the new one
+    line('running '+tailOf(comp)+(nenv?' with '+nenv+' config value'+(nenv===1?'':'s'):'')+'…','out');
+    const {ok,j,status}=await jpost('/bridge/run',{component:comp,env});
+    if(status===403){line('running a component requires a tenant-admin, or a Studio role in a development/sandbox tenant.','warn');return;}
+    if(!ok){line('run failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+    // The run is BACKGROUNDED server-side (large ingests take minutes). Free the prompt now and print the
+    // outcome here when it lands — no proxy 504, terminal stays usable. (Also: runs '+tailOf(comp)+' anytime.)
+    line('▶ started in the background — I’ll print the result here when it finishes (or check: runs '+tailOf(comp)+')','k');
+    _pollRun(comp, before, 170, 6000).then(out=>{                // poll ~17 min (dev-run cap is 10 min)
+      if(!out){line('['+tailOf(comp)+'] still running — check anytime with: runs '+tailOf(comp),'warn');return;}
+      const rs=String(out.status||out.state||'');
+      const good=(rs==='ok'||rs==='0');
+      line('→ ['+tailOf(comp)+'] '+rs+(out.exit!=null?' (exit '+out.exit+')':''), good?'ok':'warn');
+      const log=out.log||out.logs||out.output;
+      if(typeof log==='string'&&log.trim())log.trim().split('\n').slice(-14).forEach(l=>line('  '+l,'out'));
+    });
+  },
+
+  async runs(args){
+    const comp=args[0];
+    if(!comp){line('usage: runs <component>','warn');return;}
+    const {ok,j,status}=await jget('/bridge/runs?component='+encodeURIComponent(comp));
+    if(!ok){line('could not fetch runs ('+status+')','err');return;}
+    const rows=(j.runs||j.results||j.items||[]);
+    if(!rows.length){line('no runs recorded for '+comp,'out');return;}
+    table(rows.map(r=>({when:r.started_at||r.at||r.ts||'',status:r.status||r.state||'',rows:r.rows||r.written||'',note:r.note||r.error||''})),['when','status','rows','note']);
+  },
+
+  async logs(args){
+    const r=await resolveComp(args[0]);
+    if(r.error){line(r.error,'warn');return;}
+    if(r.candidates){line('ambiguous — matches:','warn');r.candidates.forEach(c=>line('  '+c,'out'));return;}
+    const n=Math.max(1,Math.min(400,parseInt(args[1],10)||200));
+    const {ok,j,status}=await jget('/bridge/runs?component='+encodeURIComponent(r.cid));
+    if(!ok){line('could not fetch runs ('+status+')','err');return;}
+    const runs=(j.runs||j.results||j.items)||[];
+    if(!runs.length){line('no runs yet for '+tailOf(r.cid)+' — run it first','out');return;}
+    const x=runs[0];                                       // newest run
+    const rs=String(x.status||'');
+    emit('<span class="k">'+esc(x.at||'')+' · </span><span class="'+((rs==='ok'||rs==='0')?'ok':'warn')+'">'+esc(rs)+(x.exit!=null?' (exit '+x.exit+')':'')+'</span>'+(x.detail?'<span class="k"> · '+esc(String(x.detail))+'</span>':''),'out');
+    const log=x.log||x.logs||x.output||'';
+    if(!String(log).trim()){line('(no log captured — this run produced no stdout/stderr)','out');return;}
+    String(log).replace(/\r/g,'').split('\n').slice(-n).forEach(l=>line(l,'out'));
+  },
+
+  // ---- ADR-0114 Slice 1: virtual filesystem (read-only) ----
+  async ls(args){
+    const p=vpath(args[0]);
+    const {ok,j,status}=await jget('/bridge/vfs?action=list&path='+encodeURIComponent(p));
+    if(!ok){line('ls: '+p+' ('+status+')','err');return;}
+    const ents=j.entries||[];
+    if(!ents.length){line('(empty) '+(j.path||p),'out');return;}
+    const rows=ents.map(e=>({name:e.node_type==='folder'?e.name+'/':e.name,type:e.node_type,
+      bytes:e.size_bytes||'',file_id:e.file_id||''}));
+    table(rows,['name','type','bytes','file_id']);
+  },
+  async cd(args){
+    const p=vpath(args[0]||'/');
+    const {ok,j}=await jget('/bridge/vfs?action=stat&path='+encodeURIComponent(p));
+    if(!ok){line('cd: no such path: '+p,'err');return;}
+    if(j.node_type!=='folder'){line('cd: not a folder: '+p,'err');return;}
+    cwd=j.path||p;line(cwd,'out');
+  },
+  pwd(){line(cwd,'out');},
+  async cat(args){
+    if(!args[0]){line('usage: cat <path>','err');return;}
+    const p=vpath(args[0]);
+    const st=await jget('/bridge/vfs?action=stat&path='+encodeURIComponent(p));
+    if(!st.ok){line('cat: no such path: '+p,'err');return;}
+    const nt=st.j.node_type,fid=st.j.file_id||'',ct=st.j.content_type||'',sz=st.j.size_bytes||0;
+    if(nt==='folder'){line('cat: is a folder — use `ls`','err');return;}
+    if(nt!=='blob'){line('cat: '+(nt||'?')+' is not a file — use `ls`','err');return;}   // disk-backed source has no file_id; the resolver reads it
+    const texty=(/text|json|csv|xml|yaml|javascript|markdown/i.test(ct)||/\.(txt|csv|json|md|ya?ml|log|xml|html|js|py)$/i.test(p));
+    if(sz>262144||!texty){
+      line('['+nt+'] '+p+'  ·  '+(ct||'text')+'  ·  '+sz+' bytes'+(fid?('  ·  file_id '+fid):'  ·  (on disk)'),'out');
+      line('large/binary — use `head '+p+'` for the first lines, `grep <text> '+p+'`, or download in Files','out');
+      return;
+    }
+    const r=await fetch('/bridge/vfs?action=read&inline=1&path='+encodeURIComponent(p));
+    if(!r.ok){line('cat: read failed ('+r.status+')','err');return;}
+    const t=await r.text(),rows=t.replace(/\r/g,'').split('\n');
+    rows.slice(0,500).forEach(l=>line(l,'out'));
+    if(rows.length>500)line('… ('+(rows.length-500)+' more lines — `head`/`tail`/`grep` or download)','out');
+  },
+  async head(args){await lineScan('head',args,'lines');},
+  async tail(args){await lineScan('tail',args,'lines');},
+  async wc(args){
+    if(!args[0]){line('usage: wc <path>','err');return;}
+    const p=vpath(args[0]);
+    const {ok,j,status}=await jget('/bridge/vfs?action=wc&path='+encodeURIComponent(p));
+    if(!ok){line('wc: '+(j.error||status),'err');return;}
+    line(j.lines+' lines · '+(j.bytes||0)+' bytes · '+p,'out');
+  },
+  async grep(args){
+    if(args.length<2){line('usage: grep <pattern> <path>   (prefix pattern with -i for case-insensitive)','err');return;}
+    let ci='';if(args[0]==='-i'){ci='&i=1';args=args.slice(1);}
+    const pat=args[0],p=vpath(args[1]);
+    const {ok,j,status}=await jget('/bridge/vfs?action=grep&q='+encodeURIComponent(pat)+ci+'&path='+encodeURIComponent(p));
+    if(!ok){line('grep: '+(j.error||status),'err');return;}
+    const m=j.matches||[];
+    if(!m.length){line('no matches for "'+pat+'" in '+(j.scanned||0)+' lines','out');return;}
+    m.forEach(x=>emit('<span class="acc">'+x.line+'</span>: '+esc(x.text),'out'));
+    line((j.capped?'(capped at '+m.length+' matches) ':'')+m.length+' match(es) · scanned '+(j.scanned||0)+' lines','out');
+  },
+  async stat(args){
+    if(!args[0]){line('usage: stat <path>','err');return;}
+    const p=vpath(args[0]);
+    const {ok,j,status}=await jget('/bridge/vfs?action=stat&path='+encodeURIComponent(p));
+    if(!ok){line('stat: no such path: '+p,'err');return;}
+    line('type      '+j.node_type,'out');
+    line('path      '+(j.path||p),'out');
+    if(j.size_bytes)line('bytes     '+j.size_bytes,'out');
+    if(j.content_type)line('type      '+j.content_type,'out');
+    if(j.file_id)line('file_id   '+j.file_id,'out');
+    if(j.updated_at)line('updated   '+j.updated_at,'out');
+  },
+  async find(args){
+    if(!args[0]){line('usage: find <name-substring> [path]','err');return;}
+    const q=args[0].toLowerCase(),root=vpath(args[1]||cwd),hits=[];
+    async function walk(dir,depth){
+      if(depth>6||hits.length>=200)return;
+      const {ok,j}=await jget('/bridge/vfs?action=list&path='+encodeURIComponent(dir));
+      if(!ok)return;
+      for(const e of (j.entries||[])){
+        if(e.name.toLowerCase().indexOf(q)>=0)hits.push({path:e.path,type:e.node_type});
+        if(e.node_type==='folder')await walk(e.path,depth+1);
+      }
+    }
+    await walk(root,0);
+    if(!hits.length){line('find: no match for "'+args[0]+'" under '+root,'out');return;}
+    table(hits,['path','type']);
+  },
+  // ---- ADR-0114 Slice 3: author component source + publish (parity with Studio) ----
+  async edit(args){
+    if(!args[0]){line('usage: edit <path>   — a component source file under /projects/<proj>/<comp>/ (meta.yaml · run.py · dist/index.html)','err');return;}
+    const p=vpath(args[0]);
+    let content='';
+    const r=await fetch('/bridge/vfs?action=read&inline=1&path='+encodeURIComponent(p));
+    if(r.ok)content=await r.text();
+    openEditor(p,content);
+  },
+  async write(args){
+    if(!args[0]){line('usage: write <path> <text…>   (quick one-liner; use `edit` for the full modal)','err');return;}
+    const p=vpath(args[0]), content=args.slice(1).join(' ');
+    const {ok,j,status}=await jpost('/bridge/vfs',{path:p,content});
+    if(!ok){line('write: '+(j.error||status),'err');return;}
+    line('saved '+(j.path||p)+'  ('+(j.bytes!=null?j.bytes:content.length)+' bytes)','out');
+  },
+  async publish(args){
+    if(!args[0]){line('usage: publish <component>   — certify + list it (needs a green `run` first)','err');return;}
+    const r=await resolveComp(args[0]);
+    if(r.error){line('publish: '+r.error,'err');return;}
+    if(r.candidates){line('ambiguous — matches:','warn');r.candidates.forEach(c=>line('  '+c,'out'));return;}
+    const cid=r.cid;
+    line('publishing '+cid+' …','out');
+    const {ok,j,status}=await jpost('/bridge/project-publish',{component:cid});
+    if(!ok){line('publish refused: '+(j.error||JSON.stringify(j)||status),'err');return;}
+    line('✓ published '+(j.component||cid)+(j.version?(' @ '+j.version):'')+' — certified + listed (Under Development in your tenant)','out');
+  },
+  clear(){S.innerHTML='';},
+};
+const ALIAS={datasets:'data',q:'query',file:'files',dir:'ls',who:'whoami','?':'help',
+  desc:'describe',info:'describe',comps:'components',apps:'components',log:'logs',ai:'ask',chat:'ask'};
+
+// ---- fetch: import a public https URL straight into the filestore (→ /inbox), no Files UI / aos needed ----
+CMDS.fetch=async function(args){
+  // fetch <url> [as <path|name>]
+  let url='', dest='';
+  const ai=args.indexOf('as');
+  if(ai>=0){ url=args.slice(0,ai).join(''); dest=args.slice(ai+1).join(' ').trim(); }
+  else { url=(args[0]||'').trim(); }
+  if(!/^https:\/\//i.test(url)){line('usage: fetch <https-url> [as /inbox/name]  — imports a public file into your filestore','err');return;}
+  let name='', folder='inbox';
+  if(dest){ const dn=dest.replace(/^\/+/,''); const i=dn.lastIndexOf('/'); if(i>=0){folder=dn.slice(0,i)||'inbox'; name=dn.slice(i+1);} else name=dn; }
+  line('fetching '+url+' …','out');
+  const {ok,j,status}=await jpost('/bridge/fetch-file',{url,name:name||undefined,folder});
+  if(status===401){line('sign in first.','warn');return;}
+  if(!ok){line('fetch failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+  const kb=j.size?(j.size>1048576?(j.size/1048576).toFixed(1)+' MB':(j.size/1024).toFixed(0)+' KB'):'';
+  line('✓ imported '+(j.path||j.name)+'  '+kb+(j.content_type?'  ['+j.content_type+']':''),'ok');
+  line('  file_id: '+String(j.file_id).slice(0,30)+'…','k');
+  if(j.record_error)line('  note: bytes landed but the Files index record failed: '+j.record_error,'warn');
+  line('  use it: run <driver> SOME_FILE_ID='+(j.path||('/inbox/'+j.name)),'k');
+};
+ALIAS['import']='fetch'; ALIAS['wget']='fetch'; ALIAS['curl']='fetch';
+
+// ---- aoi: show / set the tenant's area of interest (developer re-scopes often) ----
+CMDS.aoi=async function(args){
+  const op=(args[0]||'').toLowerCase();
+  if(!op){
+    const {ok,j}=await jget('/bridge/aoi');
+    if(!ok){line('could not read AOI','err');return;}
+    const a=j.aois||[];
+    if(!a.length){line('no AOI set for '+j.tenant+'. Set one:  aoi set from <tenant>   |   aoi set bbox <minLon> <minLat> <maxLon> <maxLat> [name]','out');return;}
+    table(a.map(x=>({name:x.name,bbox:(x.bbox||[]).join(', '),res:x.h3_res,id:x.id})),['name','bbox','res','id']);
+    return;
+  }
+  if(op!=='set'){line('usage: aoi | aoi set from <tenant> | aoi set bbox <minLon> <minLat> <maxLon> <maxLat> [name]','warn');return;}
+  const rest=args.slice(1); const body={};
+  if((rest[0]||'').toLowerCase()==='from'){ body.from_tenant=rest[1]||''; if(!body.from_tenant){line('usage: aoi set from <tenant>','err');return;} }
+  else if((rest[0]||'').toLowerCase()==='bbox'){ const n=rest.slice(1,5).map(Number); if(n.length<4||n.some(isNaN)){line('usage: aoi set bbox <minLon> <minLat> <maxLon> <maxLat> [name]','err');return;} body.bbox=n; const nm=rest.slice(5).join(' '); if(nm)body.name=nm; }
+  else {line('usage: aoi set from <tenant> | aoi set bbox <minLon> <minLat> <maxLon> <maxLat> [name]','err');return;}
+  const {ok,j,status}=await jpost('/bridge/aoi',body);
+  if(status===403){line('setting an AOI needs a Studio role in a development tenant (or tenant admin).','warn');return;}
+  if(!ok){line('aoi set failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+  line('✓ AOI set: '+j.aoi.name+'  bbox '+(j.aoi.bbox||[]).join(', ')+'  res '+j.aoi.h3_res,'ok');
+  line('  '+j.aoi.id,'k');
+};
+ALIAS['aois']='aoi';
+
+// ---- secret: store a component key in the vault (value pasted in an editor, never on the command line) ----
+CMDS.secret=async function(args){
+  const op=(args[0]||'').toLowerCase(), comp=args[1], name=args[2];
+  if(op==='status'){
+    if(!comp||!name){line('usage: secret status <component> <NAME>','warn');return;}
+    const {ok,j}=await jpost('/bridge/secret',{action:'status',component:comp,name:name});
+    line(ok?('secret '+name+' @ '+comp+': '+JSON.stringify(j)):'status failed','out');return;
+  }
+  if(op!=='set'){line('usage: secret set <component> <NAME> [@/path]   ·   secret status <component> <NAME>','warn');return;}
+  if(!comp||!name){line('usage: secret set <component> <NAME> [@/inbox/key.json]  — editor to paste, or read from a file','warn');return;}
+  // FILE FORM: secret set <comp> <NAME> @/inbox/key.json  → read the value from an uploaded file (no clipboard needed).
+  const ref=args[3]||'';
+  if(/^[@\/]/.test(ref)){
+    const path=ref.replace(/^@/,'');
+    const r=await fetch('/bridge/vfs?action=read&path='+encodeURIComponent(path));
+    if(!r.ok){line('could not read '+path+' ('+r.status+') — upload the key file first (Files app or `aos upload`)','err');return;}
+    const val=(await r.text()).trim();
+    if(!val){line('file '+path+' is empty','err');return;}
+    const {ok,j,status}=await jpost('/bridge/secret',{action:'set',component:comp,name:name,value:val});
+    if(status===403){line('setting a key needs a Studio role in a development tenant (or tenant admin).','warn');return;}
+    if(!ok){line('secret set failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+    line('✓ secret '+name+' stored for '+comp+' from '+path+' ('+val.length+' bytes → vault)','ok');
+    line('  security: delete the key file now — open the Files app and remove '+path,'warn');
+    return;
+  }
+  openEditor('Set secret '+name+' for '+comp+' — click in the box, paste (⌘/Ctrl-V or right-click→Paste), then ⌘/Ctrl-S', '', async(val)=>{
+    val=(val||'').trim();
+    if(!val){line('empty value — not set','warn');return;}
+    const {ok,j,status}=await jpost('/bridge/secret',{action:'set',component:comp,name:name,value:val});
+    if(status===403){line('setting a key needs a Studio role in a development tenant (or tenant admin).','warn');return;}
+    if(!ok){line('secret set failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+    line('✓ secret '+name+' stored for '+comp+' (in the vault; value not retained here)','ok');
+  });
+  line('editor open — click in the box, paste (⌘/Ctrl-V, or right-click→Paste if blocked), ⌘/Ctrl-S to store. If paste is blocked: upload the key file, then `secret set '+comp+' '+name+' @/inbox/<file>`.','k');
+};
+
+// ---- Console AI chat: talk to your AirawatOS agent (plan → it answers + proposes actions; writes confirm) ----
+CMDS.ask=async function(args){
+  const q=args.join(' ').trim();
+  if(!q){line('usage: ask <question>   — chat with your agent (it can answer, and propose actions to run)','err');return;}
+  const d=emit('<span class="hint">· thinking…</span>','out');
+  let r; try{r=await jpost('/bridge/agent',{message:q,history:[]});}catch(e){d.remove();line('ask: '+String(e.message||e),'err');return;}
+  d.remove();
+  const j=r.j||{};
+  if(!r.ok){line('ask: '+(j.error||r.status),'err');return;}
+  if(j.reply)String(j.reply).split('\n').forEach(l=>line(l,'out'));
+  if(j.propose)_stageProposal(j.propose); else PENDING=null;
+};
+function _stageProposal(pr){
+  PENDING=pr;
+  line('↳ proposes: '+(pr.name||'action')+'  '+JSON.stringify(pr.args||{}),'warn');
+  line('  `confirm` to run it · `cancel` to drop.','hint');
+}
+CMDS.confirm=async function(){
+  if(!PENDING){line('nothing to confirm','out');return;}
+  const p=PENDING; PENDING=null;
+  if(p.kind==='secret'){line('this step sets a secret — do it in the GUI assistant (the console never handles secret values).','warn');return;}
+  const d=emit('<span class="hint">· running '+esc(p.name||'action')+'…</span>','out');
+  let r; try{r=await jpost('/bridge/agent',{confirm:{name:p.name,args:p.args||{}}});}catch(e){d.remove();line('confirm: '+String(e.message||e),'err');return;}
+  d.remove(); const j=r.j||{};
+  if(!r.ok){line('confirm: '+(j.error||r.status),'err');return;}
+  if(j.reply)String(j.reply).split('\n').forEach(l=>line(l,'out'));
+  if(j.done&&j.done.title&&!(j.reply||'').includes(j.done.title))line('✓ '+j.done.title,'out');
+  if(j.propose)_stageProposal(j.propose);                   // multi-step plan: resume → confirm the next step
+};
+CMDS.cancel=function(){ if(PENDING){PENDING=null;line('cancelled.','out');} else line('nothing to cancel','out'); };
+
+// ---- ADR-0114 S3b: create a project + scaffold a component, entirely from the Console ----
+CMDS.project=async function(args){
+  const op=(args[0]||'ls').toLowerCase();
+  if(op==='ls'){return CMDS.ls(['/projects']);}
+  if(op==='use'){
+    const name=slug(args[1]); if(!name){line('usage: project use <name>','err');return;}
+    const st=await jget('/bridge/vfs?action=stat&path='+encodeURIComponent('/projects/'+name));
+    if(!st.ok){line('no such project: '+name+' — `project ls`','err');return;}
+    cwd='/projects/'+name; line('cwd → '+cwd,'out'); return;
+  }
+  if(op==='new'){
+    const name=slug(args[1]); if(!name){line('usage: project new <name>','err');return;}
+    const id='ds:'+myTenant()+':studio/project/'+name;
+    const obj={schema:'studio.project',id,title:args.slice(1).join(' ')||name,members:[]};
+    const {ok,j,status}=await jpost('/bridge/save',{object:obj});
+    if(!ok){line('project new: '+(j.error||status),'err');return;}
+    line('✓ created project '+name+'  ('+id+')','out');
+    cwd='/projects/'+name; line('cwd → '+cwd+'   — now: new engine <name>','out'); return;
+  }
+  if(op==='add'){
+    // Attach an EXISTING component (built out-of-band, or shared) to the current project's members —
+    // the same governed write `new` does after scaffolding, so it then shows under `ls` + is edit/publish-able.
+    const proj=curProject();
+    if(!proj){line('not in a project — `cd /projects/<project>` first (or `project use <name>`)','err');return;}
+    const r=await resolveComp(args[1]);
+    if(r.error){line(r.error,'err');return;}
+    if(r.candidates){line('ambiguous — pass the full id. matches: '+r.candidates.join(', '),'err');return;}
+    const cid=r.cid, kind=kindOf(cid), name=tailOf(cid);
+    const pid='ds:'+myTenant()+':studio/project/'+proj;
+    const got=await jpost('/bridge/query',{app_id:APPID,schema:'studio.project'});
+    const rec=((got.j&&got.j.results)||[]).find(x=>x.id===pid);
+    if(!rec){line('project '+proj+' not found','err');return;}
+    if((rec.members||[]).some(m=>m&&m.ref===cid)){line(cid+' is already a member of '+proj,'out');return;}
+    const members=(rec.members||[]).concat([{ref:cid,kind,status:'draft',title:name}]);  // shape matches `new` scaffold (no `layer` — studio.project enforces a layer enum)
+    const s2=await jpost('/bridge/save',{object:{...rec,members}});
+    if(!s2.ok){line('project add: '+(s2.j.error||JSON.stringify(s2.j)||s2.status),'err');return;}
+    _INST=null;                                            // bust the installed-cache so resolveComp sees it
+    line('✓ added '+cid+' to project '+proj,'out');
+    line('now: ls · edit '+name+'/'+(kind==='app'?'dist/index.html':'run.py')+' · publish '+name,'out'); return;
+  }
+  if(op==='invite'){
+    // ADR-0113: owner/lead adds a teammate onto the current project's `team` so they can see + build it.
+    const proj=curProject();
+    if(!proj){line('not in a project — `cd /projects/<project>` first (or `project use <name>`)','err');return;}
+    const who=(args[1]||'').trim();
+    if(!who){line('usage: project invite <username> [role]   — role one of studio.developer|business-analyst|test-engineer|project-manager (default developer)','err');return;}
+    let role=(args[2]||'studio.developer').trim(); if(role.indexOf('.')<0) role='studio.'+role;
+    const pid='ds:'+myTenant()+':studio/project/'+proj;
+    const {ok,j,status}=await jpost('/bridge/project-invite',{project_id:pid,sub:who,role:role});
+    if(!ok){line('project invite: '+(j.error||JSON.stringify(j)||status),'err');return;}
+    line('✓ added '+who+' to '+proj+' as '+role,'out');
+    line('they can now `cd /projects/'+proj+'` (or open it in Studio) and build its components.','out'); return;
+  }
+  line('usage: project new <name> | ls | use <name> | add <component> | invite <username> [role]','err');
+};
+CMDS.new=async function(args){
+  const kind=(args[0]||'').toLowerCase(), name=slug(args[1]);
+  if(!['driver','engine','app'].includes(kind)||!name){line('usage: new <driver|engine|app> <name>   (inside a project: cd /projects/<proj>)','err');return;}
+  const proj=curProject();
+  if(!proj){line('not in a project — run `project new <name>` or `cd /projects/<project>` first','err');return;}
+  const cid='ds:'+myTenant()+':'+kind+'/'+name;
+  const sc=await jpost('/bridge/component-scaffold',{component:cid,title:args.slice(1).join(' ')||name});
+  if(!sc.ok){line('scaffold: '+(sc.j.error||sc.status),'err');return;}
+  // link the new component into the current project's members (so it shows under the project + opens in Studio)
+  const pid='ds:'+myTenant()+':studio/project/'+proj;
+  const got=await jpost('/bridge/query',{app_id:APPID,schema:'studio.project'});
+  const rec=((got.j&&got.j.results)||[]).find(x=>x.id===pid);
+  if(rec){
+    const members=(rec.members||[]).filter(m=>m&&m.ref!==cid);
+    members.push({ref:cid,kind,status:'draft',title:name});
+    const s2=await jpost('/bridge/save',{object:{...rec,members}});
+    if(!s2.ok)line('note: scaffolded but could not link to project ('+(s2.j.error||s2.status)+')','warn');
+  }else{line('note: scaffolded but project '+proj+' not found to link','warn');}
+  _INST=null;                                            // bust the installed-cache so resolveComp sees it
+  line('✓ new '+kind+' '+name+'  ('+cid+')','out');
+  line('next: cd '+name+' · edit run.py · run '+name+' · logs '+name+' · publish '+name,'out');
+};
+// ---- ADR-0114 S3c: govern nouns (schemas) + verbs (interfaces) ----
+CMDS.schema=async function(args){
+  const op=(args[0]||'').toLowerCase();
+  const sid=(args[1]||'').trim();
+  if(op==='new'||op==='local'){                 // SANDBOX: install a LOCAL schema (dev tenant) without network approval
+    if(!sid||sid.indexOf('.')<1){line('schema id must be <domain>.<subject> — e.g. water.note','err');return;}
+    const lskel=JSON.stringify({type:'object','x-kind':'entity',
+      description:'TODO: what '+sid+' represents',
+      properties:{title:{type:'string'}},   // declare only YOUR domain fields — schema/id/tenant are the registry's envelope
+      required:['title']},null,2);
+    openEditor('local schema: '+sid, lskel, async text=>{
+      let d; try{d=JSON.parse(text);}catch(e){return {ok:false,err:'not valid JSON'};}
+      const {ok,j,status}=await jpost('/bridge/schema-define',{schema_id:sid,version:'0.1.0',definition:d});
+      return ok?{ok:true,msg:'✓ installed LOCAL schema '+sid+' (dev sandbox — not network-published). Add records:  put '+sid+' field=value …   Publish later:  schema propose '+sid}
+               :{ok:false,err:(j.error||j.detail||JSON.stringify(j)||status)};
+    });
+    return;
+  }
+  if(op!=='propose'){line('usage: schema new <domain.subject>  (local · dev sandbox)  |  schema propose <domain.subject>  (publish to network)','err');return;}
+  if(!sid||sid.indexOf('.')<1){line('schema id must be <domain>.<subject> — e.g. water.complaint','err');return;}
+  const skel=JSON.stringify({type:'object','x-kind':'entity',
+    description:'TODO: what '+sid+' represents. x-kind: entity | measure | event | reference',
+    required:['id'],properties:{id:{type:'string'},tenant:{type:'string'}}},null,2);
+  openEditor('schema: '+sid, skel, async text=>{
+    let defn; try{defn=JSON.parse(text);}catch(e){return {ok:false,err:'not valid JSON'};}
+    const {ok,j,status}=await jpost('/bridge/schema-request',{schema_id:sid,version:'0.1.0',definition:defn});
+    return ok?{ok:true,msg:'✓ filed schema request '+sid+' — '+(j.status||'pending')+' (standards body decides in Network-admin)'}
+             :{ok:false,err:(j.error||JSON.stringify(j)||status)};
+  });
+};
+CMDS.iface=async function(args){
+  if((args[0]||'').toLowerCase()!=='propose'){line('usage: iface propose <interface_id>   (the VERB contract)','err');return;}
+  const iid=(args[1]||'').trim(); if(!iid){line('interface id required','err');return;}
+  const skel=JSON.stringify({modality:'request',description:'TODO: what '+iid+' does',
+    request:{type:'object',properties:{}},response:{type:'object',properties:{}},roles:[]},null,2);
+  openEditor('interface: '+iid, skel, async text=>{
+    let defn; try{defn=JSON.parse(text);}catch(e){return {ok:false,err:'not valid JSON'};}
+    const {ok,j,status}=await jpost('/bridge/interface-request',{interface_id:iid,version:'0.1.0',definition:defn});
+    return ok?{ok:true,msg:'✓ filed interface request '+iid+' — '+(j.status||'pending')}
+             :{ok:false,err:(j.error||JSON.stringify(j)||status)};
+  });
+};
+// ---- browse governed CONTRACTS (nouns/verbs/roles) + attach an existing one to the project ----
+// Mirrors Studio's "📐 Browse specs" + "＋ Add to project": a spec IS a contract, so the member is
+// written with layer:'network' + origin:'existing' → it lands under 🔗 Contracts in the Studio tree.
+async function _contracts(){
+  let d={}, ifs=[], roles=[];
+  try{d=(await jpost('/bridge/schemas',{})).j||{};}catch(e){}
+  try{ifs=((await jpost('/bridge/interfaces',{})).j||{}).interfaces||[];}catch(e){}
+  try{roles=((await jget('/bridge/catalog?kind=roles')).j||{}).roles||[];}catch(e){}
+  const nouns=(d.schemas||[]).map(s=>({id:s.schema_id||'',kind:'schema',ver:s.version||''}));
+  const verbs=ifs.map(f=>({id:f.interface_id||f.id||f.name||'',kind:'interface',ver:f.version||''}));
+  const rols=roles.map(x=>({id:(x.role||x.id||x.name||''),kind:'role',ver:''}));
+  return nouns.concat(verbs).concat(rols).filter(x=>x.id);
+}
+CMDS.contract=async function(args){
+  const op=(args[0]||'ls').toLowerCase();
+  if(op==='ls'){
+    const q=(args[1]||'').toLowerCase();
+    const all=await _contracts();
+    const items=q?all.filter(x=>x.id.toLowerCase().includes(q)):all;
+    if(!items.length){line('no governed contracts'+(q?(' match “'+q+'”'):''),'out');return;}
+    const ic={schema:'📄',interface:'⚡',role:'🎭'};
+    const head={schema:'NOUNS (data schemas)',interface:'VERBS (interfaces)',role:'ROLES (actors)'};
+    ['schema','interface','role'].forEach(k=>{
+      const g=items.filter(x=>x.kind===k); if(!g.length)return;
+      line(head[k]+'  ·  '+g.length,'out');
+      g.sort((a,b)=>a.id>b.id?1:-1).forEach(x=>line('  '+ic[k]+' '+x.id+(x.ver?('  v'+x.ver):''),'out'));
+    });
+    line(curProject()?'add one:  contract add <id>':'open a project (`project use <name>`) then:  contract add <id>','out'); return;
+  }
+  if(op==='add'){
+    const proj=curProject();
+    if(!proj){line('not in a project — `cd /projects/<project>` first (or `project use <name>`)','err');return;}
+    const ids=args.slice(1).map(s=>s.trim()).filter(Boolean);
+    if(!ids.length){line('usage: contract add <id> [<id> …]   (browse: contract ls [query])','err');return;}
+    const all=await _contracts();
+    const pid='ds:'+myTenant()+':studio/project/'+proj;
+    const got=await jpost('/bridge/query',{app_id:APPID,schema:'studio.project'});
+    const rec=((got.j&&got.j.results)||[]).find(x=>x.id===pid);
+    if(!rec){line('project '+proj+' not found','err');return;}
+    const members=(rec.members||[]).slice();   // append all resolvable new contracts, then ONE governed save
+    const added=[];
+    for(const id of ids){
+      const spec=all.find(x=>x.id===id)||all.find(x=>x.id.toLowerCase()===id.toLowerCase());
+      if(!spec){line('✗ '+id+' — no governed contract (browse: contract ls '+id+')','err');continue;}
+      if(members.some(m=>m&&m.ref===spec.id)){line('• '+spec.id+' already in '+proj,'out');continue;}
+      members.push({ref:spec.id,kind:spec.kind,title:spec.id,origin:'existing',status:'published',layer:'network'});
+      added.push(spec);
+    }
+    if(!added.length){line('nothing to add.','out');return;}
+    const s2=await jpost('/bridge/save',{object:{...rec,members}});
+    if(!s2.ok){line('contract add: '+(s2.j.error||JSON.stringify(s2.j)||s2.status),'err');return;}
+    added.forEach(spec=>line('✓ added '+spec.id+' ('+spec.kind+') to '+proj,'out'));
+    line(added.length+' contract'+(added.length>1?'s':'')+' now under 🔗 Contracts in Studio.','out'); return;
+  }
+  if(op==='show'||op==='view'||op==='cat'){
+    const id=(args[1]||'').trim();
+    if(!id){line('usage: contract show <id>   (browse: contract ls [query])','err');return;}
+    const all=await _contracts();
+    const spec=all.find(x=>x.id===id)||all.find(x=>x.id.toLowerCase()===id.toLowerCase());
+    if(!spec){line('no governed contract “'+id+'” — browse with:  contract ls '+id,'err');return;}
+    if(spec.kind==='role'){
+      line('🎭 '+spec.id+'   ROLE (actor)','out');
+      line('a governed actor the solution routes work to — holders are assigned per tenant in Admin → Roles.','out'); return;
+    }
+    const isIf=spec.kind==='interface';
+    const {ok,j,status}=await jpost(isIf?'/bridge/interface-resolve':'/bridge/schema-resolve', isIf?{interface_id:spec.id}:{schema_id:spec.id});
+    if(!ok){line('resolve '+spec.id+': '+(j.error||JSON.stringify(j)||status),'err');return;}
+    const r=j||{}, def=r.definition||r, ver=r.version||spec.ver;
+    line((isIf?'⚡ ':'📄 ')+spec.id+(ver?('  v'+ver):'')+'   '+(isIf?('VERB · interface · modality '+(r.modality||def.modality||'request')):'NOUN · data schema')+(r.sensitivity||def.sensitivity?(' · sensitivity '+(r.sensitivity||def.sensitivity)):''),'out');
+    if(def.description||r.description) line((def.description||r.description),'out');
+    line('— governed contract (read-only; to change it: schema propose / iface propose → Network approves) —','out');
+    line(JSON.stringify(def,null,2),'out'); return;
+  }
+  line('usage: contract ls [query] | contract show <id> | contract add <id>','err');
+};
+// ---- registry record reads (Tier-1, read-only): get one · bitemporal history · my governance requests ----
+CMDS.get=async function(args){
+  const id=(args[0]||'').trim();
+  if(!id){line('usage: get <record-id>   e.g. get ds:'+myTenant()+':water.complaint/C-4471','err');return;}
+  const {ok,j,status}=await jpost('/bridge/resolve',{ref:id});
+  if(!ok){line('get '+id+': '+(j.error||JSON.stringify(j)||status),'err');return;}
+  const obj=j.object||j.subject||((j.results||[])[0])||null;
+  if(!obj){line('no record resolved for '+id+(j.routed_to?('  — routed to '+j.routed_to):''),'out');return;}
+  if(j.object&&j.object.schema)line('📄 '+id+'   ('+j.object.schema+')','out');
+  line(JSON.stringify(obj,null,2),'out');
+};
+CMDS.history=async function(args){
+  const id=(args[0]||'').trim();
+  if(!id){line('usage: history <record-id>   — bitemporal version lineage (every version, who wrote it, tombstones)','err');return;}
+  const {ok,j,status}=await jpost('/bridge/history',{id});
+  if(!ok){line('history '+id+': '+(j.error||JSON.stringify(j)||status),'err');return;}
+  const vs=j.history||j.versions||(Array.isArray(j)?j:[]);
+  if(!vs.length){line('no history (or not visible to you) for '+id,'out');return;}
+  const rows=vs.map((v,i)=>({'#':vs.length-i,
+    tx_from:(v.transaction_time&&v.transaction_time.from)||v.tx_from||'',
+    tx_to:(v.transaction_time&&v.transaction_time.to)||'(current)',
+    valid_from:(v.valid_time&&v.valid_time.from)||'',
+    wrote_by:v.wrote_by||v.agent||'', retracted:v.retracted?'yes':''}));
+  table(rows,['#','tx_from','tx_to','valid_from','wrote_by','retracted']);
+  line(vs.length+' version'+(vs.length===1?'':'s')+' — newest first; append-only + attributed (bitemporal registry).','k');
+};
+CMDS.requests=async function(){
+  const {ok,j,status}=await jget('/bridge/my-requests');
+  if(!ok){line('requests: '+(j.error||JSON.stringify(j)||status),'err');return;}
+  const rs=j.requests||[];
+  if(!rs.length){line('no governance requests filed by you. File one:  schema propose <id>  ·  iface propose <id>','out');return;}
+  table(rs.map(r=>({kind:r.kind,subject:r.subject,status:r.status,decided_by:r.decided_by||'',reason:r.reason||'',published:r.published?'yes':''})),
+        ['kind','subject','status','decided_by','reason','published']);
+  line(rs.length+' request'+(rs.length===1?'':'s')+' (pending first).','k');
+};
+// ---- registry record WRITES (dev-sandbox: builder × development tenant; kernel still attributes + validates) ----
+function _kvargs(toks){const o={};toks.forEach(t=>{const i=t.indexOf('=');if(i>0){let k=t.slice(0,i),v=t.slice(i+1);try{v=JSON.parse(v);}catch(e){}o[k]=v;}});return o;}
+CMDS.put=async function(args){
+  const schema=(args[0]||'').trim();
+  if(!schema||schema.indexOf('.')<1){line('usage: put <schema> {json}   |   put <schema> field=value …   (schema = <domain>.<subject>)','err');return;}
+  const rest=args.slice(1).join(' ').trim();
+  let fields={};
+  if(rest.startsWith('{')){ try{fields=JSON.parse(rest);}catch(e){line('invalid JSON: '+(e.message||e),'err');return;} }
+  else { fields=_kvargs(args.slice(1)); }
+  const tenant=myTenant();
+  let local=fields.id||fields.key||fields.code;
+  let id = (typeof local==='string'&&local.indexOf('ds:')===0) ? local
+         : 'ds:'+tenant+':'+schema+'/'+(local!=null?String(local):('r-'+Date.now().toString(36)+'-'+Math.floor(Math.random()*1e4)));
+  const obj=Object.assign({},fields,{schema,id,tenant});
+  const {ok,j,status}=await jpost('/bridge/save',{app_id:APPID,object:obj});
+  if(!ok){line('put: '+(j.error||status)+(j.detail?(' — '+j.detail):''),'err');return;}
+  line('✓ wrote '+id,'out'); line('read it:  get '+id+'   ·   list:  query '+schema,'k');
+};
+CMDS.update=async function(args){
+  const id=(args[0]||'').trim();
+  if(!id||args.length<2){line('usage: update <record-id> field=value [field2=value …]','err');return;}
+  const r=await jpost('/bridge/resolve',{ref:id});
+  const cur=(r.j&&(r.j.object||r.j.subject))||null;
+  if(!r.ok||!cur){line('update: cannot resolve '+id+' ('+((r.j&&r.j.error)||r.status)+')','err');return;}
+  const patch=_kvargs(args.slice(1));
+  const obj=Object.assign({},cur,patch,{id:cur.id,schema:cur.schema});
+  const {ok,j,status}=await jpost('/bridge/save',{app_id:APPID,object:obj});
+  if(!ok){line('update: '+(j.error||status)+(j.detail?(' — '+j.detail):''),'err');return;}
+  line('✓ updated '+id+' ('+Object.keys(patch).join(', ')+')','out'); line('history:  history '+id,'k');
+};
+CMDS.rm=async function(args){
+  const id=(args[0]||'').trim();
+  if(!id){line('usage: rm <record-id>   — retract a registry record (soft-delete; history preserved)','err');return;}
+  const {ok,j,status}=await jpost('/bridge/record-retract',{id});
+  if(!ok){line('rm: '+(j.error||j.detail||JSON.stringify(j)||status),'err');return;}
+  line('✓ retracted '+id+'  (vanishes from reads; still in `history`)','out');
+};
+// ---- ADR-0114 S3d: compose the solution + install it ----
+CMDS.compose=async function(args){
+  const proj=curProject()||slug(args[0]||'');
+  if(!proj){line('not in a project — `cd /projects/<project>` first (or: compose <project>)','err');return;}
+  const pid='ds:'+myTenant()+':studio/project/'+proj;
+  line('composing '+proj+' → solution (pins + publishes the PUBLISHED member graph) …','out');
+  const {ok,j,status}=await jpost('/bridge/project-compose',{project:pid});
+  if(!ok){line('compose: '+(j.error||JSON.stringify(j)||status),'err');return;}
+  const sid=j.solution||j.solution_id||j.id||'(open the project in Studio to see it)';
+  line('✓ composed solution '+sid+(j.version?(' @ '+j.version):''),'out');
+  if(sid.indexOf(':')>=0)line('install it:  install '+sid,'out');
+};
+CMDS.install=async function(args){
+  const id=(args[0]||'').trim();
+  if(!id||id.indexOf(':')<0){line('usage: install <ds:…:solution/… | component id>  (installing needs a tenant-admin)','err');return;}
+  const kind=id.indexOf(':solution/')>=0?'solution':undefined;
+  line('installing '+id+(kind?(' ('+kind+')'):'')+' …','out');
+  const {ok,j,status}=await jpost('/bridge/install',kind?{id,kind}:{id});
+  if(!ok){line('install: '+(j.error||JSON.stringify(j)||status),'err');return;}
+  const inst=(j.installed&&(j.installed.component_id||j.installed))||j.installed||id;
+  line('✓ installed '+inst,'out');
+  if(j.shelved_apps&&j.shelved_apps.length)line('   apps on desktop: '+j.shelved_apps.join(', '),'out');
+  if(Array.isArray(j.grants))line('   member grants issued: '+j.grants.length,'out');
+};
+
+function parse(s){
+  // tokenise a command line, honouring quotes ANYWHERE in a token (e.g. title="Pump C-12 leaking" → one token,
+  // quotes stripped). A run of non-space chars + quoted segments concatenate until an UNquoted space.
+  const out=[]; let cur='', q=null, has=false;
+  for(let i=0;i<s.length;i++){ const c=s[i];
+    if(q){ if(c===q){q=null;} else {cur+=c;} has=true; continue; }
+    if(c==='"'||c==="'"){ q=c; has=true; continue; }
+    if(c===' '||c==='\t'){ if(has){out.push(cur);cur='';has=false;} continue; }
+    cur+=c; has=true;
+  }
+  if(has) out.push(cur);
+  return out;
+}
+
+async function dispatch(raw){
+  const s=raw.trim();if(!s)return;
+  echo(s);
+  const toks=parse(s);let name=toks[0].toLowerCase();name=ALIAS[name]||name;
+  const fn=CMDS[name];
+  if(!fn){line('unknown command: '+toks[0]+" — type 'help'",'err');return;}
+  BUSY=true;CL.disabled=true;
+  try{await fn(toks.slice(1));}catch(e){line('error: '+(e&&e.message||e),'err');}
+  BUSY=false;CL.disabled=false;CL.focus();
+}
+
+// ---- TAB completion -------------------------------------------------------
+// Completes the COMMAND when you're on the first word, else a VFS PATH for the filesystem commands
+// (cd w<Tab> → cd water-intelligence/). One match fills it; several complete the common prefix + list.
+const PATH_CMDS=new Set(['cd','ls','cat','head','tail','wc','grep','stat','find']);
+function commonPrefix(a){if(!a.length)return'';let p=a[0];for(const s of a){let i=0;while(i<p.length&&i<s.length&&p[i]===s[i])i++;p=p.slice(0,i);}return p;}
+function lastTok(v){const m=v.match(/(\S*)$/);const tok=m?m[1]:'';return {pre:v.slice(0,v.length-tok.length),tok};}
+async function complete(){
+  const v=CL.value, {pre,tok}=lastTok(v);
+  if(pre.trim()===''){                                   // completing the COMMAND name
+    const names=[...new Set([...Object.keys(CMDS),...Object.keys(ALIAS)])].filter(n=>n.startsWith(tok)).sort();
+    if(!names.length)return;
+    if(names.length===1)CL.value=pre+names[0]+' ';
+    else{const l=commonPrefix(names);if(l.length>tok.length)CL.value=pre+l;line(names.join('   '),'out');}
+    return;
+  }
+  const toks=v.trim().split(/\s+/), cmd=(ALIAS[toks[0]]||toks[0]||'').toLowerCase();
+  if(!PATH_CMDS.has(cmd))return;                          // only filesystem commands path-complete
+  const slash=tok.lastIndexOf('/'), dirPart=slash>=0?tok.slice(0,slash+1):'', leaf=slash>=0?tok.slice(slash+1):tok;
+  const parent=dirPart?vpath(dirPart):cwd;
+  const {ok,j}=await jget('/bridge/vfs?action=list&path='+encodeURIComponent(parent));
+  if(!ok)return;
+  let ents=(j.entries||[]).filter(x=>x.name.startsWith(leaf));
+  if(cmd==='cd')ents=ents.filter(x=>x.node_type==='folder');
+  if(!ents.length)return;
+  const disp=x=>x.name+(x.node_type==='folder'?'/':'');
+  if(ents.length===1)CL.value=pre+dirPart+disp(ents[0])+(ents[0].node_type==='folder'?'':' ');
+  else{const l=commonPrefix(ents.map(x=>x.name));if(l.length>leaf.length)CL.value=pre+dirPart+l;line(ents.map(disp).join('   '),'out');}
+  setTimeout(()=>CL.setSelectionRange(99999,99999),0);
+}
+// ---- Console AI (Slice 1): kimi-k3 predicts the next command → ghost hint → Tab-on-empty accepts (human gate) ----
+const BAR=document.getElementById('bar');                   // already position:absolute; bottom:0 (a positioned ancestor for the ghost)
+const ghostEl=document.createElement('span');               // INLINE ghost: grey text overlaid inside the input
+ghostEl.id='ghost';
+ghostEl.style.cssText='position:absolute;pointer-events:none;color:var(--dim);white-space:pre;overflow:hidden;z-index:2';
+BAR.appendChild(ghostEl);
+let GHOST='', ghostTimer=null, PENDING=null;                // PENDING = an agent-proposed action awaiting `confirm`
+function setGhost(s){
+  GHOST=s||'';
+  if(!GHOST||CL.value!==''){ghostEl.textContent='';return;}
+  const cs=getComputedStyle(CL);
+  ghostEl.style.fontFamily=cs.fontFamily; ghostEl.style.fontSize=cs.fontSize; ghostEl.style.fontWeight=cs.fontWeight;
+  ghostEl.style.left=(CL.offsetLeft+parseFloat(cs.paddingLeft||'0'))+'px';
+  ghostEl.style.top=(CL.offsetTop+parseFloat(cs.paddingTop||'0'))+'px';
+  ghostEl.style.height=cs.lineHeight;
+  ghostEl.textContent=GHOST+'  ⇥';                          // trailing ⇥ = Tab to accept
+}
+async function suggest(){
+  if(CL.value!=='')return;
+  try{
+    const {ok,j}=await jpost('/bridge/console-ai',{mode:'suggest',cwd,
+      commands:Object.keys(CMDS).concat(Object.keys(ALIAS)).join(' '),history:HIST.slice(-12)});
+    if(CL.value==='')setGhost(ok&&j.suggestion?j.suggestion:'');
+  }catch(e){}
+}
+function scheduleSuggest(){clearTimeout(ghostTimer);ghostTimer=setTimeout(()=>{if(CL.value==='')suggest();},600);}
+CL.addEventListener('input',()=>{ if(CL.value!=='')setGhost(''); else scheduleSuggest(); });
+
+CL.addEventListener('keydown',e=>{
+  if(e.key==='Tab'){
+    e.preventDefault();
+    if(CL.value===''&&GHOST){CL.value=GHOST;setGhost('');setTimeout(()=>CL.setSelectionRange(99999,99999),0);return;}  // accept the AI suggestion (does NOT run)
+    if(!BUSY)complete();
+    return;
+  }
+  if(BUSY){e.preventDefault();return;}
+  if(e.key==='Enter'){const v=CL.value;CL.value='';setGhost('');if(v.trim()){HIST.push(v);HI=HIST.length;}dispatch(v);scheduleSuggest();}
+  else if(e.key==='ArrowUp'){if(HI>0){HI--;CL.value=HIST[HI]||'';setGhost('');setTimeout(()=>CL.setSelectionRange(999,999),0);}e.preventDefault();}
+  else if(e.key==='ArrowDown'){if(HI<HIST.length){HI++;CL.value=HIST[HI]||'';setGhost('');}e.preventDefault();}
+  else if(e.key==='l'&&e.ctrlKey){CMDS.clear();e.preventDefault();}
+});
+document.addEventListener('click',e=>{
+  if(window.getSelection().toString())return;                          // don't fight a text selection
+  if(e.target&&e.target.closest&&e.target.closest('.cons-ov,.menu,textarea,input,button,select,[contenteditable]'))return;  // leave focus on editors/menus/fields
+  CL.focus();
+});
+
+(async function boot(){
+  try{const cfg=await fetch('./config.json').then(r=>r.json());if(cfg&&cfg.app_id)APPID=cfg.app_id;}catch(e){}
+  try{const {j}=await jget('/session');if(j)SESS=j;}catch(e){}
+  setPrompt();
+  emit('<span class="hd">AirOS Console</span> <span class="k">v0.1.0</span>','out');
+  emit('<span class="k">Signed in as <span class="acc">'+esc(SESS.sub||'anon')+'</span> · tenant <span class="acc">'+esc(SESS.tenant||'—')+'</span>. Type <span class="acc">help</span>.</span>','out');
+  CL.focus();
+})();
+</script>
