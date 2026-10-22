@@ -181,7 +181,7 @@ const CMDS={
       ['help','this help'],
       ['whoami','your identity, tenant, and roles'],
       ['data','list the governed datasets installed in your tenant'],
-      ['query &lt;schema&gt; [N]','read up to N rows of a schema you can see (default 25)'],
+      ['query &lt;schema&gt; [N] [flags]','read N rows (default 25). flags: --all / --deleted (soft-deleted); --asof &lt;ts&gt; (state as known then); --valid &lt;ts&gt; (facts true then)'],
       ['get &lt;record-id&gt;','fetch one record by its ds:… id (resolves local / cross-tenant refs)'],
       ['history &lt;record-id&gt;','bitemporal version lineage of a record — every version, who wrote it, tombstones'],
       ['requests','the schema/interface/role change-requests you filed + their approve/reject status'],
@@ -253,15 +253,33 @@ const CMDS={
   },
 
   async query(args){
-    const schema=args[0];
-    if(!schema){line('usage: query <schema> [N]','warn');return;}
-    const limit=Math.max(1,Math.min(200,parseInt(args[1],10)||25));
-    const {ok,j,status}=await jpost('/bridge/query',{app_id:APPID,schema,paginate:true,limit});
+    // flags: --all / --deleted (soft-deleted) ; --asof <ts> / --valid <ts> (bitemporal time-travel, value-taking)
+    let all=false, onlyDeleted=false, known=null, valid=null; const pos=[];
+    for(let i=0;i<args.length;i++){ let a=String(args[i]); const al=a.toLowerCase();
+      if(al==='--all'){all=true;}
+      else if(al==='--deleted'){onlyDeleted=true;}
+      else if(al==='--asof'||al==='--known'){known=args[++i];}
+      else if(al.startsWith('--asof=')){known=a.slice(7);} else if(al.startsWith('--known=')){known=a.slice(8);}
+      else if(al==='--valid'){valid=args[++i];}
+      else if(al.startsWith('--valid=')){valid=a.slice(8);}
+      else if(a.startsWith('--')){/* unknown flag ignored */}
+      else pos.push(a);
+    }
+    const schema=pos[0];
+    if(!schema){line('usage: query <schema> [N] [--all|--deleted] [--asof <ts>] [--valid <ts>]   (--asof = state known at a past time; --valid = facts true at a past time)','warn');return;}
+    const limit=Math.max(1,Math.min(200,parseInt(pos[1],10)||25));
+    const incl=all||onlyDeleted;
+    const b={app_id:APPID,schema,paginate:true,limit,include_retracted:incl};
+    if(known) b.known_as_of=known;   if(valid) b.valid_as_of=valid;
+    const {ok,j,status}=await jpost('/bridge/query',b);
     if(!ok){line('query failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
-    const rows=j.results||j.records||j.items||[];
+    let rows=j.results||j.records||j.items||[];
+    if(onlyDeleted) rows=rows.filter(r=>r&&r._retracted);   // only the soft-deleted
+    if(incl) rows=rows.map(r=>Object.assign({deleted:(r&&r._retracted)?'yes':''}, r));  // visible deleted column
     const total=(j.total!=null?j.total:(j.count!=null?j.count:rows.length));
     table(rows);
-    line(rows.length+' shown'+(total!=null?' of '+total:'')+(j.next_cursor?' · more available':''),'k');
+    const asof=(known?(' · as-known-of '+known):'')+(valid?(' · as-valid-of '+valid):'');
+    line(rows.length+' shown'+(total!=null?' of '+total:'')+(incl?' · incl. soft-deleted':'')+asof+(j.next_cursor?' · more available':''),'k');
   },
 
   async files(args){
@@ -847,10 +865,11 @@ function _kvargs(toks){const o={};toks.forEach(t=>{const i=t.indexOf('=');if(i>0
 CMDS.put=async function(args){
   const schema=(args[0]||'').trim();
   if(!schema||schema.indexOf('.')<1){line('usage: put <schema> {json}   |   put <schema> field=value …   (schema = <domain>.<subject>)','err');return;}
-  const rest=args.slice(1).join(' ').trim();
   let fields={};
-  if(rest.startsWith('{')){ try{fields=JSON.parse(rest);}catch(e){line('invalid JSON: '+(e.message||e),'err');return;} }
-  else { fields=_kvargs(args.slice(1)); }
+  // {json} form: read the RAW line (quotes intact) — the tokenizer strips quotes, which would break JSON.
+  const bs=LASTRAW.indexOf('{'), be=LASTRAW.lastIndexOf('}');
+  if(bs>=0 && be>bs){ try{fields=JSON.parse(LASTRAW.slice(bs,be+1));}catch(e){line('invalid JSON: '+(e.message||e),'err');return;} }
+  else { fields=_kvargs(args.slice(1)); }   // field=value form
   const tenant=myTenant();
   let local=fields.id||fields.key||fields.code;
   let id = (typeof local==='string'&&local.indexOf('ds:')===0) ? local
@@ -918,8 +937,10 @@ function parse(s){
   return out;
 }
 
+let LASTRAW='';   // the raw command line (quotes intact) — commands that take a {json} blob read this, not the quote-stripped tokens
 async function dispatch(raw){
   const s=raw.trim();if(!s)return;
+  LASTRAW=s;
   echo(s);
   const toks=parse(s);let name=toks[0].toLowerCase();name=ALIAS[name]||name;
   const fn=CMDS[name];
