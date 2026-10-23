@@ -9,7 +9,12 @@
 #
 # Audience: EVERYONE. `roles` is intentionally omitted (like the Data app) — any signed-in user may open it;
 # the real gate is the per-bridge, per-user authorization at the kernel boundary.
-component_id: ds:airawatdeveloper:app/console
+#
+# RE-HOMED to the ds:airawat: platform namespace (was ds:airawatdeveloper:app/console): Console is a BASE-OS app
+# and belongs with its siblings (chat/docs/sheets/inbox/mail/file-explorer). ds:airawat: is also REQUIRED by the
+# base-OS suite guard — _default_suite_apps() only auto-installs default_install apps under ds:airawat:, so a
+# 3rd-party app can't force itself onto every tenant.
+component_id: ds:airawat:app/console
 kind: app
 version: 0.1.0
 provider: ds:airawat:developer
@@ -18,6 +23,7 @@ icon: ⌨️
 entrypoint: index.html
 bundle: dist
 sandboxed: true
+default_install: true            # ships with the OS: auto-shelved on every tenant (admin login), Marketplace-findable
 # data_browser relaxes the app-level read allow-list so `query <schema>` can address ANY governed schema;
 # the REAL gate is unchanged — the kernel tenant-scopes + RBAC-gates every read under the user's token.
 data_browser: true
