@@ -1,0 +1,35 @@
+component_id: ds:airawatdeveloper:solution/water-intelligence
+kind: solution
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Water Intelligence
+description: >
+  Grievance-first water operations. Ingests a utility's complaint export, geocodes to H3,
+  detects hotspots (severity + per-capita rate), computes operational signals (reopen/recurring/emerging)
+  + an overview projection, and presents an operations dashboard. Fully config-driven — one water.config
+  record + the water.category taxonomy adapt it to any water utility. No hardcoded agency values.
+members:
+  # governed schemas (network-approved)
+  - { ref: water.category@0.1.0,   kind: schema, layer: network }
+  - { ref: water.record_kind@0.1.0, kind: schema, layer: network }
+  - { ref: water.config@0.1.0,     kind: schema, layer: network }
+  - { ref: water.complaint@0.1.0,  kind: schema, layer: network }
+  - { ref: water.hotspot@0.1.0,    kind: schema, layer: network }
+  - { ref: water.signal@0.1.0,     kind: schema, layer: network }
+  - { ref: water.overview@0.1.0,   kind: schema, layer: network }
+  # components
+  - { ref: ds:airawatdeveloper:driver/water-setup,      kind: driver }
+  - { ref: ds:airawatdeveloper:driver/gazetteer-builder,  kind: driver }
+  - { ref: ds:airawatdeveloper:driver/water-complaints, kind: driver }
+  - { ref: ds:airawatdeveloper:driver/water-docs,       kind: driver }
+  - { ref: ds:airawatdeveloper:engine/water-hotspots,   kind: engine }
+  - { ref: ds:airawatdeveloper:engine/water-signals,    kind: engine }
+  - { ref: ds:airawatdeveloper:app/water-dashboard,     kind: app }
+setup:                       # install-seed order (run after install)
+  - run: water-setup         # seed taxonomy + Solution Configuration
+  - run: water-docs          # seed the Build + Install guides into the Docs app
+inputs:                      # per-install data the operator provides (see Install guide)
+  - { env: COMPLAINTS_FILE_ID, for: water-complaints, required: true }
+  - { env: OSM_PBF_URL,       for: gazetteer-builder, required: false }
+  - { env: GAZETTEER_FILE_ID,  for: water-complaints, required: false }
+  - { env: POP_FILE_ID,        for: water-hotspots,   required: false }
