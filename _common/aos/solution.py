@@ -54,6 +54,8 @@ class Solution:
     def subscriptions(self): return self.d.get("subscriptions") or []
     @property
     def contributions(self): return self.d.get("contributions") or []
+    @property
+    def setup(self): return self.d.get("setup") or []   # install-seed steps: [{run: <component>[, env:{…}]}]
 
     def validate(self):
         p = []
