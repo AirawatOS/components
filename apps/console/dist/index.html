@@ -188,6 +188,9 @@ const CMDS={
       ['put &lt;schema&gt; field=value …','write a record (dev sandbox) — `put <schema> {json}` also works; auto-ids if no id'],
       ['update &lt;record-id&gt; field=value …','patch fields on an existing record (dev sandbox) — new bitemporal version'],
       ['rm &lt;record-id&gt;','retract a record (dev sandbox soft-delete; history preserved)'],
+      ['share &lt;record-id&gt; public|link|&lt;user&gt; [view|edit] [--until=&lt;iso&gt;]','grant access to a record — `public` = world-readable, `link` = anyone-with-the-link; prints an /open URL'],
+      ['shares [record-id]','list the access grants on a record (grantee · scope · expiry · revoked)'],
+      ['unshare &lt;record-id&gt; &lt;grantee&gt;','revoke a grant (grantee = public | link:&lt;tok&gt; | &lt;user&gt;) — the /open link stops working'],
       ['files [folder]','list your files (flat) — shows name · folder · file_id'],
       ['fetch &lt;url&gt; [as &lt;path&gt;]','import a public https file into your filestore (→ /inbox) — then pass its path to a run'],
       ['aoi','show your tenant’s area(s) of interest (space.aoi)'],
@@ -203,6 +206,10 @@ const CMDS={
       ['wc &lt;path&gt;','count lines + bytes'],
       ['stat &lt;path&gt;','show a node’s type · size · file_id · updated'],
       ['find &lt;name&gt; [path]','find files/folders by name substring under a folder'],
+      ['users [filter]','list the people in your tenant (username · roles)'],
+      ['user add &lt;name&gt; [role,role]','(tenant-admin) create a login in your tenant — editor prompts for the initial password (never typed on the command line)'],
+      ['user reset &lt;name&gt;','(tenant-admin) reset an existing user’s password — editor prompts for the new one'],
+      ['user roles &lt;name&gt;','show a user’s identity (locked) + granted (editable) roles'],
       ['components [filter]','list installed drivers/engines you can run'],
       ['describe &lt;component&gt;','show a component’s config contract — what to pass on run'],
       ['project new &lt;name&gt;','create a Studio project (and cd into it) — opens in Studio too'],
@@ -621,6 +628,67 @@ CMDS.secret=async function(args){
   line('editor open — click in the box, paste (⌘/Ctrl-V, or right-click→Paste if blocked), ⌘/Ctrl-S to store. If paste is blocked: upload the key file, then `secret set '+comp+' '+name+' @/inbox/<file>`.','k');
 };
 
+// ---- User management: list (everyone) · add / reset password (tenant-admin, own tenant) ----------------------
+// Passwords are entered in the editor modal (never typed on the command line → never in scrollback, history or logs);
+// they are POSTed once and never retained here. The REAL gate is server-side (403) — the client check is only UX.
+function _isTenantAdmin(){return (SESS.roles||[]).some(r=>r==='platform.tenant-admin'||r==='tenant_admin'||r==='admin'||r==='platform.steward');}
+CMDS.users=function(args){return CMDS.user(['ls'].concat(args||[]));};
+CMDS.user=async function(args){
+  const op=(args[0]||'ls').toLowerCase();
+  if(op==='ls'){
+    const q=args[1]||'';
+    const {ok,j,status}=await jget('/bridge/users?q='+encodeURIComponent(q)+'&page_size=200');
+    if(!ok){line('could not list users ('+status+')','err');return;}
+    const rows=(j.users||[]).map(u=>({username:u.username||u.sub||'',roles:((u.roles||[]).join(' '))||'—'}));
+    if(!rows.length){line('no users'+(q?' matching "'+q+'"':''),'out');return;}
+    table(rows,['username','roles']);
+    line(rows.length+' user'+(rows.length===1?'':'s')+' in '+(SESS.tenant||'—'),'k');
+    return;
+  }
+  if(op==='roles'){
+    const who=(args[1]||''); if(!who){line('usage: user roles <username>','warn');return;}
+    const sub=who.indexOf('://')>=0?who:('user://'+(SESS.tenant||'')+'/'+who);
+    const {ok,j,status}=await jget('/bridge/user-roles?subject='+encodeURIComponent(sub));
+    if(!ok){line('could not read roles ('+status+')','err');return;}
+    line('identity (locked):  '+((j.identity||[]).join(' ')||'—'),'out');
+    line('granted (editable): '+((j.granted||[]).join(' ')||'—'),'out');
+    return;
+  }
+  if(op==='add'){
+    if(!_isTenantAdmin()){line('adding a user requires a tenant-admin role.','warn');return;}
+    const handle=(args[1]||'').toLowerCase();
+    if(!handle){line('usage: user add <username> [role,role]   — roles bounded to studio.* or platform.tenant-admin','warn');return;}
+    const roles=(args[2]||'').split(',').map(s=>s.trim()).filter(Boolean);
+    openEditor('Initial password for '+handle+' (min 6) — click in the box, type it, then ⌘/Ctrl-S', '', async(pw)=>{
+      pw=(pw||'').trim();
+      if(pw.length<6){line('password too short (min 6) — user NOT created','warn');return;}
+      const {ok,j,status}=await jpost('/bridge/user-create',{username:handle,roles:roles,password:pw});
+      if(status===403){line('adding a user requires a tenant-admin role.','warn');return;}
+      if(!ok){line('user add failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+      line('✓ created '+handle+' in '+(j.tenant||SESS.tenant||'your tenant')+(roles.length?' with roles '+roles.join(' '):'')+' (password set; not retained here)','ok');
+    });
+    line('editor open — type the INITIAL password, ⌘/Ctrl-S to create. Sent once; never shown or logged.','k');
+    return;
+  }
+  if(op==='reset'){
+    if(!_isTenantAdmin()){line('resetting a password requires a tenant-admin role.','warn');return;}
+    const handle=(args[1]||'').toLowerCase();
+    if(!handle){line('usage: user reset <username>','warn');return;}
+    openEditor('NEW password for '+handle+' (min 6) — click in the box, type it, then ⌘/Ctrl-S', '', async(pw)=>{
+      pw=(pw||'').trim();
+      if(pw.length<6){line('password too short (min 6) — NOT reset','warn');return;}
+      const {ok,j,status}=await jpost('/bridge/user-reset-password',{username:handle,password:pw});
+      if(status===403){line('resetting a password requires a tenant-admin role.','warn');return;}
+      if(status===404){line('no user "'+handle+'" in '+(SESS.tenant||'this tenant')+' — check `users`','err');return;}
+      if(!ok){line('reset failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+      line('✓ password reset for '+handle+' — they sign in with the new password next time (value not retained here)','ok');
+    });
+    line('editor open — type the NEW password, ⌘/Ctrl-S to apply. Sent once; never shown or logged.','k');
+    return;
+  }
+  line('usage: user ls [filter] | user add <name> [role,role] | user reset <name> | user roles <name>','err');
+};
+
 // ---- Console AI chat: talk to your AirawatOS agent (plan → it answers + proposes actions; writes confirm) ----
 CMDS.ask=async function(args){
   const q=args.join(' ').trim();
@@ -918,6 +986,63 @@ CMDS.rm=async function(args){
   const {ok,j,status}=await jpost('/bridge/record-retract',{id});
   if(!ok){line('rm: '+(j.error||j.detail||JSON.stringify(j)||status),'err');return;}
   line('✓ retracted '+id+'  (vanishes from reads; still in `history`)','out');
+};
+// ---- ADR-0103 S2a/S3d: per-object sharing — grant access + show the no-sign-in viewer path ----
+function _openPath(id, token){
+  let p='/open?id='+encodeURIComponent(id);
+  if(token)p=p+'&token='+encodeURIComponent(token);
+  return location.origin+p;
+}
+CMDS.share=async function(args){
+  const id=(args[0]||'').trim();
+  const who=(args[1]||'').trim();
+  if(!id||!who){line('usage: share <record-id> public|link|<user>|role:<role> [view|comment|edit] [--until=<iso8601>]','err');
+    line('  public = world-readable · link = anyone with the printed link · <user> = one person in your tenant','k');return;}
+  let scope='view', until=null;
+  for(const a of args.slice(2)){
+    if(a==='view'||a==='comment'||a==='edit')scope=a;
+    else if(a.indexOf('--until=')===0)until=a.slice(8);
+  }
+  let grantee=who, token=null;
+  if(who==='public')grantee='anyone';
+  else if(who==='link'){token='lk-'+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36);grantee='link:'+token;}
+  const tenant=myTenant();
+  const gid='ds:'+tenant+':access.grant/g-'+Date.now().toString(36)+'-'+Math.floor(Math.random()*1e4);
+  const obj={schema:'access.grant',id:gid,tenant,object_id:id,grantee,scope};
+  if(until)obj.expires_at=until;
+  const {ok,j,status}=await jpost('/bridge/save',{app_id:APPID,object:obj});
+  if(!ok){line('share: '+(j.error||status)+(j.detail?(' — '+j.detail):''),'err');return;}
+  line('✓ shared '+id+' -> '+grantee+' ('+scope+(until?(', until '+until):'')+')','out');
+  if(grantee==='anyone'||token){
+    emit('<span class="k">no-sign-in viewer:</span> <span class="acc">'+esc(_openPath(id,token))+'</span>','out');
+  }else{
+    line('they can now:  get '+id,'k');
+  }
+  line('list grants:  shares '+id+'   ·   revoke:  unshare '+id+' '+grantee,'k');
+};
+async function _grantsFor(id){
+  const {ok,j}=await jpost('/bridge/query',{app_id:APPID,schema:'access.grant',limit:1000});
+  if(!ok)return [];
+  const rows=j.rows||j.results||j.objects||[];
+  return rows.map(r=>r.object||r).filter(g=>g&&(!id||g.object_id===id));
+}
+CMDS.shares=async function(args){
+  const id=(args[0]||'').trim();
+  const gs=await _grantsFor(id);
+  if(!gs.length){line('no grants'+(id?(' on '+id):'')+'. Share one:  share '+(id||'<record-id>')+' public','out');return;}
+  table(gs.map(g=>({object_id:g.object_id,grantee:g.grantee,scope:g.scope,expires_at:g.expires_at||'',revoked:g.revoked?'yes':''})),
+        ['object_id','grantee','scope','expires_at','revoked']);
+  line(gs.length+' grant'+(gs.length===1?'':'s')+'.','k');
+};
+CMDS.unshare=async function(args){
+  const id=(args[0]||'').trim(); let who=(args[1]||'').trim();
+  if(!id||!who){line('usage: unshare <record-id> <grantee>   (grantee = public | link:<tok> | <user> | role:<role>)','err');return;}
+  if(who==='public')who='anyone';
+  const gs=(await _grantsFor(id)).filter(g=>g.grantee===who && !g.revoked);
+  if(!gs.length){line('no active grant to '+who+' on '+id,'out');return;}
+  let n=0;
+  for(const g of gs){ const {ok}=await jpost('/bridge/record-retract',{id:g.id}); if(ok)n++; }
+  line('✓ revoked '+n+' grant'+(n===1?'':'s')+' ('+who+' on '+id+') — any /open link now 404s','out');
 };
 // ---- ADR-0114 S3d: compose the solution + install it ----
 CMDS.compose=async function(args){
