@@ -1,0 +1,18 @@
+# water-setup (kind=driver) — seed the Water Intelligence governed REFERENCE DATA (taxonomy + config as DATA, so
+# no component hardcodes it): water.category (11), water.record_kind (3), water.config (1). Idempotent (RESET=1
+# overwrites). Reconstructed 2026-10-23 from the governed build-guide Appendix C (its canonical source) — the
+# draft was lost from the ephemeral components dir. Confined — only I/O is the SDK ctx.
+component_id: ds:airawatdeveloper:driver/water-setup
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Water Intelligence — Setup (seed taxonomy + config)
+entrypoint: run.py
+confinement_min: L1
+writes: [water.category, water.record_kind, water.config]
+scopes:
+  - { verb: write, scope: water.category }
+  - { verb: write, scope: water.record_kind }
+  - { verb: write, scope: water.config }
+config:
+  - { name: RESET, kind: value, default: "0" }
