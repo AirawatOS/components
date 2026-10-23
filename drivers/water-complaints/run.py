@@ -188,7 +188,7 @@ def map_row(r):
 
 @driver.main
 def run():
-    geocoding = _load_gazetteer()                                  # no-op unless GAZETTEER_FILE_ID is set
+    geocoding = _load_gazetteer()                                  # registry space.place first; GAZETTEER_FILE_ID overrides
     res = ingest.table(
         schema="water.complaint", map_row=map_row, columns=COLUMNS,
         file_env="COMPLAINTS_FILE_ID",
