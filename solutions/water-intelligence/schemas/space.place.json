@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "space.place",
+  "type": "object",
+  "description": "A gazetteer entry: a named place / postal area / ward resolved to a point + H3 cell, used to geocode records by name or PIN. Produced per tenant (AOI-bounded) by the gazetteer-builder.",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "locality",
+        "pincode",
+        "ward"
+      ],
+      "description": "Which geocode TIER this entry serves."
+    },
+    "key": {
+      "type": "string",
+      "description": "Lookup key \u2014 normalised name (locality/ward) or 6-digit PIN."
+    },
+    "name": {
+      "type": "string",
+      "description": "Original (display) name."
+    },
+    "pincode": {
+      "type": "string"
+    },
+    "centroid": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "[longitude, latitude]."
+    },
+    "h3": {
+      "type": "string",
+      "description": "H3 cell (resolution per `resolution`)."
+    },
+    "resolution": {
+      "type": "integer"
+    },
+    "tier_confidence": {
+      "type": "number",
+      "description": "Geocode confidence when matched at this tier."
+    },
+    "source": {
+      "type": "string"
+    },
+    "observed_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "key",
+    "centroid",
+    "h3"
+  ],
+  "additionalProperties": true,
+  "x-subject": "place"
+}

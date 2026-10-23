@@ -1,0 +1,31 @@
+# A DRIVER (kind=driver) — build the per-tenant GEOCODING GAZETTEER into the registry (space.place), for ANY city.
+# Fetches an OSM extract BY URL (or an uploaded PBF), clips it to the TENANT's AOI, and derives three geocode
+# tiers — localities (OSM place names), pincodes (OSM addr:postcode centroids) and wards (space.ward centroids) —
+# each resolved to a point + H3 cell. Writes space.place facts (NOT a file), so the gazetteer is governed,
+# tenant-scoped and queryable; water-complaints reads it to place complaints on the H3 grid. Real OSM only.
+component_id: ds:airawatdeveloper:driver/gazetteer-builder
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Gazetteer Builder (OSM → space.place)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: geospatial          # needs h3 (cell indexing) + osmium (PBF parse/clip). geospatial provides both.
+reads:
+  - space.aoi                  # the tenant AOI (bbox) to clip to
+  - space.ward                 # ward boundaries (ward tier centroids)
+writes:
+  - space.place
+config:
+  - { name: OSM_PBF_URL,     kind: value }   # https URL of the city/region OSM extract (e.g. a Geofabrik .osm.pbf)
+  - { name: OSM_PBF_FILE_ID, kind: value }   # OR an already-uploaded PBF (filestore digest) — use instead of URL
+  - { name: RES,             kind: value, default: "9" }   # H3 resolution (matches water.hotspot)
+egress:
+  - { host: download.geofabrik.de, rate_per_min: 6, user_agent: "AirawatOS/gazetteer-builder (+https://airawat.org)" }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: openstreetmap.org, provides: [space.place] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: space.ward }
+  - { verb: write, scope: space.place }

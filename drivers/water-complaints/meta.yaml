@@ -11,16 +11,17 @@ provider: ds:airawat:developer
 display_name: Water Complaints Ingest
 entrypoint: run.py
 confinement_min: L1
-reads: [water.complaint]
+reads: [water.complaint, space.place]
 writes: [water.complaint]
 files: [get]                     # reads the complaints CSV blob from the filestore (ctx.file.get)
 # config: which file, per-run cap, source label, the taxonomy crosswalk + admin hierarchy, and OPTIONAL column
 # overrides (auto-detected from the header otherwise).
-config: [COMPLAINTS_FILE_ID, MAX, SOURCE, TAXONOMY_MAP, ADMIN_COLUMNS,
+config: [COMPLAINTS_FILE_ID, MAX, SOURCE, TAXONOMY_MAP, ADMIN_COLUMNS, GAZETTEER_FILE_ID,
          ID_FIELD, CHANNEL_FIELD, CATEGORY_FIELD, SUBCATEGORY_FIELD, PRIORITY_FIELD, STATUS_FIELD,
          REGISTERED_FIELD, REGISTERED_TIME_FIELD, CLOSED_FIELD, REOPENS_FIELD]
 scopes:
   - { verb: read,  scope: water.complaint }
+  - { verb: read,  scope: space.place }
   - { verb: write, scope: water.complaint }
 # DEFAULT SCHEDULE (auto-scheduled on install): re-ingest nightly at 02:00. Idempotent + delta-only, so a
 # re-run only writes new/changed complaints. The installing board's admin can change the frequency or pause it
