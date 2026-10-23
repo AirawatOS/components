@@ -3,10 +3,10 @@
 # value/formula; bitemporal → version history). A small client formula engine (SUM/AVERAGE/MIN/MAX/COUNT +
 # arithmetic + cell refs/ranges) computes values; the inline ✨AI generates a table from a description via the
 # shared /bridge/ai-assist (Kimi K3). `personal: true` = self-service + owner-scoped (see app_host workspace runtime).
-component_id: ds:airawat:app/sheets
+component_id: ds:airawatdeveloper:app/sheets
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Sheets
 icon: 📊
 entrypoint: index.html

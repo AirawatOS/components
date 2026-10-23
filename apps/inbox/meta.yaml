@@ -1,9 +1,9 @@
 # Unified Inbox (kind=app). Every task/notification/decision for the signed-in user, from any solution,
 # in one place. Reads platform.inbox_item as the user (host scopes to actor==sub).
-component_id: ds:airawat:app/inbox
+component_id: ds:airawatdeveloper:app/inbox
 kind: app
 version: 0.2.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Tasks
 icon: 📥
 entrypoint: index.html

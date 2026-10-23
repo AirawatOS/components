@@ -2,10 +2,10 @@
 # Personal + AI-native: each user has their own decks, stored as governed doc.deck facts (ordered slides;
 # bitemporal → version history). Slide rail + per-slide editor + Present mode; the inline ✨AI drafts a whole
 # deck from a topic via the shared /bridge/ai-assist (Kimi K3). `personal: true` = self-service + owner-scoped.
-component_id: ds:airawat:app/slides
+component_id: ds:airawatdeveloper:app/slides
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Slides
 icon: 🖼️
 entrypoint: index.html

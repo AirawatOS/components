@@ -6,10 +6,10 @@
 # `personal: true` is the workspace-runtime flag (app_host): it makes the app SELF-SERVICE (any signed-in
 # tenant user may write — no audience role needed) and OWNER-SCOPED (the host stamps + forces owner==sub on
 # every read and write, so a user only ever sees their own docs). Reused by Sheets/Slides/Mail/Chat.
-component_id: ds:airawat:app/docs
+component_id: ds:airawatdeveloper:app/docs
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Docs
 icon: 📄
 entrypoint: index.html

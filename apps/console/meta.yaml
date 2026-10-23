@@ -10,14 +10,15 @@
 # Audience: EVERYONE. `roles` is intentionally omitted (like the Data app) — any signed-in user may open it;
 # the real gate is the per-bridge, per-user authorization at the kernel boundary.
 #
-# RE-HOMED to the ds:airawat: platform namespace (was ds:airawatdeveloper:app/console): Console is a BASE-OS app
-# and belongs with its siblings (chat/docs/sheets/inbox/mail/file-explorer). ds:airawat: is also REQUIRED by the
-# base-OS suite guard — _default_suite_apps() only auto-installs default_install apps under ds:airawat:, so a
-# 3rd-party app can't force itself onto every tenant.
-component_id: ds:airawat:app/console
+# Base-OS app, owned by the first-party developer participant airawatdeveloper (ADR-0094: the network admin
+# `airawat` only GOVERNS/certifies; it is not a component vendor — reference-implementation apps belong to
+# `airawatdeveloper`). Delivered to every tenant via default_install; the base-OS suite guard
+# (_default_suite_apps) trusts the ds:airawatdeveloper: first-party namespace so a 3rd-party app can't force
+# itself onto every tenant.
+component_id: ds:airawatdeveloper:app/console
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Console
 icon: ⌨️
 entrypoint: index.html

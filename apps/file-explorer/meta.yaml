@@ -7,10 +7,10 @@
 # `personal: true` is the workspace-runtime flag (app_host): SELF-SERVICE (any signed-in tenant user may write,
 # no audience role) + OWNER-SCOPED (the host stamps + forces owner==sub on every read and write, so a user only
 # ever sees their own files). Same runtime Docs/Sheets/Slides/Mail use.
-component_id: ds:airawat:app/file-explorer
+component_id: ds:airawatdeveloper:app/file-explorer
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Files
 icon: 📁
 entrypoint: index.html

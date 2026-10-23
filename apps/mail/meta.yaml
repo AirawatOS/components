@@ -3,10 +3,10 @@
 # tenants, later). MEMBERSHIP-scoped (visible to sender + recipients) — writes go through the dedicated
 # /bridge/mail-{list,send,get} bridges (NOT /bridge/save), so it is NOT `personal`. Inline ✨AI drafts/replies
 # via the shared /bridge/ai-assist (Kimi K3). Available to every signed-in user; auto-installed per tenant.
-component_id: ds:airawat:app/mail
+component_id: ds:airawatdeveloper:app/mail
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Mail
 icon: ✉️
 entrypoint: index.html

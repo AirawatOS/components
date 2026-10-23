@@ -6,10 +6,10 @@
 #
 # Writes go through the dedicated /bridge/chat-* bridges (membership-enforced + AI routing), NOT /bridge/save —
 # so this app is NOT `personal` (channels are shared among members). Available to every signed-in user (roles []).
-component_id: ds:airawat:app/chat
+component_id: ds:airawatdeveloper:app/chat
 kind: app
 version: 0.1.0
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Chat
 icon: 💬
 entrypoint: index.html
