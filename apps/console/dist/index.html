@@ -209,6 +209,8 @@ const CMDS={
       ['users [filter]','list the people in your tenant (username · roles)'],
       ['user add &lt;name&gt; [role,role]','(tenant-admin) create a login in your tenant — editor prompts for the initial password (never typed on the command line)'],
       ['user reset &lt;name&gt;','(tenant-admin) reset an existing user’s password — editor prompts for the new one'],
+      ['user disable &lt;name&gt; [reason]','(tenant-admin) block a user’s login (reversible); their next sign-in is refused'],
+      ['user enable &lt;name&gt;','(tenant-admin) re-enable a disabled user’s login'],
       ['user roles &lt;name&gt;','show a user’s identity (locked) + granted (editable) roles'],
       ['components [filter]','list installed drivers/engines you can run'],
       ['describe &lt;component&gt;','show a component’s config contract — what to pass on run'],
@@ -686,7 +688,22 @@ CMDS.user=async function(args){
     line('editor open — type the NEW password, ⌘/Ctrl-S to apply. Sent once; never shown or logged.','k');
     return;
   }
-  line('usage: user ls [filter] | user add <name> [role,role] | user reset <name> | user roles <name>','err');
+  if(op==='disable'||op==='enable'){
+    if(!_isTenantAdmin()){line((op)+' a user requires a tenant-admin role.','warn');return;}
+    const handle=(args[1]||'').toLowerCase();
+    if(!handle){line('usage: user '+op+' <username>'+(op==='disable'?' [reason]':''),'warn');return;}
+    const disabled=(op==='disable');
+    const reason=disabled?args.slice(2).join(' '):'';
+    const {ok,j,status}=await jpost('/bridge/user-disable',{username:handle,disabled:disabled,reason:reason});
+    if(status===403){line(op+' requires a tenant-admin role.','warn');return;}
+    if(status===400){line((j&&j.error)||'refused (you cannot disable your own account)','warn');return;}
+    if(status===404){line('no user "'+handle+'" in '+(SESS.tenant||'this tenant')+' — check `users`','err');return;}
+    if(!ok){line(op+' failed ('+status+')'+(j&&j.error?': '+j.error:''),'err');return;}
+    line(disabled?('⛔ '+handle+' disabled — their next sign-in is refused until re-enabled'+(reason?' ('+reason+')':''))
+                :('✓ '+handle+' re-enabled — they can sign in again'),'ok');
+    return;
+  }
+  line('usage: user ls [filter] | user add <name> [role,role] | user reset <name> | user disable <name> [reason] | user enable <name> | user roles <name>','err');
 };
 
 // ---- Console AI chat: talk to your AirawatOS agent (plan → it answers + proposes actions; writes confirm) ----
