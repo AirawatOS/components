@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "required": [
+    "h3",
+    "observed_at"
+  ],
+  "properties": {
+    "h3": {
+      "type": "string"
+    },
+    "ward": {
+      "type": "string"
+    },
+    "zone": {
+      "type": "string"
+    },
+    "count": {
+      "type": "integer"
+    },
+    "window": {
+      "type": "object"
+    },
+    "category": {
+      "type": "string"
+    },
+    "dominant": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string"
+    },
+    "wow_change": {
+      "type": "number"
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "rate_per_10k": {
+      "type": "number"
+    }
+  }
+}

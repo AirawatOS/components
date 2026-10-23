@@ -1,0 +1,74 @@
+{
+  "type": "object",
+  "required": [
+    "category",
+    "status",
+    "registered_at"
+  ],
+  "properties": {
+    "h3": {
+      "type": "string"
+    },
+    "raw": {
+      "type": "object"
+    },
+    "ward": {
+      "type": "string"
+    },
+    "zone": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "reopens": {
+      "type": "integer"
+    },
+    "category": {
+      "enum": [
+        "no_water",
+        "low_pressure",
+        "contamination",
+        "tanker_request",
+        "pipeline_leakage",
+        "sewer_overflow",
+        "manhole",
+        "road_restoration",
+        "billing",
+        "new_connection",
+        "other"
+      ],
+      "type": "string"
+    },
+    "centroid": {
+      "type": "array"
+    },
+    "priority": {
+      "type": "string"
+    },
+    "sla_days": {
+      "type": "number"
+    },
+    "closed_at": {
+      "type": "string"
+    },
+    "admin_path": {
+      "type": "object"
+    },
+    "subcategory": {
+      "type": "string"
+    },
+    "tracking_no": {
+      "type": "string"
+    },
+    "raw_category": {
+      "type": "string"
+    },
+    "registered_at": {
+      "type": "string"
+    },
+    "source_channel": {
+      "type": "string"
+    }
+  }
+}

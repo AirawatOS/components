@@ -1,0 +1,13 @@
+# water-docs (kind=driver) — seed the Water Intelligence Build + Install guides into the tenant's Docs
+# (doc.document) so operators have the companion documentation in-platform. Idempotent (deterministic ids).
+# Reconstructed 2026-10-23 (the draft was never persisted); ships the guide markdown in its own bundle.
+component_id: ds:airawatdeveloper:driver/water-docs
+kind: driver
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Water Intelligence — Docs seeder
+entrypoint: run.py
+confinement_min: L1
+writes: [doc.document]
+scopes:
+  - { verb: write, scope: doc.document }

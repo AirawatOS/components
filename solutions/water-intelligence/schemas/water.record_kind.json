@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": [
+    "code",
+    "label"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "tenant": {
+      "type": "string"
+    },
+    "is_complaint": {
+      "type": "boolean",
+      "description": "true = counts as an actionable complaint (the real denominator)"
+    }
+  }
+}

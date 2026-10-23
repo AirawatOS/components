@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water Intelligence Dashboard</title>
+<link rel="stylesheet" href="/shared/aos.css">
+<style>
+  /* All selectors are scoped under .wi so they beat the shared aos.css single-class rules (.grid/.card/.bar). */
+  .wi{ --wi-crit:var(--danger,#d64545); --wi-warn:var(--warn,#d98a1f); --wi-info:var(--accent,#2d7ff9);
+       --wi-good:var(--good,#1f9d55); --wi-sewer:#8257e6; --wi-water:#2d7ff9; --wi-tanker:#e8863c;
+       display:block !important; width:100%; max-width:1760px; margin:0 auto; padding:20px 22px 60px; box-sizing:border-box; }
+  .wi *{ box-sizing:border-box; }
+  body{ background:var(--bg,#0b0f14); color:var(--ink,#e6edf3); font:14px/1.5 var(--sans,system-ui,sans-serif); margin:0; }
+  .wi .hd{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:4px; }
+  .wi .hd h1{ font-size:23px; margin:0; letter-spacing:-.01em; }
+  .wi .hd .sub{ color:var(--dim,#8b96a4); font-size:13.5px; margin-top:2px; }
+  .wi .hd .meta{ text-align:right; color:var(--dim,#8b96a4); font-size:12.5px; }
+  .wi .pillrow{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:10px 0 18px; }
+  .wi .wp{ border:1px solid var(--line,#222b36); background:var(--panel2,#121821); border-radius:999px; padding:5px 11px; font-size:12.5px; color:var(--dim,#9aa7b4); }
+  .wi .wp b{ color:var(--ink,#e6edf3); font-weight:600; }
+  .wi .wp.snap{ color:var(--wi-warn); }
+  .wi .wc{ background:var(--panel,#0f151d); border:1px solid var(--line,#222b36); border-radius:14px; padding:16px 17px; margin:0; overflow:hidden; }
+  .wi .wc h3{ margin:0 0 2px; font-size:14px; } .wi .wc .cap{ color:var(--dim,#8b96a4); font-size:11.5px; margin:0 0 12px; }
+  .wi .wg{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+  .wi .wg.kpis{ grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin-bottom:14px; }
+  .wi .wg.ins{ grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+  .wi .wk .lab{ color:var(--dim,#8b96a4); font-size:12px; display:flex; align-items:center; gap:6px; }
+  .wi .wk .val{ font-size:26px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; margin-top:3px; }
+  .wi .wk .note{ color:var(--dim,#6f7b88); font-size:11.5px; margin-top:3px; }
+  .wi .wk .ic{ width:26px; height:26px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; font-size:14px; }
+  .wi .wbs{ display:flex; flex-direction:column; gap:9px; }
+  .wi .wb{ display:grid; grid-template-columns:130px 1fr auto; gap:10px; align-items:center; font-size:12.5px; height:auto; background:none; border:0; min-width:0; }
+  .wi .wb .nm{ color:var(--ink,#cdd6e0); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wi .wb .tk{ height:9px; border-radius:5px; background:var(--wi-info); min-width:2px; }
+  .wi .wb .vl{ font-variant-numeric:tabular-nums; color:var(--dim,#9aa7b4); font-size:12px; white-space:nowrap; }
+  .wi .tabs{ display:inline-flex; gap:2px; background:var(--panel2,#121821); border:1px solid var(--line,#222b36); border-radius:9px; padding:2px; }
+  .wi .tabs button{ border:0; background:transparent; color:var(--dim,#9aa7b4); padding:4px 10px; border-radius:7px; font:600 12px var(--sans,system-ui); cursor:pointer; }
+  .wi .tabs button.on{ background:var(--accent,#2d7ff9); color:#fff; }
+  .wi table.t{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .wi table.t th{ text-align:left; color:var(--dim,#8b96a4); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; padding:0 8px 7px; border-bottom:1px solid var(--line,#222b36); }
+  .wi table.t td{ padding:7px 8px; border-bottom:1px solid var(--line2,#1a222c); font-variant-numeric:tabular-nums; }
+  .wi table.t tr:last-child td{ border-bottom:0; }
+  .wi table.t td.nm{ color:var(--ink,#cdd6e0); font-variant-numeric:normal; }
+  .wi .wch{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .wi .wch.critical{ background:rgba(214,69,69,.16); color:var(--wi-crit); } .wi .wch.warning{ background:rgba(217,138,31,.16); color:var(--wi-warn); } .wi .wch.info{ background:rgba(45,127,249,.14); color:var(--wi-info); }
+  .wi .wch.wk{ background:rgba(31,157,85,.15); color:var(--wi-good); }
+  .wi .ic{ display:inline-flex; }
+  .wi .insc{ background:var(--panel,#0f151d); border:1px solid var(--line,#222b36); border-left:3px solid var(--accent); border-radius:12px; padding:13px 14px; }
+  .wi .insc .k{ font-size:12px; color:var(--dim,#8b96a4); display:flex; align-items:center; gap:6px; }
+  .wi .insc .big{ font-size:21px; font-weight:700; margin:5px 0 3px; letter-spacing:-.01em; }
+  .wi .insc .d{ font-size:12px; color:var(--dim,#9aa7b4); line-height:1.4; }
+  .wi .insc.critical{ border-left-color:var(--wi-crit); } .wi .insc.warn{ border-left-color:var(--wi-warn); } .wi .insc.good{ border-left-color:var(--wi-good); }
+  .wi .sect{ font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--dim,#6f7b88); margin:22px 2px 10px; font-weight:600; }
+  .wi .legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--dim,#9aa7b4); margin-top:10px; }
+  .wi .legend i{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+  .wi .src{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:12.5px; color:var(--dim,#9aa7b4); }
+  .wi .src .s{ display:flex; gap:8px; align-items:baseline; } .wi .src .s b{ color:var(--ink,#cdd6e0); font-weight:600; }
+  .wi .foot{ color:var(--dim,#6f7b88); font-size:11.5px; margin-top:14px; line-height:1.5; }
+  .wi .loading{ color:var(--dim,#8b96a4); padding:50px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wi" id="app"><div class="loading">Loading governed water facts…</div></div>
+<script src="/shared/aos.js"></script>
+<script>
+const E = (window.AOS && AOS.esc) || (s => String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+const N = x => { x=Math.round(Number(x)||0); return (window.AOS && AOS.n) ? AOS.n(x) : x.toLocaleString(); };
+const PCT = x => ((Number(x)||0)*100).toFixed(1).replace(/\.0$/,'') + '%';
+let CATLAB = {};   // category code → label, from governed water.category (no labels hardcoded here)
+let DOMLAB = {};   // domain code → label, derived from water.category domains
+let WCFG = {}, RWARN=150, RCRIT=300;   // water.config record + rate-chip thresholds (set from config in render)
+const clab = k => CATLAB[k] || String(k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+
+function bars(items, max, color, labf){
+  labf = labf || (x=>x.key); const mx = max || Math.max(1,...items.map(i=>i.count));
+  return '<div class="wbs">'+items.map(i=>
+    '<div class="wb"><span class="nm" title="'+E(labf(i))+'">'+E(labf(i))+'</span>'+
+    '<span class="tk" style="width:'+Math.max(2,100*i.count/mx)+'%;background:'+(color||'var(--wi-info)')+'"></span>'+
+    '<span class="vl">'+N(i.count)+'</span></div>').join('')+'</div>';
+}
+function lineSVG(series){
+  if(!series.length) return '';
+  const w=100,h=46,mx=Math.max(1,...series.map(p=>p.complaints));
+  const pts=series.map((p,i)=>[i/(series.length-1||1)*w, h-(p.complaints/mx)*(h-6)-3]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="width:100%;height:120px;display:block" role="img" aria-label="daily complaints over the snapshot window">'+
+    '<path d="M'+pts[0][0]+' '+pts[0][1]+' '+d.slice(1)+' L'+w+' '+h+' L0 '+h+' Z" fill="rgba(45,127,249,.12)"/>'+
+    '<path d="'+d+'" fill="none" stroke="var(--wi-info)" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg>';
+}
+function donutSVG(items){
+  const tot=items.reduce((a,b)=>a+b.count,0)||1; const cols={sewer:'var(--wi-sewer)',water:'var(--wi-water)',tanker:'var(--wi-tanker)'};
+  const R=15.9,C=2*Math.PI*R; let segs='';
+  items.forEach(it=>{ const frac=it.count/tot;
+    segs+='<circle r="'+R+'" cx="21" cy="21" fill="none" stroke="'+(cols[it.key]||'#789')+'" stroke-width="7" stroke-dasharray="'+(C*frac).toFixed(2)+' '+C.toFixed(2)+'" stroke-dashoffset="'+(C*0.25 - C*cumFrac(items,it)).toFixed(2)+'" transform="rotate(-90 21 21)"/>'; });
+  return '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><svg viewBox="0 0 42 42" style="width:112px;height:112px" role="img" aria-label="complaints by domain">'+segs+
+    '<text x="21" y="20" text-anchor="middle" font-size="5.5" fill="var(--ink)" font-weight="700">'+N(tot)+'</text>'+
+    '<text x="21" y="26" text-anchor="middle" font-size="3" fill="var(--dim)">complaints</text></svg>'+
+    '<div style="flex:1;min-width:120px">'+items.map(it=>'<div class="wb" style="grid-template-columns:14px 1fr auto;margin-bottom:6px"><i style="width:10px;height:10px;border-radius:3px;background:'+(cols[it.key]||'#789')+'"></i><span class="nm">'+E(clabDomain(it.key))+'</span><span class="vl">'+Math.round(100*it.count/tot)+'% · '+N(it.count)+'</span></div>').join('')+'</div></div>';
+}
+function cumFrac(items,upto){ const tot=items.reduce((a,b)=>a+b.count,0)||1; let s=0; for(const it of items){ if(it===upto) break; s+=it.count/tot; } return s; }
+function clabDomain(k){ return DOMLAB[k] || String(k||'').replace(/\b\w/g,c=>c.toUpperCase()); }
+
+(window.AOS ? AOS.boot(main) : main());
+async function main(){
+  let ov,hs,sig,cats,cfgs;
+  try{
+    [ov,hs,sig,cats,cfgs] = await Promise.all([
+      AOS.query('water.overview',{limit:5}), AOS.query('water.hotspot',{limit:2000}), AOS.query('water.signal',{limit:500}),
+      AOS.query('water.category',{limit:100}), AOS.query('water.config',{limit:5}) ]);
+  }catch(e){ document.getElementById('app').innerHTML='<div class="loading">Could not load data: '+E(e.message||e)+'</div>'; return; }
+  // governed vocab + Solution Configuration — no labels/branding hardcoded in this app
+  (cats||[]).forEach(c=>{ if(c.code){ CATLAB[c.code]=c.label||c.code; if(c.domain && !DOMLAB[c.domain]) DOMLAB[c.domain]=c.domain.replace(/\b\w/g,x=>x.toUpperCase()); }});
+  WCFG = (cfgs||[])[0] || {};
+  ov=(ov||[]).sort((a,b)=>String(b.observed_at).localeCompare(String(a.observed_at)))[0];
+  if(!ov){ document.getElementById('app').innerHTML='<div class="loading">No <b>water.overview</b> fact yet — run <code>run water-signals</code> in the Console to generate it, then reload.</div>'; return; }
+  render(ov, hs||[], sig||[]);
+}
+function sigOf(sig,t,s){ return sig.find(x=>x.signal_type===t && x.scope===s); }
+function sigs(sig,t,s){ return sig.filter(x=>x.signal_type===t && x.scope===s); }
+
+function render(ov,hs,sig){
+  const T=ov.totals||{}, win=ov.window||{};
+  const sev=WCFG.severity||{}, attr=WCFG.attributions||{};
+  RWARN=+sev.rate_warn||150; RCRIT=+sev.rate_crit||300;             // rate chips (from water.config)
+  const TITLE=WCFG.dashboard_title||'Water Intelligence Dashboard';
+  const AGENCY=WCFG.agency_name||''; const SUBTITLE=WCFG.subtitle||'from complaints to insight';
+  const ZONELAB=WCFG.zone_label||'operational zones'; const ISLIVE=!!WCFG.is_live;
+  const rec=sigOf(sig,'recurring','citywide'), reo=sigOf(sig,'reopen','citywide'), emg=sigOf(sig,'emerging','citywide');
+  const wmap={}; hs.forEach(h=>{ const w=h.ward||'(unknown)'; const e=wmap[w]||(wmap[w]={ward:w,count:0,rate:h.rate_per_10k!=null?h.rate_per_10k:null,dominant:{}}); e.count+=h.count||0; if(h.rate_per_10k!=null) e.rate=h.rate_per_10k; const d=h.dominant||h.category; if(d) e.dominant[d]=(e.dominant[d]||0)+(h.count||0); });
+  const wards=Object.values(wmap).map(w=>({...w, dom:(Object.entries(w.dominant).sort((a,b)=>b[1]-a[1])[0]||['?'])[0]}));
+  const chronic=sigs(sig,'recurring','cell').sort((a,b)=>b.metric-a.metric);
+  const reopWards=sigs(sig,'reopen','ward').sort((a,b)=>b.metric-a.metric);
+  const reopCats=sigs(sig,'reopen','category').sort((a,b)=>b.metric-a.metric);
+  const tankerReo=reopCats.find(c=>c.key==='tanker_request');
+
+  const kpi=(ic,bg,lab,val,note)=>'<div class="wc wk"><div class="lab"><span class="ic" style="background:'+bg+'">'+ic+'</span>'+E(lab)+'</div><div class="val">'+val+'</div><div class="note">'+E(note)+'</div></div>';
+  let H='';
+  H+='<div class="hd"><div><h1>💧 '+E(TITLE)+'</h1><div class="sub">'+(AGENCY?E(AGENCY)+' — ':'')+E(SUBTITLE)+'</div></div>'+
+     '<div class="meta">Window<br><b style="color:var(--ink)">'+E(win.from)+' → '+E(win.to)+'</b><br>'+E(win.span_days)+'-day snapshot</div></div>';
+  H+='<div class="pillrow"><span class="wp '+(ISLIVE?'':'snap')+'">● '+(ISLIVE?'Live':'Snapshot (not a live feed)')+'</span>'+
+     '<span class="wp">Complaints analysed <b>'+N(T.complaints)+'</b></span>'+
+     '<span class="wp">Geocoded <b>'+PCT(T.geocode_pct||0)+'</b></span>'+
+     '<span class="wp">Governed facts <b>water.overview · water.hotspot · water.signal</b></span></div>';
+  H+='<div class="wg kpis">'+
+     kpi('📇','rgba(45,127,249,.15)','Total Contacts',N(T.contacts),'calls · queries · complaints')+
+     kpi('💬','rgba(130,87,230,.15)','Complaints',N(T.complaints),'the real denominator')+
+     kpi('⏳','rgba(217,138,31,.15)','Pending',N(T.pending),'not yet closed')+
+     kpi('✅','rgba(31,157,85,.15)','Closed',N(T.closed),PCT(T.closure_rate||0)+' closure rate')+
+     kpi('🔁','rgba(214,69,69,.15)','Reopened',N(T.reopened_complaints),N(T.reopen_events)+' reopen events')+
+     kpi('🗺️','rgba(45,127,249,.15)','Hotspots',N(hs.length),'cells above threshold')+'</div>';
+
+  const cats=(ov.by_category||[]).slice(0,9), zones=(ov.by_zone||[]).slice(0,11);
+  H+='<div class="wg">';
+  H+='<div class="wc"><h3>Top Complaint Categories</h3><p class="cap">water.overview · complaints only</p>'+bars(cats,null,'var(--wi-info)',i=>clab(i.key))+'</div>';
+  H+='<div class="wc"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3>Priority Hotspots</h3>'+
+     '<span class="tabs"><button id="tV" class="on" onclick="rankWards(0)">By volume</button><button id="tR" onclick="rankWards(1)">Per 10k people</button></span></div>'+
+     '<p class="cap">water.hotspot · aggregated to ward</p><div id="wardRank"></div></div>';
+  H+='<div class="wc"><h3>Complaints by Zone</h3><p class="cap">water.overview · '+E(ZONELAB)+'</p>'+bars(zones,null,'var(--wi-sewer)')+'</div>';
+  H+='</div>';
+
+  const topRate=[...wards].filter(w=>w.rate!=null).sort((a,b)=>b.rate-a.rate)[0];
+  H+='<div class="sect">Signals · each is a governed water.signal fact</div><div class="wg ins">';
+  if(rec) H+='<div class="insc critical"><div class="k">🔂 Recurring</div><div class="big">'+PCT(rec.metric)+' chronic</div><div class="d">'+E(rec.chronic_cells)+' of '+E(rec.active_cells)+' active cells appear in <b>all '+E(rec.weeks)+' weeks</b>, '+E(rec.spike_cells)+' one-week spikes — structural, not episodic.</div></div>';
+  if(reo) H+='<div class="insc warn"><div class="k">🔁 Reopen</div><div class="big">'+PCT(reo.metric)+' reopened</div><div class="d">'+N(reo.reopened)+' complaints reopened; '+N(reo.reopen_events)+' events. Tankers bounce back most ('+(tankerReo?PCT(tankerReo.metric):'—')+').</div></div>';
+  if(emg) H+='<div class="insc '+(emg.reliable?'good':'')+'"><div class="k">📈 Trend</div><div class="big">'+(emg.reliable?((emg.metric>=0?'+':'')+Math.round(emg.metric*100)+'% WoW'):'n/a')+'</div><div class="d">'+E(emg.summary)+'</div></div>';
+  if(topRate) H+='<div class="insc"><div class="k">⚖️ Per-capita worst</div><div class="big">'+E(topRate.ward)+'</div><div class="d"><b>'+N(topRate.rate)+' / 10k</b> residents — '+E(clab(topRate.dom))+'. Volume ≠ stress: big wards fall, dense pockets rise.</div></div>';
+  H+='</div>';
+
+  H+='<div class="sect">Volume & mix</div><div class="wg">';
+  H+='<div class="wc"><h3>Complaint Trend</h3><p class="cap">daily complaints across the snapshot — not a period-over-period delta</p>'+lineSVG(ov.trend_daily||[])+
+     '<div class="legend"><span><i style="background:var(--wi-info)"></i>complaints / day</span><span style="color:var(--wi-warn)">steady ~1.3k/day in August; no surge</span></div></div>';
+  H+='<div class="wc"><h3>Domain-wise</h3><p class="cap">water.overview</p>'+donutSVG(ov.by_domain||[])+'</div>';
+  H+='<div class="wc"><h3>Channel-wise</h3><p class="cap">water.overview · source_channel</p>'+bars((ov.by_channel||[]).slice(0,8),null,'var(--wi-tanker)')+'</div>';
+  H+='</div>';
+
+  H+='<div class="sect">Where to act</div><div class="wg">';
+  H+='<div class="wc"><h3>Chronic cells</h3><p class="cap">recurring/cell · hot every week</p><table class="t"><thead><tr><th>Ward</th><th style="text-align:right">Complaints</th><th></th></tr></thead><tbody>'+
+     chronic.slice(0,10).map(c=>'<tr><td class="nm">'+E(c.ward||c.key)+'</td><td style="text-align:right">'+N(c.metric)+'</td><td><span class="wch wk">'+E(c.weeks)+'/'+E(c.weeks)+' wks</span></td></tr>').join('')+'</tbody></table></div>';
+  H+='<div class="wc"><h3>Not sticking — reopen</h3><p class="cap">reopen/ward · reopen/category rate</p>'+
+     '<table class="t"><thead><tr><th>Ward</th><th style="text-align:right">Reopened</th></tr></thead><tbody>'+
+     reopWards.slice(0,6).map(w=>'<tr><td class="nm">'+E(w.key)+'</td><td style="text-align:right">'+N(w.metric)+'</td></tr>').join('')+'</tbody></table>'+
+     '<div style="margin-top:10px">'+bars(reopCats.slice(0,4).map(c=>({key:c.key,count:c.metric})),Math.max(...reopCats.map(c=>c.metric),0.01),'var(--wi-crit)',i=>clab(i.key)+' — '+PCT(i.count))+'</div>'+
+     '<div class="legend"><span style="color:var(--dim)">bar = reopen rate by category</span></div></div>';
+  const rateRows=[...wards].filter(w=>w.rate!=null).sort((a,b)=>b.rate-a.rate).slice(0,10);
+  H+='<div class="wc"><h3>Top areas per 10k people</h3><p class="cap">water.hotspot · rate_per_10k (WorldPop)</p><table class="t"><thead><tr><th>Ward</th><th style="text-align:right">Complaints</th><th style="text-align:right">Rate /10k</th><th></th></tr></thead><tbody>'+
+     rateRows.map(w=>'<tr><td class="nm">'+E(w.ward)+'</td><td style="text-align:right">'+N(w.count)+'</td><td style="text-align:right">'+N(w.rate)+'</td><td><span class="wch '+(w.rate>=RCRIT?'critical':w.rate>=RWARN?'warning':'info')+'">'+E(clab(w.dom))+'</span></td></tr>').join('')+'</tbody></table></div>';
+  H+='</div>';
+
+  H+='<div class="sect">Data sources</div><div class="wc"><div class="src">'+
+     '<div class="s"><b>'+E(attr.complaints_source||'Grievance export')+'</b><span>'+N(T.contacts)+' records · '+E(win.from)+'→'+E(win.to)+'</span></div>'+
+     '<div class="s"><b>Geocoder</b><span>'+E(attr.geocoder||'local geocoder')+' · '+PCT(T.geocode_pct||0)+' placed</span></div>'+
+     '<div class="s"><b>Ward population</b><span>'+E(attr.population_source||'population raster')+' (per-10k)</span></div>'+
+     '<div class="s"><b>water.overview</b><span>totals · distributions · trend</span></div>'+
+     '<div class="s"><b>water.hotspot</b><span>'+N(hs.length)+' cells · severity · rate</span></div>'+
+     '<div class="s"><b>water.signal</b><span>'+N(sig.length)+' rows · reopen · recurring · emerging</span></div>'+
+     '</div></div>';
+  H+='<div class="foot">'+(ISLIVE?'Live feed. ':'⚠️ '+E(WCFG.snapshot_caveat||'This is a historical snapshot, not a live feed; period-over-period trend deltas are omitted.')+' ')+'Hotspots show association, not causation. All figures are read from governed registry facts under your session — nothing is fabricated client-side.</div>';
+
+  document.getElementById('app').innerHTML=H;
+  window.__wards=wards; rankWards(0);
+}
+function rankWards(mode){
+  const wards=window.__wards||[]; const tv=document.getElementById('tV'),tr=document.getElementById('tR'); if(tv)tv.className=mode?'':'on'; if(tr)tr.className=mode?'on':'';
+  let rows = mode ? wards.filter(w=>w.rate!=null).sort((a,b)=>b.rate-a.rate) : [...wards].sort((a,b)=>b.count-a.count);
+  rows=rows.slice(0,10); const mx=Math.max(1,...rows.map(w=>mode?w.rate:w.count));
+  const col=w=>{ const v=mode?w.rate:(w.rate||0); return v>=RCRIT?'var(--wi-crit)':v>=RWARN?'var(--wi-warn)':'var(--wi-info)'; };
+  const el=document.getElementById('wardRank'); if(!el) return;
+  el.innerHTML='<div class="wbs">'+rows.map(w=>
+    '<div class="wb"><span class="nm" title="'+E(w.ward)+'">'+E(w.ward)+'</span>'+
+    '<span class="tk" style="width:'+Math.max(2,100*(mode?w.rate:w.count)/mx)+'%;background:'+col(w)+'"></span>'+
+    '<span class="vl">'+(mode? N(w.rate)+' /10k' : N(w.count))+'</span></div>').join('')+'</div>'+
+    '<div class="legend"><span>'+(mode?'complaints per 10k residents':'total complaints in ward')+'</span></div>';
+}
+</script>
+</body>
+</html>

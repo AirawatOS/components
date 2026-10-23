@@ -1,0 +1,14 @@
+# water-dashboard (kind=app) — the Water Intelligence operations dashboard. Reads governed facts only
+# (water.overview/hotspot/signal/config/category) via AOS.query; zero branding in code (labels from
+# water.category, everything else from water.config). Recovered 2026-10-23 from the live airawatdeveloper
+# app bundle (the source was lost from the ephemeral components dir; this restores it to git + filestore).
+component_id: ds:airawatdeveloper:app/water-dashboard
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Water Intelligence Dashboard
+icon: 💧
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+required_schemas: [water.overview, water.signal, water.hotspot, water.complaint, water.config, water.category]

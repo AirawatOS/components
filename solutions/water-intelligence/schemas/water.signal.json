@@ -1,0 +1,86 @@
+{
+  "type": "object",
+  "required": [
+    "signal_type",
+    "observed_at"
+  ],
+  "properties": {
+    "h3": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "ward": {
+      "type": "string"
+    },
+    "prior": {
+      "type": "integer"
+    },
+    "scope": {
+      "enum": [
+        "citywide",
+        "ward",
+        "cell",
+        "category"
+      ],
+      "type": "string"
+    },
+    "weeks": {
+      "type": "integer"
+    },
+    "metric": {
+      "type": "number"
+    },
+    "newest": {
+      "type": "integer"
+    },
+    "window": {
+      "type": "object"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "reliable": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "integer"
+    },
+    "severity": {
+      "type": "string"
+    },
+    "complaints": {
+      "type": "integer"
+    },
+    "metric_name": {
+      "type": "string"
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "signal_type": {
+      "enum": [
+        "reopen",
+        "recurring",
+        "emerging"
+      ],
+      "type": "string"
+    },
+    "spike_cells": {
+      "type": "integer"
+    },
+    "active_cells": {
+      "type": "integer"
+    },
+    "chronic_cells": {
+      "type": "integer"
+    },
+    "reopen_events": {
+      "type": "integer"
+    }
+  }
+}

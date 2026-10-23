@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "required": [
+    "code",
+    "label"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "order": {
+      "type": "integer",
+      "description": "match + display precedence"
+    },
+    "domain": {
+      "type": "string",
+      "description": "grouping bucket e.g. sewer|water|tanker"
+    },
+    "tenant": {
+      "type": "string"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "source-label substrings that normalise to this code (ordered; first match wins by `order`)"
+    }
+  }
+}

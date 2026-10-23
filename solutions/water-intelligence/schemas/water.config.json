@@ -1,0 +1,49 @@
+{
+  "type": "object",
+  "required": [],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string"
+    },
+    "tenant": {
+      "type": "string"
+    },
+    "is_live": {
+      "type": "boolean",
+      "description": "true = live feed; false = historical snapshot (shows the snapshot caveat)"
+    },
+    "windows": {
+      "type": "object",
+      "description": "{window_days, week_days, max_weeks, min_count, min_chronic}"
+    },
+    "severity": {
+      "type": "object",
+      "description": "{rate_warn, rate_crit, count_crit_pct, count_warn_pct}"
+    },
+    "subtitle": {
+      "type": "string"
+    },
+    "zone_label": {
+      "type": "string",
+      "description": "what the agency calls its operational zones"
+    },
+    "agency_name": {
+      "type": "string",
+      "description": "e.g. Delhi Jal Board \u2014 the operating utility"
+    },
+    "attributions": {
+      "type": "object",
+      "description": "{complaints_source, geocoder, population_source}"
+    },
+    "dashboard_title": {
+      "type": "string"
+    },
+    "snapshot_caveat": {
+      "type": "string",
+      "description": "shown when is_live=false"
+    }
+  }
+}

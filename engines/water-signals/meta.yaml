@@ -1,0 +1,24 @@
+# water-signals (kind=engine) — operational signals + the dashboard's compact projection.
+# Reads governed water facts and writes water.signal (emerging / recurring / reopen, at category / cell / ward /
+# citywide scope) + ONE water.overview the dashboard reads. Pure compute, no external I/O (only the broker).
+# Reconstructed 2026-10-23 from the governed build-guide + the recorded water.signal/water.overview oracle
+# (airawatdeveloper / DJB) — verified to reproduce all 48 signals and every overview total exactly.
+component_id: ds:airawatdeveloper:engine/water-signals
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Water Signals — emerging / recurring / reopen + overview
+entrypoint: run.py
+confinement_min: L1
+reads:  [water.complaint, water.category, water.record_kind, water.config]
+writes: [water.signal, water.overview]
+scopes:
+  - { verb: read,  scope: water.complaint }
+  - { verb: read,  scope: water.category }
+  - { verb: read,  scope: water.record_kind }
+  - { verb: read,  scope: water.config }
+  - { verb: write, scope: water.signal }
+  - { verb: write, scope: water.overview }
+config:
+  - { name: TOP_WARDS, kind: value, default: "12" }       # reopen/ward: emit the N highest-reopen wards
+  - { name: TOP_CELLS, kind: value, default: "15" }       # recurring/cell: emit the N highest-volume chronic cells

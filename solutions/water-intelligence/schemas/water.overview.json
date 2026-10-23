@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "required": [
+    "observed_at"
+  ],
+  "properties": {
+    "totals": {
+      "type": "object"
+    },
+    "window": {
+      "type": "object"
+    },
+    "by_zone": {
+      "type": "array"
+    },
+    "by_domain": {
+      "type": "array"
+    },
+    "by_status": {
+      "type": "array"
+    },
+    "by_channel": {
+      "type": "array"
+    },
+    "by_category": {
+      "type": "array"
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "trend_daily": {
+      "type": "array"
+    },
+    "by_raw_category": {
+      "type": "array"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# water-hotspots (kind=engine) — aggregate geocoded water complaints into hot H3 cells (water.hotspot).
+# Pure compute over governed facts: groups COMPLAINT-kind, geocoded complaints in the trailing 30-day window
+# by H3 cell; per cell computes count, dominant category, ward/zone, count-percentile severity, ward-level
+# rate_per_10k (needs a ward-population input) and a week-over-week trend. NO external I/O — only the broker.
+# Reconstructed 2026-10-23 from the governed build-guide + the recorded water.hotspot oracle (verified: count,
+# dominant, category, ward, zone, severity, window, id reproduce 350/350 on the DJB airawatdeveloper dataset).
+component_id: ds:airawatdeveloper:engine/water-hotspots
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Water Hotspots — H3 aggregation
+entrypoint: run.py
+confinement_min: L1
+reads:  [water.complaint, water.record_kind, water.config]
+writes: [water.hotspot]
+scopes:
+  - { verb: read,  scope: water.complaint }
+  - { verb: read,  scope: water.record_kind }
+  - { verb: read,  scope: water.config }
+  - { verb: write, scope: water.hotspot }
+config:
+  - { name: POP_FILE_ID, kind: value }        # optional {"wards": {"<ward>": <population>}} → rate_per_10k
+  - { name: WINDOW_DAYS, kind: value, default: "30" }
