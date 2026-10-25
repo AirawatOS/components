@@ -1,0 +1,43 @@
+# rest-connector (kind=connector) — a GENERIC read-side adapter that resolves a governed schema LIVE from a
+# REST system of record, instead of a driver copying it into the registry. Implements the one governed read
+# interface (data.read@0.1.0). Config-driven so ONE component serves many sources: point it at a base URL + a
+# per-schema path/param/field mapping, and it answers governed queries by calling that API and mapping the
+# response into the governed schema's shape. Confined — its only I/O is the declared egress via ctx.fetch, with
+# the API key injected from Vault by the broker. Reads only; never writes to the source. (Data-connectors S0/S1.)
+component_id: ds:airawatdeveloper:connector/rest-connector
+kind: connector
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: REST Connector (external source → governed schema)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: connector          # long-lived, warm/pooled on the read path (NOT a cold batch job). S1 runtime.
+  mode: warm
+implements:
+  - data.read@0.1.0             # the one governed read interface
+serves:
+  - water.complaint           # the governed schema(s) this connector resolves (demo: a city grievance API)
+# capabilities — what the SOURCE can evaluate. The resolver pushes these down and compensates for the rest.
+capabilities:
+  filter_ops: [eq, in, gte, lte]   # ops the source API honours natively
+  projection: false                # this API returns full rows
+  sort: false
+  paging: cursor                   # cursor | offset | none
+  max_page: 200
+  as_of: false                     # live source keeps no history → no point-in-time
+  freshness_s: 5                   # per-call latency budget (deadline)
+config:
+  - { name: SOURCE_URL,  kind: value }   # base URL of the REST source, e.g. https://grievance.djb.gov.in/api
+  - { name: PATH,        kind: value, default: "/complaints" }   # list endpoint
+  - { name: PARAM_MAP,   kind: value }   # JSON: governed-field -> source query-param, e.g. {"ward":"ward_no"}
+  - { name: FIELD_MAP,   kind: value }   # JSON: governed-field -> source response-field, e.g. {"id":"grievance_no"}
+  - { name: KEY_FIELD,   kind: value, default: "id" }   # which governed field is the stable identity key
+egress:
+  - { host: grievance.djb.gov.in, rate_per_min: 120, max_concurrent: 8,
+      user_agent: "AirawatOS/rest-connector (+https://airawat.org)" }
+secret: secret://airawatdeveloper/rest-connector/api_key   # Vault; broker-injected, never seen by connector code
+sources:
+  - { ref: "ds:airawatdeveloper:ref/source/djb-grievance", host: grievance.djb.gov.in, provides: [water.complaint] }
+scopes:
+  - { verb: read, scope: water.complaint }

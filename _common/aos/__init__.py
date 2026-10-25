@@ -26,7 +26,7 @@ Design notes:
 """
 import os, json, time, base64, hashlib, contextvars, urllib.request, urllib.error
 
-__all__ = ["engine", "driver", "ctx", "Ctx", "Reject", "now", "egress", "ingest"]
+__all__ = ["engine", "driver", "connector", "ConnectorQuery", "ctx", "Ctx", "Reject", "now", "egress", "ingest"]
 
 # ── observed vocabulary (populated at runtime by Ctx; consumed by aos.meta.derive) ──
 # READS/WRITES → scopes; FILES (put/get) → the meta `files:` declaration; EGRESS → external hosts reached via
@@ -622,5 +622,103 @@ class _Driver:
 
 
 driver = _Driver()
+
+
+# ── connector — read-side adapter over an external system of record (data-connectors S0) ─────────────
+# A connector resolves a GOVERNED schema by reading from an external source LIVE, instead of a driver having
+# copied the data in. It registers a per-schema reader the kernel resolver calls: `read(q) -> connector.page(...)`.
+# Same confinement/broker/Vault machinery as a driver; the difference is DIRECTION (read, not write) and that the
+# resolver invokes it in-band. The warm pooled serve loop is the runtime's job (S1); run()/run_local() here give a
+# headless one-shot so a connector is authorable + testable now.
+class ConnectorQuery:
+    """The governed query the resolver sends. Source-agnostic; the reader maps it to the source's native call."""
+    def __init__(self, d):
+        d = d or {}
+        self.schema = d.get("schema"); self.tenant = d.get("tenant")
+        self.where = d.get("where") or []            # [{field, op, value}] AND-ed
+        self.projection = d.get("projection")         # [field] or None = all
+        self.sort = d.get("sort") or []               # [{field, dir}]
+        self.limit = d.get("limit") or 100
+        self.cursor = d.get("cursor")                 # opaque continuation
+        self.as_of = d.get("as_of")                   # only honoured if capabilities.as_of
+        self.raw = d
+    def get(self, field, op="eq"):
+        """Convenience: first `where` value for (field, op), else None — e.g. q.get('ward')."""
+        for w in self.where:
+            if w.get("field") == field and w.get("op", "eq") == op:
+                return w.get("value")
+        return None
+
+
+class _Connector:
+    COMPLETE = "complete"; PARTIAL = "partial"; UNAVAILABLE = "unavailable"
+
+    def __init__(self):
+        self._readers = {}        # schema -> fn(ConnectorQuery) -> page
+
+    def read(self, schema):
+        """@connector.read('water.complaint') — register the reader for a governed schema this connector serves."""
+        def deco(fn):
+            self._readers[schema] = fn
+            return fn
+        return deco
+
+    def page(self, rows, cursor=None, completeness=None, observed_at=None, source_ref=None):
+        """Build the governed page. `completeness` = {status, reason?, evaluated_rows?} (default complete).
+        `observed_at` = when the source actually answered (freshness); defaults to now()."""
+        comp = completeness if isinstance(completeness, dict) else {"status": completeness or self.COMPLETE}
+        return {"rows": list(rows or []), "cursor": cursor, "observed_at": observed_at or now(),
+                "completeness": comp, "source_ref": source_ref}
+
+    def partial(self, rows, reason, evaluated_rows=None, cursor=None, **kw):
+        """Shortcut for a partial page — the source could not fully honour the query (see capabilities)."""
+        c = {"status": self.PARTIAL, "reason": reason}
+        if evaluated_rows is not None:
+            c["evaluated_rows"] = evaluated_rows
+        return self.page(rows, cursor=cursor, completeness=c, **kw)
+
+    def readers(self):
+        return dict(self._readers)
+
+    def _serve_one(self, q):
+        qo = ConnectorQuery(q)
+        fn = self._readers.get(qo.schema)
+        if not fn:
+            raise Reject(f"connector serves no reader for schema {qo.schema!r}")
+        return fn(qo)
+
+    def run(self):
+        """Headless one-shot (S0): resolve ONE query from env AIRAWAT_QUERY (JSON) or stdin, print the page as JSON.
+        The resolver-driven warm serve loop is wired in the runtime (S1)."""
+        if not self._readers:
+            raise Reject("no @connector.read registered")
+        import sys as _sys
+        cx = Ctx.from_broker()
+        token = _current.set(cx)
+        try:
+            raw = os.environ.get("AIRAWAT_QUERY") or ("" if _sys.stdin.isatty() else _sys.stdin.read()) or "{}"
+            pg = self._serve_one(json.loads(raw))
+            print(json.dumps(pg))
+            return pg
+        finally:
+            _current.reset(token)
+
+    def run_local(self, query, store=None, tenant="you-dev", fetches=None):
+        """`aos test` path: serve ONE query against an in-memory ctx (seed `fetches={url: body}` for the source)."""
+        if not self._readers:
+            raise Reject("no @connector.read registered")
+        cx = Ctx.in_memory(store, tenant, fetches=fetches) if "fetches" in Ctx.in_memory.__code__.co_varnames \
+            else Ctx.in_memory(store, tenant)
+        token = _current.set(cx)
+        try:
+            return self._serve_one(query)
+        finally:
+            _current.reset(token)
+
+    def registered(self):
+        return bool(self._readers)
+
+
+connector = _Connector()
 
 from . import ingest   # aos.ingest — generic tabular-ingest primitive (additive; imported last so ctx/Reject exist)
