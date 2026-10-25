@@ -345,3 +345,150 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     finally:
         try: os.unlink(ef.name)
         except OSError: pass
+
+
+# ── WARM placement (data-connectors S2b): a long-lived pooled server, not a one-shot batch run ──────────────
+# The read path can't `docker run --rm` a fresh container per query. A `runtime.mode: warm` component is launched
+# ONCE as a detached, NAMED container on the kernel's network; the kernel reaches it by that name (discovered via
+# the platform.connector_runtime record the kernel writes — ADR option B) and pools the connection. place_warm is
+# idempotent: an already-running, healthy container is returned as-is.
+CONNECTOR_PORT = int(os.environ.get("CONNECTOR_PORT", "9900"))
+# Dev fallback image for a warm connector when its `connector` runtime isn't certified yet. A warm connector is
+# pure-stdlib (broker SDK bind-mounted), so a slim python runs it — but then it is NOT image-locked/egress-confined,
+# so the record is stamped confined:false. Prod certifies the `connector` runtime (image-lock + declared egress) =
+# the S2c hardening follow-on. Never silently unconfined: the flag rides the governed runtime record.
+CONNECTOR_DEV_IMAGE = os.environ.get("CONNECTOR_DEV_IMAGE", "python:3.12-slim")
+
+
+def _container_state(name):
+    """(running: bool, healthy_hint: str) for a docker container by name — '' if absent."""
+    try:
+        r = subprocess.run(["docker", "inspect", "--format", "{{.State.Running}}", name],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return (False, "")
+        return (r.stdout.strip() == "true", "")
+    except Exception:
+        return (False, "")
+
+
+def _healthz(base_url, tries=20, delay=0.5):
+    """Poll GET <base_url>/healthz until ok. Returns the health JSON or None."""
+    import time
+    for _ in range(tries):
+        try:
+            with urllib.request.urlopen(base_url.rstrip("/") + "/healthz", timeout=4) as f:
+                return json.loads(f.read() or b"{}")
+        except Exception:
+            time.sleep(delay)
+    return None
+
+
+def place_warm(component_dir, run_token, env=None, *, name, label="", cid=None,
+               source_file_id=None, source_origin=None):
+    """Launch (or reuse) a component as a long-lived WARM server; return a dict the kernel records:
+      {ok, container, base_url, address, image, profile, confined, launched_at, ttl_s, health}
+    on_disk source is used as-is; universal delivery rehydrates from the filestore when source_file_id is given.
+    `name` is the container name the kernel discovers (e.g. connector-rest-connector)."""
+    env = {k: str(v) for k, v in (env or {}).items()}
+    # Reuse an already-healthy container (idempotent) — reach it by service name on the placement network.
+    base_url = f"http://{name}:{CONNECTOR_PORT}"
+    running, _ = _container_state(name)
+    if running:
+        h = _healthz(base_url, tries=4, delay=0.4)
+        if h is not None:
+            return {"ok": True, "reused": True, "container": name, "base_url": base_url,
+                    "address": base_url + "/read", "health": h, "profile": None, "confined": None,
+                    "launched_at": None, "ttl_s": int(os.environ.get("CONNECTOR_TTL_S", "90"))}
+        # running but unhealthy → recycle it so we re-create cleanly
+        try: subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True, timeout=30)
+        except Exception: pass
+
+    if source_file_id and not os.path.isfile(os.path.join(component_dir, "meta.yaml")):
+        _org = source_origin or {}
+        got = _fetch_and_verify(cid, source_file_id,
+                                _resolve_cert(cid, _org.get("network")) if cid else None,
+                                filestore_url=_org.get("filestore"))
+        if not got:
+            return {"ok": False, "error": f"universal delivery: could not fetch+verify source for {label or cid}"}
+        component_dir = got
+    meta = _read_meta(component_dir)
+    entry = meta.get("entrypoint", "run.py")
+    profile = (meta.get("runtime") or {}).get("profile")
+
+    # Resolve the image: the certified runtime profile when present+certified (CONFINED), else the dev base image.
+    image, confined = CONNECTOR_DEV_IMAGE, False
+    if profile:
+        runtime_id = f"ds:airawatdeveloper:runtime/{profile}"
+        cert = _resolve_cert(runtime_id)
+        runtime_dir = os.path.join(COMPONENTS, "runtimes", profile)
+        if cert and (cert.get("conformance") or {}).get("verified") and os.path.isfile(os.path.join(runtime_dir, "meta.yaml")):
+            rmeta = _read_meta(runtime_dir)
+            rimg = rmeta.get("image")
+            if ENFORCE_IMAGE:
+                want, have = rmeta.get("image_digest"), (_local_image_id(rimg) if rimg else None)
+                locked = (not cert.get("evidence_digest") or _dir_digest(runtime_dir) == cert["evidence_digest"]) \
+                         and want and have and have == want
+                if locked:
+                    image, confined = rimg, True
+                # else: certified runtime present but image mismatch → fall back to dev image (confined:false, loud)
+            elif rimg:
+                image, confined = rimg, True
+    if not confined:
+        print(f"[launcher] WARM {label or name}: running UNCONFINED on {image} "
+              f"(runtime profile '{profile}' not certified/locked) — record stamped confined:false (S2c hardening pending)")
+
+    # Materialise declared secrets (same as cold place) — passed via --env-file, never argv.
+    secret_env = {}
+    for sname in _list(meta.get("secrets")):
+        val = _materialize(env.get("TENANT", "airawat"), meta.get("component_id", ""), sname)
+        if val is None:
+            return {"ok": False, "error": f"secret '{sname}' not configured for {meta.get('component_id')} "
+                                          f"in tenant '{env.get('TENANT')}'"}
+        secret_env[sname] = val
+
+    cmd = ["docker", "run", "-d", "--name", name, "--restart", "unless-stopped"]
+    if RUNTIME_NETWORK:
+        cmd += ["--network", RUNTIME_NETWORK]
+    else:
+        cmd += ["--add-host", "host.docker.internal:host-gateway"]
+    cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro"]
+    _common = os.path.abspath(os.path.join(component_dir, "..", "..", "_common"))
+    if os.path.isdir(_common):
+        cmd += ["-v", f"{_common}:/_common:ro"]
+    import tempfile as _tf
+    allenv = {"AIRAWAT_API": CONTAINER_BROKER_URL, "RUN_TOKEN": run_token,
+              "AIRAWAT_CONNECTOR_MODE": "serve", "CONNECTOR_PORT": str(CONNECTOR_PORT),
+              # the dev base image has no `aos` baked → point PYTHONPATH at the bind-mounted SDK
+              "PYTHONPATH": "/_common", **env, **secret_env}
+    ef = _tf.NamedTemporaryFile("w", prefix="airawat-warm-", suffix=".env", delete=False)
+    try:
+        for k, v in allenv.items():
+            ef.write(f"{k}={v}\n")
+        ef.close(); os.chmod(ef.name, 0o600)
+        cmd += ["--env-file", ef.name, image, "python", f"/drivers/{entry}"]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except FileNotFoundError:
+            return {"ok": False, "error": "docker not available to place a warm container"}
+        if p.returncode != 0:
+            return {"ok": False, "error": f"docker run failed: {(p.stderr or p.stdout or '')[:300]}"}
+    finally:
+        try: os.unlink(ef.name)
+        except OSError: pass
+
+    h = _healthz(base_url)
+    if h is None:
+        logs = ""
+        try:
+            lr = subprocess.run(["docker", "logs", "--tail", "40", name], capture_output=True, text=True, timeout=15)
+            logs = (lr.stdout or "") + (lr.stderr or "")
+        except Exception:
+            pass
+        return {"ok": False, "container": name, "image": image, "error": "warm container did not become healthy",
+                "logs": logs[-800:]}
+    import time as _t
+    return {"ok": True, "container": name, "base_url": base_url, "address": base_url + "/read",
+            "image": image, "profile": profile, "confined": confined, "health": h,
+            "launched_at": _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime()),
+            "ttl_s": int(os.environ.get("CONNECTOR_TTL_S", "90"))}

@@ -718,6 +718,67 @@ class _Connector:
     def registered(self):
         return bool(self._readers)
 
+    def main(self):
+        """Entry a connector's run.py calls: warm serve loop when AIRAWAT_CONNECTOR_MODE=serve (the launcher
+        sets it for a `runtime.mode: warm` placement), else the headless one-shot. One authoring model, both runtimes."""
+        import os as _os
+        if (_os.environ.get("AIRAWAT_CONNECTOR_MODE") or "").lower() == "serve":
+            return self.serve()
+        return self.run()
+
+    def serve(self, port=None, host="0.0.0.0"):
+        """Warm pooled runtime (S2b): a long-lived HTTP server the kernel's resolver calls per query.
+        POST /read  {schema, tenant, where[], projection?, sort[], limit, cursor?, as_of?}  → the page JSON
+        GET  /healthz → {status, schemas:[...]}
+        The connector holds ONE broker ctx for its lifetime (minted from RUN_TOKEN); each request is served
+        under it. This is the address the runtime-manager registers in platform.connector_runtime, so the
+        kernel discovers it by record, not by a hardcoded endpoint. Blocks forever (the container stays up)."""
+        if not self._readers:
+            raise Reject("no @connector.read registered")
+        import os as _os, json as _json
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        port = int(port or _os.environ.get("CONNECTOR_PORT", "9900"))
+        try:                                             # process-wide broker ctx for the serving lifetime;
+            _current.set(Ctx.from_broker())              # a ctx-free connector (fixed/offline source) needs none
+        except Exception as _e:
+            print(f"[connector] no broker ctx at startup ({_e}); readers that call ctx.* will fail per-request")
+        schemas = list(self._readers.keys())
+        _serve_one = self._serve_one
+
+        class _H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _send(self, code, obj):
+                b = _json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+            def do_GET(self):
+                if self.path.rstrip("/") == "/healthz":
+                    return self._send(200, {"status": "ok", "schemas": schemas})
+                return self._send(404, {"error": "not found"})
+
+            def do_POST(self):
+                if self.path.rstrip("/") != "/read":
+                    return self._send(404, {"error": "not found"})
+                try:
+                    q = _json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                except Exception:
+                    return self._send(400, {"error": "bad json"})
+                try:
+                    return self._send(200, _serve_one(q))
+                except Reject as r:
+                    return self._send(422, {"error": str(r)})
+                except Exception as e:
+                    return self._send(502, {"error": f"connector read failed: {str(e)[:200]}"})
+
+        print(f"[connector] warm serve on :{port}  schemas={schemas}")
+        ThreadingHTTPServer((host, port), _H).serve_forever()
+
 
 connector = _Connector()
 

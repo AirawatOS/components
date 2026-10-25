@@ -1,0 +1,28 @@
+# demo-connector (kind=connector) — a minimal WARM connector used to prove the data-connectors S2b runtime
+# registry + discovery loop end-to-end. It serves the throwaway `demo.external` schema with a couple of fixed
+# rows (NO source I/O, NO secrets, NO egress) so the proof exercises the DISCOVERY + ROUTING mechanism — the
+# runtime-manager launching it warm, the kernel finding it via platform.connector_runtime and routing a query —
+# without entangling a real upstream. Delete alongside the demo.external test schema after the proof.
+component_id: ds:airawatdeveloper:connector/demo-connector
+kind: connector
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Demo Connector (warm-runtime proof)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: connector          # warm/pooled on the read path; proof runs on the dev base image (confined:false)
+  mode: warm
+implements:
+  - data.read@0.1.0
+serves:
+  - demo.external
+capabilities:
+  filter_ops: [eq, in]
+  projection: false
+  sort: false
+  paging: none
+  as_of: false
+  freshness_s: 2
+scopes:
+  - { verb: read, scope: demo.external }
