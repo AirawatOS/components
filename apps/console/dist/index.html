@@ -181,7 +181,7 @@ const CMDS={
       ['help','this help'],
       ['whoami','your identity, tenant, and roles'],
       ['data','list the governed datasets installed in your tenant'],
-      ['query &lt;schema&gt; [N] [flags]','read/filter/aggregate. --where f=v|f&gt;=n|f~sub|f^pre|f? · --sort f[:desc] · --by f --agg op[:f] · --all/--deleted · --asof/--valid &lt;ts&gt;'],
+      ['query &lt;schema&gt; [N] [flags]','read/filter/aggregate. --where f=v|f&gt;=n|f~sub|f^pre|f? · --sort f[:desc] · --by f --agg op[:f] · --all/--deleted · --meta (show valid-from/recorded) · --asof &lt;ts&gt; (as the system knew it) · --valid &lt;ts&gt; (as true in the world)'],
       ['get &lt;record-id&gt;','fetch one record by its ds:… id (resolves local / cross-tenant refs)'],
       ['history &lt;record-id&gt;','bitemporal version lineage of a record — every version, who wrote it, tombstones'],
       ['requests','the schema/interface/role change-requests you filed + their approve/reject status'],
@@ -264,7 +264,7 @@ const CMDS={
   async query(args){
     // flags: --all/--deleted (soft-deleted) · --asof/--valid <ts> (time-travel) · --where f<op>v (repeat) ·
     //        --sort f[:desc] · --by f (group) + --agg op[:f] (metric). All value-taking flags accept `=` form too.
-    let all=false,onlyDeleted=false,known=null,valid=null,sort=null; const pos=[],where=[],groupBy=[],aggs=[];
+    let all=false,onlyDeleted=false,known=null,valid=null,sort=null,meta=false; const pos=[],where=[],groupBy=[],aggs=[];
     const OPS=[['>=','gte'],['<=','lte'],['!=','ne'],['~','contains'],['^','prefix'],['>','gt'],['<','lt'],['=','eq']];
     const coerce=v=>{try{return JSON.parse(v);}catch(e){return v;}};
     const pushWhere=e=>{ e=String(e||''); if(e.endsWith('?')){where.push([e.slice(0,-1),'exists',true]);return;}
@@ -275,6 +275,7 @@ const CMDS={
       else if(al==='--deleted'){onlyDeleted=true;}
       else if(al==='--asof'||al==='--known'){known=args[++i];} else if(al.startsWith('--asof=')){known=a.slice(7);} else if(al.startsWith('--known=')){known=a.slice(8);}
       else if(al==='--valid'){valid=args[++i];} else if(al.startsWith('--valid=')){valid=a.slice(8);}
+      else if(al==='--meta'){meta=true;}
       else if(al==='--where'){pushWhere(args[++i]);} else if(al.startsWith('--where=')){pushWhere(a.slice(8));}
       else if(al==='--sort'){sort=args[++i];} else if(al.startsWith('--sort=')){sort=a.slice(7);}
       else if(al==='--by'){groupBy.push(args[++i]);} else if(al.startsWith('--by=')){groupBy.push(a.slice(5));}
@@ -283,7 +284,7 @@ const CMDS={
       else pos.push(a);
     }
     const schema=pos[0];
-    if(!schema){line('usage: query <schema> [N] [--where f=v …] [--sort f[:desc]] [--by f --agg op[:f]] [--all|--deleted] [--asof ts] [--valid ts]','warn');return;}
+    if(!schema){line('usage: query <schema> [N] [--where f=v …] [--sort f[:desc]] [--by f --agg op[:f]] [--all|--deleted] [--meta] [--asof ts] [--valid ts]','warn');return;}
     const limit=Math.max(1,Math.min(500,parseInt(pos[1],10)||25));
     const incl=all||onlyDeleted;
     const filter={}; where.forEach(([f,op,v])=>{filter[f]=filter[f]||{}; filter[f][op]=v;});
@@ -306,6 +307,9 @@ const CMDS={
     let rows=j.results||j.records||j.items||[];
     if(onlyDeleted) rows=rows.filter(r=>r&&r._retracted);
     if(incl) rows=rows.map(r=>Object.assign({deleted:(r&&r._retracted)?'yes':''}, r));
+    // --meta: surface the bitemporal envelope columns the table otherwise hides (valid-from · recorded-at)
+    if(meta) rows=rows.map(r=>{const o=r||{}; const vt=(o.valid_time&&o.valid_time.from)||o.valid_from||''; const ra=o.recorded_at||o.tx_from||'';
+      return Object.assign({valid_from:vt, recorded:ra}, o);});
     const total=(j.total!=null?j.total:(j.count!=null?j.count:rows.length));
     table(rows);
     const asof=(known?(' · as-known-of '+known):'')+(valid?(' · as-valid-of '+valid):'');
@@ -940,6 +944,17 @@ CMDS.get=async function(args){
   const obj=j.object||j.subject||((j.results||[])[0])||null;
   if(!obj){line('no record resolved for '+id+(j.routed_to?('  — routed to '+j.routed_to):''),'out');return;}
   if(j.object&&j.object.schema)line('📄 '+id+'   ('+j.object.schema+')','out');
+  // bitemporal timestamps (envelope) — surfaced explicitly since the raw dump buries them
+  const vt=(obj.valid_time&&obj.valid_time.from)||obj.valid_from, ra=obj.recorded_at||obj.tx_from;
+  if(vt||ra)line('   🕑 valid-from '+(vt||'—')+'  ·  recorded '+(ra||'—')+(obj._rev!=null?('  ·  rev '+obj._rev):''),'k');
+  // sharing status — access.grant is a SEPARATE governed record (ADR-0103), so surface a hint here
+  try{
+    const gs=(await _grantsFor(id)).filter(g=>!g.revoked);
+    if(gs.length){
+      const kinds=gs.map(g=>g.grantee==='anyone'?'public':(String(g.grantee).startsWith('link:')?'link':g.grantee));
+      line('   🔓 shared: '+kinds.join(', ')+'   (details: shares '+id+')','out');
+    } else line('   🔒 not shared   (share '+id+' public|link|<user>)','k');
+  }catch(e){}
   line(JSON.stringify(obj,null,2),'out');
 };
 CMDS.history=async function(args){
