@@ -5,7 +5,8 @@ launcher sets AIRAWAT_CONNECTOR_MODE=serve and `connector.main()` starts the lon
 in one-shot mode it answers a single AIRAWAT_QUERY. No ctx.fetch, no secrets, no egress."""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "_common"))
-sys.path.insert(0, "/_common")   # warm container bind-mount of the shared SDK
+sys.path.insert(0, "/_common")          # warm container: shared helpers (ids.py)
+sys.path.insert(0, "/connector_sdk")    # warm container: isolated aos SDK bind
 from aos import connector
 
 # A tiny fixed dataset. Each row already carries `schema`; the resolver stamps provenance/freshness/history.

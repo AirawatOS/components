@@ -455,12 +455,19 @@ def place_warm(component_dir, run_token, env=None, *, name, label="", cid=None,
     cmd += ["-v", f"{os.path.abspath(component_dir)}:/drivers:ro"]
     _common = os.path.abspath(os.path.join(component_dir, "..", "..", "_common"))
     if os.path.isdir(_common):
-        cmd += ["-v", f"{_common}:/_common:ro"]
+        cmd += ["-v", f"{_common}:/_common:ro"]   # ids.py + shared helpers (does NOT need an aos/ here)
+    # The `aos` SDK for a warm connector comes from an ISOLATED dir bound at /connector_sdk — so the dev base
+    # image gets the SDK WITHOUT live-swapping the shared in-process _common/aos. Prefer an explicit
+    # CONNECTOR_SDK_DIR, else <COMPONENTS>/_connector_sdk, else the baked /app/components/_common (certified image).
+    pythonpath = "/_common"
+    _sdk_host = os.environ.get("CONNECTOR_SDK_DIR") or os.path.join(COMPONENTS, "_connector_sdk")
+    if os.path.isdir(os.path.join(_sdk_host, "aos")):
+        cmd += ["-v", f"{os.path.abspath(_sdk_host)}:/connector_sdk:ro"]
+        pythonpath = "/connector_sdk:/_common"
     import tempfile as _tf
     allenv = {"AIRAWAT_API": CONTAINER_BROKER_URL, "RUN_TOKEN": run_token,
               "AIRAWAT_CONNECTOR_MODE": "serve", "CONNECTOR_PORT": str(CONNECTOR_PORT),
-              # the dev base image has no `aos` baked → point PYTHONPATH at the bind-mounted SDK
-              "PYTHONPATH": "/_common", **env, **secret_env}
+              "PYTHONPATH": pythonpath, **env, **secret_env}
     ef = _tf.NamedTemporaryFile("w", prefix="airawat-warm-", suffix=".env", delete=False)
     try:
         for k, v in allenv.items():
