@@ -855,6 +855,14 @@ CMDS.schema=async function(args){
       additionalProperties:false},null,2);
     openEditor('local schema: '+sid, lskel, async text=>{
       let d; try{d=JSON.parse(text);}catch(e){return {ok:false,err:'not valid JSON'};}
+      // Run the AUTHORITATIVE network house-rules linter NOW (at author time), not at propose — so you fix
+      // violations here instead of discovering them later. Degrades gracefully if the advisor is unreachable
+      // (a network hiccup shouldn't block local dev).
+      try{
+        const adv=await jpost('/bridge/schema-advise',{schema_id:sid,definition:d,kind:'schema'});
+        const viol=((adv.j||{}).house_rule_violations)||[];
+        if(viol.length) return {ok:false,err:'house rules — fix before saving:\n• '+viol.join('\n• ')};
+      }catch(e){/* advisor unreachable — allow the local draft rather than hard-block */}
       const {ok,j,status}=await jpost('/bridge/schema-define',{schema_id:sid,version:'0.1.0',definition:d});
       if(!ok) return {ok:false,err:(j.error||j.detail||JSON.stringify(j)||status)};
       // Inside a project? ALSO attach it as a DRAFT contract member (origin:new, def_text) so the schema you
