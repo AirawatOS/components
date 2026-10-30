@@ -126,6 +126,13 @@
       <div id="net-mine"></div>
       <h3 style="margin-top:20px">Available networks</h3>
       <div id="net-dir"><div class="empty">Loading…</div></div>
+      <h3 style="margin-top:22px">Add a network by URL</h3>
+      <p class="sub">A network can be hosted anywhere. Paste its address to apply to it directly — your
+        application goes to that network and its administrator decides.</p>
+      <div class="card"><div class="row" style="gap:10px">
+        <input id="net-url" placeholder="https://health.example.gov  (network base URL)" style="flex:1">
+        <button class="act" id="net-add">Apply</button>
+      </div></div>
     </section>
   </main>
 </div>
@@ -190,6 +197,15 @@ async function loadNetworks(){
     if(r&&r.participation){ toast('Applied — pending the network’s approval'); loadNetworks(); }
     else { toast((r&&r.error)||'Apply failed',true); btn.disabled=false; }
   });
+  const addBtn=$('#net-add'), addUrl=$('#net-url');
+  if(addBtn) addBtn.onclick=async()=>{
+    const url=(addUrl.value||'').trim(); if(!url){ toast('Enter a network URL',true); return; }
+    addBtn.disabled=true;
+    const r=await API('connect-network',{url});
+    if(r&&r.ok){ addUrl.value=''; toast('Applied to '+(r.network||url)+' — pending approval'); loadNetworks(); }
+    else { toast((r&&r.error)||'Could not reach that network',true); }
+    addBtn.disabled=false;
+  };
 }
 
 // --- Personal ---
