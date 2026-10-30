@@ -67,6 +67,7 @@
     <a class="ritem" data-v="packs">📦 Domain Packs<span class="rh">bundles</span></a>
     <div class="rgrp">Participants</div>
     <a class="ritem" data-v="participants">🔗 Directory<span class="rh">members</span></a>
+    <a class="ritem" data-v="membership">🤝 Membership<span class="rh">join requests</span></a>
     <div class="rgrp">Governance</div>
     <a class="ritem" data-v="requests">⚖️ Change Requests<span class="rh">propose → approve</span></a>
     <a class="ritem" data-v="publish">📤 Publish Requests<span class="rh">submit → approve</span></a>
@@ -88,7 +89,33 @@ function boot(){
   setView(VIEW);
 }
 function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
-function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
+function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,membership:membershipReqs,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
+
+// --- Membership (ADR-0116): tenants/participants applying to join THIS network; approving provisions NO tenant ---
+async function membershipReqs(){
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
+  let d; try{ const r=await jpost('/bridge/network-requests',{}); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
+  catch(e){ W.innerHTML='<div class="empty">could not load membership requests ('+esc(String(e))+')</div>'; return; }
+  const ALL=(d.participation||[]).slice().sort((a,b)=>String(b.requested_at||'').localeCompare(String(a.requested_at||'')));
+  const P=ALL.filter(q=>q.status==='pending'), DEC=ALL.filter(q=>q.status!=='pending').slice(0,25);
+  const badge=s=>s==='approved'?'<span class="chip" style="color:#5fd08a">✓ approved</span>':'<span class="chip" style="color:#e07a5f">'+esc(s)+'</span>';
+  const when=t=>esc(String(t||'').replace('T',' ').slice(0,16));
+  W.innerHTML=`<div class="lbl">Membership requests</div>
+    <div class="hint">Tenants and participants applying to join this network (ADR-0116). Approving grants a tenant-free membership — it provisions no tenant — letting them provide services to members or consume this network’s services.</div>
+    ${P.length?`<table><tr><th>participant</th><th>direction</th><th>scopes</th><th>requested</th><th></th></tr>
+      ${P.map(q=>`<tr><td class="mono">${esc(q.participant)}</td><td>${esc(q.direction||'both')}</td><td class="muted">${esc((q.scopes||[]).join(', ')||'all')}</td><td class="muted">${when(q.requested_at)}</td>
+        <td style="text-align:right"><button class="btn sm" data-ap="${esc(q.participant)}">Approve</button> <button class="btn sm danger" data-rj="${esc(q.participant)}">Reject</button></td></tr>`).join('')}
+      </table>`:'<div class="empty">no pending membership requests</div>'}
+    ${DEC.length?`<div class="lbl" style="margin-top:22px">Recently decided</div>
+      <table><tr><th>participant</th><th>status</th><th>decided</th></tr>
+      ${DEC.map(q=>`<tr><td class="mono">${esc(q.participant)}</td><td>${badge(q.status)}</td><td class="muted">${when(q.decided_at)}</td></tr>`).join('')}</table>`:''}`;
+  async function decide(participant,decision){
+    const r=await jpost('/bridge/network-decide',{participant:participant,decision:decision});   // network injected server-side
+    if(r.ok){ toast(decision==='approve'?'Approved':'Rejected'); membershipReqs(); } else { toast((r.j&&(r.j.error||r.j.detail))||'failed',true); }
+  }
+  W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decide(b.dataset.ap,'approve'));
+  W.querySelectorAll('[data-rj]').forEach(b=>b.onclick=()=>decide(b.dataset.rj,'reject'));
+}
 
 // --- Publish Requests: ADR-0080 developer submits → network steward approves → LIVE in the marketplace ----
 async function publishReqs(){

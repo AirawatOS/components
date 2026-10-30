@@ -88,6 +88,7 @@
     <button class="navbtn on" data-tab="personal" title="Personal"><span class="ic">👤</span><span class="txt">Personal</span></button>
     <button class="navbtn" data-tab="admin" title="Components"><span class="ic">🛠️</span><span class="txt">Components</span></button>
     <button class="navbtn" data-tab="supply" title="Supply chain"><span class="ic">🛡️</span><span class="txt">Supply chain</span></button>
+    <button class="navbtn" data-tab="networks" title="Networks"><span class="ic">🌐</span><span class="txt">Networks</span></button>
   </nav>
   <main>
     <section id="personal">
@@ -115,6 +116,16 @@
       <div class="keyrow" style="margin-bottom:14px"><button class="act" id="drift-refresh">↻ Re-scan</button><span id="drift-sum" class="m2"></span></div>
       <div id="drift-banner"></div>
       <div id="supply-body"><div class="empty">Loading…</div></div>
+    </section>
+
+    <section id="networks" hidden>
+      <h2>Networks</h2>
+      <p class="sub">Connect this tenant to one or more networks (health, labour, water…). Applying makes you a
+        <b>participant</b> — it does <b>not</b> create a new tenant. The network decides; once approved you can
+        provide services to its members or use its services for your users.</p>
+      <div id="net-mine"></div>
+      <h3 style="margin-top:20px">Available networks</h3>
+      <div id="net-dir"><div class="empty">Loading…</div></div>
     </section>
   </main>
 </div>
@@ -150,9 +161,36 @@ document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
   $('#personal').hidden = b.dataset.tab!=='personal';
   $('#admin').hidden = b.dataset.tab!=='admin';
   $('#supply').hidden = b.dataset.tab!=='supply';
+  $('#networks').hidden = b.dataset.tab!=='networks';
   if(b.dataset.tab==='admin') loadAdmin();
   if(b.dataset.tab==='supply') loadSupply();
+  if(b.dataset.tab==='networks') loadNetworks();
 });
+
+// --- Networks (ADR-0116): connect this tenant to networks; applying provisions NO tenant ---
+const NET_COLOR={approved:'var(--ok)',pending:'var(--warn)',rejected:'var(--danger)',revoked:'var(--muted)'};
+function netBadge(s){ return `<span style="font-size:12px;font-weight:600;color:${NET_COLOR[s]||'var(--muted)'};text-transform:capitalize">${esc(s)}</span>`; }
+async function loadNetworks(){
+  const [dir,mine]=await Promise.all([API('networks'),API('my-networks')]);
+  const members={}; (mine.participation||[]).forEach(p=>members[p.network]=p);
+  const rows=(mine.participation||[]);
+  $('#net-mine').innerHTML = rows.length ? '<h3>Your memberships</h3>'+rows.map(p=>
+    `<div class="row"><div class="lbl"><b>${esc(p.network)}</b><small>${esc(p.direction||'both')} · ${esc((p.scopes||[]).join(', ')||'all scopes')}</small></div>${netBadge(p.status)}</div>`).join('') : '';
+  const nets=(dir.networks||[]);
+  const dirEl=$('#net-dir');
+  if(!nets.length){ dirEl.innerHTML='<div class="empty">No networks are listed yet.</div>'; return; }
+  dirEl.innerHTML=nets.map(n=>{
+    const m=members[n.network];
+    const right = m ? netBadge(m.status) : `<button class="act" data-net="${esc(n.network)}">Apply to join</button>`;
+    return `<div class="row"><div class="lbl"><b>${esc(n.label||n.network)}</b><small>${esc(n.description||n.network)}</small></div>${right}</div>`;
+  }).join('');
+  dirEl.querySelectorAll('button[data-net]').forEach(btn=>btn.onclick=async()=>{
+    btn.disabled=true;
+    const r=await API('join-network',{network:btn.dataset.net,direction:'both'});
+    if(r&&r.participation){ toast('Applied — pending the network’s approval'); loadNetworks(); }
+    else { toast((r&&r.error)||'Apply failed',true); btn.disabled=false; }
+  });
+}
 
 // --- Personal ---
 $('#theme').onchange = e => { API('set-theme',{theme:e.target.value}).then(()=>toast('Theme saved')); try{document.documentElement.setAttribute('data-theme',e.target.value)}catch(_){} };
