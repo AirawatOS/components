@@ -124,6 +124,16 @@
         <b>participant</b> — it does <b>not</b> create a new tenant. The network decides; once approved you can
         provide services to its members or use its services for your users.</p>
       <div id="net-mine"></div>
+      <div id="net-offer-wrap" hidden>
+        <h3 style="margin-top:20px">Offer a service into a network</h3>
+        <p class="sub">Make one of your services available to the members of a network you belong to.</p>
+        <div class="card"><div class="row" style="gap:10px;flex-wrap:wrap">
+          <select id="net-offer-net"></select>
+          <input id="net-offer-sid" placeholder="service id (e.g. flood-alerts)" style="flex:1">
+          <input id="net-offer-title" placeholder="title" style="flex:1">
+          <button class="act" id="net-offer-btn">Offer</button>
+        </div></div>
+      </div>
       <h3 style="margin-top:20px">Available networks</h3>
       <div id="net-dir"><div class="empty">Loading…</div></div>
       <h3 style="margin-top:22px">Add a network by URL</h3>
@@ -181,8 +191,20 @@ async function loadNetworks(){
   const [dir,mine]=await Promise.all([API('networks'),API('my-networks')]);
   const members={}; (mine.participation||[]).forEach(p=>members[p.network]=p);
   const rows=(mine.participation||[]);
-  $('#net-mine').innerHTML = rows.length ? '<h3>Your memberships</h3>'+rows.map(p=>
-    `<div class="row"><div class="lbl"><b>${esc(p.network)}</b><small>${esc(p.direction||'both')} · ${esc((p.scopes||[]).join(', ')||'all scopes')}</small></div>${netBadge(p.status)}</div>`).join('') : '';
+  const approved=rows.filter(p=>p.status==='approved');
+  // CONSUME: fetch the services each joined network offers its members
+  const svcByNet={};
+  await Promise.all(approved.map(async p=>{ const r=await API('network-services',{network:p.network}); svcByNet[p.network]=(r&&r.services)||[]; }));
+  $('#net-mine').innerHTML = rows.length ? '<h3>Your memberships</h3>'+rows.map(p=>{
+    const svc=svcByNet[p.network]||[];
+    const svcHtml = p.status==='approved'
+      ? `<div style="margin:2px 0 12px 16px;font-size:13px">${svc.length?svc.map(s=>`• <b>${esc(s.title)}</b> <span class="m2">${esc(s.service_id)} · ${esc(s.provider)}</span>`).join('<br>'):'<span class="m2">No services offered yet.</span>'}</div>` : '';
+    return `<div class="row"><div class="lbl"><b>${esc(p.network)}</b><small>${esc(p.direction||'both')} · ${esc((p.scopes||[]).join(', ')||'all scopes')}</small></div>${netBadge(p.status)}</div>${svcHtml}`;
+  }).join('') : '';
+  // PROVIDE: the offer form targets the networks you belong to
+  const offerWrap=$('#net-offer-wrap'), offerSel=$('#net-offer-net');
+  if(offerWrap){ offerWrap.hidden = approved.length===0;
+    if(approved.length){ offerSel.innerHTML=approved.map(p=>`<option value="${esc(p.network)}">${esc(p.network)}</option>`).join(''); } }
   const nets=(dir.networks||[]);
   const dirEl=$('#net-dir');
   if(!nets.length){ dirEl.innerHTML='<div class="empty">No networks are listed yet.</div>'; return; }
@@ -205,6 +227,16 @@ async function loadNetworks(){
     if(r&&r.ok){ addUrl.value=''; toast('Applied to '+(r.network||url)+' — pending approval'); loadNetworks(); }
     else { toast((r&&r.error)||'Could not reach that network',true); }
     addBtn.disabled=false;
+  };
+  const offBtn=$('#net-offer-btn');
+  if(offBtn) offBtn.onclick=async()=>{
+    const net=$('#net-offer-net').value, sid=($('#net-offer-sid').value||'').trim(), title=($('#net-offer-title').value||'').trim();
+    if(!net||!sid){ toast('Pick a network and a service id',true); return; }
+    offBtn.disabled=true;
+    const r=await API('offer-network-service',{network:net,service_id:sid,title:title||sid});
+    if(r&&r.service){ $('#net-offer-sid').value=''; $('#net-offer-title').value=''; toast('Service offered to '+net); loadNetworks(); }
+    else { toast((r&&r.error)||'Offer failed',true); }
+    offBtn.disabled=false;
   };
 }
 
