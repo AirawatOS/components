@@ -61,6 +61,12 @@
   .flbl{display:block;font-size:11.5px;color:var(--dim);margin-bottom:4px}
   .card input{width:100%;box-sizing:border-box;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:7px 9px;font-size:13px}
   .card input:focus{outline:none;border-color:#2f6ba3}
+  .caps{display:flex;flex-wrap:wrap;gap:6px;min-height:26px;margin-bottom:6px}
+  .cap{display:inline-flex;align-items:center;gap:5px;background:#10233a;border:1px solid #244a6e;border-radius:999px;padding:3px 9px;font-size:12px;color:#cfe4ff}
+  .cap b{cursor:pointer;color:#7fa9d6;font-weight:700;margin-left:2px}.cap b:hover{color:#fff}
+  .cap.cap-bad{background:#2c1c10;border-color:#6e4a24;color:#f0c68a}
+  .cap-add{width:100%;box-sizing:border-box;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12.5px}
+  .cap-add:focus{outline:none;border-color:#2f6ba3}
   </style>
 <header><h1 id="netname">🌐 Network</h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
 <div class="shell">
@@ -105,26 +111,49 @@ function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()
 // --- Participant Types (ADR-0116): the network admin defines its OWN participant kinds + per-type provide/consume
 //     matrix. This is what makes the join page + portal generic — a Labour network defines employer/staffing-agency;
 //     a Water network defines its own. Saved to the network profile (POST /v1/networks, network injected server-side). ---
-let PT=[];   // working copy of participant_types being edited
+let PT=[], NOUNS=[], VERBS=[];   // working copy of participant_types + the governed catalogs to pick from
 async function partTypes(){
   const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
   let prof=PROFILE;
   if(!prof){ try{ const r=await jpost('/bridge/network-profile',{}); prof=(r.j&&r.j.profile)||{}; PROFILE=prof; NETWORK=prof.network||''; }
     catch(e){ W.innerHTML='<div class="empty">could not load this network’s profile ('+esc(String(e))+')</div>'; return; } }
-  PT=JSON.parse(JSON.stringify(prof.participant_types||[]));
+  // Load the governed catalogs — provide/consume can ONLY reference a governed Noun (schema) or Verb (interface).
+  try{ const s=await jpost('/bridge/schemas',{}); NOUNS=[...new Set(((s.j&&s.j.schemas)||[]).map(x=>x.schema_id).filter(Boolean))].sort(); }catch(e){ NOUNS=[]; }
+  try{ const v=await jpost('/bridge/interfaces',{}); VERBS=[...new Set(((v.j&&v.j.interfaces)||[]).map(x=>x.interface_id).filter(Boolean))].sort(); }catch(e){ VERBS=[]; }
+  const NSET=new Set(NOUNS), VSET=new Set(VERBS);
   const idv=v=>esc(v==null?'':String(v));
-  const csv=a=>Array.isArray(a)?a.join(', '):'';
+  // migrate any legacy free-text entries → typed refs (best-effort: match the catalogs, else keep as noun+ungoverned)
+  const norm=c=>{ if(c&&typeof c==='object'&&c.kind) return {kind:c.kind,ref:c.ref};
+    const s=String(c||'').trim(); if(!s) return null; return {kind: VSET.has(s)&&!NSET.has(s)?'verb':'noun', ref:s}; };
+  PT=(prof.participant_types||[]).map(t=>({id:t.id||'',label:t.label||'',description:t.description||'',
+     provide:(t.provide||[]).map(norm).filter(Boolean), consume:(t.consume||[]).map(norm).filter(Boolean)}));
+  const governed=c=> c.kind==='verb' ? VSET.has(c.ref) : NSET.has(c.ref);
+  const icon=k=> k==='verb'?'🔌':'🧩';
+  function capChips(i,leg){
+    const list=PT[i][leg]||[];
+    const chips=list.map((c,ci)=>{ const ok=governed(c);
+      return `<span class="cap ${ok?'':'cap-bad'}" title="${ok?(c.kind==='verb'?'governed Verb (interface)':'governed Noun (schema)'):'NOT in the governed catalog — govern it first'}">${icon(c.kind)} <span class="mono">${idv(c.ref)}</span>${ok?'':' ⚠'}<b data-delcap="${i}:${leg}:${ci}">×</b></span>`;}).join('');
+    const taken=new Set(list.map(c=>c.kind+':'+c.ref));
+    const opt=(kind,ref)=> taken.has(kind+':'+ref)?'':`<option value="${kind}:${idv(ref)}">${icon(kind)} ${idv(ref)}</option>`;
+    const nounOpts=NOUNS.map(r=>opt('noun',r)).join(''), verbOpts=VERBS.map(r=>opt('verb',r)).join('');
+    return `<div class="caps">${chips||'<span class="muted" style="font-size:12px">none yet</span>'}</div>
+      <select class="cap-add" data-add="${i}:${leg}">
+        <option value="">+ add a governed capability…</option>
+        <optgroup label="🧩 Nouns — data (schemas)">${nounOpts||'<option disabled>none governed</option>'}</optgroup>
+        <optgroup label="🔌 Verbs — requests / events (interfaces)">${verbOpts||'<option disabled>none governed</option>'}</optgroup>
+      </select>`;
+  }
   function draw(){
     W.innerHTML=`
-    <div class="lbl">Participant types & profile</div>
-    <div class="hint">Define who can participate in <b>${idv(prof.label||NETWORK)}</b> and what each kind may <b>provide</b> (offer to members) and <b>consume</b> (use from the network). These power the public join page and each participant’s dashboard. Use <code>*</code> to mean “any service”.</div>
-    <div class="card" style="max-width:860px;margin-top:12px">
+    <div class="lbl">Participant types &amp; profile</div>
+    <div class="hint">Define who can participate in <b>${idv(prof.label||NETWORK)}</b> and what each kind may <b>provide</b> (offer to members) and <b>consume</b> (use). Capabilities are governed — a <b>🧩 Noun</b> (schema = data) or a <b>🔌 Verb</b> (interface = a request/response or event). Pick from the ${NOUNS.length} Nouns + ${VERBS.length} Verbs this network governs; if one is missing, <a href="#" id="pt-propose">propose it in Change Requests →</a> first.</div>
+    <div class="card" style="max-width:900px;margin-top:12px">
       <div class="row2"><div><label class="flbl">Network display name</label><input id="pf-label" value="${idv(prof.label||'')}" placeholder="e.g. Demo Labour Network"></div></div>
       <div style="margin-top:10px"><label class="flbl">Short blurb <span class="muted">(shown on the join page)</span></label>
         <input id="pf-blurb" value="${idv(prof.blurb||'')}" placeholder="One line describing what this network is for."></div>
     </div>
-    <div id="pt-list" style="max-width:860px"></div>
-    <div style="max-width:860px;margin:10px 0 24px;display:flex;gap:10px;align-items:center">
+    <div id="pt-list" style="max-width:900px"></div>
+    <div style="max-width:900px;margin:10px 0 24px;display:flex;gap:10px;align-items:center">
       <button class="btn" id="pt-add">+ Add participant type</button>
       <button class="btn primary" id="pt-save">Save</button>
       <span class="muted" id="pt-msg"></span>
@@ -137,22 +166,26 @@ async function partTypes(){
           <div><label class="flbl">Label</label><input class="pt-label" value="${idv(t.label)}" placeholder="Employer"></div>
         </div>
         <div style="margin-top:8px"><label class="flbl">Description</label><input class="pt-desc" value="${idv(t.description)}" placeholder="Who this participant is."></div>
-        <div class="row2" style="margin-top:8px">
-          <div><label class="flbl">Provides <span class="muted">(comma-separated service ids)</span></label><input class="pt-prov mono" value="${idv(csv(t.provide))}" placeholder="job-postings"></div>
-          <div><label class="flbl">Consumes <span class="muted">(comma-separated)</span></label><input class="pt-cons mono" value="${idv(csv(t.consume))}" placeholder="skilling-credentials, compliance-check"></div>
+        <div class="row2" style="margin-top:10px;align-items:flex-start">
+          <div><label class="flbl">Provides <span class="muted">(offers to members)</span></label>${capChips(i,'provide')}</div>
+          <div><label class="flbl">Consumes <span class="muted">(uses from the network)</span></label>${capChips(i,'consume')}</div>
         </div>
         <div style="margin-top:10px;text-align:right"><button class="btn sm danger" data-del="${i}">Remove</button></div>
       </div>`).join('') : '<div class="empty" style="margin-top:12px">No participant types yet — add one so organisations can apply to join.</div>';
     // wire
+    document.getElementById('pt-propose').onclick=e=>{ e.preventDefault(); sync(); setView('requests'); };
     document.getElementById('pt-add').onclick=()=>{ sync(); PT.push({id:'',label:'',description:'',provide:[],consume:[]}); draw(); };
     document.getElementById('pt-save').onclick=save;
     L.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ sync(); PT.splice(+b.dataset.del,1); draw(); });
+    L.querySelectorAll('[data-delcap]').forEach(b=>b.onclick=()=>{ sync(); const [i,leg,ci]=b.dataset.delcap.split(':'); PT[+i][leg].splice(+ci,1); draw(); });
+    L.querySelectorAll('.cap-add').forEach(sel=>sel.onchange=()=>{ if(!sel.value)return; sync(); const [i,leg]=sel.dataset.add.split(':');
+      const [kind,...rest]=sel.value.split(':'); const ref=rest.join(':'); PT[+i][leg].push({kind,ref}); draw(); });
   }
-  function sync(){   // read the DOM back into PT (so add/remove/save keep edits)
+  function sync(){   // read the text fields back into PT; provide/consume are kept as live state (chips), not text
     document.querySelectorAll('#pt-list [data-i]').forEach(row=>{
-      const i=+row.dataset.i, g=s=>row.querySelector(s), split=v=>v.split(',').map(x=>x.trim()).filter(Boolean);
-      PT[i]={id:(g('.pt-id').value||'').trim(), label:(g('.pt-label').value||'').trim(),
-             description:(g('.pt-desc').value||'').trim(), provide:split(g('.pt-prov').value||''), consume:split(g('.pt-cons').value||'')};
+      const i=+row.dataset.i, g=s=>row.querySelector(s);
+      PT[i].id=(g('.pt-id').value||'').trim(); PT[i].label=(g('.pt-label').value||'').trim();
+      PT[i].description=(g('.pt-desc').value||'').trim();
     });
   }
   async function save(){
@@ -160,6 +193,8 @@ async function partTypes(){
     const msg=document.getElementById('pt-msg');
     const bad=PT.find(t=>!t.id); if(bad){ msg.textContent='every type needs an id'; msg.style.color='#e5484d'; return; }
     const ids=PT.map(t=>t.id); if(new Set(ids).size!==ids.length){ msg.textContent='type ids must be unique'; msg.style.color='#e5484d'; return; }
+    const ungoverned=[]; PT.forEach(t=>['provide','consume'].forEach(leg=>(t[leg]||[]).forEach(c=>{ if(!governed(c)) ungoverned.push(t.id+'.'+leg+': '+c.ref); })));
+    if(ungoverned.length){ msg.textContent='ungoverned capability — govern it first: '+ungoverned[0]; msg.style.color='#e5484d'; return; }
     const body={label:(document.getElementById('pf-label').value||'').trim()||undefined,
                 blurb:(document.getElementById('pf-blurb').value||'').trim(), participant_types:PT};
     msg.textContent='saving…'; msg.style.color='';
