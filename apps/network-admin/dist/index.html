@@ -56,8 +56,13 @@
   .sens{border:1px solid} .sens.public{color:#3fb950;border-color:#1a5a2e;background:#0f2417}
   .sens.internal{color:var(--accent);border-color:#2b3a4d;background:#16202e} .sens.sensitive{color:var(--gold);border-color:#6b5316;background:#241d0c}
   .btn.sm{padding:3px 9px;font-size:11.5px}.btn.danger{border-color:#5a2424;color:#e5484d}.btn.danger:hover{background:#2a1414;border-color:#e5484d}
+  .btn.primary{background:#1f4e78;border-color:#2f6ba3;color:#dbeafe}.btn.primary:hover{background:#255a8c}
+  .row2{display:flex;gap:14px}.row2>div{flex:1}
+  .flbl{display:block;font-size:11.5px;color:var(--dim);margin-bottom:4px}
+  .card input{width:100%;box-sizing:border-box;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:7px 9px;font-size:13px}
+  .card input:focus{outline:none;border-color:#2f6ba3}
   </style>
-<header><h1>🌐 Airawat<b>Network</b></h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
+<header><h1 id="netname">🌐 Network</h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
 <div class="shell">
   <nav class="rail">
     <div class="rgrp">The Language <span class="rgh">the shared contract</span></div>
@@ -66,6 +71,7 @@
     <a class="ritem" data-v="roles">👥 Roles<span class="rh">actors</span></a>
     <a class="ritem" data-v="packs">📦 Domain Packs<span class="rh">bundles</span></a>
     <div class="rgrp">Participants</div>
+    <a class="ritem" data-v="parttypes">🧷 Participant Types<span class="rh">kinds · provide/consume</span></a>
     <a class="ritem" data-v="participants">🔗 Directory<span class="rh">members</span></a>
     <a class="ritem" data-v="membership">🤝 Membership<span class="rh">join requests</span></a>
     <div class="rgrp">Governance</div>
@@ -83,13 +89,88 @@ async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content
 function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2200);}
 function esc(s){if(s==null)return '';if(typeof s!=='string')s=(s.value!=null?s.value:JSON.stringify(s));return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
+let NETWORK='', PROFILE=null;   // the admin's OWN network (from session) + its profile
 function boot(){
   fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
+  // The console is NOT hardcoded to any one network — title + types come from THIS admin's own network profile.
+  jpost('/bridge/network-profile',{}).then(r=>{ PROFILE=(r.j&&r.j.profile)||null; NETWORK=(PROFILE&&PROFILE.network)||'';
+    if(PROFILE){ document.getElementById('netname').innerHTML='🌐 '+esc(PROFILE.label||PROFILE.network); document.title=(PROFILE.label||PROFILE.network)+' · Network Admin'; }
+  }).catch(()=>{});
   document.querySelectorAll('.ritem').forEach(el=>el.onclick=()=>setView(el.dataset.v));
   setView(VIEW);
 }
 function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
-function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),participants:participants,membership:membershipReqs,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
+function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),parttypes:partTypes,participants:participants,membership:membershipReqs,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
+
+// --- Participant Types (ADR-0116): the network admin defines its OWN participant kinds + per-type provide/consume
+//     matrix. This is what makes the join page + portal generic — a Labour network defines employer/staffing-agency;
+//     a Water network defines its own. Saved to the network profile (POST /v1/networks, network injected server-side). ---
+let PT=[];   // working copy of participant_types being edited
+async function partTypes(){
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
+  let prof=PROFILE;
+  if(!prof){ try{ const r=await jpost('/bridge/network-profile',{}); prof=(r.j&&r.j.profile)||{}; PROFILE=prof; NETWORK=prof.network||''; }
+    catch(e){ W.innerHTML='<div class="empty">could not load this network’s profile ('+esc(String(e))+')</div>'; return; } }
+  PT=JSON.parse(JSON.stringify(prof.participant_types||[]));
+  const idv=v=>esc(v==null?'':String(v));
+  const csv=a=>Array.isArray(a)?a.join(', '):'';
+  function draw(){
+    W.innerHTML=`
+    <div class="lbl">Participant types & profile</div>
+    <div class="hint">Define who can participate in <b>${idv(prof.label||NETWORK)}</b> and what each kind may <b>provide</b> (offer to members) and <b>consume</b> (use from the network). These power the public join page and each participant’s dashboard. Use <code>*</code> to mean “any service”.</div>
+    <div class="card" style="max-width:860px;margin-top:12px">
+      <div class="row2"><div><label class="flbl">Network display name</label><input id="pf-label" value="${idv(prof.label||'')}" placeholder="e.g. Demo Labour Network"></div></div>
+      <div style="margin-top:10px"><label class="flbl">Short blurb <span class="muted">(shown on the join page)</span></label>
+        <input id="pf-blurb" value="${idv(prof.blurb||'')}" placeholder="One line describing what this network is for."></div>
+    </div>
+    <div id="pt-list" style="max-width:860px"></div>
+    <div style="max-width:860px;margin:10px 0 24px;display:flex;gap:10px;align-items:center">
+      <button class="btn" id="pt-add">+ Add participant type</button>
+      <button class="btn primary" id="pt-save">Save</button>
+      <span class="muted" id="pt-msg"></span>
+    </div>`;
+    const L=document.getElementById('pt-list');
+    L.innerHTML = PT.length ? PT.map((t,i)=>`
+      <div class="card" style="margin-top:12px" data-i="${i}">
+        <div class="row2">
+          <div><label class="flbl">Type id <span class="muted">(stable key)</span></label><input class="pt-id mono" value="${idv(t.id)}" placeholder="employer"></div>
+          <div><label class="flbl">Label</label><input class="pt-label" value="${idv(t.label)}" placeholder="Employer"></div>
+        </div>
+        <div style="margin-top:8px"><label class="flbl">Description</label><input class="pt-desc" value="${idv(t.description)}" placeholder="Who this participant is."></div>
+        <div class="row2" style="margin-top:8px">
+          <div><label class="flbl">Provides <span class="muted">(comma-separated service ids)</span></label><input class="pt-prov mono" value="${idv(csv(t.provide))}" placeholder="job-postings"></div>
+          <div><label class="flbl">Consumes <span class="muted">(comma-separated)</span></label><input class="pt-cons mono" value="${idv(csv(t.consume))}" placeholder="skilling-credentials, compliance-check"></div>
+        </div>
+        <div style="margin-top:10px;text-align:right"><button class="btn sm danger" data-del="${i}">Remove</button></div>
+      </div>`).join('') : '<div class="empty" style="margin-top:12px">No participant types yet — add one so organisations can apply to join.</div>';
+    // wire
+    document.getElementById('pt-add').onclick=()=>{ sync(); PT.push({id:'',label:'',description:'',provide:[],consume:[]}); draw(); };
+    document.getElementById('pt-save').onclick=save;
+    L.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ sync(); PT.splice(+b.dataset.del,1); draw(); });
+  }
+  function sync(){   // read the DOM back into PT (so add/remove/save keep edits)
+    document.querySelectorAll('#pt-list [data-i]').forEach(row=>{
+      const i=+row.dataset.i, g=s=>row.querySelector(s), split=v=>v.split(',').map(x=>x.trim()).filter(Boolean);
+      PT[i]={id:(g('.pt-id').value||'').trim(), label:(g('.pt-label').value||'').trim(),
+             description:(g('.pt-desc').value||'').trim(), provide:split(g('.pt-prov').value||''), consume:split(g('.pt-cons').value||'')};
+    });
+  }
+  async function save(){
+    sync();
+    const msg=document.getElementById('pt-msg');
+    const bad=PT.find(t=>!t.id); if(bad){ msg.textContent='every type needs an id'; msg.style.color='#e5484d'; return; }
+    const ids=PT.map(t=>t.id); if(new Set(ids).size!==ids.length){ msg.textContent='type ids must be unique'; msg.style.color='#e5484d'; return; }
+    const body={label:(document.getElementById('pf-label').value||'').trim()||undefined,
+                blurb:(document.getElementById('pf-blurb').value||'').trim(), participant_types:PT};
+    msg.textContent='saving…'; msg.style.color='';
+    const r=await jpost('/bridge/network-configure',body);
+    if(r.ok){ PROFILE=r.j.network||PROFILE; if(PROFILE){ prof=PROFILE;
+        document.getElementById('netname').innerHTML='🌐 '+esc(PROFILE.label||PROFILE.network); }
+      msg.textContent='✓ saved'; msg.style.color='#5fd08a'; toast('participant types saved'); }
+    else { msg.textContent=(r.j&&(r.j.error||r.j.detail))||('error '+r.status); msg.style.color='#e5484d'; }
+  }
+  draw();
+}
 
 // --- Membership (ADR-0116): tenants/participants applying to join THIS network; approving provisions NO tenant ---
 async function membershipReqs(){
