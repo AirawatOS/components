@@ -10,4 +10,4 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 required_schemas: []
-roles: [platform.steward]
+roles: [platform.steward, network.admin, network.steward]   # the network authority: the standards-body steward OR an <instance>-network admin
