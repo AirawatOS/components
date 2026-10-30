@@ -781,6 +781,27 @@ CMDS.project=async function(args){
     line('✓ added '+cid+' to project '+proj,'out');
     line('now: ls · edit '+name+'/'+(kind==='app'?'dist/index.html':'run.py')+' · publish '+name,'out'); return;
   }
+  if(op==='rm'||op==='remove'){
+    // The inverse of `add` / `new` / `schema new`: detach a member from the current project. Matches by exact
+    // ref OR by its tail (so `project rm test.note` works whether stored as 'test.note' or a full ds: id).
+    const proj=curProject();
+    if(!proj){line('not in a project — `cd /projects/<project>` first (or `project use <name>`)','err');return;}
+    const ref=(args[1]||'').trim();
+    if(!ref){line('usage: project rm <ref>   (ref as shown in `ls` — e.g. test.note, water-complaints)','err');return;}
+    const pid='ds:'+myTenant()+':studio/project/'+proj;
+    const got=await jpost('/bridge/query',{app_id:APPID,schema:'studio.project'});
+    const rec=((got.j&&got.j.results)||[]).find(x=>x.id===pid);
+    if(!rec){line('project '+proj+' not found','err');return;}
+    const before=(rec.members||[]).length;
+    const members=(rec.members||[]).filter(m=>m&&m.ref!==ref&&tailOf(m.ref||'')!==ref);
+    if(members.length===before){line('no member “'+ref+'” in '+proj+' — see `ls`','err');return;}
+    const s2=await jpost('/bridge/save',{object:{...rec,members}});
+    if(!s2.ok){line('project rm: '+(s2.j.error||JSON.stringify(s2.j)||s2.status),'err');return;}
+    _INST=null;
+    line('✓ removed '+ref+' from project '+proj+' ('+(before-members.length)+' member removed)','out');
+    line('note: this detaches it from the project. A local draft schema / component def stays in the dev store (inert); a governed/published contract is untouched.','out');
+    return;
+  }
   if(op==='invite'){
     // ADR-0113: owner/lead adds a teammate onto the current project's `team` so they can see + build it.
     const proj=curProject();
@@ -824,23 +845,54 @@ CMDS.schema=async function(args){
   const sid=(args[1]||'').trim();
   if(op==='new'||op==='local'){                 // SANDBOX: install a LOCAL schema (dev tenant) without network approval
     if(!sid||sid.indexOf('.')<1){line('schema id must be <domain>.<subject> — e.g. water.note','err');return;}
+    // House-rules-compliant skeleton (network R1–R4): envelope (schema+id, id pattern) + closed + typed, so the
+    // SAME draft proposes cleanly later with no surprise. Add your own domain fields under `properties`.
     const lskel=JSON.stringify({type:'object','x-kind':'entity',
       description:'TODO: what '+sid+' represents',
-      properties:{title:{type:'string'}},   // declare only YOUR domain fields — schema/id/tenant are the registry's envelope
-      required:['title']},null,2);
+      properties:{schema:{const:sid},id:{type:'string',pattern:'^ds:[a-z0-9-]+:\\S+$'},
+                  tenant:{type:['string','null']},title:{type:'string'}},
+      required:['schema','id','title'],
+      additionalProperties:false},null,2);
     openEditor('local schema: '+sid, lskel, async text=>{
       let d; try{d=JSON.parse(text);}catch(e){return {ok:false,err:'not valid JSON'};}
+      // Run the AUTHORITATIVE network house-rules linter NOW (at author time), not at propose — so you fix
+      // violations here instead of discovering them later. Degrades gracefully if the advisor is unreachable
+      // (a network hiccup shouldn't block local dev).
+      try{
+        const adv=await jpost('/bridge/schema-advise',{schema_id:sid,definition:d,kind:'schema'});
+        const viol=((adv.j||{}).house_rule_violations)||[];
+        if(viol.length) return {ok:false,err:'house rules — fix before saving:\n• '+viol.join('\n• ')};
+      }catch(e){/* advisor unreachable — allow the local draft rather than hard-block */}
       const {ok,j,status}=await jpost('/bridge/schema-define',{schema_id:sid,version:'0.1.0',definition:d});
-      return ok?{ok:true,msg:'✓ installed LOCAL schema '+sid+' (dev sandbox — not network-published). Add records:  put '+sid+' field=value …   Publish later:  schema propose '+sid}
-               :{ok:false,err:(j.error||j.detail||JSON.stringify(j)||status)};
+      if(!ok) return {ok:false,err:(j.error||j.detail||JSON.stringify(j)||status)};
+      // Inside a project? ALSO attach it as a DRAFT contract member (origin:new, def_text) so the schema you
+      // just authored shows in Studio (under 🔗 Contracts) + `ls` IMMEDIATELY — no `contract add`, no network
+      // proposal. `schema propose` later promotes the same draft to the network for steward approval.
+      const proj=curProject();
+      if(proj){
+        const pid='ds:'+myTenant()+':studio/project/'+proj;
+        const got=await jpost('/bridge/query',{app_id:APPID,schema:'studio.project'});
+        const rec=((got.j&&got.j.results)||[]).find(x=>x.id===pid);
+        if(rec){
+          const members=(rec.members||[]).filter(m=>m&&m.ref!==sid);
+          members.push({ref:sid,kind:'schema',layer:'network',origin:'new',status:'draft',title:sid,def_text:text});
+          const s2=await jpost('/bridge/save',{object:{...rec,members}});
+          _INST=null;
+          if(!s2.ok) return {ok:true,msg:'✓ installed LOCAL schema '+sid+' — usable now, but could NOT add to project '+proj+' ('+(s2.j.error||s2.status)+'). Retry: contract add '+sid};
+          return {ok:true,msg:'✓ installed LOCAL schema '+sid+' + added to project '+proj+' as a draft contract (now in Studio under 🔗 Contracts + `ls`). Add records: put '+sid+' field=value …  ·  publish later: schema propose '+sid};
+        }
+      }
+      return {ok:true,msg:'✓ installed LOCAL schema '+sid+' (dev sandbox — not network-published). Add records:  put '+sid+' field=value …   Publish later:  schema propose '+sid};
     });
     return;
   }
   if(op!=='propose'){line('usage: schema new <domain.subject>  (local · dev sandbox)  |  schema propose <domain.subject>  (publish to network)','err');return;}
   if(!sid||sid.indexOf('.')<1){line('schema id must be <domain>.<subject> — e.g. water.complaint','err');return;}
+  // House-rules-compliant skeleton (network R1–R4): envelope (schema+id with id-pattern) + closed + typed.
   const skel=JSON.stringify({type:'object','x-kind':'entity',
     description:'TODO: what '+sid+' represents. x-kind: entity | measure | event | reference',
-    required:['id'],properties:{id:{type:'string'},tenant:{type:'string'}}},null,2);
+    properties:{schema:{const:sid},id:{type:'string',pattern:'^ds:[a-z0-9-]+:\\S+$'},tenant:{type:['string','null']}},
+    required:['schema','id'],additionalProperties:false},null,2);
   openEditor('schema: '+sid, skel, async text=>{
     let defn; try{defn=JSON.parse(text);}catch(e){return {ok:false,err:'not valid JSON'};}
     const {ok,j,status}=await jpost('/bridge/schema-request',{schema_id:sid,version:'0.1.0',definition:defn});

@@ -11,7 +11,7 @@ bundle: dist
 sandboxed: true
 required_schemas: []
 system: true    # platform app — auto-installed for every tenant and cannot be uninstalled (the way in to install others)
-roles: [platform.tenant-admin]    # the Marketplace is an ADMIN tool — only the tenant admin sees it, not ordinary users
+roles: [platform.tenant-admin, platform.admin, network.admin]    # the Marketplace is an ADMIN tool — every realm admin (data/operator/network) sees it, not ordinary users
 # ADR-0081 App-Agent surface — the Marketplace plane of the Personal Agent: FIND → INSTALL → CONFIGURE → RUN
 # any certified component/solution. GENERIC + id-driven (ids come from marketplace_search over the live catalog;
 # the host holds no component list). Each write is admin-role-gated AND confirm-gated AND re-checked at the bridge
