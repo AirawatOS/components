@@ -68,7 +68,7 @@
   .cap-add{width:100%;box-sizing:border-box;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12.5px}
   .cap-add:focus{outline:none;border-color:#2f6ba3}
   </style>
-<header><h1 id="netname">🌐 Network</h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
+<header><h1 id="netname">🌐 Network</h1><span class="sub">· Network Console</span><select id="netsel" hidden title="networks you may manage" style="margin-left:14px;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:4px 8px;font-size:12.5px"></select><span class="who" id="who"></span></header>
 <div class="shell">
   <nav class="rail">
     <div class="rgrp">The Language <span class="rgh">the shared contract</span></div>
@@ -95,15 +95,44 @@ async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content
 function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2200);}
 function esc(s){if(s==null)return '';if(typeof s!=='string')s=(s.value!=null?s.value:JSON.stringify(s));return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
-let NETWORK='', PROFILE=null;   // the admin's OWN network (from session) + its profile
+let NETWORK='', PROFILE=null;          // the ACTIVE network's id + its profile
+let NETWORKS=[], ACTIVE=null;          // multi-network console: the networks this principal may manage + the selected one
+// legacy writes work ONLY on the caller's own tenant (authority rule tenant==network); a null ACTIVE means
+// discovery is unavailable → fall back to today's single-network behavior (writable).
+const writable = () => !ACTIVE || !!ACTIVE.cross_network_write_enabled;
+// own-tenant → omit `network` so the bridge injects claims.tenant (byte-equivalent to today); otherwise pass the
+// explicit selected network (the bridge re-verifies it is in the server-derived manageable set before forwarding).
+const netParam = () => (ACTIVE && !ACTIVE.cross_network_write_enabled) ? {network:ACTIVE.network} : {};
+function renderSelector(){
+  const sel=document.getElementById('netsel'); if(!sel) return;
+  if(NETWORKS.length<1){ sel.hidden=true; return; }
+  sel.hidden=false;
+  sel.innerHTML=NETWORKS.map(n=>`<option value="${esc(n.network)}"${ACTIVE&&n.network===ACTIVE.network?' selected':''}>${esc(n.label||n.slug||n.network)}${n.cross_network_write_enabled?'':' 🔒'}</option>`).join('');
+  sel.onchange=()=>setNetwork(sel.value);
+}
+function setNetwork(id){ ACTIVE=NETWORKS.find(n=>n.network===id)||ACTIVE; PROFILE=null; NETWORK=(ACTIVE&&ACTIVE.network)||'';
+  const nm=document.getElementById('netname'); if(nm&&ACTIVE) nm.innerHTML='🌐 '+esc(ACTIVE.label||ACTIVE.slug||ACTIVE.network);
+  renderSelector(); render(); }
 function boot(){
   fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
-  // The console is NOT hardcoded to any one network — title + types come from THIS admin's own network profile.
-  jpost('/bridge/network-profile',{}).then(r=>{ PROFILE=(r.j&&r.j.profile)||null; NETWORK=(PROFILE&&PROFILE.network)||'';
-    if(PROFILE){ document.getElementById('netname').innerHTML='🌐 '+esc(PROFILE.label||PROFILE.network); document.title=(PROFILE.label||PROFILE.network)+' · Network Admin'; }
-  }).catch(()=>{});
+  // Multi-network: the networks this principal may MANAGE are derived SERVER-SIDE from Trust role assignments
+  // (GET /bridge/networks-mine). The selector never lists a network the caller holds no role on; a 🔒 marks a
+  // network that is read-only here (legacy writes disabled until the authority rule migrates — Commit D).
+  jget('/bridge/networks-mine').then(d=>{ NETWORKS=(d&&d.result)||[];
+    ACTIVE = NETWORKS.find(n=>n.cross_network_write_enabled) || NETWORKS[0] || null;   // default: the caller's own-tenant network
+    renderSelector();
+    if(ACTIVE){ NETWORK=ACTIVE.network; const nm=document.getElementById('netname'); if(nm) nm.innerHTML='🌐 '+esc(ACTIVE.label||ACTIVE.slug||ACTIVE.network); }
+    loadProfile();
+  }).catch(()=>{ loadProfile(); });   // discovery unavailable → single-network legacy behavior
   document.querySelectorAll('.ritem').forEach(el=>el.onclick=()=>setView(el.dataset.v));
   setView(VIEW);
+}
+function loadProfile(){
+  // the ACTIVE network's profile (console title + the types editor). Own tenant → network injected server-side.
+  jpost('/bridge/network-profile',netParam()).then(r=>{ PROFILE=(r.j&&r.j.profile)||null;
+    if(PROFILE&&!ACTIVE){ NETWORK=PROFILE.network||'';
+      document.getElementById('netname').innerHTML='🌐 '+esc(PROFILE.label||PROFILE.network); document.title=(PROFILE.label||PROFILE.network)+' · Network Console'; }
+  }).catch(()=>{});
 }
 function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
 function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),parttypes:partTypes,participants:participants,membership:membershipReqs,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
@@ -154,9 +183,9 @@ async function partTypes(){
     </div>
     <div id="pt-list" style="max-width:900px"></div>
     <div style="max-width:900px;margin:10px 0 24px;display:flex;gap:10px;align-items:center">
-      <button class="btn" id="pt-add">+ Add participant type</button>
-      <button class="btn primary" id="pt-save">Save</button>
-      <span class="muted" id="pt-msg"></span>
+      <button class="btn" id="pt-add"${writable()?'':' disabled'}>+ Add participant type</button>
+      <button class="btn primary" id="pt-save"${writable()?'':' disabled'}>Save</button>
+      <span class="muted" id="pt-msg">${writable()?'':'🔒 read-only — you may view this network but managing it here is disabled until cross-network writes land (Commit D).'}</span>
     </div>`;
     const L=document.getElementById('pt-list');
     L.innerHTML = PT.length ? PT.map((t,i)=>`
@@ -189,8 +218,9 @@ async function partTypes(){
     });
   }
   async function save(){
-    sync();
     const msg=document.getElementById('pt-msg');
+    if(!writable()){ msg.textContent='🔒 read-only on this network (cross-network writes land in Commit D)'; msg.style.color='#e5a23d'; return; }
+    sync();
     const bad=PT.find(t=>!t.id); if(bad){ msg.textContent='every type needs an id'; msg.style.color='#e5484d'; return; }
     const ids=PT.map(t=>t.id); if(new Set(ids).size!==ids.length){ msg.textContent='type ids must be unique'; msg.style.color='#e5484d'; return; }
     const ungoverned=[]; PT.forEach(t=>['provide','consume'].forEach(leg=>(t[leg]||[]).forEach(c=>{ if(!governed(c)) ungoverned.push(t.id+'.'+leg+': '+c.ref); })));
@@ -210,7 +240,7 @@ async function partTypes(){
 // --- Membership (ADR-0116): tenants/participants applying to join THIS network; approving provisions NO tenant ---
 async function membershipReqs(){
   const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
-  let d; try{ const r=await jpost('/bridge/network-requests',{}); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
+  let d; try{ const r=await jpost('/bridge/network-requests',netParam()); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
   catch(e){ W.innerHTML='<div class="empty">could not load membership requests ('+esc(String(e))+')</div>'; return; }
   const ALL=(d.participation||[]).slice().sort((a,b)=>String(b.requested_at||'').localeCompare(String(a.requested_at||'')));
   const P=ALL.filter(q=>q.status==='pending'), DEC=ALL.filter(q=>q.status!=='pending').slice(0,25);
@@ -220,13 +250,14 @@ async function membershipReqs(){
     <div class="hint">Tenants and participants applying to join this network (ADR-0116). Approving grants a tenant-free membership — it provisions no tenant — letting them provide services to members or consume this network’s services.</div>
     ${P.length?`<table><tr><th>participant</th><th>direction</th><th>scopes</th><th>requested</th><th></th></tr>
       ${P.map(q=>`<tr><td class="mono">${esc(q.participant)}</td><td>${esc(q.direction||'both')}</td><td class="muted">${esc((q.scopes||[]).join(', ')||'all')}</td><td class="muted">${when(q.requested_at)}</td>
-        <td style="text-align:right"><button class="btn sm" data-ap="${esc(q.participant)}">Approve</button> <button class="btn sm danger" data-rj="${esc(q.participant)}">Reject</button></td></tr>`).join('')}
+        <td style="text-align:right">${writable()?`<button class="btn sm" data-ap="${esc(q.participant)}">Approve</button> <button class="btn sm danger" data-rj="${esc(q.participant)}">Reject</button>`:'<span class="muted">🔒 read-only</span>'}</td></tr>`).join('')}
       </table>`:'<div class="empty">no pending membership requests</div>'}
     ${DEC.length?`<div class="lbl" style="margin-top:22px">Recently decided</div>
       <table><tr><th>participant</th><th>status</th><th>decided</th></tr>
       ${DEC.map(q=>`<tr><td class="mono">${esc(q.participant)}</td><td>${badge(q.status)}</td><td class="muted">${when(q.decided_at)}</td></tr>`).join('')}</table>`:''}`;
   async function decide(participant,decision){
-    const r=await jpost('/bridge/network-decide',{participant:participant,decision:decision});   // network injected server-side
+    if(!writable()){ toast('🔒 read-only on this network (cross-network writes land in Commit D)',true); return; }
+    const r=await jpost('/bridge/network-decide',{participant:participant,decision:decision});   // network injected server-side (own tenant)
     if(r.ok){ toast(decision==='approve'?'Approved':'Rejected'); membershipReqs(); } else { toast((r.j&&(r.j.error||r.j.detail))||'failed',true); }
   }
   W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decide(b.dataset.ap,'approve'));
