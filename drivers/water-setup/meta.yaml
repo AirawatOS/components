@@ -9,10 +9,13 @@ provider: ds:airawatdeveloper:developer
 display_name: Water Intelligence — Setup (seed taxonomy + config)
 entrypoint: run.py
 confinement_min: L1
-writes: [water.category, water.record_kind, water.config]
+writes: [water.category, water.record_kind, water.config, viz.layer]
+reads: [viz.layer]
 scopes:
   - { verb: write, scope: water.category }
   - { verb: write, scope: water.record_kind }
   - { verb: write, scope: water.config }
+  - { verb: write, scope: viz.layer }       # seed the City Scan water map layers (load/critical/burden)
+  - { verb: read,  scope: viz.layer }        # idempotency check
 config:
   - { name: RESET, kind: value, default: "0" }
