@@ -51,10 +51,12 @@ CONFIG = {
 # color_scale, render "map", grouped under "Water". The map reads h3_id off each hotspot (added in
 # water-hotspots). rate_per_10k is only populated when water-hotspots ran with POP_FILE_ID.
 VIZ_LAYERS = [
-    {"layer_id": "water-load", "label": "Water complaints — load", "short_label": "Complaint load",
-     "order": 40, "value_field": "count", "color_scale": "reds", "higher_is_worse": True, "extrude": True,
+    {"layer_id": "water-load", "label": "Water complaints (load)", "short_label": "Complaint load",
+     "order": 40, "value_field": "count", "color_scale": "reds", "higher_is_worse": True,
      "unit": "complaints",
-     "description": "Complaint volume per h3 cell in the trailing window — operational load (where crews are needed).",
+     # NB: label kept pure ASCII — the governed viz.layer schema strict-validates `label`, and an em-dash
+     # (U+2014) silently fails the write (422 swallowed by put_many's savepoint → 0 rows, SDK still counts 1).
+     "description": "Complaint volume per h3 cell in the trailing window: operational load (where crews are needed).",
      "interpretation": "Taller/redder = more complaints in that cell. Raw volume, not per-capita."},
     {"layer_id": "water-critical", "label": "Critical hotspots", "short_label": "Critical",
      "order": 41, "value_field": "count", "color_scale": "reds", "higher_is_worse": True,
@@ -94,10 +96,22 @@ def run():
                      source_schema="water.hotspot", render="map", category="natural", group="Water",
                      solution="water-intelligence", enabled=True) for v in VIZ_LAYERS]
 
+    # viz.layer rows are written ONE AT A TIME via ctx.write (single /v1/write) so a strict-schema
+    # rejection RAISES here and is printed — unlike write_many, whose stale optimistic count hides the
+    # per-record error and leaves a descriptor silently absent. Returns the count that actually persisted.
+    def _write_viz(rows):
+        ok = 0
+        for r in rows:
+            try:
+                ctx.write(r); ok += 1
+            except Exception as e:
+                print("[water-setup] VIZ WRITE FAILED id=%s -> %s" % (r.get("id"), str(getattr(e, "detail", e))[:300]))
+        return ok
+
     wrote = 0
     if reset:
         wrote = ((ctx.write_many(cat_rows) or 0) + (ctx.write_many(rk_rows) or 0)
-                 + (ctx.write_many([cfg_row]) or 0) + (ctx.write_many(viz_rows) or 0))
+                 + (ctx.write_many([cfg_row]) or 0) + _write_viz(viz_rows))
     else:
         have_cat, have_rk, have_cfg = _have("water.category"), _have("water.record_kind"), _have("water.config")
         have_viz = _have("viz.layer")
@@ -108,7 +122,7 @@ def run():
         if new_cat: wrote += ctx.write_many(new_cat) or 0
         if new_rk: wrote += ctx.write_many(new_rk) or 0
         if new_cfg: wrote += ctx.write_many(new_cfg) or 0
-        if new_viz: wrote += ctx.write_many(new_viz) or 0
+        if new_viz: wrote += _write_viz(new_viz)
 
     live_cat = len(_have("water.category")); live_rk = len(_have("water.record_kind")); live_cfg = len(_have("water.config"))
     live_viz = len([1 for i in _have("viz.layer") if ":viz/layer/water-" in i])

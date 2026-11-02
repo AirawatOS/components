@@ -23,6 +23,34 @@ import os, json, math, datetime as _dt
 from collections import Counter, defaultdict
 from aos import driver, ctx
 
+try:                        # optional — present in the EO/geo runtime; absent is fine (hex renders from h3 alone)
+    import h3 as _h3
+except Exception:
+    _h3 = None
+
+
+def _space(h, name=None):
+    """The governed cell-measure `space` block (ADR-0053): City Scan reads the cell id from `space.h3`
+    (its reducer keys cell_field=space.h3 and the H3HexagonLayer derives the hex from the index), so a flat
+    top-level h3 is invisible to the map. `name` (ward · zone) rides inside `space` because the surface
+    reducer only projects the `space` block + the value field — a top-level `ward` never reaches the hover
+    tooltip. res/centroid are filled when the h3 lib is available (v4 then v3 names), else omitted — the
+    hexagon still renders from `h3` alone."""
+    sp = {"h3": h}
+    if name:
+        sp["name"] = name
+    if _h3 is not None:
+        try:
+            sp["res"] = (_h3.get_resolution(h) if hasattr(_h3, "get_resolution") else _h3.h3_get_resolution(h))
+        except Exception:
+            pass
+        try:
+            lat, lng = (_h3.cell_to_latlng(h) if hasattr(_h3, "cell_to_latlng") else _h3.h3_to_geo(h))
+            sp["centroid"] = [round(lng, 6), round(lat, 6)]   # [lng, lat] — matches air.quality's space.centroid
+        except Exception:
+            pass
+    return sp
+
 
 def _date(s):
     return (s or "")[:10]
@@ -83,7 +111,8 @@ def compute_hotspots(complaints, record_kinds, config, ward_pop, now, window_day
         wow = round(last / prior, 2) if prior else None
         oid = "ds:%s:water/hotspot/%s-%s" % (ctx.tenant, h, TO)
         row = {"schema": "water.hotspot", "id": oid, "tenant": ctx.tenant, "h3": h,
-               "h3_id": h,  # City Scan's map layer reads `h3_id` (registryClient); keep `h3` too for back-compat
+               "h3_id": h,  # kept flat for back-compat; City Scan reads the cell from `space.h3` (see _space)
+               "space": _space(h, " · ".join([p for p in (ward, zone) if p])),  # governed cell block (+ name for hover)
                "ward": ward, "zone": zone, "count": len(g), "dominant": dom, "category": dom,
                "severity": sev_of[h], "rate_per_10k": rate, "wow_change": wow,
                "window": {"from": FROM, "to": TO, "days": window_days}, "observed_at": now}
