@@ -83,6 +83,7 @@ def compute_hotspots(complaints, record_kinds, config, ward_pop, now, window_day
         wow = round(last / prior, 2) if prior else None
         oid = "ds:%s:water/hotspot/%s-%s" % (ctx.tenant, h, TO)
         row = {"schema": "water.hotspot", "id": oid, "tenant": ctx.tenant, "h3": h,
+               "h3_id": h,  # City Scan's map layer reads `h3_id` (registryClient); keep `h3` too for back-compat
                "ward": ward, "zone": zone, "count": len(g), "dominant": dom, "category": dom,
                "severity": sev_of[h], "rate_per_10k": rate, "wow_change": wow,
                "window": {"from": FROM, "to": TO, "days": window_days}, "observed_at": now}
