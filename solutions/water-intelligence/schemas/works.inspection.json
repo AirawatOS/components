@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "works.inspection",
+  "type": "object",
+  "x-kind": "entity",
+  "x-version": "0.1.0",
+  "x-subject": "works-inspection",
+  "description": "An on-site inspection report: a typed site visit with GPS, logged defect observations (severity + remedial action + target date + rectification status), geo-tagged media, and supervisory comments. The richest operational-evidence record — it lets a complaint hotspot be explained by a nearby unresolved defect. GPS is validated to the service area before H3; officer name/designation kept for accountability, contact PII excluded.",
+  "properties": {
+    "id": { "type": "string", "pattern": "^ds:[a-z0-9-]+:\\S+$" },
+    "schema": { "const": "works.inspection" },
+    "tenant": { "type": ["string", "null"] },
+    "inspection_no": { "type": "string", "description": "Official tracking ref (e.g. IMS-YYYYMMDD-NNNN) — the primary key." },
+    "source_id": { "type": ["string", "null"] },
+    "inspection_at": { "type": ["string", "null"], "description": "ISO-8601 (source date + time combined)." },
+    "inspection_type": { "type": ["string", "null"], "description": "PROJECT_DRAINAGE / PROJECT_WATER / WTP / STP / MAINTENANCE / OTHER." },
+    "status": { "type": ["string", "null"], "description": "SUBMITTED / APPROVED / PENDING." },
+    "project_ref": { "type": ["string", "null"], "description": "-> works.project.project_code." },
+    "project_name": { "type": ["string", "null"] },
+    "work_order_no": { "type": ["string", "null"] },
+    "contractor": { "type": ["string", "null"] },
+    "inspector_ref": { "type": ["string", "null"] },
+    "inspector_name": { "type": ["string", "null"], "description": "Govt officer (accountability) — contact PII excluded." },
+    "inspector_designation": { "type": ["string", "null"], "description": "AE / EE / SE." },
+    "physical_progress": { "type": ["string", "null"], "description": "On-site assessed progress (source string, e.g. '80%')." },
+    "lat": { "type": ["number", "null"] },
+    "lon": { "type": ["number", "null"] },
+    "h3": { "type": ["string", "null"] },
+    "geo_method": { "type": ["string", "null"], "description": "gps | zone_fallback — GPS used only after service-area bbox validation." },
+    "geo_confidence": { "type": ["number", "null"] },
+    "zone": { "type": ["string", "null"] },
+    "division": { "type": ["string", "null"] },
+    "ward": { "type": ["string", "null"] },
+    "observations": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "tracking_id": { "type": ["string", "null"] },
+          "observation_type": { "type": ["string", "null"], "description": "GENERAL / SAFETY / QUALITY (API: category|observationType)." },
+          "severity": { "type": ["string", "null"], "description": "CRITICAL / MAJOR / MINOR / LOW / NORMAL (source enum varies)." },
+          "status": { "type": ["string", "null"], "description": "OPEN / RESOLVED / CLOSED." },
+          "responsible_party": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"], "description": "Observed defect (API: description|observation)." },
+          "remedial_action": { "type": ["string", "null"], "description": "Prescribed fix (API: remedialAction|recommendation)." },
+          "target_date": { "type": ["string", "null"] },
+          "action_taken": { "type": ["string", "null"] },
+          "remarks": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "observations_count": { "type": ["integer", "null"] },
+    "attachments": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "file_name": { "type": ["string", "null"] },
+          "file_type": { "type": ["string", "null"] },
+          "document_type": { "type": ["string", "null"], "description": "SITE_PHOTO / TEST_REPORT / INSPECTION_PHOTO_n." },
+          "url": { "type": ["string", "null"] },
+          "file_store_id": { "type": ["string", "null"] },
+          "uploaded_at": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "comments": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "author_name": { "type": ["string", "null"] },
+          "comment_text": { "type": ["string", "null"] },
+          "created_at": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "created_at": { "type": ["string", "null"], "description": "Source audit stamp — drives incremental dedup." },
+    "updated_at": { "type": ["string", "null"] },
+    "source": { "type": ["string", "null"] },
+    "prov": { "type": ["object", "null"] },
+    "confidence": { "type": ["number", "null"] },
+    "ext": { "type": ["object", "null"] }
+  },
+  "required": ["schema", "id", "inspection_no"],
+  "additionalProperties": true
+}

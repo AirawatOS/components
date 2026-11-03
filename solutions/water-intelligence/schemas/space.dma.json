@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "space.dma",
+  "type": "object",
+  "x-kind": "entity",
+  "x-version": "0.1.0",
+  "x-subject": "dma",
+  "description": "A District Metered Area — the operational unit of a piped water network (an inlet-metered zone), the level at which supply/pressure/NRW are managed. Links upward to a service area; links to wards via space.area_link (wards and DMAs are different delimitations). PLATFORM geography (space.*), agency-neutral.",
+  "properties": {
+    "id": { "type": "string", "pattern": "^ds:[a-z0-9-]+:\\S+$" },
+    "schema": { "const": "space.dma" },
+    "tenant": { "type": ["string", "null"] },
+    "dma_code": { "type": "string", "description": "Stable code / key for this DMA." },
+    "name": { "type": ["string", "null"], "description": "Display name." },
+    "geometry": { "type": ["object", "null"], "description": "GeoJSON geometry (Polygon/MultiPolygon)." },
+    "centroid": { "type": ["array", "null"], "items": { "type": "number" }, "description": "[longitude, latitude]." },
+    "service_area_ref": { "type": ["string", "null"], "description": "Parent space.service_area id." },
+    "zone": { "type": ["string", "null"] },
+    "division": { "type": ["string", "null"] },
+    "jurisdiction": { "type": ["string", "null"] },
+    "inlet_count": { "type": ["integer", "null"] },
+    "connections": { "type": ["integer", "null"], "description": "Metered connections in the DMA (if known)." },
+    "source": { "type": ["string", "null"] },
+    "observed_at": { "type": ["string", "null"] }
+  },
+  "required": ["schema", "id", "dma_code"],
+  "additionalProperties": true
+}
