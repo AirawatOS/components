@@ -219,7 +219,7 @@ def _sig(obj, exclude):
 
 
 def table(*, schema, map_row, columns=None, file_env="FILE_ID", source_env="SOURCE", max_env="MAX",
-          key_field=None, key_fields=None, sig_exclude=("id", "tenant"), tally_field=None, ctx=None):
+          key_field=None, key_fields=None, sig_exclude=("id", "tenant"), tally_field=None, ctx=None, batch=0):
     """Ingest a CSV blob (filestore id in `os.environ[file_env]`) into `schema`, idempotently.
 
     map_row(Row) → a governed-envelope dict (without id/tenant — they're stamped here) or None to SKIP the row.
@@ -263,6 +263,17 @@ def table(*, schema, map_row, columns=None, file_env="FILE_ID", source_env="SOUR
 
     new = changed = unchanged = skipped = 0
     tally = {}
+    # BULK WRITE (opt-in): with batch>0 (or env INGEST_BATCH), buffer changed/new objects and flush them via the
+    # broker's ONE-round-trip batch write (cx.write_many) every `batch` rows, instead of a per-row HTTP+registry
+    # round-trip. On a large feed this is the difference between ~1 write/10ms×N and a handful of batch calls —
+    # the fix for a 96k ingest that otherwise crawls. Default 0 = original per-row behaviour (unchanged).
+    batch = int(os.environ.get("INGEST_BATCH", str(batch)) or 0)
+    _buf = []
+
+    def _flush():
+        if _buf:
+            cx.write_many(_buf); _buf.clear()
+
     for raw_row in rdr:
         obj = map_row(Row(raw_row, cols, lower))
         if not obj:
@@ -289,11 +300,17 @@ def table(*, schema, map_row, columns=None, file_env="FILE_ID", source_env="SOUR
             changed += 1
         else:
             new += 1
-        cx.write(obj)
+        if batch > 0:
+            _buf.append(obj)
+            if len(_buf) >= batch:
+                _flush()
+        else:
+            cx.write(obj)
         if tally_field and obj.get(tally_field) is not None:
             tally[obj[tally_field]] = tally.get(obj[tally_field], 0) + 1
         if max_n and (new + changed) >= max_n:
             break
+    _flush()                                               # write any buffered remainder
     top = sorted(tally.items(), key=lambda kv: -kv[1])[:6]
     print(f"[{schema}] wrote {new} new + {changed} changed; skipped {unchanged} unchanged + {skipped} rows "
           f"(dedup by stable id)" + (f"; {tally_field}: {top}" if tally_field else ""), flush=True)
