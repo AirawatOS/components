@@ -48,6 +48,8 @@
 <header><h1>📂 Data</h1>
   <button class="tabb on" id="tab-browse" onclick="setTab('browse')">Browse</button>
   <button class="tabb" id="tab-net" onclick="setTab('net')">Network 🔗</button>
+  <button class="tabb" id="tab-upload" title="Upload a CSV or JSON — the schema is inferred and the data ingested into the registry" onclick="document.getElementById('upf').click()">⬆ Upload</button>
+  <input type="file" id="upf" accept=".csv,.tsv,.json" style="display:none">
   <span class="who" id="who"></span></header>
 <div id="browse"><div class="layout">
   <div class="list" id="list"></div>
@@ -224,6 +226,25 @@ async function doBrowse(schema, tenant, title){
     ${rows.map(o=>`<tr>${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</table></div></div>`;
   P.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+// MOUNT: once the owner has granted access, mount schema@owner into THIS tenant's registry. The kernel then
+// unions the owner's rows into every normal read — so the dataset shows up in Browse (and in City Scan etc.)
+// as if local, with NO app change. mode 'live' = read-in-place; 'cached' = a refreshed local copy.
+async function doMount(schema, tenant, title){
+  if(!schema||!tenant){ alert('missing schema/owner'); return; }
+  const cached = confirm(`Mount "${schema}" from ${tenant}.\n\nOK = CACHED copy (refreshes on a schedule)\nCancel = LIVE (always read in place)`);
+  let refresh=60;
+  if(cached){ const v=prompt('Refresh every how many minutes?','60'); if(v===null) return; refresh=parseInt(v,10)||60; }
+  const r=await jpost('/bridge/data-mount',{source_tenant:tenant,source_schema:schema,mode:cached?'cached':'live',refresh_minutes:refresh,title});
+  alert(r.ok? `Mounted ${schema} from ${tenant} (${cached?'cached · every '+refresh+'m':'live'}). It now appears in Browse.` : ('Mount failed: '+((r.j&&r.j.error)||('HTTP '+r.status))));
+  renderNet();
+}
+async function doUnmount(mid){ if(!confirm('Unmount? This tenant stops seeing the shared rows.')) return;
+  const o=/ds:[^:]+:data\/mount\/([^-]+)--(.+)/.exec(mid); if(!o){alert('bad mount id');return;}
+  const r=await jpost('/bridge/data-mount',{source_tenant:o[1],source_schema:o[2],disable:true});
+  alert(r.ok?'Unmounted':'Failed'); renderNet();
+}
+async function loadMounts(){ const r=await jpost('/bridge/query',{app_id:APPID,schema:'data.mount',paginate:true,limit:100});
+  return r.ok? (r.j.results||[]).map(x=>x.object||x).filter(m=>m&&m.enabled!==false) : []; }
 async function doDecide(rid,dec){ const res=await gov('decide',{request_id:rid,decision:dec}); alert(res.__err?('Failed: '+res.__err):(dec+' → '+((res.grant||{}).issued||res.decision||'done'))); renderNet(); }
 async function doRetire(oid){ if(!confirm('Remove from network? Others stop discovering it (existing grants stay until revoked).'))return; const res=await gov('retire-offering',{id:oid}); alert(res.__err?('Failed: '+res.__err):'Retired'); renderNet(); }
 async function doRevoke(gid){ if(!confirm('Revoke this access grant? The consumer immediately loses access.'))return; const res=await gov('revoke',{grant_id:gid}); alert(res.__err?('Failed: '+res.__err):'Revoked'); renderNet(); }
@@ -234,6 +255,7 @@ async function renderNet(){
   const disc=await gov('discover',{}); const offs=(disc.offerings||[]).map(o=>({...o, _prov:offProvider(o), _schema:offSchema(o)}));
   const mine=offs.filter(o=>o._prov===TENANT||(o._prov||'').includes(':'+TENANT+':')||(o._prov||'').startsWith('ds:'+TENANT)), others=offs.filter(o=>!mine.includes(o));
   const reqs=((await gov('requests',{tenant:TENANT})).requests)||[];
+  const mounts=await loadMounts();
   const opts=DSET.map(d=>`<option value="${esc(d.schema)}">${esc(subject(d.schema).replace(/_/g,' '))} (${esc(d.schema)})</option>`).join('');
   N.innerHTML=`
    <div id="shared-preview"></div>
@@ -248,8 +270,15 @@ async function renderNet(){
         <div class="muted">from <b>${esc(o._prov)}</b>${o.jurisdiction?(' · '+esc(o.jurisdiction)):''} · ${esc(o.access_mode||o.visibility||'request')}</div>
         <div class="muted">${esc(o.description||'')}</div>
         <div class="row2"><button class="btn" onclick="doRequest('${esc(o.id)}')">Request access</button>
-          <button class="btn" onclick="doBrowse('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">Browse shared data</button></div></div>`).join('')
+          <button class="btn" onclick="doBrowse('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">Browse shared data</button>
+          <button class="btn p" onclick="doMount('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">⤵ Mount</button></div></div>`).join('')
       : '<div class="muted">No offerings from other participants yet.</div>'}</div>
+   <div class="card"><h3>⤵ Mounted registries (${mounts.length})</h3>
+     <div class="muted">Shared datasets mounted into this tenant — they appear in Browse and in any app (City Scan, etc.) as if local.</div>
+     ${mounts.length? mounts.map(m=>`<div class="off"><b>${esc(m.title||m.source_schema)}</b> <span class="chip">${esc(m.source_schema)}</span>
+        <div class="muted">from <b>${esc(m.source_tenant)}</b> · ${esc(m.mode||'live')}${m.mode==='cached'?(' · every '+esc(m.refresh_minutes||60)+'m'):' · read in place'}</div>
+        <div class="row2"><button class="btn d" onclick="doUnmount('${esc(m.id)}')">Unmount</button></div></div>`).join('')
+      : '<div class="muted" style="margin-top:6px">Nothing mounted yet — mount a dataset from “Discover” above.</div>'}</div>
    <div class="card"><h3>📥 Requests for MY data (${reqs.length})</h3>
      ${reqs.length? reqs.map(r=>`<div class="off"><b>${esc(r.requested_by||r.component_id)}</b> requests <span class="chip">${esc((r.reads||[]).join(', ')||r.offering_id||'')}</span>
         <div class="muted">purpose: ${esc(r.purpose||'—')} · status: <b>${esc(r.status)}</b></div>
@@ -262,5 +291,35 @@ async function renderNet(){
         <div class="row2"><button class="btn d" onclick="doRetire('${esc(o.id)}')">Retire (stop sharing)</button></div></div>`).join('')
       : '<div class="muted">You have not shared any datasets yet.</div>'}</div>`;
 }
+// ---- UPLOAD: parse a CSV/JSON client-side → POST rows to /bridge/data-upload (infers + governs schema, ingests).
+function _splitDelim(l,d){ const out=[]; let cur='',q=false;
+  for(let i=0;i<l.length;i++){ const ch=l[i];
+    if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else { if(ch==='"') q=true; else if(ch===d){ out.push(cur); cur=''; } else cur+=ch; } }
+  out.push(cur); return out; }
+function parseTable(text,d){
+  const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.length);
+  if(!lines.length) return [];
+  const hdr=_splitDelim(lines[0],d).map(h=>h.trim());
+  return lines.slice(1).map(l=>{ const c=_splitDelim(l,d); const o={};
+    hdr.forEach((h,i)=>{ let v=c[i]; if(v===undefined) v='';
+      else { v=v.trim(); if(v!==''&&/^-?\d+(\.\d+)?$/.test(v)) v=Number(v); else if(v==='true'||v==='false') v=(v==='true'); }
+      o[h]=v; }); return o; });
+}
+async function doUpload(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return; ev.target.value='';
+  let rows=[]; const text=await f.text();
+  try{ if(/\.json$/i.test(f.name)){ const j=JSON.parse(text); rows=Array.isArray(j)?j:(j.rows||j.data||(j&&typeof j==='object'?[j]:[])); }
+       else rows=parseTable(text, /\.tsv$/i.test(f.name)?'\t':','); }
+  catch(e){ alert('Could not parse '+f.name+': '+e.message); return; }
+  rows=rows.filter(r=>r&&typeof r==='object');
+  if(!rows.length){ alert('No rows found in '+f.name); return; }
+  const name=(prompt('Dataset name — becomes the governed schema dataset.<name>:', f.name.replace(/\.[^.]+$/,''))||'').trim();
+  if(!name) return;
+  const r=await jpost('/bridge/data-upload',{name,rows});
+  if(r.ok&&r.j.ok){ alert('Uploaded "'+r.j.schema+'" — '+r.j.written+'/'+r.j.rows+' rows ingested. It now appears in Browse (and can be shared on the Network tab).'); DSET.length=0; setTab('browse'); boot(); }
+  else alert('Upload failed: '+((r.j&&r.j.error)||('HTTP '+(r.status||'?'))));
+}
+document.getElementById('upf').addEventListener('change', doUpload);
 boot();
 </script>
