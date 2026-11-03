@@ -199,6 +199,45 @@ function render(ov,hs,sig){
 
   document.getElementById('app').innerHTML=H;
   window.__wards=wards; rankWards(0);
+  mountWaterAI(ov, hs, sig, wards);
+}
+
+// ── AI agent (grounded water analyst) ─────────────────────────────────────────
+// Reuses the shared AOS.assistant drawer (✨ FAB → /bridge/ai-assist, model key held
+// server-side in Vault). READ-ONLY: it answers strictly from the grounding context
+// built out of THIS dashboard's governed facts — no fabrication, no actions.
+function waterCtx(ov, hs, sig, wards){
+  const T=ov.totals||{}, win=ov.window||{}, L=[];
+  L.push("WATER INTELLIGENCE — "+(WCFG.agency_name||'agency')+" — "+(WCFG.is_live?'LIVE feed':'HISTORICAL SNAPSHOT (not live)'));
+  L.push("Window: "+win.from+" → "+win.to+" ("+(win.span_days||'?')+" days).");
+  L.push("Totals: contacts="+T.contacts+", complaints(denominator)="+T.complaints+", pending="+T.pending+", closed="+T.closed+" (closure "+PCT(T.closure_rate||0)+"), reopened="+T.reopened_complaints+" over "+T.reopen_events+" events. Geocoded "+PCT(T.geocode_pct||0)+". Hotspot cells="+hs.length+".");
+  L.push("Top complaint categories: "+(ov.by_category||[]).slice(0,9).map(c=>clab(c.key)+"="+c.count).join(", ")+".");
+  L.push("By domain: "+(ov.by_domain||[]).map(d=>clabDomain(d.key)+"="+d.count).join(", ")+".");
+  L.push("By zone: "+(ov.by_zone||[]).slice(0,11).map(z=>z.key+"="+z.count).join(", ")+".");
+  L.push("Worst wards by complaint VOLUME: "+[...wards].sort((a,b)=>b.count-a.count).slice(0,10).map(w=>w.ward+"("+w.count+(w.rate!=null?", "+w.rate+"/10k":"")+", "+clab(w.dom)+")").join("; ")+".");
+  const byRate=[...wards].filter(w=>w.rate!=null).sort((a,b)=>b.rate-a.rate).slice(0,10).map(w=>w.ward+"("+w.rate+"/10k, "+w.count+" complaints, "+clab(w.dom)+")").join("; ");
+  if(byRate) L.push("Worst wards PER 10k residents (equity view): "+byRate+".");
+  const rec=sigOf(sig,'recurring','citywide'), reo=sigOf(sig,'reopen','citywide'), emg=sigOf(sig,'emerging','citywide');
+  if(rec) L.push("Recurring signal: "+PCT(rec.metric)+" of active cells chronic (hot all "+rec.weeks+" weeks): "+rec.chronic_cells+"/"+rec.active_cells+"; "+rec.spike_cells+" one-week spikes.");
+  if(reo) L.push("Reopen signal: "+PCT(reo.metric)+" of complaints reopened ("+reo.reopened+" complaints, "+reo.reopen_events+" events).");
+  if(emg) L.push("Trend signal: "+(emg.reliable?((emg.metric>=0?'+':'')+Math.round(emg.metric*100)+'% week-over-week'):'not statistically reliable')+". "+(emg.summary||''));
+  const chronic=sigs(sig,'recurring','cell').sort((a,b)=>b.metric-a.metric).slice(0,10).map(c=>(c.ward||c.key)+"("+c.metric+")").join("; ");
+  if(chronic) L.push("Chronic cells (hot every week): "+chronic+".");
+  const reopCats=sigs(sig,'reopen','category').sort((a,b)=>b.metric-a.metric).slice(0,6).map(c=>clab(c.key)+"="+PCT(c.metric)).join(", ");
+  if(reopCats) L.push("Reopen rate by category: "+reopCats+".");
+  L.push("CAVEAT: "+(WCFG.snapshot_caveat||'Historical snapshot; hotspots show association, not causation.'));
+  return L.join("\n");
+}
+function mountWaterAI(ov, hs, sig, wards){
+  if(window.__waterAI || !(window.AOS && AOS.assistant)) return; window.__waterAI=1;
+  const CTX = waterCtx(ov, hs, sig, wards);
+  const agency = WCFG.agency_name || 'the water utility';
+  AOS.assistant({
+    title: "Water Analyst",
+    system: "You are the Water Intelligence analyst for "+agency+". Answer ONLY from the CONTEXT, which is the governed water.overview / water.hotspot / water.signal facts for the current window. Be concise and specific — cite the wards, categories and numbers from the context. If something is not in the context, say you don't have that data rather than guessing; never invent figures. This is a historical snapshot, not a live feed, and hotspots show association, not causation. When asked where to act, prioritise from the data and explain the trade-off: raw VOLUME = operational load, rate_per_10k = per-capita equity, recurring/reopen = stubborn problems.",
+    context: () => CTX,
+    chips: ["Worst wards by volume?", "Worst per 10k residents?", "What's reopening the most?", "Where are the chronic hotspots?", "If I had 3 crews today, where should they go?"]
+  });
 }
 function rankWards(mode){
   const wards=window.__wards||[]; const tv=document.getElementById('tV'),tr=document.getElementById('tR'); if(tv)tv.className=mode?'':'on'; if(tr)tr.className=mode?'on':'';
