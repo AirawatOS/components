@@ -1,0 +1,14 @@
+# hello-engine (kind=engine) — the smallest ENGINE that exercises the real publish→certify→install→run
+# pipeline. It declares ONE read of demo.ping (what hello-dev writes), reads it back through the broker under
+# its run-token, and reports the count. No egress, no secrets, no write — a harmless sample for dev-profile
+# proofs only (ADR-0124 item 1 verification).
+component_id: ds:airawatdeveloper:engine/hello-engine
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:participant/developer
+display_name: Hello engine (demo.ping reader)
+entrypoint: run.py
+confinement_min: L1
+reads: [demo.ping]
+scopes:
+  - { verb: read, scope: demo.ping }
