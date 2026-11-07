@@ -25,7 +25,7 @@ NETWORK_URL = os.environ.get("NETWORK_URL", "http://localhost:8090")
 FILESTORE_URL = os.environ.get("FILESTORE_URL", "http://localhost:8095")
 COMPONENT_CACHE = os.environ.get("COMPONENT_CACHE", "/tmp/airawatos-components")   # writable rehydrate dir
 SECRETS_URL = os.environ.get("SECRETS_URL", "http://localhost:8102")
-SECRETS_INTERNAL = os.environ.get("SECRETS_INTERNAL", "")
+# slice-1c-iii: SECRETS_INTERNAL retired — _materialize mints an audience-bound svc:secrets token (svc_token).
 # PLACEMENT NETWORK. In production the runtime container joins the SAME docker network as the kernel and
 # reaches the broker by its service alias (`kernel:8080`) — service DNS, no host gateway. Set RUNTIME_NETWORK
 # to that network (e.g. airawat-stack_default). Unset ⇒ Docker-Desktop dev fallback: default bridge + the
@@ -225,10 +225,18 @@ def attest_runtimes(node=None, network_url=None):
 
 
 def _materialize(tenant, component, name):
-    """Raw secret from Vault via the secrets service (internal-gated). Returns None if unset."""
+    """Raw secret from Vault via the secrets service. ADR-0124 slice-1c-iii: authenticate with an audience-bound
+    svc:secrets token minted as the `launcher` principal (fail-closed: no token → gate refuses). Returns None if unset."""
     try:
-        r = _post(SECRETS_URL + "/materialize", {"tenant": tenant, "component": component, "name": name},
-                  {"X-Internal-Token": SECRETS_INTERNAL})
+        hdr = {}
+        try:
+            import svc_token as _svc_sec
+            _t = _svc_sec.token(principal="launcher", tenant=os.environ.get("SERVICE_TENANT", "localdev-operator"), audience="svc:secrets")
+            if _t:
+                hdr["Authorization"] = "Bearer " + _t
+        except Exception:
+            pass
+        r = _post(SECRETS_URL + "/materialize", {"tenant": tenant, "component": component, "name": name}, hdr)
         return r.get("value")
     except Exception:
         return None
