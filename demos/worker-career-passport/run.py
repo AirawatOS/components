@@ -29,16 +29,17 @@ NET = os.environ.get("NETWORK_URL", "http://network:8090")
 IDP = os.environ.get("IDENTITY_URL", "http://identity:8093")
 
 # ---------- tiny HTTP helpers ----------
-# POST /users on the reference IdP is guarded by an internal provisioner token (the network uses it on
-# join-approve). Supplied at runtime via the IDENTITY_INTERNAL env var — never hardcoded in this file.
-IDENTITY_INTERNAL = os.environ.get("IDENTITY_INTERNAL", "")
+# POST /users on the reference IdP admits ONLY an audience-bound svc:identity token from an allow-listed
+# operator-realm caller (ADR-0131). Supply a provisioner-minted bearer at runtime via IDENTITY_SVC_TOKEN
+# (POST /login {username:"provisioner", tenant:"<inst>-operator", password:<Vault>, aud:"svc:identity"}).
+IDENTITY_SVC_TOKEN = os.environ.get("IDENTITY_SVC_TOKEN", "")
 
 def _req(method, url, body=None, tok=None, internal=False):
     h = {"Content-Type": "application/json"}
     if tok:
         h["Authorization"] = "Bearer " + tok
-    if internal and IDENTITY_INTERNAL:
-        h["X-Internal-Token"] = IDENTITY_INTERNAL
+    if internal and IDENTITY_SVC_TOKEN:
+        h["Authorization"] = "Bearer " + IDENTITY_SVC_TOKEN
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(url, data=data, headers=h, method=method)
     try:

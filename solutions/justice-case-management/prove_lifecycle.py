@@ -14,11 +14,12 @@ def _req(method, url, body=None, token=None, internal=None):
     r = urllib.request.Request(url, data=(json.dumps(body).encode() if body is not None else None),
                                method=method, headers={"Content-Type": "application/json"})
     if token: r.add_header("Authorization", "Bearer " + token)
-    if internal: r.add_header("X-Internal-Token", internal)
+    if internal: r.add_header("Authorization", "Bearer " + internal)   # svc:identity bearer (ADR-0131)
     try: return json.loads(urllib.request.urlopen(r, timeout=30).read()), None
     except urllib.error.HTTPError as e: return None, f"{e.code} {e.read().decode()[:220]}"
 
-def provision(u, roles): _req("POST", f"{IDN}/users", {"username": u, "tenant": TEN, "roles": roles}, internal="airawat-identity-internal")
+# ADR-0131: identity provisioning is svc:identity-only — pass a provisioner-minted bearer via IDENTITY_SVC_TOKEN.
+def provision(u, roles): _req("POST", f"{IDN}/users", {"username": u, "tenant": TEN, "roles": roles}, internal=os.environ.get("IDENTITY_SVC_TOKEN", ""))
 def token(u):
     r, err = _req("POST", f"{IDN}/realms/{TEN}/login", {"username": u})
     if err: raise SystemExit(f"login {u}: {err}"); 
