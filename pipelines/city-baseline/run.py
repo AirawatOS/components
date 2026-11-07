@@ -10,13 +10,18 @@ The onboarding spine, end to end:
   advance    workspace maturity L0 → L1 (Baseline)
   notify     write a platform.inbox_item to the commissioner: 'Your City Baseline is ready'
 
-Each member runs as its own confined component (its own run-token + declared caps); this orchestrator only
-writes the workspace / request / inbox. In production the ADR-0050 execution engine runs the members under
-minted tokens — here the pipeline invokes them directly (drivers are host subprocesses in the reference build).
+EXECUTION (slice-1c-iv step 3): this pipeline does NOT place its members and holds NO service credential. It
+runs in two phases under the SCHEDULER (which owns execution and delegates placement to the runtime manager):
+  PHASE=pre  (default) — file the request + provision the workspace (L0), then DECLARE the member plan on stdout
+                         (`AIROS_PIPELINE_PLAN <json>`). The scheduler runs each member as ITS OWN installed
+                         component — its own per-tenant install run-token + declared caps — via the runtime manager.
+  PHASE=post           — the scheduler passes STEPS_OK / STEPS_TOTAL / STEP_RESULTS; advance L0 → L1 + notify.
+The pipeline's only I/O is the broker (its run token). A member that is not installed for the tenant simply fails
+its step (reported), never a widening.
 
-Env: AOI_ID · TENANT · WORKSPACE · COMMISSIONER (role:// or user://) · PRIORITIES (comma list)
+Env: AOI_ID · TENANT · WORKSPACE · COMMISSIONER (role:// or user://) · PRIORITIES (comma list) · PHASE
 """
-import json, os, sys, subprocess, time, urllib.request
+import json, os, sys, time, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
@@ -34,22 +39,22 @@ REQID = f"ds:{TENANT}:city/onboarding_request/{AOI_ID.rsplit('/', 1)[-1]}"
 COMMISSIONER = os.environ.get("COMMISSIONER", f"role://{TENANT}/urban.commissioner")
 PRIORITIES = [p.strip() for p in os.environ.get("PRIORITIES", "growth,heat").split(",") if p.strip()]
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-COMPONENTS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CI = "engines/cell-indexer"
+PHASE = (os.environ.get("PHASE") or "pre").strip().lower()
 
-# (label, component dir, run-token, extra env) — the ordered baseline pipeline
+# (label, member "<kind>/<name>" — resolved by the scheduler under THIS pipeline's steward, extra env) — the ordered
+# baseline. Members run under their OWN per-tenant install tokens (install-as-grant), not tokens named here.
 MEMBERS = [
     # Land cover from Google Dynamic World (GEE) — writes cell.builtup + cell.greencover FRACTIONS directly,
     # server-side reduced (scales to a metro). Runs in the certified earth-observation runtime via the manager.
     # Replaces the OSM-landcover acquire + the two cell-indexer fraction steps. (No GEE creds ⇒ fails loudly.)
-    ("land cover → built + green (Dynamic World)", "drivers/landcover-dw", "dev-run-landcover-dw", {}),
-    ("acquire heat (Open-Meteo)",  "drivers/heat", "dev-run-heat", {"MODE": "openmeteo"}),
-    ("index → cell.heat",          CI, "dev-run-cell", {"INPUT_SCHEMA": "environment.lst_observation",
+    ("land cover → built + green (Dynamic World)", "driver/landcover-dw", {}),
+    ("acquire heat (Open-Meteo)",  "driver/heat", {"MODE": "openmeteo"}),
+    ("index → cell.heat",          "engine/cell-indexer", {"INPUT_SCHEMA": "environment.lst_observation",
                                     "OUTPUT_SCHEMA": "cell.heat", "METHOD": "idw", "VALUE_FIELD": "lst_value"}),
     # terrain from Copernicus GLO-30 DEM via GEE (server-side, scales to a metro; runs in the EO runtime).
     # Replaces the Open-Meteo point-fetch terrain driver. (No GEE creds for terrain-dem ⇒ fails loudly.)
-    ("terrain (Copernicus DEM)",   "drivers/terrain-dem", "dev-run-terrain-dem", {}),
-    ("assess coverage & trust",    "engines/coverage-qa", "dev-run-coverage", {}),
+    ("terrain (Copernicus DEM)",   "driver/terrain-dem", {}),
+    ("assess coverage & trust",    "engine/coverage-qa", {}),
 ]
 
 
@@ -75,66 +80,36 @@ def workspace(level, status, name, res):
         "maturity_level": level, "status": status, "created_at": NOW})
 
 
-RUNTIME_MANAGER_URL = os.environ.get("RUNTIME_MANAGER_URL")   # placement authority (point 1); else in-process
-
-
-def _place(reldir, run_token, env, label):
-    """Ask the RUNTIME MANAGER to run a member — the pipeline holds NO docker/secret power, it only REQUESTS a
-    placement (platform.runtime_invoke). Falls back to an in-process launcher only when no manager is
-    configured (local dev)."""
-    if RUNTIME_MANAGER_URL:
-        body = {"component": reldir, "run_token": run_token, "env": env, "label": label}
-        req = urllib.request.Request(RUNTIME_MANAGER_URL + "/v1/invoke", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json",
-                     "X-Internal-Token": os.environ.get("RUNTIME_MANAGER_INTERNAL", "")}, method="POST")
-        r = json.loads(urllib.request.urlopen(req, timeout=1300).read())
-        return r.get("exit_code", 1), r.get("logs", "")
-    sys.path.insert(0, os.path.join(COMPONENTS, "_common"))
-    import launcher
-    return launcher.place(os.path.join(COMPONENTS, reldir), run_token, env, label=label)
-
-
-def run_member(label, reldir, token, env):
-    # Onboarding tokens are tenant-generic: the run's tenant rides in the token name as "<base>@<tenant>"
-    # so ONE base drives the baseline for ANY city (the kernel clones the base spec per tenant). See ADR-0060.
-    member_token = f"{token}@{TENANT}"
-    # non-secret run config. WRITE_TENANT is what members stamp into output ids (ds:<tenant>:…) — must match
-    # the run's tenant. The manager decides placement from the member's meta: runtime.profile ⇒ its certified
-    # container (cert-checked, image-locked, secrets materialised); else an in-process host subprocess.
-    e = dict(AOI_ID=AOI_ID, TENANT=TENANT, WRITE_TENANT=TENANT, **env)
-    try:
-        rc, out = _place(reldir, member_token, e, label)
-    except Exception as ex:
-        print(f"  [FAIL] {label}: {ex}"); return False
-    tail = ((out or "").strip().splitlines() or ["(no output)"])[-1][:120]
-    print(f"  [{'ok  ' if rc == 0 else 'FAIL'}] {label}: {tail}")
-    if rc != 0:
-        print(f"         {(out or '').strip()[-300:]}")
-    return rc == 0
+def plan():
+    """The member plan the SCHEDULER executes (it validates + resolves each member under this pipeline's steward,
+    and runs it under that member's own per-tenant install token via the runtime manager)."""
+    return [{"label": label, "member": member, "env": env} for label, member, env in MEMBERS]
 
 
 def main():
     aoi = call("/v1/read", {"scope": "space.aoi", "id": AOI_ID}).get("object") or {}
     name = aoi.get("name", AOI_ID.rsplit("/", 1)[-1]); res = int(aoi.get("h3_res", 9))
-    print(f"City Baseline · AOI '{name}' ({AOI_ID}) · workspace {WSID}\n")
-
-    request("building", name, res)                      # L0: the commissioner's request, now building
-    workspace(0, "building", name, res)                 # L0 Requested → provisioning
-
-    print("running baseline pipeline:")
-    ok = sum(run_member(*m) for m in MEMBERS)
-
+    if PHASE == "pre":
+        print(f"City Baseline · AOI '{name}' ({AOI_ID}) · workspace {WSID}\n")
+        request("building", name, res)                  # L0: the commissioner's request, now building
+        workspace(0, "building", name, res)             # L0 Requested → provisioning
+        print("AIROS_PIPELINE_PLAN " + json.dumps(plan()))   # the scheduler runs these members (not this process)
+        return 0
+    if PHASE != "post":
+        raise SystemExit(f"FATAL: unknown PHASE '{PHASE}' (pre | post)")
+    ok = int(os.environ.get("STEPS_OK") or 0); total = int(os.environ.get("STEPS_TOTAL") or len(MEMBERS))
+    for r in json.loads(os.environ.get("STEP_RESULTS") or "[]"):
+        print(f"  [{'ok  ' if r.get('status') == 'ok' else 'FAIL'}] {r.get('label') or r.get('member')}: {r.get('status')}")
     workspace(1, "ready", name, res)                    # L1 Baseline
     request("ready", name, res)
     iid = f"ds:{TENANT}:platform/inbox_item/baseline-ready-{WSID.rsplit('/', 1)[-1]}"
     write("platform.inbox_item", iid, {"schema": "platform.inbox_item", "id": iid, "actor": COMMISSIONER,
         "title": f"Your City Baseline for {name} is ready",
-        "body": (f"The City Digital Baseline for {name} has been generated ({ok}/{len(MEMBERS)} steps). "
+        "body": (f"The City Digital Baseline for {name} has been generated ({ok}/{total} steps). "
                  "Open City Scan to explore built-up, green cover, heat and terrain over the ward, with a "
                  "coverage & trust report showing what is authoritative vs AI-derived."),
         "ref": WSID, "kind": "notification", "status": "unread", "created_at": NOW})
-
-    print(f"\n✓ baseline ready — {ok}/{len(MEMBERS)} steps · workspace → L1 Baseline · notified {COMMISSIONER}")
+    print(f"\n✓ baseline ready — {ok}/{total} steps · workspace → L1 Baseline · notified {COMMISSIONER}")
     print(f"RESULT: {json.dumps({'workspace': WSID, 'maturity': 1, 'steps_ok': ok, 'notified': COMMISSIONER})}")
     return 0 if ok else 1
 

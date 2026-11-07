@@ -1,0 +1,14 @@
+# CONFORMANCE FIXTURE (slice-1c-iv step 3) — a pipeline MEMBER: run by the scheduler (via the runtime manager)
+# under its OWN per-tenant install token, it writes one base-governed platform.inbox_item for its STEP and prints
+# a short diagnostic of its own environment (proving it got a clean env: no Vault / service credential).
+component_id: ds:airawat:engine/pipeline-probe-step
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Pipeline probe step (conformance fixture)
+entrypoint: run.py
+confinement_min: L1
+reads: []
+writes: [platform.inbox_item]
+scopes:
+  - { verb: write, scope: platform.inbox_item }
