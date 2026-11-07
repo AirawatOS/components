@@ -135,8 +135,20 @@ def _fetch_and_verify(cid, source_file_id, cert, filestore_url=None):
     name = (cid.rsplit("/", 1)[-1] if cid else str(source_file_id).replace(":", "-"))
     dest = os.path.join(COMPONENT_CACHE, name)
     try:
-        blob = urllib.request.urlopen(
-            (filestore_url or FILESTORE_URL) + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), timeout=60).read()
+        # ADR-0124 slice-1c-ii: the filestore gate ENFORCES — attach a svc:filestore token minted as the
+        # `launcher` principal (the scheduler host's Vault token reads its password). Fail-closed: no token →
+        # header omitted → the gate refuses (a missing-credential misconfig must not fall open).
+        _fs_hdr = {}
+        try:
+            import svc_token as _svc_fs
+            _t = _svc_fs.token(principal="launcher", tenant=os.environ.get("SERVICE_TENANT", "localdev-operator"), audience="svc:filestore")
+            if _t:
+                _fs_hdr["Authorization"] = "Bearer " + _t
+        except Exception:
+            pass
+        _req = urllib.request.Request(
+            (filestore_url or FILESTORE_URL) + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), headers=_fs_hdr)
+        blob = urllib.request.urlopen(_req, timeout=60).read()
         if os.path.isdir(dest):
             shutil.rmtree(dest, ignore_errors=True)       # never merge over stale bytes
         os.makedirs(dest, exist_ok=True)
