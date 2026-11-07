@@ -266,8 +266,12 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     profile = (meta.get("runtime") or {}).get("profile")
 
     if not profile:                                      # IN-PROCESS (reference default) — host subprocess
-        e = dict(os.environ, RUN_TOKEN=run_token,
-                 AIRAWAT_API=os.environ.get("AIRAWAT_API", "http://localhost:8080"), **env)
+        # CLEAN env (slice-1c-iv step 2 / DEBT-B51 partial): the child gets ONLY its run token, the broker URL, the
+        # SDK path and its declared non-secret config — NEVER the placement host's environment. The runtime manager
+        # holds a Vault token (to mint the launcher's svc:secrets/svc:filestore tokens); inheriting it would hand a
+        # component that power. Mirrors host.py's clean env.
+        e = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": "/tmp", "RUN_TOKEN": run_token,
+             "AIRAWAT_API": os.environ.get("AIRAWAT_API", "http://localhost:8080"), **env}
         # Put the `aos` SDK on the child's import path so a component that `import aos` works in the reference
         # in-process runtime (no baked runtime image). The SDK dir is the FIRST of these that actually holds an
         # `aos/` package — HERE (repo layout), the in-container install, or an explicit override — because this
