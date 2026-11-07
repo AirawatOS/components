@@ -196,7 +196,16 @@ def attest_runtimes(node=None, network_url=None):
     import socket
     node = node or os.environ.get("NODE_ID") or socket.gethostname()
     net = network_url or NETWORK_URL
-    tok = os.environ.get("RUNTIME_ATTEST_INTERNAL", "airawat-attest-internal")
+    # step 5: audience-bound svc:network token minted as the `launcher` principal (no shared literal; fail-closed)
+    try:
+        import svc_token as _svc_att
+        tok = _svc_att.token(principal="launcher", tenant=os.environ.get("SERVICE_TENANT", "localdev-operator"),
+                             audience="svc:network")
+    except Exception:
+        tok = None
+    if not tok:
+        print("[attest] no svc:network token for the launcher principal — skipping attestation (fail-closed)")
+        return
     try:
         r = urllib.request.urlopen(net + "/v1/store?kind=runtime", timeout=15)
         listings = (json.loads(r.read() or b"{}") or {}).get("listings", [])
@@ -218,7 +227,7 @@ def attest_runtimes(node=None, network_url=None):
             _post(net + "/v1/runtime/attest",
                   {"runtime_id": cid, "version": l.get("version"), "node": node, "image": image,
                    "local_image_id": have or "", "certified_image_digest": want, "match": match},
-                  {"X-Internal-Token": tok})
+                  {"Authorization": "Bearer " + tok})
             print(f"[attest] {profile}: match={match} image={'present' if have else 'absent'} src_ok={dir_ok}")
         except Exception as e:
             print(f"[attest] {profile}: {e}")
