@@ -23,7 +23,7 @@ if os.environ.get("PROBE_OUT_OF_GRANT") == "1":   # slice-1e functional check: a
     try:
         urllib.request.urlopen(r2, timeout=60).read(); print("OUTSIDE_GRANT_RESULT accepted")
     except urllib.error.HTTPError as e:
-        print("OUTSIDE_GRANT_RESULT refused", e.code, e.read().decode()[:160])
+        print("OUTSIDE_GRANT_RESULT refused", e.code, e.read().decode()[:400])
 leak = sorted(k for k in os.environ if k.startswith(("VAULT", "SERVICE_", "IDENTITY", "SECRETS")))
 print("ENVCHECK", "CLEAN" if not leak else "LEAK " + ",".join(leak))
 print(f"target {oid}")
