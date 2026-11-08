@@ -69,6 +69,19 @@ def _list(v):
     return [x.strip() for x in str(v).strip().lstrip("[").rstrip("]").split(",") if x.strip()]
 
 
+def _net_hdr(base=None):
+    """slice-1f — the Network's internal lookups admit only svc:network from a declared principal. In the runtime
+    manager the launcher mints as `launcher`; elsewhere (scheduler in-process dev path) as its own service principal."""
+    try:
+        import svc_token as _st
+        h = _st.net_headers(base, principal="launcher")
+        if "Authorization" not in h:
+            h = _st.net_headers(base)
+        return h
+    except Exception:
+        return dict(base or {})
+
+
 def _post(url, body, headers=None):
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", **(headers or {})}, method="POST")
@@ -81,7 +94,7 @@ def _resolve_cert(subject_id, network_url=None):
     cert lives on the OWNING participant's network — pass its base url; trust is still the digest vs this cert
     (a hardening step verifies the remote cert's signature against the participant's directory key)."""
     try:
-        r = _post((network_url or NETWORK_URL) + "/v1/certificates/resolve", {"subject_id": subject_id})
+        r = _post((network_url or NETWORK_URL) + "/v1/certificates/resolve", {"subject_id": subject_id}, _net_hdr())
         if not isinstance(r, dict) or r.get("detail"):
             return None
         return r.get("certificate") or (r if (r.get("subject") or r.get("status")) else None)
@@ -114,7 +127,7 @@ def _runtime_source_file_id(cid, network_url=None):
     try:
         req = urllib.request.Request((network_url or NETWORK_URL) + "/v1/store/resolve",
             data=json.dumps({"component_id": cid}).encode(),
-            headers={"Content-Type": "application/json"}, method="POST")
+            headers=_net_hdr({"Content-Type": "application/json"}), method="POST")
         r = json.loads(urllib.request.urlopen(req, timeout=15).read())
         l = r.get("listing") or r
         return l.get("source_file_id") or None
