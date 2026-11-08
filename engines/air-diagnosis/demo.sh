@@ -16,7 +16,7 @@ TOK=$(j -X POST "$K/v1/components/install" -d "{\"component_id\":\"$CID\"}" | py
 echo "   run-token=$TOK"
 
 echo "3) seed an unhealthy pm2.5 reading (a driver writes the fact the engine will read)"
-j -X POST "$K/v1/write" -H "X-Run-Token: dev-run-air" \
+j -X POST "$K/v1/write" -H "X-Run-Token: $TOK" \
   -d "{\"scope\":\"air.sensor_reading\",\"id\":\"$STATION\",\"object\":{\"kind\":\"assertion\",\"pollutant\":\"pm25\",\"station\":\"station-7\",\"value\":82},\"valid_time\":{\"from\":\"2025-05-12T00:00:00Z\"},\"asserted_at\":\"2025-05-12T06:00:00Z\"}" >/dev/null
 echo "   seeded pm25=82 at $STATION"
 
