@@ -1,0 +1,14 @@
+# CONFORMANCE FIXTURE (dev only; declared-edges net) — declares ONE read so that installing it yields a REAL,
+# steward-signed read-grant. That lets the declared-edges net prove kernel → network /v1/receipts/data-read SUCCEEDS
+# (a receipt is only ever minted for a grant-backed read). It writes nothing; its run is a no-op.
+component_id: ds:airawat:engine/edge-probe-reader
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Edge probe reader (conformance fixture)
+entrypoint: run.py
+confinement_min: L1
+reads: [platform.inbox_item]
+writes: []
+scopes:
+  - { verb: read, scope: platform.inbox_item }
