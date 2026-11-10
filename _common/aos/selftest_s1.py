@@ -1,11 +1,11 @@
-import sys; sys.path.insert(0,"/Users/manishsv/Documents/Projects/Airawat/components/_common")
+import sys; sys.path.insert(0,__import__("os").path.join(__import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.abspath(__file__)))), "_common"))
 from aos.solution import Solution, Deployer, InMemoryBackend
 def _has_yaml():
     try:
         import yaml; return True
     except ImportError:
         return False
-D="/Users/manishsv/Documents/Projects/Airawat/components/solutions/water-safety-aos"
+D=__import__("os").path.join(__import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.abspath(__file__)))), "solutions", "water-safety-aos")
 sol=Solution.load(D)
 print("parsed:", ("pyyaml" if _has_yaml() else "fallback"),
       "| solution:",sol.name,"env:",sol.environment)

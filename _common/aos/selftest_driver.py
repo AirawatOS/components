@@ -8,7 +8,7 @@ Proves the aos DRIVER ergonomics are as strong as the engine path:
   4. `ctx.write_many` batches; the whole surface (facts/get/write/write_many) works headless-shaped.
 """
 import sys, importlib.util, os
-BASE = "/Users/manishsv/Documents/Projects/Airawat/components"
+BASE = __import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.abspath(__file__))))
 sys.path.insert(0, BASE + "/_common")
 
 import aos
