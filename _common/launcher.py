@@ -264,6 +264,23 @@ def _materialize(tenant, component, name):
         return None
 
 
+ML_LIBS = ("xgboost", "sklearn", "scipy", "torch", "torchvision", "joblib", "lightgbm", "tensorflow")
+_ML_RE = __import__("re").compile(r"^\s*(?:import|from)\s+(%s)\b" % "|".join(ML_LIBS), __import__("re").M)
+
+
+def _ml_imports(component_dir):
+    """The ML libraries a component's Python source imports (any .py under its dir) — they need the modeling runtime."""
+    found = set()
+    for r, _, fs in os.walk(component_dir):
+        for f in fs:
+            if f.endswith(".py"):
+                try:
+                    found.update(m.group(1) for m in _ML_RE.finditer(open(os.path.join(r, f), errors="replace").read()))
+                except OSError:
+                    pass
+    return sorted(found)
+
+
 def place(component_dir, run_token, env=None, *, label="", cid=None, source_file_id=None, source_origin=None):
     """Run a component. Returns (returncode, output). runtime.profile ⇒ certified container; else in-process.
 
@@ -288,6 +305,15 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     profile = (meta.get("runtime") or {}).get("profile")
 
     if not profile:                                      # IN-PROCESS (reference default) — host subprocess
+        # Layer 1 merge (DEBT-B114): the reference image carries NO ML libraries (xgboost, scikit-learn, scipy, torch, …)
+        # — they live in the `modeling` runtime. A component whose code imports one cannot run in-process: refuse it
+        # with a message naming the runtime, instead of failing later with an ImportError inside the run.
+        ml = _ml_imports(component_dir)
+        if ml:
+            return 87, (f"REFUSED (in-process): {label or meta.get('component_id') or component_dir} imports "
+                        f"{', '.join(ml)} — ML libraries are not in the platform image. Declare "
+                        f"`runtime: {{profile: modeling}}` in its meta.yaml so it runs in the modeling runtime "
+                        f"(components/runtimes/modeling).")
         # CLEAN env (slice-1c-iv step 2 / DEBT-B51 partial): the child gets ONLY its run token, the broker URL, the
         # SDK path and its declared non-secret config — NEVER the placement host's environment. The runtime manager
         # holds a Vault token (to mint the launcher's svc:secrets/svc:filestore tokens); inheriting it would hand a
