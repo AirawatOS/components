@@ -15,7 +15,7 @@ filestore write — are direct, which is what the UNSANDBOXED ingestion tier wit
 
   Env: TENANT · YEARS ("2023,2024,2025") · FEATURE_SET (manifest tag; default pm25-train-cpcb) ·
        MAX_STATIONS (cap cells for a cheap run; 0 = all) · DATE_FROM / DATE_TO (clamp the feature window) ·
-       RUN_TOKEN · AIRAWAT_API · FILESTORE_URL
+       RUN_TOKEN · AIRAWAT_API
 """
 import os, io, json, time, math, shutil, urllib.request as u, urllib.error, datetime as dt
 import pyarrow.parquet as pq, pyarrow as pa
@@ -23,7 +23,6 @@ import h3
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ["RUN_TOKEN"]
-FS = os.environ.get("FILESTORE_URL", "http://filestore:8095")
 TENANT = os.environ.get("TENANT") or os.environ.get("WRITE_TENANT") or "new-delhi"
 YEARS = [y.strip() for y in os.environ.get("YEARS", "2023,2024,2025").split(",") if y.strip()]
 FEATURE_SET = os.environ.get("FEATURE_SET", "pm25-train-cpcb").strip()
@@ -240,12 +239,13 @@ def main():
     aligned = sum(1 for r in rows if r.get("pm25_cams") is not None)
     print(f"assembled {len(rows)} rows · {aligned} with aligned CAMS features · {len(set(r['h3_id'] for r in rows))} stations", flush=True)
 
-    # PARQUET → filestore (direct; a ~20 MB analytical blob, over the small broker proxy cap)
+    # PARQUET → filestore THROUGH THE BROKER under this run's token (DEBT-B174: a component is not a declared
+    # filestore caller, so a direct call is refused; the broker writes it with the kernel's svc:filestore token)
     cols = ["h3_id", "resolution", "lon", "lat", "observed_at", "station"] + FEATURE_COLS + LAG_COLS + ["pm25_obs"]
     table = pa.table({c: [r.get(c) for r in rows] for c in cols})
     buf = io.BytesIO(); pq.write_table(table, buf); blob = buf.getvalue()
-    fr = u.Request(f"{FS}/files", data=blob, headers={"Content-Type": "application/octet-stream"}, method="POST")
-    fid = json.loads(u.urlopen(fr, timeout=300).read())["id"]
+    import base64
+    fid = jpost(f"{API}/v1/file/put", {"content_b64": base64.b64encode(blob).decode()}, {"X-Run-Token": TOKEN}, timeout=300)["id"]
     print(f"parquet {len(blob)} bytes → filestore {fid}", flush=True)
 
     # MANIFEST → registry (governed, via THIS driver's run-token)
