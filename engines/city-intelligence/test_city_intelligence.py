@@ -121,6 +121,28 @@ mg = f.get("mass_gathering") or {}
 check("mass-gathering facts kept when flood + crowd data exist (0.3.0 behaviour)",
       mg.get("flood_and_crowd_overlap_cells") == 1 and mg.get("people_exposed_in_overlap") == 4000, mg)
 
+def ask_empty_model(question, data):
+    seen = {}
+    def model(msgs, n):
+        seen["n"] = n
+        return ""                                       # the model spent its whole budget reasoning (finish=length)
+    out, err = ci.h_ask({"body": {"question": question}, "kfind": lambda s, where=None: list(data.get(s, [])), "ai_complete": model})
+    return out, err, seen.get("n")
+
+
+out, err, n = ask_empty_model("where are the hottest areas and how many people live there?", BASE)
+ans = (out or {}).get("answer") or ""
+check("the model gets an answer budget of 1800 tokens (900 left a reasoning model nothing to answer with)", n == 1800, n)
+check("an empty model reply never becomes 'No answer' — the computed facts are shown instead, numbers included",
+      ans.startswith("The analyst model returned no text") and "cell a (lon 77.5, lat 12.9)" in ans and "heat_c 33.5" in ans and "population 12,000" in ans, ans[:300])
+check("…and it still ends with the evidence-quality line", "Evidence quality:" in ans and "city.cell_profile" in ans, ans[-160:])
+
+def boom(msgs, n):
+    raise TimeoutError("timed out")
+out, err = ci.h_ask({"body": {"question": "hottest areas?"}, "kfind": lambda s, where=None: list(BASE.get(s, [])), "ai_complete": boom})
+check("a model timeout still answers with the computed facts (and says why)",
+      not err and (out or {}).get("answer", "").startswith("The analyst model is unavailable (timed out)") and "heat_c 33.5" in out["answer"], (err, (out or {}).get("answer", "")[:120]))
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 

@@ -22,6 +22,7 @@ import json, re
 
 HOT_FLOOD = ("high", "severe")
 TOP = 8
+ANSWER_TOKENS = 1800   # 0.4.1: a reasoning model spends tokens thinking first; 900 left nothing for the answer (finish=length, empty)
 
 # raw-layer fallback when no city.cell_profile exists: schema → {profile field: source field}
 RAW = {
@@ -270,6 +271,47 @@ def works_facts(kfind):
             "contractors_by_spend": [pick(o, ("name", "contractor", "works_count", "paid_net_total")) for o in contr[:TOP]]}
 
 
+def _fmt(v):
+    if isinstance(v, float):
+        return ("%.3f" % v).rstrip("0").rstrip(".") if abs(v) < 100 else "{:,.0f}".format(v)
+    if isinstance(v, int):
+        return "{:,}".format(v)
+    return str(v)
+
+
+def facts_summary(facts, why="returned no text"):
+    """The computed facts as a plain briefing — used when the model returns no text, so the user always gets the
+    grounded numbers (never 'No answer'). Deterministic; states nothing the facts do not."""
+    lines = ["The analyst model %s, so here are the computed facts directly:" % why]
+    for topic in facts.get("question_topics") or []:
+        block = facts.get(topic)
+        if not isinstance(block, dict):
+            continue
+        for k, v in block.items():
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                rows = []
+                for r in v[:5]:
+                    c = r.get("centroid")
+                    where = ("cell %s (lon %s, lat %s)" % (r.get("h3"), c[0], c[1])) if c else "cell %s" % r.get("h3")
+                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid"))
+                    rows.append("%s: %s" % (where, vals))
+                lines.append("- %s — " % k.replace("_", " ") + "; ".join(rows))
+            elif isinstance(v, dict) and {"min", "max"} <= set(v):
+                lines.append("- %s: min %s, median %s, max %s across %s cells" % (k.replace("_", " "), _fmt(v["min"]), _fmt(v["median"]), _fmt(v["max"]), _fmt(v["cells"])))
+            elif not isinstance(v, (list, dict)):
+                lines.append("- %s: %s" % (k.replace("_", " "), _fmt(v)))
+    pw = facts.get("public_works") or {}
+    if pw.get("wards_by_spend"):
+        lines.append("- wards by works spend: " + "; ".join("%s ₹%s (%s works)" % (w.get("ward"), _fmt(w.get("paid_net_total") or 0), _fmt(w.get("works_count") or 0)) for w in pw["wards_by_spend"][:5]))
+    if facts.get("layers_missing_for_this_question"):
+        lines.append("- Missing for this question: " + ", ".join(facts["layers_missing_for_this_question"]) + " — not an all-clear.")
+    if len(lines) == 1:
+        lines.append("- No computed facts match this question.")
+    lines.append("Evidence quality: " + ", ".join("%s %s cells" % (s, _fmt((v or {}).get("cells") or 0)) for s, v in (facts.get("evidence_quality") or {}).items())
+                 + " · source " + str((facts.get("city_cells") or {}).get("source")))
+    return "\n".join(lines)
+
+
 def h_ask(ctx):
     body = ctx.get("body") or {}
     question = (body.get("question") or body.get("q") or "").strip()[:500]
@@ -337,15 +379,17 @@ def h_ask(ctx):
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts, default=str)[:12000] + "\n\nQUESTION: " + question}]
     try:
-        ans = (ctx["ai_complete"](msgs, 900) or "").strip()
-    except Exception as e:
-        return None, "the AI model is unavailable: " + str(e)[:160]
+        ans = (ctx["ai_complete"](msgs, ANSWER_TOKENS) or "").strip()
+    except Exception as e:                                             # unavailable / timed out: still answer with the facts
+        return {"answer": facts_summary(facts, "is unavailable (%s)" % str(e)[:80]), "sources": sources, "facts": facts}, None
     ans = re.sub(r"(?is)<think>.*?</think>", "", ans).strip()
     _tells = ("the user wants", "the facts", "system prompt", "need to", "we need", "let me", "i should")
     if any(t in ans[:120].lower() for t in _tells):
         blocks = [b for b in re.split(r"\n\s*\n", ans) if b.strip()]
         if blocks:
             ans = blocks[-1].strip()
+    if not ans.strip():                                                # the model spent its budget reasoning / returned nothing
+        ans = facts_summary(facts)
     return {"answer": ans, "sources": sources, "facts": facts}, None
 
 
