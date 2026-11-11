@@ -567,17 +567,19 @@ async function load(){
   // SOLUTION layers (air-intelligence, flood, crowd-safety, solid-waste): don't hard-exclude them — a baseline
   // tenant just shouldn't see EMPTY ones. So include a solution layer ONLY IF this tenant actually has its data.
   // (This is what lets new-delhi's air layers — readings / PM2.5 surface / hotspots — appear + correlate here.)
-  const CONDITIONAL=["air.quality","air.hotspot","air.sensor_reading","cell.cams","cell.aod","risk.flood","cell.crowd_density","waste.segregation_compliance"];
-  const present={};
-  await Promise.all(CONDITIONAL.map(async s=>{ present[s]=await has(s); }));
+  // 0.4.9: this now applies to EVERY layer, not a fixed list — the shared ds:airawat: catalogue also carries solution
+  // layers (tax gap, crowd, water…) a city may never have built, and an empty layer in the picker reads as "we have
+  // this". (The host separately drops other tenants' own descriptors.) One limit-1 probe per distinct source schema.
   // The viz.layer catalogue is SHARED across tenants, so several descriptors can target the same source_schema
   // (e.g. a curated global ds:airawat: layer + a stale per-tenant copy). We keep ONE per schema — preferring the
   // one that carries a tree tag (group), then the global ds:airawat: descriptor, then declared order. Without
   // this an untagged tenant duplicate could win and land its layer under "Other".
   const rank=d=>((d.group?0:2)+(String(d.id||"").startsWith("ds:airawat:")?0:1));   // lower = preferred
-  const descs=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field
-                                     &&!GEOM_LAYERS.includes(d.source_schema)&&!NEVER.includes(d.source_schema)
-                                     &&(!CONDITIONAL.includes(d.source_schema)||present[d.source_schema]))
+  const cand=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field
+                                     &&!GEOM_LAYERS.includes(d.source_schema)&&!NEVER.includes(d.source_schema));
+  const present={};
+  await Promise.all([...new Set(cand.map(d=>d.source_schema))].map(async s=>{ present[s]=await has(s); }));
+  const descs=cand.filter(d=>present[d.source_schema])
                                      .sort((a,b)=>rank(a)-rank(b)||(a.order??99)-(b.order??99));
   const seen={}, specs=[];
   for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
@@ -1230,9 +1232,9 @@ function fitView(bbox){
 (function(){
   const wrap=document.createElement('div'); wrap.id='askwrap';
   wrap.innerHTML='<button id="askbtn" title="Ask the city analyst">🔍 Ask</button>'
-   +'<div id="askpanel" hidden><div class="askhd"><span>City analyst</span><span id="askx">×</span></div>'
+   +'<div id="askpanel" hidden><div class="askhd"><span>City analyst</span><span class="askact"><span id="askwide" title="Expand">⤢</span><span id="askx" title="Close">×</span></span></div>'
    +'<div id="asklog"><div class="am ai">Ask about the city, grounded in governed data — e.g. “which areas are most congested?”, “where should we add healthcare centres?”.</div></div>'
-   +'<div class="askin"><input id="askq" placeholder="Ask a question…" autocomplete="off"><button id="asksend">→</button></div></div>';
+   +'<div class="askin"><input id="askq" data-voice placeholder="Ask a question…" autocomplete="off"><button id="asksend">→</button></div></div>';
   document.body.appendChild(wrap);
   const css=document.createElement('style'); css.textContent=
    '#askwrap{position:fixed;right:16px;bottom:16px;z-index:30;font:14px system-ui,sans-serif}'
@@ -1240,7 +1242,15 @@ function fitView(bbox){
    +'#askpanel{position:absolute;right:0;bottom:48px;width:370px;max-height:64vh;display:flex;flex-direction:column;background:#0e1c2a;border:1px solid #22344a;border-radius:12px;box-shadow:0 6px 24px #0009;overflow:hidden}'
    +'#askpanel[hidden]{display:none}'
    +'.askhd{padding:9px 12px;background:#13273b;color:#e6edf5;font-weight:600;display:flex;justify-content:space-between}'
-   +'#askx{cursor:pointer;color:#8aa0b6}'
+   +'#askx,#askwide{cursor:pointer;color:#8aa0b6;padding:0 4px}.askact{display:flex;gap:6px}#askwide:hover,#askx:hover{color:#e6edf5}'
+   +'#askpanel.wide{width:min(880px,calc(100vw - 32px));max-height:86vh}#askpanel.wide .am{max-width:96%}'
+   +'.am.md{white-space:normal}.am.md p{margin:0 0 6px}.am.md p:last-child{margin-bottom:0}.am.md h4{margin:6px 0 4px;font-size:13.5px}'
+   +'.am.md ul,.am.md ol{margin:4px 0 6px 18px;padding:0}.am.md li{margin:2px 0}.am.md li.sub{margin-left:14px}'
+   +'.am.md .tw{overflow-x:auto;max-width:100%;margin:6px 0}.am.md table{border-collapse:collapse;font-size:12.5px;min-width:100%}'
+   +'.am.md th,.am.md td{border:1px solid #22344a;padding:4px 8px;text-align:left;vertical-align:top;white-space:nowrap}'
+   +'.am.md th{background:#16304a;color:#cdd9e5;font-weight:600}.am.md td{font-variant-numeric:tabular-nums}'
+   +'.am.md code{background:#0a1622;padding:0 4px;border-radius:4px;font-size:12px}'
+   +'.askin .aos-mic-group,.askin .aos-mic,.askin .aos-mic-lang{margin:0}.askin .aos-mic,.askin .aos-mic-lang{background:#0a1622;color:#e6edf5;border-color:#22344a}'
    +'#asklog{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:90px}'
    +'.am{padding:8px 11px;border-radius:10px;max-width:88%;white-space:pre-wrap;line-height:1.45;font-size:13.5px}'
    +'.am.me{align-self:flex-end;background:#38bdf8;color:#04121f}'
@@ -1261,6 +1271,27 @@ function fitView(bbox){
   document.head.appendChild(css);
   const G=id=>document.getElementById(id);
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function md(src){
+    const lines=String(src||'').replace(/\r/g,'').split('\n'), out=[]; let list=null;
+    const inl=t=>esc(t).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+    const close=()=>{ if(list){ out.push('</'+list+'>'); list=null; } };
+    const isRow=l=>/^\s*\|.*\|\s*$/.test(l), cells=l=>l.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+    for(let i=0;i<lines.length;i++){
+      const l=lines[i]; let m;
+      if(isRow(l)&&i+1<lines.length&&/^\s*\|?\s*:?-{2,}/.test(lines[i+1])){
+        close(); const head=cells(l), rows=[]; i+=2;
+        while(i<lines.length&&isRow(lines[i])){ rows.push(cells(lines[i])); i++; } i--;
+        out.push('<div class="tw"><table><thead><tr>'+head.map(c=>'<th>'+inl(c)+'</th>').join('')+'</tr></thead><tbody>'
+          +rows.map(r=>'<tr>'+r.map(c=>'<td>'+inl(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');
+        continue; }
+      if((m=l.match(/^\s*#{1,6}\s+(.*)$/))){ close(); out.push('<h4>'+inl(m[1])+'</h4>'); continue; }
+      if((m=l.match(/^(\s*)[-*•]\s+(.*)$/))){ if(list!=='ul'){ close(); out.push('<ul>'); list='ul'; }
+        out.push('<li'+(m[1].length>=2?' class="sub"':'')+'>'+inl(m[2])+'</li>'); continue; }
+      if((m=l.match(/^\s*\d+[.)]\s+(.*)$/))){ if(list!=='ol'){ close(); out.push('<ol>'); list='ol'; } out.push('<li>'+inl(m[1])+'</li>'); continue; }
+      close(); if(l.trim()) out.push('<p>'+inl(l)+'</p>');
+    }
+    close(); return out.join('');
+  }
   function addMsg(role,html){const l=G('asklog');const d=document.createElement('div');d.className='am '+role;d.innerHTML=html;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
   // Evidence-quality panel: how GOOD is the evidence behind the answer (not just the conclusion) — per governed
   // layer: observed vs inferred, coverage %, freshness, confidence. Grounds "quality & uncertainty of evidence".
@@ -1280,6 +1311,7 @@ function fitView(bbox){
       else if(v.gaps) bits.push('gaps: '+esc(String(v.gaps)));
       const fresh=agelbl(v.freshness_min); if(fresh) bits.push(fresh);
       if(v.mean_confidence!=null) bits.push('conf '+v.mean_confidence);
+      if(!tags&&!bits.length) return '';
       return '<div class="eq-row"><span class="ly">'+esc(LAYER_NAME[k]||k)+'</span>'+tags
         +(bits.length?'<span class="eq-m">· '+esc(bits.join(' · '))+'</span>':'')+'</div>';
     }).join('');
@@ -1288,6 +1320,11 @@ function fitView(bbox){
   let ASKING=false;
   G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden)G('askq').focus();};
   G('askx').onclick=()=>{G('askpanel').hidden=true;};
+  const setWide=w=>{ G('askpanel').classList.toggle('wide',w); G('askwide').textContent=w?'⤡':'⤢'; G('askwide').title=w?'Shrink':'Expand'; };
+  try{ setWide(localStorage.getItem('aosAskWide')==='1'); }catch(e){}
+  G('askwide').onclick=()=>{ const w=!G('askpanel').classList.contains('wide'); setWide(w); try{ localStorage.setItem('aosAskWide',w?'1':'0'); }catch(e){} };
+  G('askq').addEventListener('input',e=>{ if(!e.isTrusted&&G('askq').value.trim()) ask(); });   // dictated (synthetic input) → ask
+  if(!document.querySelector('script[src="/shared/voice.js"]')){ const vs=document.createElement('script'); vs.src='/shared/voice.js'; vs.defer=true; document.head.appendChild(vs); }
   async function ask(){
     if(ASKING) return;
     const q=G('askq').value.trim(); if(!q) return;
@@ -1296,7 +1333,7 @@ function fitView(bbox){
     const slot=addMsg('ai','<span style="opacity:.6">Analysing governed layers…</span>');
     try{
       const d=await bridge('/bridge/city-ask',{question:q});
-      slot.innerHTML=esc(d.answer||'No answer.')
+      slot.classList.add('md'); slot.innerHTML=md(d.answer||'No answer.')
         +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'')
         +evidenceQualityHtml(d.facts&&d.facts.evidence_quality);
       ASK_HL=Array.isArray(d.highlight)?d.highlight:[];

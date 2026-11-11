@@ -5,7 +5,7 @@
 # reading only through the host bridge (/bridge/query) over its declared schemas.
 component_id: ds:airawat:app/city-scan
 kind: app
-version: 0.4.8   # 0.4.8: renamed display_name City Scan → Visualize (ADR-0075 — shared surface named for the capability); component_id unchanged
+version: 0.4.9   # 0.4.9: analyst answers rendered as Markdown (tables, bullets, bold — escaped first), an expand/shrink control, the evidence block only when it adds tags/coverage, Bodhan voice dictation on the question box (a spoken question sends itself; hidden when the tenant has no Bodhan key); EVERY layer is listed only if this tenant has its data. 0.4.8: renamed display_name City Scan → Visualize (ADR-0075 — shared surface named for the capability); component_id unchanged
 provider: ds:airawat:developer
 display_name: Visualize   # ADR-0075: the shared map surface, named for the capability (was "City Scan"); component_id stays city-scan
 entrypoint: index.html
