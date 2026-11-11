@@ -587,7 +587,8 @@ async function load(){
                 unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,fmt:fmtFor(d.unit),
                 grp:d.group||"",sub:d.subgroup||"",sol:d.solution||"",
                 interp:d.interpretation||d.description||""}); }   // tree taxonomy + "how to read it" — REGISTRY-driven
-  LAYERS=specs;                                                 // metadata only — per-layer data loads on demand
+  LAYERS=specs;
+  loadPlaces();                                                 // gazetteer names for hover / drill (background, best-effort)                                                 // metadata only — per-layer data loads on demand
   DATA={aoi,scope:SB,data:{},coverage:[],roads:null,roads_local:null,water:null,facilities:null,sensors:null};   // null overlay = not loaded yet
   // FIRST PAINT: no choropleth auto-loaded — the map opens on the AOI + coverage report, and a layer's cells
   // load only when the user picks it (auto-loading built-up made initial load heavy for no reason).
@@ -691,14 +692,14 @@ function exitDrill(){
 function toggleCollapse(){ panelCollapsed=!panelCollapsed; cellPanel(); }
 function cellPanel(){
   const p=$("cellpanel"); if(!drillCell){ p.hidden=true; return; }
-  const h3s=esc((drillCell.h3||'').slice(0,12));
+  const h3s=esc(cellWhere(drillCell)||(drillCell.h3||'').slice(0,12));
   const top=`<div class="cptop"><span>Cell detail</span><span class="cpbtns">`
     +`<button id="cpmin" title="${panelCollapsed?'Expand':'Collapse'}">${panelCollapsed?'▸':'▾'}</button>`
     +`<button id="cpx" title="Exit (Esc)">×</button></span></div>`;
   p.hidden=false;
   if(panelCollapsed){                                            // collapsed → just the header bar + id (frees the map)
     p.classList.add("collapsed");
-    p.innerHTML=top+`<div class="cph mono" style="margin:0">${h3s}</div>`;
+    p.innerHTML=top+`<div class="cph" style="margin:0">${h3s}</div>`;
     $("cpx").onclick=exitDrill; $("cpmin").onclick=toggleCollapse; return;
   }
   p.classList.remove("collapsed");
@@ -913,6 +914,28 @@ function updateScrubber(){
   $("tsub").textContent=`${tIdx+1}/${times.length} frames`;
   const pb=$("tplay"); if(pb) pb.textContent=tPlaying?"⏸":"▶";
 }
+// ── place names: the tenant's gazetteer (space.place, OSM localities + wards) → nearest named place to a cell ──
+// Same rule as the City analyst: ≤1 km "Jayanagar (0.4 km)", ≤2.5 km "near Jayanagar (1.6 km)", else lat/lon.
+let PLACES=null; const PLACE_CACHE={};
+async function loadPlaces(){
+  if(PLACES) return;
+  const rows=await q("space.place");
+  PLACES=rows.filter(p=>(p.kind==="locality"||p.kind==="ward")&&p.name&&Array.isArray(p.centroid)&&p.centroid.length>=2)
+             .map(p=>[+p.centroid[0],+p.centroid[1],String(p.name)]);
+}
+function cellWhere(o){
+  const c=o&&o.c; if(!Array.isArray(c)||c.length<2) return "";
+  const k=o.h3||(c[0]+","+c[1]); if(PLACE_CACHE[k]!==undefined) return PLACE_CACHE[k];
+  let out=c[1].toFixed(4)+", "+c[0].toFixed(4);
+  if(PLACES&&PLACES.length){
+    const kx=Math.cos(c[1]*Math.PI/180); let best=null, bd=Infinity;
+    for(const p of PLACES){ const dx=(p[0]-c[0])*kx, dy=p[1]-c[1], d=dx*dx+dy*dy; if(d<bd){bd=d;best=p;} }
+    const km=111.32*Math.sqrt(bd);
+    if(best&&km<=2.5) out=(km<=1?"":"near ")+best[2]+" ("+km.toFixed(1)+" km)";
+    PLACE_CACHE[k]=out;                                         // cache only once names are loaded
+  }
+  return out;
+}
 function tip(info){
   const t=$("tip");
   if(!info||!info.object){ t.style.opacity=0; return; }
@@ -925,7 +948,7 @@ function tip(info){
               : (()=>{ // TEMPORAL: show the value of the FRAME currently on screen (tIdx), not the base value —
                        // else the tooltip reports the latest hour while the cells are painted for a scrubbed-to hour.
                   const fv=(L&&L.temporal&&Array.isArray(o.series)&&o.series[tIdx]&&typeof o.series[tIdx][L.sfield]==="number")?o.series[tIdx][L.sfield]:o.v;
-                  return `<b>${esc(L?L.fmt(fv):fv)}</b> · <span class="mono" style="color:var(--muted)">${esc((o.h3||"").slice(0,10))}</span>`; })();
+                  return `<b>${esc(L?L.fmt(fv):fv)}</b> · <span style="color:var(--muted)">${esc(cellWhere(o))}</span>`; })();
   t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
 function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true; return; } b.textContent=msg; b.hidden=false; }
