@@ -6,7 +6,7 @@
 # is unreachable is skipped; if none yield data the run fails loudly and writes nothing.
 component_id: ds:airawatdeveloper:driver/air-sensors
 kind: driver
-version: 0.2.0   # 0.2.1: OpenAQ considerate-use — 30/min (≤2000/hr) + pre-emptive x-ratelimit-remaining pause
+version: 0.3.0   # 0.3.0 (staging could not accept 0.2.2 — its stored 0.2.1 carries a comment the store reads as 0.2.10): CPCB values are AQI SUB-INDICES (data.gov.in 'Real time Air Quality Index'), converted to µg/m³ via CPCB NAQI breakpoints before writing — 213 was written as PM2.5 µg/m³ for a station at ~95. 0.2.1: OpenAQ considerate-use — 30/min (≤2000/hr) + pre-emptive x-ratelimit-remaining pause
 provider: ds:airawat:developer
 display_name: Air Sensors
 entrypoint: run.py
