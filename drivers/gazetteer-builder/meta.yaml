@@ -5,7 +5,7 @@
 # tenant-scoped and queryable; water-complaints reads it to place complaints on the H3 grid. Real OSM only.
 component_id: ds:airawatdeveloper:driver/gazetteer-builder
 kind: driver
-version: 0.1.0
+version: 0.1.1   # 0.1.1: declares the shared OSM_PBF data asset, so one OSM extract provided in City Setup (URL or upload) feeds the gazetteer along with roads / facilities / transit / drainage
 provider: ds:airawatdeveloper:developer
 display_name: Gazetteer Builder (OSM → space.place)
 entrypoint: run.py
@@ -21,6 +21,8 @@ config:
   - { name: OSM_PBF_URL,     kind: value }   # https URL of the city/region OSM extract (e.g. a Geofabrik .osm.pbf)
   - { name: OSM_PBF_FILE_ID, kind: value }   # OR an already-uploaded PBF (filestore digest) — use instead of URL
   - { name: RES,             kind: value, default: "9" }   # H3 resolution (matches water.hotspot)
+assets:                               # the SAME regional OSM extract the other OSM drivers use (City Setup fans it out)
+  - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: true, hint: "Regional OpenStreetMap extract (.osm.pbf, e.g. Geofabrik India southern-zone). Shared with the Roads / Facilities drivers." }
 egress:
   - { host: download.geofabrik.de, rate_per_min: 6, user_agent: "AirawatOS/gazetteer-builder (+https://airawat.org)" }
 sources:
