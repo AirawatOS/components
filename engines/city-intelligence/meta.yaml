@@ -8,7 +8,7 @@
 # resolves here with NO host code and NO baking — swap or upgrade by publishing a new version.
 component_id: ds:airawatdeveloper:engine/city-intelligence
 kind: engine
-version: 0.3.0
+version: 0.4.0   # 0.4.0: a general city analyst — reads the city.cell_profile rollup (raw cell layers as fallback), the works rollups and ALL open recommendations; topic-chosen facts; missing layers stated; proxies labelled
 provider: ds:airawat:developer
 display_name: City Intelligence
 entrypoint: run.py
@@ -16,8 +16,8 @@ confinement_min: L1
 implements: [city.analyst@0.1.0]
 verbs:
   city-ask: city.analyst@0.1.0
-required_schemas: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness]
-reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness]
+required_schemas: [governance.recommendation, city.coverage]   # 0.4.0: every other layer is OPTIONAL — absent layers are reported, not required
+reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness, city.cell_profile, cell.heat, cell.rainfall, cell.weather_forecast, cell.builtup, cell.greencover, cell.hydrology, demographics.population, cell.buildings, cell.roads, geo.facility, works.city_summary, works.ward_rollup, works.contractor_rollup]
 writes: []
 scopes:
   - { verb: read, scope: risk.flood }
@@ -26,3 +26,17 @@ scopes:
   - { verb: read, scope: governance.recommendation }
   - { verb: read, scope: city.coverage }
   - { verb: read, scope: intelligence.effectiveness }
+  - { verb: read, scope: city.cell_profile }
+  - { verb: read, scope: cell.heat }
+  - { verb: read, scope: cell.rainfall }
+  - { verb: read, scope: cell.weather_forecast }
+  - { verb: read, scope: cell.builtup }
+  - { verb: read, scope: cell.greencover }
+  - { verb: read, scope: cell.hydrology }
+  - { verb: read, scope: demographics.population }
+  - { verb: read, scope: cell.buildings }
+  - { verb: read, scope: cell.roads }
+  - { verb: read, scope: geo.facility }
+  - { verb: read, scope: works.city_summary }
+  - { verb: read, scope: works.ward_rollup }
+  - { verb: read, scope: works.contractor_rollup }

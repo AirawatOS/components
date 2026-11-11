@@ -1,0 +1,31 @@
+# CITY PROFILE (kind=engine) — the per-cell ROLLUP of a city's baseline layers: ONE city.cell_profile record per H3
+# cell, joining that cell's values from every baseline layer the tenant has (heat, rainfall, forecast, built-up and
+# green cover, hydrology, population, buildings, roads, facilities). A DERIVED, rebuildable view — the source layers stay
+# the truth; every value keeps its source layer + observation time, so freshness and gaps stay visible.
+# Why: questions (City Scan Ask) and apps need the layers JOINED per cell; computing that join on every request means
+# re-reading ~11k cells × ~10 layers each time. Run it as the LAST step of a baseline build, and on a schedule.
+# Writes only its own tenant's cells; a layer the tenant has not built is simply absent from the profile (never filled in).
+component_id: ds:airawat:engine/city-profile
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: City Profile (per-cell rollup of the baseline layers)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.aoi, cell.heat, cell.rainfall, cell.weather_forecast, cell.builtup, cell.greencover, cell.hydrology,
+        demographics.population, cell.buildings, cell.roads, geo.facility]
+writes: [city.cell_profile]
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: cell.heat }
+  - { verb: read,  scope: cell.rainfall }
+  - { verb: read,  scope: cell.weather_forecast }
+  - { verb: read,  scope: cell.builtup }
+  - { verb: read,  scope: cell.greencover }
+  - { verb: read,  scope: cell.hydrology }
+  - { verb: read,  scope: demographics.population }
+  - { verb: read,  scope: cell.buildings }
+  - { verb: read,  scope: cell.roads }
+  - { verb: read,  scope: geo.facility }
+  - { verb: write, scope: city.cell_profile }
+config: [AOI_ID]                     # optional: the area to profile (the pipeline passes it); else the tenant's own space.aoi
