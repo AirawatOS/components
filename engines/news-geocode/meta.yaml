@@ -8,7 +8,7 @@
 # (skips issues already carrying geometry). Powers the categorical "Civic issues" point overlay in City Scan.
 component_id: ds:airawat:engine/news-geocode
 kind: engine
-version: 0.2.0   # 0.2.0: the tenant's gazetteer (space.place) first, the public geocoder only on a miss; CITY_HINT / VIEWBOX default from the tenant AOI
+version: 0.2.1   # 0.2.1: the geocode source rides in geocode_method (civic.issue is additionalProperties:false — 0.2.0's geocode_source field was refused, 422); a refused write is counted, not fatal. 0.2.0: the tenant's gazetteer (space.place) first, the public geocoder only on a miss; CITY_HINT / VIEWBOX default from the tenant AOI
 provider: ds:airawat:developer
 display_name: News Geocoder (civic.issue → map point)
 entrypoint: run.py

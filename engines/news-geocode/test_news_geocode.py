@@ -58,17 +58,29 @@ ng.geocode = fake_geocode
 ng.main()
 
 check("a gazetteer locality is placed from space.place", (writes.get("i1") or {}).get("geometry", {}).get("coordinates") == [77.6408, 12.9784]
-      and writes["i1"].get("geocode_source") == "gazetteer:locality", writes.get("i1"))
-check("…'Indiranagar Area' matches once the generic word is dropped", (writes.get("i2") or {}).get("geocode_source") == "gazetteer:locality")
+      and writes["i1"].get("geocode_method") == "news-geocode@0.2.1 (gazetteer:locality)", writes.get("i1"))
+check("…'Indiranagar Area' matches once the generic word is dropped", "(gazetteer:locality)" in (writes.get("i2") or {}).get("geocode_method", ""))
 check("…and the public geocoder is not asked for gazetteer hits", not any(p in ("Indiranagar", "Indiranagar Area") for p, _, _ in geocoder_calls), geocoder_calls)
 check("a locality the gazetteer lacks falls back to the geocoder (another tenant's 'Shivajinagar' row ignored)",
-      (writes.get("i3") or {}).get("geocode_source") == "nominatim" and writes["i3"]["geometry"]["coordinates"] == [77.6050, 12.9857])
+      "(nominatim)" in (writes.get("i3") or {}).get("geocode_method", "") and writes["i3"]["geometry"]["coordinates"] == [77.6050, 12.9857])
 check("…bounded by the AOI viewbox and the AOI city hint (no hand-set config)",
       geocoder_calls and geocoder_calls[0][1] == "Bengaluru, India" and geocoder_calls[0][2] == "77.46,13.14,77.78,12.83", geocoder_calls[:1])
 check("no locality → no point", "i4" not in writes)
 check("unresolved locality → no point (never the city centroid)", "i5" not in writes)
 check("a near-miss name is not fuzzily matched to the gazetteer ('Indranagar')",
       "i6" not in writes and ("Indranagar", "Bengaluru, India", "77.46,13.14,77.78,12.83") in geocoder_calls)
+
+# civic.issue is additionalProperties:false (staging: 0.2.0's extra `geocode_source` field → 422 on every write)
+ALLOWED = {"agency", "category", "confidence", "geocode_confidence", "geocode_method", "geocoded_at", "geometry", "id",
+           "jurisdiction", "method", "observed_at", "place_label", "roles", "schema", "severity", "source_ref", "source_url",
+           "status", "summary", "tenant", "title"}
+extra = sorted({k for o in writes.values() for k in o} - ALLOWED)
+check("0.2.1 every write uses only the governed civic.issue fields", not extra, extra)
+def refuse(scope, oid, obj):
+    if oid == "i1": raise RuntimeError("HTTP Error 422")
+    writes[oid] = obj
+writes.clear(); ng.write = refuse; ng.main()
+check("…one refused write is counted and skipped; the rest are still written", "i1" not in writes and "i3" in writes, sorted(writes))
 
 print("ALL PASS" if not fails else "FAILED: %d" % len(fails))
 sys.exit(1 if fails else 0)
