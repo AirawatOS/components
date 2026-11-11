@@ -1244,9 +1244,9 @@ function fitView(bbox){
    +'.askhd{padding:9px 12px;background:#13273b;color:#e6edf5;font-weight:600;display:flex;justify-content:space-between}'
    +'#askx,#askwide{cursor:pointer;color:#8aa0b6;padding:0 4px}.askact{display:flex;gap:6px}#askwide:hover,#askx:hover{color:#e6edf5}'
    +'#askpanel.wide{width:min(880px,calc(100vw - 32px));max-height:86vh}#askpanel.wide .am{max-width:96%}'
-   +'.am.md{white-space:normal}.am.md p{margin:0 0 6px}.am.md p:last-child{margin-bottom:0}.am.md h4{margin:6px 0 4px;font-size:13.5px}'
+   +'.am.md{white-space:normal}.am.md:has(.md-tbl){max-width:100%;align-self:stretch}.am.md p{margin:0 0 6px}.am.md p:last-child{margin-bottom:0}.am.md h4{margin:6px 0 4px;font-size:13.5px}'
    +'.am.md ul,.am.md ol{margin:4px 0 6px 18px;padding:0}.am.md li{margin:2px 0}.am.md li.sub{margin-left:14px}'
-   +'.am.md .tw{overflow-x:auto;max-width:100%;margin:6px 0}.am.md table{border-collapse:collapse;font-size:12.5px;min-width:100%}'
+   +'.am.md .md-tbl{display:block;width:auto;overflow-x:auto;max-width:100%;margin:6px 0;font-size:12.5px;color:inherit}.am.md table{border-collapse:collapse;font-size:12.5px;min-width:100%;color:#e6edf5}'
    +'.am.md th,.am.md td{border:1px solid #22344a;padding:4px 8px;text-align:left;vertical-align:top;white-space:nowrap}'
    +'.am.md th{background:#16304a;color:#cdd9e5;font-weight:600}.am.md td{font-variant-numeric:tabular-nums}'
    +'.am.md code{background:#0a1622;padding:0 4px;border-radius:4px;font-size:12px}'
@@ -1281,7 +1281,7 @@ function fitView(bbox){
       if(isRow(l)&&i+1<lines.length&&/^\s*\|?\s*:?-{2,}/.test(lines[i+1])){
         close(); const head=cells(l), rows=[]; i+=2;
         while(i<lines.length&&isRow(lines[i])){ rows.push(cells(lines[i])); i++; } i--;
-        out.push('<div class="tw"><table><thead><tr>'+head.map(c=>'<th>'+inl(c)+'</th>').join('')+'</tr></thead><tbody>'
+        out.push('<div class="md-tbl"><table><thead><tr>'+head.map(c=>'<th>'+inl(c)+'</th>').join('')+'</tr></thead><tbody>'
           +rows.map(r=>'<tr>'+r.map(c=>'<td>'+inl(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');
         continue; }
       if((m=l.match(/^\s*#{1,6}\s+(.*)$/))){ close(); out.push('<h4>'+inl(m[1])+'</h4>'); continue; }
