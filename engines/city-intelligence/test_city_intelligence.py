@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioural check — City Intelligence 0.4.0 grounds Ask on the city's REAL layers, says what is missing, labels proxies.
+"""Behavioural check — City Intelligence 0.4.x grounds Ask on the city's REAL layers, says what is missing, labels proxies.
 
 Drives the real h_ask() with an in-memory kfind (records shaped as the drivers / rollups write them) and a stub model
 that captures the FACTS it is grounded on (the model never computes a figure, so the facts are what matters):
@@ -142,6 +142,18 @@ def boom(msgs, n):
 out, err = ci.h_ask({"body": {"question": "hottest areas?"}, "kfind": lambda s, where=None: list(BASE.get(s, [])), "ai_complete": boom})
 check("a model timeout still answers with the computed facts (and says why)",
       not err and (out or {}).get("answer", "").startswith("The analyst model is unavailable (timed out)") and "heat_c 33.5" in out["answer"], (err, (out or {}).get("answer", "")[:120]))
+
+# 0.4.2 — staging: an outskirts cell (1,607/km² on ~0.19 km/km² of road) topped the "congestion" proxy over the dense core
+OUT = dict(BASE, **{"city.cell_profile": PROFILES + [
+    profile("o", 77.78, 12.84, population=300, density_per_km2=1607, road_density_km_per_km2=0.12)]})
+out, err, f, sysmsg = ask("which areas are most congested?", OUT)
+acc = f.get("access") or {}
+prox = acc.get(next((k for k in acc if k.startswith("PROXY")), ""), [])
+check("0.4.2 proxy: a sparse outskirts cell with almost no roads does not top it (only the denser half competes)",
+      prox and prox[0].get("h3") == "a" and "o" not in [r.get("h3") for r in prox], [r.get("h3") for r in prox])
+check("0.4.2 rows carry a ready-to-print 'lat, lon' (centroid is [lon, lat])", prox and prox[0].get("lat_lon") == "12.9000, 77.5000", prox[:1])
+check("0.4.2 the model is asked for Markdown with tables for ranked lists, no h3 ids, one short evidence line",
+      "Markdown table" in sysmsg and "never print h3 ids" in sysmsg and "ONE short line 'Evidence quality: '" in sysmsg)
 
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")

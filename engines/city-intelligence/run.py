@@ -178,7 +178,10 @@ def city_cells(kfind):
 
 
 def _row(c, fields):
-    r = {"h3": _h3(c), "centroid": (c.get("cell_ref") or {}).get("centroid")}
+    cen = (c.get("cell_ref") or {}).get("centroid")
+    r = {"h3": _h3(c), "centroid": cen}
+    if isinstance(cen, (list, tuple)) and len(cen) >= 2 and all(isinstance(x, (int, float)) for x in cen[:2]):
+        r["lat_lon"] = "%.4f, %.4f" % (cen[1], cen[0])   # 0.4.2: ready to print — the model never swaps [lon, lat] itself
     for f in fields:
         if c.get(f) is not None:
             r[f] = c[f]
@@ -240,10 +243,15 @@ def topic_facts(topic, cells, question):
     elif topic == "access":
         f["traffic_or_congestion_layer_present"] = False
         f["road_density_km_per_km2"] = _stats(cells, "road_density_km_per_km2")
-        f["PROXY_dense_people_low_road_density (NOT congestion — no traffic data)"], _ = _top(
-            cells, lambda c: (c.get("density_per_km2") or 0) / max(c.get("road_density_km_per_km2") or 0.1, 0.1),
+        # 0.4.2: only the DENSER HALF of the city competes (density ≥ the city median), and road density is floored at
+        # 1 km/km² — otherwise near-empty outskirts with almost no roads (1,607/km² on 0.19 km/km²) topped the list.
+        _dens = _stats(cells, "density_per_km2")
+        _med = (_dens or {}).get("median") or 0
+        f["PROXY_people_per_road_density_in_denser_half (NOT congestion — no traffic data)"], _ = _top(
+            cells, lambda c: (c.get("density_per_km2") or 0) / max(c.get("road_density_km_per_km2") or 1.0, 1.0),
             ("density_per_km2", "road_density_km_per_km2"),
-            cond=lambda c: c.get("density_per_km2") is not None and c.get("road_density_km_per_km2") is not None)
+            cond=lambda c: c.get("density_per_km2") is not None and c.get("road_density_km_per_km2") is not None
+            and c["density_per_km2"] >= _med)
     elif topic == "buildings":
         f["building_coverage"] = _stats(cells, "building_coverage")
         f["most_built_up_cells"], _ = _top(cells, num("built_volume_m3"), ("built_volume_m3", "building_coverage", "mean_height_m", "density_per_km2"))
@@ -293,7 +301,7 @@ def facts_summary(facts, why="returned no text"):
                 for r in v[:5]:
                     c = r.get("centroid")
                     where = ("cell %s (lon %s, lat %s)" % (r.get("h3"), c[0], c[1])) if c else "cell %s" % r.get("h3")
-                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid"))
+                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid", "lat_lon"))
                     rows.append("%s: %s" % (where, vals))
                 lines.append("- %s — " % k.replace("_", " ") + "; ".join(rows))
             elif isinstance(v, dict) and {"min", "max"} <= set(v):
@@ -369,13 +377,18 @@ def h_ask(ctx):
     sysmsg = ("You are the City Intelligence Analyst for AirawatOS, advising city officials. Answer using ONLY the FACTS "
               "JSON — live, governed records computed per H3 grid cell (each cell has an h3 id and a centroid [lon, lat]) and "
               "the public-works rollups. State concrete numbers from the facts; never invent a figure, a place name or a "
-              "cause. Refer to cells by their centroid coordinates (and h3 id); do not name neighbourhoods unless the facts "
-              "name them. Anything labelled PROXY or 'proxy' must be called a proxy in the answer. If "
+              "cause. Refer to a cell by its lat_lon (\"lat, lon\"); never print h3 ids — the map highlights those cells. Do not "
+              "name neighbourhoods unless the facts name them. Anything labelled PROXY or 'proxy' must be called a proxy in the "
+              "answer (say it once, in the table heading or the line before it — not on every row). If "
               "facts.layers_missing_for_this_question is non-empty, say plainly which data is missing and what it would take "
-              "— a missing layer is never an all-clear. Begin with a one-line headline, then hyphen bullets; if the question "
-              "asks what to do, suggest options grounded in the facts and any open recommendations. Do NOT show reasoning or "
-              "restate the question. End with one line 'Evidence quality:' from facts.evidence_quality and "
-              "facts.city_cells.source (records/cells per layer, coverage % where known). You inform; officials decide.")
+              "— a missing layer is never an all-clear. FORMAT (Markdown, rendered in a chat panel): a one-line **bold** "
+              "headline; then at most 4 short '- ' bullets; whenever you list 3 or more cells, wards or contractors, use a "
+              "Markdown table instead of bullets — columns '#', 'Location (lat, lon)' or the name, then each value with its "
+              "unit in the header (e.g. 'Pop. density (/km²)'); round to at most 1 decimal and use thousands separators. "
+              "Keep it under 220 words. If the question asks what to do, suggest options grounded in the facts and any open "
+              "recommendations. Do NOT show reasoning or restate the question. End with ONE short line 'Evidence quality: ' — "
+              "the source (facts.city_cells.source), the number of city cells, and only the layers this answer used, with "
+              "their cell counts. You inform; officials decide.")
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts, default=str)[:12000] + "\n\nQUESTION: " + question}]
     try:
