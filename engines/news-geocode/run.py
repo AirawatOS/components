@@ -26,7 +26,8 @@ BATCH = int(os.environ.get("BATCH", "10"))
 SLEEP = float(os.environ.get("GEOCODE_SLEEP", "1.1"))          # >=1s for Nominatim usage policy
 RECODE = os.environ.get("RECODE", "") not in ("", "0", "false")  # re-geocode issues that already have geometry
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-METHOD = "news-geocode@0.1.0"
+METHOD = "news-geocode@0.2.0"
+_GENERIC = {"the", "area", "locality", "layout", "extension", "road", "main", "cross", "circle", "junction"}
 
 
 def _call(path, body, timeout=120):
@@ -98,6 +99,50 @@ def extract_places(items):
     return out
 
 
+def _norm(s):
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", str(s or "").lower()).split())
+
+
+def load_gazetteer(rows):
+    """The tenant's OWN gazetteer (space.place, written by gazetteer-builder from OSM) → {normalised name: (lon, lat, conf, kind)}.
+    Localities win over wards over pincodes when two share a name. Used BEFORE the public geocoder: faster, stays inside
+    the tenant's governed data, and every hit is inside the AOI by construction."""
+    rank = {"locality": 0, "ward": 1, "pincode": 2}
+    out = {}
+    for r in rows or []:
+        c = r.get("centroid") or []
+        if len(c) < 2 or not r.get("name"):
+            continue
+        k = _norm(r["name"])
+        cur = out.get(k)
+        if k and (cur is None or rank.get(r.get("kind"), 9) < rank.get(cur[3], 9)):
+            out[k] = (float(c[0]), float(c[1]), float(r.get("tier_confidence") or 0.6), r.get("kind") or "")
+    return out
+
+
+def gazetteer_lookup(gaz, place):
+    """Exact (normalised) name match, then the name with generic words dropped ("Koramangala 5th Block Road" stays a miss;
+    "Indiranagar Area" → "indiranagar"). Never fuzzy — a near-miss is not a location."""
+    if not gaz or not place:
+        return None
+    k = _norm(place)
+    if k in gaz:
+        return gaz[k]
+    k2 = " ".join(w for w in k.split() if w not in _GENERIC)
+    return gaz.get(k2) if k2 and k2 != k else None
+
+
+def aoi_defaults(aois):
+    """CITY_HINT and VIEWBOX from the tenant's AOI when not configured: the AOI's name (or its id's last segment) + India,
+    and its bbox [w, s, e, n] as the geocoder viewbox — so a new city needs no hand-set config."""
+    a = next((x for x in aois or [] if isinstance(x.get("bbox"), list) and len(x["bbox"]) == 4), None)
+    if not a:
+        return "", ""
+    name = a.get("name") or str(a.get("id") or "").rsplit("/", 1)[-1].replace("-", " ").title()
+    w, s_, e, n = a["bbox"]
+    return (name + ", India") if name else "", "%s,%s,%s,%s" % (w, n, e, s_)
+
+
 def geocode(place):
     """locality → (lon, lat, confidence) via the geocoder inside the AOI, or (None,None,0.0) if UNRESOLVED."""
     q = place + ((", " + CITY_HINT) if CITY_HINT else "")
@@ -122,10 +167,23 @@ def main():
     if not TOKEN or not TENANT:
         print("news-geocode — handlers: extract_places, geocode (dev self-test, no tenant/token).")
         return 0
+    global CITY_HINT, VIEWBOX
+    if not (CITY_HINT and VIEWBOX):
+        try:
+            hint, vb = aoi_defaults(query("space.aoi"))
+        except Exception:
+            hint, vb = "", ""
+        CITY_HINT = CITY_HINT or hint
+        VIEWBOX = VIEWBOX or vb
+    try:
+        gaz = load_gazetteer([p for p in query("space.place") if (p.get("tenant") == TENANT or not p.get("tenant"))])
+    except Exception:
+        gaz = {}
+    print(f"[news-geocode] city {CITY_HINT or '?'} · gazetteer {len(gaz)} names", flush=True)
     issues = [i for i in query("civic.issue") if (i.get("tenant") == TENANT or not i.get("tenant"))]
     todo = [i for i in issues if RECODE or not i.get("geometry")][:MAX]
     print(f"[news-geocode] {len(issues)} civic.issue · {len(todo)} to geocode (cap {MAX}) · viewbox={'yes' if VIEWBOX else 'no'}", flush=True)
-    geocoded = no_place = unresolved = 0
+    geocoded = no_place = unresolved = from_gaz = 0
     for b in range(0, len(todo), BATCH):
         batch = todo[b:b + BATCH]
         places = extract_places(batch)
@@ -133,18 +191,25 @@ def main():
             place = places.get(i)
             if not place:
                 no_place += 1; continue
-            lon, lat, conf = geocode(place)
-            time.sleep(SLEEP)
+            hit = gazetteer_lookup(gaz, place)
+            if hit:
+                lon, lat, conf, how = hit[0], hit[1], hit[2], "gazetteer:" + hit[3]
+                from_gaz += 1
+            else:
+                lon, lat, conf = geocode(place)
+                how = "nominatim"
+                time.sleep(SLEEP)
             if lon is None:
                 unresolved += 1; continue
             upd = {**it, "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                   "place_label": place, "geocode_confidence": conf, "geocoded_at": NOW, "geocode_method": METHOD}
+                   "place_label": place, "geocode_confidence": conf, "geocoded_at": NOW,
+                   "geocode_method": METHOD, "geocode_source": how}
             write("civic.issue", it["id"], upd)
             geocoded += 1
         print(f"  processed {min(b+BATCH,len(todo))}/{len(todo)} · geocoded {geocoded}", flush=True)
-    print(f"[news-geocode] geocoded {geocoded} · no-locality {no_place} · unresolved {unresolved} "
+    print(f"[news-geocode] geocoded {geocoded} ({from_gaz} from the gazetteer) · no-locality {no_place} · unresolved {unresolved} "
           f"(the latter two left WITHOUT a point — not fabricated)", flush=True)
-    print("RESULT: " + json.dumps({"geocoded": geocoded, "no_place": no_place, "unresolved": unresolved}))
+    print("RESULT: " + json.dumps({"geocoded": geocoded, "from_gazetteer": from_gaz, "no_place": no_place, "unresolved": unresolved}))
     return 0
 
 
