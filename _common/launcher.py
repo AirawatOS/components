@@ -25,7 +25,7 @@ NETWORK_URL = os.environ.get("NETWORK_URL", "http://localhost:8090")
 FILESTORE_URL = os.environ.get("FILESTORE_URL", "http://localhost:8095")
 COMPONENT_CACHE = os.environ.get("COMPONENT_CACHE", "/tmp/airawatos-components")   # writable rehydrate dir
 SECRETS_URL = os.environ.get("SECRETS_URL", "http://localhost:8102")
-SECRETS_INTERNAL = os.environ.get("SECRETS_INTERNAL", "")
+# slice-1c-iii: SECRETS_INTERNAL retired — _materialize mints an audience-bound svc:secrets token (svc_token).
 # PLACEMENT NETWORK. In production the runtime container joins the SAME docker network as the kernel and
 # reaches the broker by its service alias (`kernel:8080`) — service DNS, no host gateway. Set RUNTIME_NETWORK
 # to that network (e.g. airawat-stack_default). Unset ⇒ Docker-Desktop dev fallback: default bridge + the
@@ -69,6 +69,19 @@ def _list(v):
     return [x.strip() for x in str(v).strip().lstrip("[").rstrip("]").split(",") if x.strip()]
 
 
+def _net_hdr(base=None):
+    """slice-1f — the Network's internal lookups admit only svc:network from a declared principal. In the runtime
+    manager the launcher mints as `launcher`; elsewhere (scheduler in-process dev path) as its own service principal."""
+    try:
+        import svc_token as _st
+        h = _st.net_headers(base, principal="launcher")
+        if "Authorization" not in h:
+            h = _st.net_headers(base)
+        return h
+    except Exception:
+        return dict(base or {})
+
+
 def _post(url, body, headers=None):
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", **(headers or {})}, method="POST")
@@ -81,7 +94,7 @@ def _resolve_cert(subject_id, network_url=None):
     cert lives on the OWNING participant's network — pass its base url; trust is still the digest vs this cert
     (a hardening step verifies the remote cert's signature against the participant's directory key)."""
     try:
-        r = _post((network_url or NETWORK_URL) + "/v1/certificates/resolve", {"subject_id": subject_id})
+        r = _post((network_url or NETWORK_URL) + "/v1/certificates/resolve", {"subject_id": subject_id}, _net_hdr())
         if not isinstance(r, dict) or r.get("detail"):
             return None
         return r.get("certificate") or (r if (r.get("subject") or r.get("status")) else None)
@@ -114,7 +127,7 @@ def _runtime_source_file_id(cid, network_url=None):
     try:
         req = urllib.request.Request((network_url or NETWORK_URL) + "/v1/store/resolve",
             data=json.dumps({"component_id": cid}).encode(),
-            headers={"Content-Type": "application/json"}, method="POST")
+            headers=_net_hdr({"Content-Type": "application/json"}), method="POST")
         r = json.loads(urllib.request.urlopen(req, timeout=15).read())
         l = r.get("listing") or r
         return l.get("source_file_id") or None
@@ -135,8 +148,20 @@ def _fetch_and_verify(cid, source_file_id, cert, filestore_url=None):
     name = (cid.rsplit("/", 1)[-1] if cid else str(source_file_id).replace(":", "-"))
     dest = os.path.join(COMPONENT_CACHE, name)
     try:
-        blob = urllib.request.urlopen(
-            (filestore_url or FILESTORE_URL) + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), timeout=60).read()
+        # ADR-0124 slice-1c-ii: the filestore gate ENFORCES — attach a svc:filestore token minted as the
+        # `launcher` principal (the scheduler host's Vault token reads its password). Fail-closed: no token →
+        # header omitted → the gate refuses (a missing-credential misconfig must not fall open).
+        # DEBT-B174: through the shared internal service client (aos_svc) — the launcher's declared filestore door; with
+        # no credential nothing is sent (DoorError), never an anonymous read.
+        import aos_svc
+        _fsd = aos_svc.client_for("launcher", principal="launcher", tenant=os.environ.get("SERVICE_TENANT", "localdev-operator")).filestore
+        if filestore_url:
+            blob = _fsd.call_url("GET", filestore_url.rstrip("/") + "/files/" + urllib.parse.quote(str(source_file_id), safe=":"), timeout=60) \
+                if _fsd.owns(filestore_url.rstrip("/") + "/files/x") else None
+            if blob is None:
+                raise RuntimeError("filestore_url %s is not the declared filestore door (%s)" % (filestore_url, _fsd.base()))
+        else:
+            blob = _fsd.get(source_file_id, timeout=60)
         if os.path.isdir(dest):
             shutil.rmtree(dest, ignore_errors=True)       # never merge over stale bytes
         os.makedirs(dest, exist_ok=True)
@@ -184,7 +209,16 @@ def attest_runtimes(node=None, network_url=None):
     import socket
     node = node or os.environ.get("NODE_ID") or socket.gethostname()
     net = network_url or NETWORK_URL
-    tok = os.environ.get("RUNTIME_ATTEST_INTERNAL", "airawat-attest-internal")
+    # step 5: audience-bound svc:network token minted as the `launcher` principal (no shared literal; fail-closed)
+    try:
+        import svc_token as _svc_att
+        tok = _svc_att.token(principal="launcher", tenant=os.environ.get("SERVICE_TENANT", "localdev-operator"),
+                             audience="svc:network")
+    except Exception:
+        tok = None
+    if not tok:
+        print("[attest] no svc:network token for the launcher principal — skipping attestation (fail-closed)")
+        return
     try:
         r = urllib.request.urlopen(net + "/v1/store?kind=runtime", timeout=15)
         listings = (json.loads(r.read() or b"{}") or {}).get("listings", [])
@@ -206,20 +240,45 @@ def attest_runtimes(node=None, network_url=None):
             _post(net + "/v1/runtime/attest",
                   {"runtime_id": cid, "version": l.get("version"), "node": node, "image": image,
                    "local_image_id": have or "", "certified_image_digest": want, "match": match},
-                  {"X-Internal-Token": tok})
+                  {"Authorization": "Bearer " + tok})
             print(f"[attest] {profile}: match={match} image={'present' if have else 'absent'} src_ok={dir_ok}")
         except Exception as e:
             print(f"[attest] {profile}: {e}")
 
 
 def _materialize(tenant, component, name):
-    """Raw secret from Vault via the secrets service (internal-gated). Returns None if unset."""
+    """Raw secret from Vault via the secrets service. ADR-0124 slice-1c-iii: authenticate with an audience-bound
+    svc:secrets token minted as the `launcher` principal (fail-closed: no token → gate refuses). Returns None if unset."""
     try:
-        r = _post(SECRETS_URL + "/materialize", {"tenant": tenant, "component": component, "name": name},
-                  {"X-Internal-Token": SECRETS_INTERNAL})
+        hdr = {}
+        try:
+            import svc_token as _svc_sec
+            _t = _svc_sec.token(principal="launcher", tenant=os.environ.get("SERVICE_TENANT", "localdev-operator"), audience="svc:secrets")
+            if _t:
+                hdr["Authorization"] = "Bearer " + _t
+        except Exception:
+            pass
+        r = _post(SECRETS_URL + "/materialize", {"tenant": tenant, "component": component, "name": name}, hdr)
         return r.get("value")
     except Exception:
         return None
+
+
+ML_LIBS = ("xgboost", "sklearn", "scipy", "torch", "torchvision", "joblib", "lightgbm", "tensorflow")
+_ML_RE = __import__("re").compile(r"^\s*(?:import|from)\s+(%s)\b" % "|".join(ML_LIBS), __import__("re").M)
+
+
+def _ml_imports(component_dir):
+    """The ML libraries a component's Python source imports (any .py under its dir) — they need the modeling runtime."""
+    found = set()
+    for r, _, fs in os.walk(component_dir):
+        for f in fs:
+            if f.endswith(".py"):
+                try:
+                    found.update(m.group(1) for m in _ML_RE.finditer(open(os.path.join(r, f), errors="replace").read()))
+                except OSError:
+                    pass
+    return sorted(found)
 
 
 def place(component_dir, run_token, env=None, *, label="", cid=None, source_file_id=None, source_origin=None):
@@ -246,8 +305,21 @@ def place(component_dir, run_token, env=None, *, label="", cid=None, source_file
     profile = (meta.get("runtime") or {}).get("profile")
 
     if not profile:                                      # IN-PROCESS (reference default) — host subprocess
-        e = dict(os.environ, RUN_TOKEN=run_token,
-                 AIRAWAT_API=os.environ.get("AIRAWAT_API", "http://localhost:8080"), **env)
+        # Layer 1 merge (DEBT-B114): the reference image carries NO ML libraries (xgboost, scikit-learn, scipy, torch, …)
+        # — they live in the `modeling` runtime. A component whose code imports one cannot run in-process: refuse it
+        # with a message naming the runtime, instead of failing later with an ImportError inside the run.
+        ml = _ml_imports(component_dir)
+        if ml:
+            return 87, (f"REFUSED (in-process): {label or meta.get('component_id') or component_dir} imports "
+                        f"{', '.join(ml)} — ML libraries are not in the platform image. Declare "
+                        f"`runtime: {{profile: modeling}}` in its meta.yaml so it runs in the modeling runtime "
+                        f"(components/runtimes/modeling).")
+        # CLEAN env (slice-1c-iv step 2 / DEBT-B51 partial): the child gets ONLY its run token, the broker URL, the
+        # SDK path and its declared non-secret config — NEVER the placement host's environment. The runtime manager
+        # holds a Vault token (to mint the launcher's svc:secrets/svc:filestore tokens); inheriting it would hand a
+        # component that power. Mirrors host.py's clean env.
+        e = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": "/tmp", "RUN_TOKEN": run_token,
+             "AIRAWAT_API": os.environ.get("AIRAWAT_API", "http://localhost:8080"), **env}
         # Put the `aos` SDK on the child's import path so a component that `import aos` works in the reference
         # in-process runtime (no baked runtime image). The SDK dir is the FIRST of these that actually holds an
         # `aos/` package — HERE (repo layout), the in-container install, or an explicit override — because this

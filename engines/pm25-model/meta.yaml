@@ -6,10 +6,12 @@
 # criterion). Reports RMSE/MAE/R² per model + XGBoost's exact TreeSHAP top contributors. Real labels only.
 component_id: ds:airawatdeveloper:engine/pm25-model
 kind: engine
-version: 0.6.0   # 0.6.0: CHAMPION/CHALLENGER GATE — PERSIST trains a challenger + only promotes it to champion if it clears MIN_R2 AND matches/beats the incumbent by MIN_IMPROVE; else records a rejected challenger (champion:false) and keeps the incumbent. INFER loads the champion slot only.
+version: 0.6.1   # 0.6.1: placed in the modeling runtime (runtime.profile). 0.6.0: CHAMPION/CHALLENGER GATE — PERSIST trains a challenger + only promotes it to champion if it clears MIN_R2 AND matches/beats the incumbent by MIN_IMPROVE; else records a rejected challenger (champion:false) and keeps the incumbent. INFER loads the champion slot only.
 provider: ds:airawat:developer
 display_name: PM2.5 Model (train + persist champion / full-grid inference)
 entrypoint: run.py
+runtime:
+  profile: modeling        # Layer 1 merge (DEBT-B114): XGBoost / scikit-learn live in components/runtimes/modeling, not the platform image
 confinement_min: L2
 reads: [air.feature_matrix, air.model]   # feature-matrix manifest → Parquet blob; air.model → the champion's serialised-model blob
 writes: [air.quality, air.model]         # INFER: per-cell PM2.5 estimate → map layer · PERSIST: champion model manifest

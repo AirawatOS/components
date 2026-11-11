@@ -15,7 +15,6 @@ import os, json, subprocess, tempfile, tarfile, io, urllib.request, shutil, time
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ.get("RUN_TOKEN", "")
 TENANT = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""
-FILESTORE = os.environ.get("FILESTORE_URL", "http://filestore:8095")
 SECRETS_URL = os.environ.get("SECRETS_URL", "")
 GIT_TOKEN = os.environ.get("GIT_TOKEN", "")            # injected from Vault (credential_ref) by the runtime
 ONLY = os.environ.get("COMPONENT_ID", "")              # publish just this component (else: all with a source asset)
@@ -51,8 +50,10 @@ def _auth_url(repo_url, token):
 
 
 def _fetch_source(file_id):
-    with urllib.request.urlopen(f"{FILESTORE}/files/{file_id}", timeout=60) as r:
-        return r.read()
+    """The component's source tar, through the broker under this run's token (DEBT-B174: a component is not a
+    declared filestore caller — the store refuses it; the kernel broker reads it with its own svc:filestore token)."""
+    import base64
+    return base64.b64decode((_call("/v1/file/get", {"id": file_id}, timeout=90) or {}).get("content_b64") or "")
 
 
 def _lay_component(work, path_tmpl, component_id, tar_bytes):

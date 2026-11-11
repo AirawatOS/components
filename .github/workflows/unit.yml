@@ -1,0 +1,29 @@
+name: components-unit
+
+# Layer 1 merge — the required pull-request check for this repository (CONTRIBUTING.md § Verification tiers, Tier 1):
+# its OWN unit tests, hermetic (no stack, no secrets). The full `make verify` stays a local pre-merge requirement.
+# ML components are not unit-tested here: they run in components/runtimes/modeling (parity_check.py).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"      # matches the service images
+          cache: pip
+      - run: pip install pyyaml==6.0.3     # the aos SDK's only dependency (_common/pyproject.toml)
+      - name: Unit tests (every tracked test file, each run as a script — exit 0 = pass)
+        run: |
+          fail=0
+          for f in $(git ls-files | grep -E '(^|/)(test|selftest)_[^/]*\.py$'); do
+            echo "::group::$f"
+            (cd "$(dirname "$f")" && AIRAWAT_ENV=development PYTHONPATH="$GITHUB_WORKSPACE/_common" python "$(basename "$f")") || { echo "::error file=$f::unit test failed"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail

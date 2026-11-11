@@ -9,10 +9,12 @@
 # into the feature matrix. method is stamped `shap-xgb-proxy` on every output. No synthetic fill.
 component_id: ds:airawatdeveloper:engine/pm25-apportion
 kind: engine
-version: 0.1.0
+version: 0.1.1   # 0.1.1: placed in the modeling runtime (runtime.profile)
 provider: ds:airawat:developer
 display_name: PM2.5 Source Apportionment (SHAP-proxy, Slice 1)
 entrypoint: run.py
+runtime:
+  profile: modeling        # Layer 1 merge (DEBT-B114): XGBoost / scikit-learn live in components/runtimes/modeling, not the platform image
 confinement_min: L2
 reads: [air.feature_matrix, air.model]     # the snapshot matrix + the champion model blob (same as pm25-model INFER)
 writes: [air.source_apportionment, air.source_mix]

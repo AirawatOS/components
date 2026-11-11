@@ -2,8 +2,9 @@
 # provisions a city.workspace, files/advances the city.onboarding_request, runs the L0→L2 baseline (acquire
 # land cover · heat · terrain → index into H3 cells → assess coverage & trust), advances the workspace
 # MATURITY (L0 Requested → L1 Baseline), and NOTIFIES the commissioner (a platform.inbox_item): "Your City
-# Baseline is ready." One request → a City Digital Baseline. In production the execution engine (ADR-0050)
-# runs the members under minted run-tokens; here the pipeline orchestrates them directly (reference build).
+# Baseline is ready." One request → a City Digital Baseline. EXECUTION (slice-1c-iv step 3): the SCHEDULER runs it
+# in phases (pre → declared members → post); each member runs as its own installed component under its own
+# per-tenant install token via the runtime manager. The pipeline holds no service credential and places nothing.
 component_id: ds:airawat:pipeline/city-baseline
 kind: pipeline
 version: 0.1.0

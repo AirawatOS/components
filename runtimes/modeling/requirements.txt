@@ -4,9 +4,10 @@
 torch>=2.1
 torchvision>=0.16
 scikit-learn>=1.3
-xgboost>=2.0
+xgboost-cpu>=2.0   # CPU-only XGBoost (same API, `import xgboost`) — no NCCL / CUDA (DEBT-B114); the engines use tree_method=hist on CPU
 numpy>=1.24
 scipy>=1.10
 h3>=4
 requests>=2.31
 pyyaml>=6
+pyarrow>=14        # the pm25 engines read their feature matrix as Parquet

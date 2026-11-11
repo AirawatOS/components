@@ -1,0 +1,18 @@
+# CONFORMANCE FIXTURE (slice-1c-iv step 3) — the smallest pipeline that exercises the SCHEDULER-OWNED execution
+# contract end to end on a base-only install (no domain packs): PHASE=pre writes a "started" inbox item + declares
+# a 2-member plan; the scheduler runs each member (engine/pipeline-probe-step) as its own installed component via
+# the runtime manager; PHASE=post writes a "done" item carrying the step results. Same contract as city-baseline.
+# Writes only the base-governed platform.inbox_item. Holds no service credential; places nothing.
+component_id: ds:airawat:pipeline/pipeline-probe
+kind: pipeline
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Pipeline probe (conformance fixture)
+entrypoint: run.py
+confinement_min: L1
+reads: []
+writes: [platform.inbox_item]
+members:
+  - ds:airawat:engine/pipeline-probe-step
+scopes:
+  - { verb: write, scope: platform.inbox_item }

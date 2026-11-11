@@ -7,7 +7,7 @@
 # back on the binding. No fabrication: a component with no source asset is skipped, not invented.
 component_id: ds:airawatdeveloper:engine/git-publisher
 kind: engine
-version: 0.1.0
+version: 0.1.1   # 0.1.1: source fetch through the broker (DEBT-B174 — a component is not a declared filestore caller)
 provider: ds:airawatdeveloper
 display_name: Git Publisher (published components → developer's own repo)
 entrypoint: run.py

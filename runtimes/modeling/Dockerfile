@@ -5,6 +5,8 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt /runtime/requirements.txt
+# generous download timeout + retries: the torch wheels are large and a dropped connection otherwise fails the build
+ENV PIP_DEFAULT_TIMEOUT=300 PIP_RETRIES=10
 RUN pip install --no-cache-dir -r /runtime/requirements.txt
 
 WORKDIR /drivers

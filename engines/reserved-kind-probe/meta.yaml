@@ -1,0 +1,14 @@
+# CONFORMANCE FIXTURE (slice-1d, FOUNDATIONS FND-19) — a component that DECLARES a write to a core-reserved record
+# kind (governance.role_assignment — a component granting roles would be self-escalation). Installed, it receives a tenant-steward grant covering that declared write; the
+# kernel must STILL refuse the write (no grant or declaration lets a component write a core-reserved kind).
+component_id: ds:airawat:engine/reserved-kind-probe
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Core-reserved kind probe (conformance fixture)
+entrypoint: run.py
+confinement_min: L1
+reads: []
+writes: [governance.role_assignment]
+scopes:
+  - { verb: write, scope: governance.role_assignment }

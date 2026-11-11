@@ -11,7 +11,7 @@
 #        a cheap smoke run) · DATE_FROM/DATE_TO (clamp the feature-fetch window) · TENANT
 component_id: ds:airawatdeveloper:driver/corpus-builder
 kind: driver
-version: 0.1.1   # 0.1.1: publish carries declared egress → run-token allows the Open-Meteo reanalysis fetch
+version: 0.1.2   # 0.1.2: parquet write through the broker (DEBT-B174). 0.1.1: publish carries declared egress → run-token allows the Open-Meteo reanalysis fetch
 provider: ds:airawat:developer
 display_name: PM2.5 Training-Corpus Builder (CPCB fleet × reanalysis)
 entrypoint: run.py
