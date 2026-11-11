@@ -368,13 +368,20 @@ async function qpage(schema, onPage, pageLimit, cap, filter){
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showRoadsLocal=false, showWater=false, drillCell=null;
 let ASK_HL=[];   // Visualize analyst: H3 cells to highlight from the last grounded answer
 let ASK_HOVER=new Set(), ASK_HOVER_KEY="";   // cells of the place the user is hovering in an analyst answer (drawn red)
+let ASK_PIN=new Set();                        // cells of the place the user CLICKED — stay red until another click / panel close
+let BAR_ELEV=null;                            // h3 → bar height (m) of the shown 3D layer, so the red marker matches the bar
+const askRed=h=>ASK_HOVER.has(h)||ASK_PIN.has(h);
 function askHoverLayer(){
-  if(!ASK_HOVER.size || !window.h3) return null;
-  const data=[...ASK_HOVER].map(h=>{try{return {h,poly:h3.cellToBoundary(h,true)};}catch(e){return null;}}).filter(Boolean);
+  const cells=[...new Set([...ASK_HOVER,...ASK_PIN])];
+  if(!cells.length || !window.h3) return null;
+  const data=cells.map(h=>{try{return {h,poly:h3.cellToBoundary(h,true)};}catch(e){return null;}}).filter(Boolean);
   if(!data.length) return null;
-  return new deck.PolygonLayer({id:"ask-hover",data,getPolygon:d=>d.poly,stroked:true,filled:true,
-    getFillColor:[239,68,68,150],getLineColor:[239,68,68,255],lineWidthUnits:"pixels",getLineWidth:3,pickable:false,
-    updateTriggers:{getPolygon:[ASK_HOVER_KEY]}});
+  const tall=mode3d&&!drillCell;                // 3D: a red BAR as tall as the cell's own bar (a touch taller, so it covers it)
+  return new deck.PolygonLayer({id:"ask-hover",data,getPolygon:d=>d.poly,stroked:!tall,filled:true,extruded:tall,
+    getElevation:d=>tall?((BAR_ELEV&&BAR_ELEV(d.h))||150)*1.01+20:0,
+    getFillColor:[239,68,68,tall?255:150],getLineColor:[239,68,68,255],lineWidthUnits:"pixels",getLineWidth:3,pickable:false,
+    material:{ambient:0.7,diffuse:0.6},
+    updateTriggers:{getPolygon:[ASK_HOVER_KEY],getElevation:[ASK_HOVER_KEY,mode3d,active,tIdx]}});
 }
 function askLayer(){
   if(!ASK_HL.length || !window.h3) return null;
@@ -649,11 +656,13 @@ function dataLayer(){
   const lo = temporal?0:d.lo, hi = temporal?d.thi:d.hi, span=(hi-lo)||1;   // temporal: fixed 0..max scale, stable across frames
   const pnorm=c=>Math.pow(Math.max(0,Math.min(1,(frameVal(c)-lo)/span)),GAMMA);   // perceptual (gamma) — spreads the range
   const zero=c=>frameVal(c)<=0 && lo<=0;                                    // TRUE absence (only when the layer bottoms at 0)
+  if(d._byH3!==d.rows){ d._idx=new Map(d.rows.map(r=>[r.h3,r])); d._byH3=d.rows; }   // h3 → row (rebuilt only when rows change)
+  BAR_ELEV=h=>{ const r=d._idx.get(h); return r&&mode3d&&!drillCell ? pnorm(r)*ELEV_MAX : 0; };
   return new deck.H3HexagonLayer({id:"cells",data:d.rows,pickable:true,filled:true,stroked:false,
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
     getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
     getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?Math.min(0.95,layerAlpha+0.28):layerAlpha),   // user-set alpha; a touch more solid in 3D so towers read
-    getFillColor:c=> ASK_HOVER.has(c.h3) ? [239,68,68,255] : zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
+    getFillColor:c=> askRed(c.h3) ? [239,68,68,255] : zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
     updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx,ASK_HOVER_KEY], opacity:[!!drillCell,mode3d,layerAlpha]}});
 }
@@ -1281,7 +1290,7 @@ function fitView(bbox){
    +'.am.md .md-tbl{display:block;width:auto;overflow-x:auto;max-width:100%;margin:6px 0;font-size:12.5px;color:inherit}.am.md table{border-collapse:collapse;font-size:12.5px;min-width:100%;color:#e6edf5}'
    +'.am.md th,.am.md td{border:1px solid #22344a;padding:4px 8px;text-align:left;vertical-align:top;white-space:nowrap}'
    +'.am.md th{background:#16304a;color:#cdd9e5;font-weight:600}.am.md td{font-variant-numeric:tabular-nums}'
-   +'.am.md .cellref{border-bottom:1px dashed #f87171;cursor:pointer}.am.md .cellref:hover,.am.md tr.hl td{background:#3b1d1d}'
+   +'.am.md .cellref{border-bottom:1px dashed #f87171;cursor:pointer}.am.md .cellref.pin{background:#7f1d1d;color:#fff;border-radius:3px;padding:0 3px}.am.md .cellref:hover,.am.md tr.hl td{background:#3b1d1d}'
    +'.am.md code{background:#0a1622;padding:0 4px;border-radius:4px;font-size:12px}'
    +'.askin .aos-mic-group,.askin .aos-mic,.askin .aos-mic-lang{margin:0}.askin .aos-mic,.askin .aos-mic-lang{background:#0a1622;color:#e6edf5;border-color:#22344a}'
    +'#asklog{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:90px}'
@@ -1340,9 +1349,14 @@ function fitView(bbox){
       html=html.split(e).join('\u0000'+marks.length+'\u0000'); marks.push('<span class="cellref" data-h3="'+refs[k].join(',')+'">'+e+'</span>'); }
     return html.replace(/\u0000(\d+)\u0000/g,(_,i)=>marks[+i]);
   }
+  function askKey(){ return [...ASK_HOVER].join(',')+'|'+[...ASK_PIN].join(','); }
   function setAskHover(list){
-    const key=(list||[]).join(','); if(key===ASK_HOVER_KEY) return;
-    ASK_HOVER=new Set(list||[]); ASK_HOVER_KEY=key; if(typeof render==='function') render();
+    const next=new Set(list||[]); if([...next].join(',')===[...ASK_HOVER].join(',')) return;
+    ASK_HOVER=next; ASK_HOVER_KEY=askKey(); if(typeof render==='function') render();
+  }
+  function setAskPin(list){
+    ASK_PIN=new Set(list||[]); ASK_HOVER_KEY=askKey(); if(typeof render==='function') render();
+    G('asklog').querySelectorAll('.cellref.pin').forEach(x=>x.classList.remove('pin'));
   }
   function addMsg(role,html){const l=G('asklog');const d=document.createElement('div');d.className='am '+role;d.innerHTML=html;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
   // Evidence-quality panel: how GOOD is the evidence behind the answer (not just the conclusion) — per governed
@@ -1371,7 +1385,7 @@ function fitView(bbox){
   }
   let ASKING=false;
   G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden)G('askq').focus();};
-  G('askx').onclick=()=>{G('askpanel').hidden=true; setAskHover([]);};
+  G('askx').onclick=()=>{G('askpanel').hidden=true; setAskHover([]); setAskPin([]);};
   const refOf=t=>{ const r=t&&t.closest&&t.closest('.cellref'); if(r) return r;
     const tr=t&&t.closest&&t.closest('tr'); return tr?tr.querySelector('.cellref'):null; };
   G('asklog').addEventListener('mouseover',e=>{ const r=refOf(e.target);
@@ -1380,8 +1394,12 @@ function fitView(bbox){
     setAskHover(r?r.dataset.h3.split(','):[]); });
   G('asklog').addEventListener('mouseleave',()=>{ G('asklog').querySelectorAll('tr.hl').forEach(x=>x.classList.remove('hl')); setAskHover([]); });
   G('asklog').addEventListener('click',e=>{ const r=refOf(e.target); if(!r||!window.h3) return;
-    try{ const c=h3.cellToLatLng(r.dataset.h3.split(',')[0]);
-      view={...view,longitude:c[1],latitude:c[0],zoom:Math.max(view.zoom||11,14),transitionDuration:700};
+    const cells=r.dataset.h3.split(',');
+    if([...ASK_PIN].join(',')===cells.join(',')){ setAskPin([]); return; }      // click the pinned name again → unpin
+    setAskPin(cells); r.classList.add('pin');
+    try{ const c=h3.cellToLatLng(cells[0]);
+      // 3D: a gentler tilt so the (tall) bar stands where the eye lands, not far above the screen centre
+      view={...view,longitude:c[1],latitude:c[0],zoom:Math.max(view.zoom||11,14),pitch:mode3d?35:(view.pitch||0),transitionDuration:700};
       deckgl.setProps({initialViewState:view}); }catch(err){} });
   const setWide=w=>{ G('askpanel').classList.toggle('wide',w); G('askwide').textContent=w?'⤡':'⤢'; G('askwide').title=w?'Shrink':'Expand'; };
   try{ setWide(localStorage.getItem('aosAskWide')==='1'); }catch(e){}
@@ -1396,6 +1414,7 @@ function fitView(bbox){
     const slot=addMsg('ai','<span style="opacity:.6">Analysing governed layers…</span>');
     try{
       const d=await bridge('/bridge/city-ask',{question:q});
+      setAskPin([]);
       slot.classList.add('md'); slot.innerHTML=linkCells(md(d.answer||'No answer.'),cellRefs(d.facts))
         +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'')
         +evidenceQualityHtml(d.facts&&d.facts.evidence_quality);
