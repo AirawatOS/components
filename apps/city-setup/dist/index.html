@@ -117,7 +117,7 @@ let POLL=null;
 async function render(){
   if(POLL){clearInterval(POLL);POLL=null;}
   const V=document.getElementById('view');
-  document.getElementById('who').textContent=D.tenant?('● '+D.tenant):'';
+  document.getElementById('who').textContent=D.tenant?('● '+(D.tenant_name||D.tenant)):'';
   if(!D.admin){ V.innerHTML='<div class="empty">City setup is for tenant admins.</div>'; return; }
   const run=D.run, mat=(D.maturity==null?null:D.maturity), running=run&&(run.status==='running'||run.status==='queued');
   const done=run&&run.status==='done', failed=run&&run.status==='failed';
@@ -148,7 +148,7 @@ async function render(){
   const hasAoi=!!((PENDING&&PENDING.name)||(aoi&&aoi.name));
 
   let html=`<div class="lbl">City Digital Baseline</div>
-    <div class="muted" style="font-size:12.5px;margin:-2px 0 4px">Tenant <b style="color:var(--ink);font-family:ui-monospace,Menlo,monospace">${esc(D.tenant)}</b> — set up your city once and it pulls free satellite, weather and map data into a live baseline you can explore in City Scan. Current state: ${state}.</div>`;
+    <div class="muted" style="font-size:12.5px;margin:-2px 0 4px">Tenant <b style="color:var(--ink);font-family:ui-monospace,Menlo,monospace">${esc(D.tenant_name||D.tenant)}</b> — set up your city once and it pulls free satellite, weather and map data into a live baseline you can explore in City Scan. Current state: ${state}.</div>`;
 
   if(done){ html+=`<div class="note" style="margin:12px 0"><span style="font-size:16px">✓</span><div><b style="color:var(--ok)">Baseline ready${run.steps_ok!=null?` — ${run.steps_ok} layer(s) built`:''}.</b> Open <b>City Scan</b> to explore it. Any layer marked ⚠/✕ below just needs its key/file connected — set it, then re-build.</div></div>`;
     if(run.layers&&run.layers.length) html+=`<div class="lgrid" style="margin:0 0 14px">${layerRows(run.layers)}</div>`; }

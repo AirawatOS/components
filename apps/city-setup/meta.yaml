@@ -4,7 +4,7 @@
 # Baseline (ADR-0060) via /bridge/city-onboard. Extracted out of the Admin app (which is domain-agnostic).
 component_id: ds:airawat:app/city-setup
 kind: app
-version: 0.1.0
+version: 0.1.1
 provider: ds:airawat:developer
 display_name: City Setup
 entrypoint: index.html
