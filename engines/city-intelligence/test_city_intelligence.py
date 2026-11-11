@@ -152,8 +152,8 @@ prox = acc.get(next((k for k in acc if k.startswith("PROXY")), ""), [])
 check("0.4.2 proxy: a sparse outskirts cell with almost no roads does not top it (only the denser half competes)",
       prox and prox[0].get("h3") == "a" and "o" not in [r.get("h3") for r in prox], [r.get("h3") for r in prox])
 check("0.4.2 rows carry a ready-to-print 'lat, lon' (centroid is [lon, lat])", prox and prox[0].get("lat_lon") == "12.9000, 77.5000", prox[:1])
-check("0.4.2 the model is asked for Markdown with tables for ranked lists, no h3 ids, one short evidence line",
-      "Markdown table" in sysmsg and "never print h3 ids" in sysmsg and "ONE short line 'Evidence quality: '" in sysmsg)
+check("0.4.4 the model writes prose only (no tables — the engine appends them), never h3 ids",
+      "Do NOT write any table" in sysmsg and "never print h3 ids" in sysmsg)
 
 # 0.4.3 — cells are named by their nearest gazetteer place, with the distance; far cells keep lat/lon only
 GAZ = dict(BASE, **{"space.place": [
@@ -170,6 +170,29 @@ check("…the gazetteer is cited and the model is told to keep 'near' and the di
       "space.place" in (out or {}).get("sources", []) and "keep the distance and the word 'near'" in sysmsg)
 out, err, f, _ = ask("what are the hottest areas?", BASE)
 check("…no gazetteer → rows unchanged (lat/lon only), nothing claimed", all("place" not in r for r in (f.get("heat") or {}).get("hottest_cells", [])))
+
+# 0.4.4 — staging: the reasoning model spent 2,859 of 3,000 tokens thinking; its table stopped after the header row.
+def ask_text(question, data, reply):
+    out, err = ci.h_ask({"body": {"question": question}, "kfind": lambda s, where=None: list(data.get(s, [])),
+                         "ai_complete": lambda msgs, n: reply})
+    return (out or {}).get("answer") or "", err
+
+PLACED = dict(OUT, **{"space.place": [{"kind": "locality", "name": "Nagamma Nagar", "centroid": [77.5003, 12.9008]}]})
+ans, err = ask_text("which areas are most congested?", PLACED, "**Congestion is not measured.**\n- Proxy only.\nEvidence quality: ok")
+rows = [l for l in ans.splitlines() if l.startswith("| ") and not l.startswith("| #")]
+check("0.4.4 the engine appends the ranked table itself, every computed row, with the exact place label",
+      len(rows) == 2 and rows[0] == "| 1 | Nagamma Nagar (0.1 km) | 48,000 | 4 |" and "| Pop. density (/km²) | Road density (km/km²) |" in ans, rows)
+check("…prose first, then the table, then ONE engine evidence line (the model's placeholder dropped)",
+      ans.startswith("**Congestion is not measured.**") and ans.count("Evidence quality:") == 1 and ans.rstrip().endswith(".")
+      and "layers used: cell.roads" in ans and "place names: OpenStreetMap gazetteer" in ans, ans[-200:])
+ans, err = ask_text("which areas are most congested?", PLACED,
+                    "**Congestion cannot be ranked directly.**\n- Road density covers 4 cells.\nCells supplied for the proxy:\n\n| # | Location | Pop. density (/km²) |\n|---|---|---|\n| 1 | Nagamma Na")
+check("…a CUT-OFF reply: its dangling table is dropped, it is marked shortened, and the full table + evidence still follow",
+      "Nagamma Na |" not in ans and "| 1 | Nagamma Na\n" not in ans and "cut short" in ans and len([l for l in ans.splitlines() if l.startswith("| 1 |")]) == 1
+      and "Evidence quality:" in ans, ans)
+ans, err = ask_text("which wards spent the most on works?", BASE, "**Ward 7 leads.**\nEvidence quality: ok")
+check("…works rollups become Ward / Contractor tables", "| # | Ward | Works | Paid (₹) |" in ans and "| 1 | Ward 7 | 1,200 | 610,000,000 |" in ans
+      and "| 1 | Acme Roads |" in ans, ans)
 
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")

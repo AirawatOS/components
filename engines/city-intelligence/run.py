@@ -337,6 +337,99 @@ def _fmt(v):
     return str(v)
 
 
+# 0.4.4 — the ENGINE writes the tables (deterministic, never truncated, exact place labels for the map link); the model
+# writes only a short headline + bullets. A reasoning model spent 2,859 of 3,000 tokens thinking and its table was cut
+# after the header row (staging, finish=length).
+COLS = {   # field → (header, scale) — percentages from fractions; everything else as stored
+    "density_per_km2": ("Pop. density (/km²)", 1), "population": ("Population", 1),
+    "road_density_km_per_km2": ("Road density (km/km²)", 1), "road_length_m": ("Road length (m)", 1),
+    "heat_c": ("Heat (°C)", 1), "rainfall_mm": ("Rainfall (mm)", 1), "forecast_peak_precip_mm": ("Forecast peak (mm)", 1),
+    "forecast_total_precip_mm": ("Forecast total (mm)", 1), "green_frac": ("Green cover (%)", 100),
+    "builtup_frac": ("Built-up (%)", 100), "flood_susceptibility": ("Flood susceptibility", 1),
+    "hand_mean_m": ("Height above drainage (m)", 1), "building_coverage": ("Building coverage (%)", 100),
+    "mean_height_m": ("Mean height (m)", 1), "built_volume_m3": ("Built volume (m³)", 1),
+    "facility_count": ("Facilities", 1), "works_count": ("Works", 1), "paid_net_total": ("Paid (₹)", 1),
+}
+_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities"}
+
+
+def _num(v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return str(v) if v is not None else "—"
+    return "{:,.0f}".format(v) if abs(v) >= 1000 or float(v).is_integer() else "{:,.1f}".format(v)
+
+
+def _title(key):
+    k = key
+    if k.upper().startswith("PROXY_"):
+        k = "Proxy — " + k[6:]
+    return k.replace("_", " ").strip().capitalize() if not k.startswith("Proxy") else k.replace("_", " ")
+
+
+def _table(rows, first_col, first):
+    fields = [f for f in COLS if any(f in r for r in rows)] + \
+             sorted({f for r in rows for f in r if f not in COLS and f not in _SKIP and f != first_col and not isinstance(r[f], (dict, list))})
+    head = ["#", first] + [COLS[f][0] if f in COLS else f.replace("_", " ") for f in fields]
+    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    for i, r in enumerate(rows, 1):
+        loc = r.get(first_col) if first_col else (r.get("place") or r.get("lat_lon") or "—")
+        vals = [_num(r.get(f) * COLS[f][1] if (f in COLS and isinstance(r.get(f), (int, float)) and COLS[f][1] != 1) else r.get(f)) for f in fields]
+        out.append("| " + " | ".join([str(i), str(loc).replace("|", "/")] + vals) + " |")
+    return "\n".join(out)
+
+
+def fact_tables(facts):
+    """Markdown tables for every ranked list in the facts: cell lists (Location = nearest place, else lat/lon) and the
+    works rollups (Ward / Contractor). At most TOP rows each, as computed — the model cannot drop or reorder them."""
+    out = []
+    for topic in facts.get("question_topics") or []:
+        block = facts.get(topic)
+        if not isinstance(block, dict):
+            continue
+        for k, v in block.items():
+            if isinstance(v, list) and v and isinstance(v[0], dict) and ("h3" in v[0] or "centroid" in v[0]):
+                out.append("**%s**\n\n%s" % (_title(k), _table(v[:TOP], None, "Location")))
+    pw = facts.get("public_works") or {}
+    if pw.get("wards_by_spend"):
+        out.append("**Wards by works spend**\n\n" + _table(pw["wards_by_spend"][:TOP], "ward", "Ward"))
+    if pw.get("contractors_by_spend"):
+        rows = [dict(r, _who=r.get("name") or r.get("contractor")) for r in pw["contractors_by_spend"][:TOP]]
+        out.append("**Contractors by works spend**\n\n" + _table([{k2: v2 for k2, v2 in r.items() if k2 not in ("name", "contractor")} for r in rows], "_who", "Contractor"))
+    return out
+
+
+def evidence_line(facts):
+    cc = facts.get("city_cells") or {}
+    used = facts.get("layers_used_for_this_question") or []
+    lp = facts.get("layers_present") or {}
+    bits = [str(cc.get("source") or "no city cell layers")]
+    if cc.get("cells"):
+        bits.append("{:,} city cells".format(cc["cells"]))
+    if used:
+        bits.append("layers used: " + ", ".join("%s (%s cells)" % (s, "{:,}".format(lp.get(s) or 0)) for s in used))
+    if facts.get("places_source"):
+        bits.append("place names: OpenStreetMap gazetteer (nearest named place)")
+    return "Evidence quality: " + "; ".join(bits) + "."
+
+
+def compose_answer(model_text, facts):
+    """Model prose (headline + bullets) + the engine's tables + one evidence line. A cut-off reply (no evidence line)
+    loses any dangling table fragment / half line, and is marked as shortened — the tables and evidence never are."""
+    txt = (model_text or "").strip()
+    cut = "evidence quality" not in txt.lower()
+    lines = [l for l in txt.splitlines() if not l.lstrip().startswith("|")]          # tables are the engine's job
+    lines = [l for l in lines if not l.lower().lstrip("*_ ").startswith("evidence quality")]
+    if cut and lines and not re.search(r"[.!?:)\]*_]\s*$", lines[-1]):
+        lines = lines[:-1]                                                           # drop a half-written last line
+    prose = "\n".join(lines).strip()
+    parts = [prose] if prose else []
+    if cut and prose:
+        parts.append("_(The analyst's commentary was cut short; the figures below are complete.)_")
+    parts += fact_tables(facts)
+    parts.append(evidence_line(facts))
+    return "\n\n".join(parts)
+
+
 def facts_summary(facts, why="returned no text"):
     """The computed facts as a plain briefing — used when the model returns no text, so the user always gets the
     grounded numbers (never 'No answer'). Deterministic; states nothing the facts do not."""
@@ -421,6 +514,7 @@ def h_ask(ctx):
     wanted = sorted({FIELD_LAYER[f] for t in topics for f in TOPICS.get(t, ((), ()))[1] if f in FIELD_LAYER})
     facts["layers_present"] = {s: layer_counts[s] for s in present}
     facts["layers_missing_for_this_question"] = [s for s in wanted if s not in layer_counts]
+    facts["layers_used_for_this_question"] = [s for s in wanted if s in layer_counts]
     if "access" in topics:
         facts["layers_missing_for_this_question"].append("traffic / congestion (no such layer exists for this tenant)")
     facts["evidence_quality"] = {s: {"cells": layer_counts[s], "coverage_pct": (cov.get(s) or {}).get("coverage_pct")} for s in present}
@@ -439,16 +533,14 @@ def h_ask(ctx):
               "cause. Refer to a cell by its `place` (e.g. 'near Jayanagar (1.6 km)' — keep the distance and the word 'near') and, "
               "when a cell has no place, by its lat_lon (\"lat, lon\"); never print h3 ids — the map highlights those cells. Do not "
               "name neighbourhoods the facts do not name. Anything labelled PROXY or 'proxy' must be called a proxy in the "
-              "answer (say it once, in the table heading or the line before it — not on every row). If "
+              "answer (say it once). If "
               "facts.layers_missing_for_this_question is non-empty, say plainly which data is missing and what it would take "
               "— a missing layer is never an all-clear. FORMAT (Markdown, rendered in a chat panel): a one-line **bold** "
-              "headline; then at most 4 short '- ' bullets; whenever you list 3 or more cells, wards or contractors, use a "
-              "Markdown table instead of bullets — columns '#', 'Location (lat, lon)' or the name, then each value with its "
-              "unit in the header (e.g. 'Pop. density (/km²)'); round to at most 1 decimal and use thousands separators. "
-              "Keep it under 220 words. If the question asks what to do, suggest options grounded in the facts and any open "
-              "recommendations. Do NOT show reasoning or restate the question. End with ONE short line 'Evidence quality: ' — "
-              "the source (facts.city_cells.source), the number of city cells, and only the layers this answer used, with "
-              "their cell counts. You inform; officials decide.")
+              "headline, then at most 4 short '- ' bullets (name at most the top 3 places). Do NOT write any table and do NOT "
+              "list every cell — the full ranked tables are appended automatically below your text. Round to at most 1 "
+              "decimal, with thousands separators. Keep it under 120 words. If the question asks what to do, suggest options "
+              "grounded in the facts and any open recommendations. Do NOT show reasoning or restate the question. End with "
+              "the single line 'Evidence quality: ok' (the full evidence line is appended for you). You inform; officials decide.")
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts, default=str)[:12000] + "\n\nQUESTION: " + question}]
     try:
@@ -462,8 +554,8 @@ def h_ask(ctx):
         if blocks:
             ans = blocks[-1].strip()
     if not ans.strip():                                                # the model spent its budget reasoning / returned nothing
-        ans = facts_summary(facts)
-    return {"answer": ans, "sources": sources, "facts": facts}, None
+        return {"answer": facts_summary(facts), "sources": sources, "facts": facts}, None
+    return {"answer": compose_answer(ans, facts), "sources": sources, "facts": facts}, None
 
 
 HANDLERS = {"city-ask": h_ask}
