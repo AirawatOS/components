@@ -18,7 +18,7 @@ confined model (ctx["ai_complete"]) on ONLY those facts, and returns {answer, so
     layers exist.
 AI informs; a human decides (ADR-0029).
 """
-import json, re
+import json, math, re
 
 HOT_FLOOD = ("high", "severe")
 TOP = 8
@@ -266,6 +266,56 @@ def topic_facts(topic, cells, question):
     return {k: v for k, v in f.items() if v not in (None, [], {})}
 
 
+PLACE_NEAR_KM, PLACE_MAX_KM = 1.0, 2.5   # ≤1 km → "Jayanagar (0.4 km)"; ≤2.5 km → "near Jayanagar (1.6 km)"; beyond → no name
+
+
+def load_places(kfind):
+    """The tenant's gazetteer (space.place, written by gazetteer-builder from OSM): named localities and wards as
+    (lon, lat, name). Pincodes are not names, so they are left out. Empty when the gazetteer has not been built."""
+    out = []
+    for p in kfind("space.place"):
+        c = p.get("centroid") or []
+        if p.get("kind") in ("locality", "ward") and p.get("name") and len(c) >= 2:
+            try:
+                out.append((float(c[0]), float(c[1]), str(p["name"])))
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def nearest_place(places, lon, lat):
+    """'Name (0.4 km)' / 'near Name (1.6 km)' for the closest named place, or None if none is within PLACE_MAX_KM.
+    Equirectangular distance — exact enough at city scale. The distance is always stated: a cell is NEAR a named
+    place, it is not claimed to be inside it."""
+    if not places or lon is None or lat is None:
+        return None
+    k = math.cos(math.radians(lat))
+    best = min(places, key=lambda p: ((p[0] - lon) * k) ** 2 + (p[1] - lat) ** 2)
+    km = 111.32 * math.sqrt(((best[0] - lon) * k) ** 2 + (best[1] - lat) ** 2)
+    if km > PLACE_MAX_KM:
+        return None
+    return ("%s (%.1f km)" if km <= PLACE_NEAR_KM else "near %s (%.1f km)") % (best[2], km)
+
+
+def annotate_places(facts, places):
+    """Give every listed cell row its nearest named place (row["place"]), so answers say where, not just lat/lon."""
+    if not places:
+        return 0
+    n = 0
+    for block in facts.values():
+        if not isinstance(block, dict):
+            continue
+        for v in block.values():
+            if isinstance(v, list):
+                for r in v:
+                    c = r.get("centroid") if isinstance(r, dict) else None
+                    if isinstance(c, (list, tuple)) and len(c) >= 2 and isinstance(c[0], (int, float)):
+                        name = nearest_place(places, c[0], c[1])
+                        if name:
+                            r["place"] = name; n += 1
+    return n
+
+
 def works_facts(kfind):
     city = kfind("works.city_summary")
     wards = sorted(kfind("works.ward_rollup"), key=lambda o: -(o.get("paid_net_total") or 0))
@@ -301,7 +351,9 @@ def facts_summary(facts, why="returned no text"):
                 for r in v[:5]:
                     c = r.get("centroid")
                     where = ("cell %s (lon %s, lat %s)" % (r.get("h3"), c[0], c[1])) if c else "cell %s" % r.get("h3")
-                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid", "lat_lon"))
+                    if r.get("place"):
+                        where = "%s — %s" % (r["place"], where)
+                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid", "lat_lon", "place"))
                     rows.append("%s: %s" % (where, vals))
                 lines.append("- %s — " % k.replace("_", " ") + "; ".join(rows))
             elif isinstance(v, dict) and {"min", "max"} <= set(v):
@@ -358,6 +410,13 @@ def h_ask(ctx):
         facts["mass_gathering"] = crowd
         sources += crowd_used
 
+    try:
+        places = load_places(kfind)
+    except Exception:
+        places = []
+    if annotate_places(facts, places):
+        facts["places_source"] = "space.place gazetteer (OpenStreetMap names; nearest named place to each cell centroid)"
+        sources.append("space.place")
     present = sorted(layer_counts)
     wanted = sorted({FIELD_LAYER[f] for t in topics for f in TOPICS.get(t, ((), ()))[1] if f in FIELD_LAYER})
     facts["layers_present"] = {s: layer_counts[s] for s in present}
@@ -377,8 +436,9 @@ def h_ask(ctx):
     sysmsg = ("You are the City Intelligence Analyst for AirawatOS, advising city officials. Answer using ONLY the FACTS "
               "JSON — live, governed records computed per H3 grid cell (each cell has an h3 id and a centroid [lon, lat]) and "
               "the public-works rollups. State concrete numbers from the facts; never invent a figure, a place name or a "
-              "cause. Refer to a cell by its lat_lon (\"lat, lon\"); never print h3 ids — the map highlights those cells. Do not "
-              "name neighbourhoods unless the facts name them. Anything labelled PROXY or 'proxy' must be called a proxy in the "
+              "cause. Refer to a cell by its `place` (e.g. 'near Jayanagar (1.6 km)' — keep the distance and the word 'near') and, "
+              "when a cell has no place, by its lat_lon (\"lat, lon\"); never print h3 ids — the map highlights those cells. Do not "
+              "name neighbourhoods the facts do not name. Anything labelled PROXY or 'proxy' must be called a proxy in the "
               "answer (say it once, in the table heading or the line before it — not on every row). If "
               "facts.layers_missing_for_this_question is non-empty, say plainly which data is missing and what it would take "
               "— a missing layer is never an all-clear. FORMAT (Markdown, rendered in a chat panel): a one-line **bold** "

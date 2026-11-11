@@ -155,6 +155,22 @@ check("0.4.2 rows carry a ready-to-print 'lat, lon' (centroid is [lon, lat])", p
 check("0.4.2 the model is asked for Markdown with tables for ranked lists, no h3 ids, one short evidence line",
       "Markdown table" in sysmsg and "never print h3 ids" in sysmsg and "ONE short line 'Evidence quality: '" in sysmsg)
 
+# 0.4.3 — cells are named by their nearest gazetteer place, with the distance; far cells keep lat/lon only
+GAZ = dict(BASE, **{"space.place": [
+    {"kind": "locality", "name": "Jayanagar", "centroid": [77.5005, 12.9010]},      # ~0.1 km from cell a
+    {"kind": "locality", "name": "Hebbal", "centroid": [77.5950, 12.9600]},         # ~1.2 km from cell b
+    {"kind": "pincode", "name": "560011", "centroid": [77.7000, 13.0000]},           # a pincode is not a name
+]})
+out, err, f, sysmsg = ask("what are the hottest areas?", GAZ)
+hot = {r["h3"]: r for r in (f.get("heat") or {}).get("hottest_cells", [])}
+check("0.4.3 a cell next to a named place carries it with the distance", hot.get("a", {}).get("place") == "Jayanagar (0.1 km)", hot.get("a"))
+check("…a cell 1–2.5 km away is 'near' the place", hot.get("b", {}).get("place") == "near Hebbal (1.2 km)", hot.get("b"))
+check("…a cell with no named place within 2.5 km gets none (pincodes are not names)", "place" not in hot.get("c", {}), hot.get("c"))
+check("…the gazetteer is cited and the model is told to keep 'near' and the distance",
+      "space.place" in (out or {}).get("sources", []) and "keep the distance and the word 'near'" in sysmsg)
+out, err, f, _ = ask("what are the hottest areas?", BASE)
+check("…no gazetteer → rows unchanged (lat/lon only), nothing claimed", all("place" not in r for r in (f.get("heat") or {}).get("hottest_cells", [])))
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 
