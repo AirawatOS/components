@@ -120,6 +120,32 @@ def _fact(T, sid, lat, lng, res, vals, obs, source, station, method):
 
 
 # ------------------------------------------------------------------ CPCB CAAQMS (data.gov.in)
+# The data.gov.in "Real time Air Quality Index" dataset reports each pollutant's AQI SUB-INDEX in avg_value, not its
+# concentration (staging: Jayanagar 5th Block 213 — CPCB's dashboard showed AQI 205; PM2.5 there was ~94 µg/m³, not 213).
+# Invert CPCB's National AQI breakpoints (piecewise-linear) back to µg/m³ before writing — air.sensor_reading is µg/m³.
+#                 sub-index:  0   50   100  200  300  400  500
+NAQI_CONC = {"pm25": (0, 30, 60, 90, 120, 250, 380),      # PM2.5 24-h, µg/m³
+             "no2":  (0, 40, 80, 180, 280, 400, 520),     # NO2 24-h, µg/m³
+             "o3":   (0, 50, 100, 168, 208, 748, 1000)}   # O3 8-h, µg/m³
+NAQI_IDX = (0, 50, 100, 200, 300, 400, 500)
+
+
+def subindex_to_conc(field, idx):
+    """CPCB NAQI sub-index → concentration (µg/m³), linear within each band; beyond 500 extends the last band.
+    None for an unknown pollutant or a missing / negative value (never guessed)."""
+    bp = NAQI_CONC.get(field)
+    if bp is None or idx is None or idx < 0:
+        return None
+    for i in range(1, len(NAQI_IDX)):
+        if idx <= NAQI_IDX[i] or i == len(NAQI_IDX) - 1:
+            lo_i, hi_i, lo_c, hi_c = NAQI_IDX[i - 1], NAQI_IDX[i], bp[i - 1], bp[i]
+            return round(lo_c + (idx - lo_i) * (hi_c - lo_c) / (hi_i - lo_i), 1)
+    return None
+
+
+CPCB_METHOD = "cpcb-caaqms.data.gov.in (AQI sub-index → µg/m³ via CPCB NAQI breakpoints)"
+
+
 def _cpcb_to_utc(last_update):
     try:
         dt = datetime.strptime(str(last_update).strip(), "%d-%m-%Y %H:%M:%S").replace(
@@ -158,8 +184,9 @@ def ingest_cpcb(T, bbox, res, out):
             key = f"{rec.get('station')}|{lat:.4f}|{lon:.4f}"
             srec = stations.setdefault(key, {"name": rec.get("station"), "lat": lat, "lon": lon,
                                              "obs": _cpcb_to_utc(rec.get("last_update")), "vals": {}})
-            if field and val is not None:
-                srec["vals"][field] = val
+            conc = subindex_to_conc(field, val) if field else None
+            if conc is not None:
+                srec["vals"][field] = conc
         if len(recs) < page_limit:
             break
         offset += page_limit
@@ -169,7 +196,7 @@ def ingest_cpcb(T, bbox, res, out):
             continue
         slug = "".join(c if c.isalnum() else "-" for c in (srec["name"] or "cpcb"))[:48].strip("-").lower()
         out.append(_fact(T, f"cpcb-{slug}", srec["lat"], srec["lon"], res, srec["vals"], srec["obs"], "cpcb",
-                         srec["name"], "cpcb-caaqms.data.gov.in"))
+                         srec["name"], CPCB_METHOD))
         written += 1
     print(f"  CPCB: scanned {total} rows → {len(stations)} in-AOI stations → wrote {written} with a current PM2.5")
     return written
