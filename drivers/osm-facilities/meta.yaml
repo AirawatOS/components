@@ -4,11 +4,13 @@
 # PBF-only (no Overpass fallback). Runs as a host subprocess (osmium), same as osm-roads.
 component_id: ds:airawat:driver/osm-facilities
 kind: driver
-version: 0.1.0
+version: 0.1.1   # 0.1.1: declares the geospatial runtime — the driver imports osmium, which only that runtime provides (staging: 'No module named osmium')
 provider: ds:airawat:developer
 display_name: Critical Facilities (OpenStreetMap)
 entrypoint: run.py
 confinement_min: L1
+runtime:
+  profile: geospatial          # osmium (PBF parse/clip) + h3 — as osm-roads / gazetteer-builder
 reads:
   - space.aoi
   - geo.facility

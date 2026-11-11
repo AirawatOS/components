@@ -8,11 +8,13 @@
 # writes the two layers. Real OSM only — no synthetic fallback; fails loudly if the AOI is missing.
 component_id: ds:airawat:driver/osm-drainage
 kind: driver
-version: 0.1.0
+version: 0.1.1   # 0.1.1: declares the geospatial runtime — the driver imports osmium, which only that runtime provides (staging: 'No module named osmium')
 provider: ds:airawat:developer
 display_name: OSM Drainage (nalas/drains -> cell.drainage)
 entrypoint: run.py
 confinement_min: L2
+runtime:
+  profile: geospatial          # osmium (PBF parse/clip) + h3 — as osm-roads / gazetteer-builder
 reads: [space.aoi]
 writes: [geo.hydro_feature, cell.drainage]
 egress:
