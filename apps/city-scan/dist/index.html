@@ -367,6 +367,15 @@ async function qpage(schema, onPage, pageLimit, cap, filter){
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showRoadsLocal=false, showWater=false, drillCell=null;
 let ASK_HL=[];   // Visualize analyst: H3 cells to highlight from the last grounded answer
+let ASK_HOVER=new Set(), ASK_HOVER_KEY="";   // cells of the place the user is hovering in an analyst answer (drawn red)
+function askHoverLayer(){
+  if(!ASK_HOVER.size || !window.h3) return null;
+  const data=[...ASK_HOVER].map(h=>{try{return {h,poly:h3.cellToBoundary(h,true)};}catch(e){return null;}}).filter(Boolean);
+  if(!data.length) return null;
+  return new deck.PolygonLayer({id:"ask-hover",data,getPolygon:d=>d.poly,stroked:true,filled:true,
+    getFillColor:[239,68,68,150],getLineColor:[239,68,68,255],lineWidthUnits:"pixels",getLineWidth:3,pickable:false,
+    updateTriggers:{getPolygon:[ASK_HOVER_KEY]}});
+}
 function askLayer(){
   if(!ASK_HL.length || !window.h3) return null;
   const data=ASK_HL.map(h=>{try{return {h,poly:h3.cellToBoundary(h,true)};}catch(e){return null;}}).filter(Boolean);
@@ -644,9 +653,9 @@ function dataLayer(){
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
     getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
     getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?Math.min(0.95,layerAlpha+0.28):layerAlpha),   // user-set alpha; a touch more solid in 3D so towers read
-    getFillColor:c=> zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
+    getFillColor:c=> ASK_HOVER.has(c.h3) ? [239,68,68,255] : zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
-    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx], opacity:[!!drillCell,mode3d,layerAlpha]}});
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx,ASK_HOVER_KEY], opacity:[!!drillCell,mode3d,layerAlpha]}});
 }
 function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
 const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
@@ -868,8 +877,8 @@ function issuesLayer(){                                          // civic.issue 
 function render(){
   if(!deckgl) return;
   const layers = (showPlan && PLAN)
-    ? [basemapLayer(), ...planLayers(), highlightLayer(), askLayer()]      // greenfield plan view (footprints + zoning + massing)
-    : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer()];
+    ? [basemapLayer(), ...planLayers(), highlightLayer(), askLayer(), askHoverLayer()]      // greenfield plan view (footprints + zoning + massing)
+    : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer(), askHoverLayer()];
   deckgl.setProps({layers:layers.filter(Boolean)});
   drawPlanCard();
   // legend
@@ -1272,6 +1281,7 @@ function fitView(bbox){
    +'.am.md .md-tbl{display:block;width:auto;overflow-x:auto;max-width:100%;margin:6px 0;font-size:12.5px;color:inherit}.am.md table{border-collapse:collapse;font-size:12.5px;min-width:100%;color:#e6edf5}'
    +'.am.md th,.am.md td{border:1px solid #22344a;padding:4px 8px;text-align:left;vertical-align:top;white-space:nowrap}'
    +'.am.md th{background:#16304a;color:#cdd9e5;font-weight:600}.am.md td{font-variant-numeric:tabular-nums}'
+   +'.am.md .cellref{border-bottom:1px dashed #f87171;cursor:pointer}.am.md .cellref:hover,.am.md tr.hl td{background:#3b1d1d}'
    +'.am.md code{background:#0a1622;padding:0 4px;border-radius:4px;font-size:12px}'
    +'.askin .aos-mic-group,.askin .aos-mic,.askin .aos-mic-lang{margin:0}.askin .aos-mic,.askin .aos-mic-lang{background:#0a1622;color:#e6edf5;border-color:#22344a}'
    +'#asklog{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:90px}'
@@ -1315,6 +1325,25 @@ function fitView(bbox){
     }
     close(); return out.join('');
   }
+  // place label / "lat, lon" → the H3 cells it names, from the FACTS the answer was grounded on (each listed row
+  // carries its h3 + place + lat_lon). The model never prints h3 ids, so this is how a name maps back to its cell.
+  function cellRefs(facts){
+    const m={};
+    const walk=v=>{ if(Array.isArray(v)) v.forEach(walk);
+      else if(v&&typeof v==='object'){ if(v.h3&&(v.place||v.lat_lon)){ [v.place,v.lat_lon].forEach(k=>{ if(k){ (m[k]=m[k]||[]).includes(v.h3)||m[k].push(v.h3); } }); }
+        else Object.values(v).forEach(walk); } };
+    walk(facts||{}); return m;
+  }
+  function linkCells(html,refs){
+    const keys=Object.keys(refs).sort((a,b)=>b.length-a.length); const marks=[];
+    for(const k of keys){ const e=esc(k); if(!html.includes(e)) continue;
+      html=html.split(e).join('\u0000'+marks.length+'\u0000'); marks.push('<span class="cellref" data-h3="'+refs[k].join(',')+'">'+e+'</span>'); }
+    return html.replace(/\u0000(\d+)\u0000/g,(_,i)=>marks[+i]);
+  }
+  function setAskHover(list){
+    const key=(list||[]).join(','); if(key===ASK_HOVER_KEY) return;
+    ASK_HOVER=new Set(list||[]); ASK_HOVER_KEY=key; if(typeof render==='function') render();
+  }
   function addMsg(role,html){const l=G('asklog');const d=document.createElement('div');d.className='am '+role;d.innerHTML=html;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
   // Evidence-quality panel: how GOOD is the evidence behind the answer (not just the conclusion) — per governed
   // layer: observed vs inferred, coverage %, freshness, confidence. Grounds "quality & uncertainty of evidence".
@@ -1342,7 +1371,18 @@ function fitView(bbox){
   }
   let ASKING=false;
   G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden)G('askq').focus();};
-  G('askx').onclick=()=>{G('askpanel').hidden=true;};
+  G('askx').onclick=()=>{G('askpanel').hidden=true; setAskHover([]);};
+  const refOf=t=>{ const r=t&&t.closest&&t.closest('.cellref'); if(r) return r;
+    const tr=t&&t.closest&&t.closest('tr'); return tr?tr.querySelector('.cellref'):null; };
+  G('asklog').addEventListener('mouseover',e=>{ const r=refOf(e.target);
+    G('asklog').querySelectorAll('tr.hl').forEach(x=>x.classList.remove('hl'));
+    if(r){ const tr=r.closest('tr'); if(tr) tr.classList.add('hl'); }
+    setAskHover(r?r.dataset.h3.split(','):[]); });
+  G('asklog').addEventListener('mouseleave',()=>{ G('asklog').querySelectorAll('tr.hl').forEach(x=>x.classList.remove('hl')); setAskHover([]); });
+  G('asklog').addEventListener('click',e=>{ const r=refOf(e.target); if(!r||!window.h3) return;
+    try{ const c=h3.cellToLatLng(r.dataset.h3.split(',')[0]);
+      view={...view,longitude:c[1],latitude:c[0],zoom:Math.max(view.zoom||11,14),transitionDuration:700};
+      deckgl.setProps({initialViewState:view}); }catch(err){} });
   const setWide=w=>{ G('askpanel').classList.toggle('wide',w); G('askwide').textContent=w?'⤡':'⤢'; G('askwide').title=w?'Shrink':'Expand'; };
   try{ setWide(localStorage.getItem('aosAskWide')==='1'); }catch(e){}
   G('askwide').onclick=()=>{ const w=!G('askpanel').classList.contains('wide'); setWide(w); try{ localStorage.setItem('aosAskWide',w?'1':'0'); }catch(e){} };
@@ -1356,7 +1396,7 @@ function fitView(bbox){
     const slot=addMsg('ai','<span style="opacity:.6">Analysing governed layers…</span>');
     try{
       const d=await bridge('/bridge/city-ask',{question:q});
-      slot.classList.add('md'); slot.innerHTML=md(d.answer||'No answer.')
+      slot.classList.add('md'); slot.innerHTML=linkCells(md(d.answer||'No answer.'),cellRefs(d.facts))
         +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'')
         +evidenceQualityHtml(d.facts&&d.facts.evidence_quality);
       ASK_HL=Array.isArray(d.highlight)?d.highlight:[];
