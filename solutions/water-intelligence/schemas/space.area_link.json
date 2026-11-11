@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "space.area_link",
+  "type": "object",
+  "x-kind": "record",
+  "x-version": "0.1.0",
+  "x-subject": "area-link",
+  "description": "A generic many-to-many relation between two space areas (ward <-> dma <-> service_area <-> place). Wards and DMAs are different delimitations, so membership is an overlap, not a single parent. overlap_fraction = share of `from` that falls inside `to`. Used for area-only records and area->area rollups; point-anchored facts stamp their area refs directly at ingest instead. PLATFORM geography (space.*).",
+  "properties": {
+    "id": { "type": "string", "pattern": "^ds:[a-z0-9-]+:\\S+$" },
+    "schema": { "const": "space.area_link" },
+    "tenant": { "type": ["string", "null"] },
+    "from_ref": { "type": "string", "description": "The contained/child area id (e.g. a space.ward)." },
+    "from_kind": { "type": ["string", "null"], "description": "ward | dma | service_area | place | cell." },
+    "to_ref": { "type": "string", "description": "The containing/parent area id (e.g. a space.dma)." },
+    "to_kind": { "type": ["string", "null"], "description": "ward | dma | service_area | place | cell." },
+    "relation": { "type": ["string", "null"], "description": "within | overlaps | contains (default within)." },
+    "overlap_fraction": { "type": ["number", "null"], "description": "0..1 — share of `from` inside `to`." },
+    "method": { "type": ["string", "null"], "description": "point_in_polygon | polygon_overlap | name_match | manual." },
+    "confidence": { "type": ["number", "null"] },
+    "source": { "type": ["string", "null"] },
+    "observed_at": { "type": ["string", "null"] }
+  },
+  "required": ["schema", "id", "from_ref", "to_ref"],
+  "additionalProperties": true
+}

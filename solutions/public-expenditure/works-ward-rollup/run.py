@@ -70,10 +70,40 @@ def run():
             "paid_gross_total": round(city_gross, 2), "generated_at": ts,
             "prov": {"source": "opencity-bbmp", "component": "works-ward-rollup@0.1.0"}}
 
-    ctx.write_many(rollups + [city])
+    # CONTRACTOR rollup: ₹ + works per contractor (join work_order → contract → contractor)
+    wo_contractor, cname = {}, {}
+    for r in ctx.facts("works.contract"):
+        o = _obj(r); wo_contractor[o.get("work_order")] = o.get("contractor")
+    for r in ctx.facts("works.contractor"):
+        o = _obj(r); cname[o.get("id")] = o.get("name")
+    cworks, cagg = {}, {}
+    for woid, cc in wo_contractor.items():
+        if cc:
+            cworks[cc] = cworks.get(cc, 0) + 1
+    for r in ctx.facts("works.payment"):
+        p = _obj(r); cc = wo_contractor.get(p.get("work_order"))
+        if not cc:
+            continue
+        a = cagg.setdefault(cc, [0.0, 0.0])
+        if p.get("paid_net") is not None:
+            a[0] += float(p["paid_net"])
+        if p.get("paid_gross") is not None:
+            a[1] += float(p["paid_gross"])
+    crolls = []
+    for cc, cnt in cworks.items():
+        net, gross = cagg.get(cc, [0.0, 0.0])
+        rid = f"ds:{T}:works/contractor_rollup/{hashlib.sha1(cc.encode()).hexdigest()[:12]}"
+        crolls.append({"schema": "works.contractor_rollup", "id": rid, "tenant": T, "contractor": cc,
+                       "name": cname.get(cc), "works_count": cnt,
+                       "paid_net_total": round(net, 2), "paid_gross_total": round(gross, 2),
+                       "prov": {"source": "opencity-bbmp", "generated_at": ts, "component": "works-ward-rollup@0.2.0"}})
+
+    allobjs = rollups + [city] + crolls
+    for i in range(0, len(allobjs), 2000):          # broker batch cap is 5000; chunk well under it
+        ctx.write_many(allobjs[i:i + 2000])
     print(f"[works-ward-rollup] wards={len(works_count)} works={n_wo} contractors={n_contractors} "
           f"payments_with_amount={city_pwa} net=₹{round(city_net/1e7,1)}cr gross=₹{round(city_gross/1e7,1)}cr "
-          f"→ wrote {len(rollups)+1} rollup records", flush=True)
+          f"→ wrote {len(rollups)+1+len(crolls)} rollup records ({len(crolls)} contractor)", flush=True)
     return 0
 
 

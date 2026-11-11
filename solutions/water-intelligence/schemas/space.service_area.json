@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "space.service_area",
+  "type": "object",
+  "x-kind": "entity",
+  "x-version": "0.1.0",
+  "x-subject": "service_area",
+  "description": "A water utility's large command / service area — the top of the operational geography; groups DMAs. PLATFORM geography (space.*), agency-neutral. Mirrors space.ward's shape.",
+  "properties": {
+    "id": { "type": "string", "pattern": "^ds:[a-z0-9-]+:\\S+$" },
+    "schema": { "const": "space.service_area" },
+    "tenant": { "type": ["string", "null"] },
+    "service_area_code": { "type": "string", "description": "Stable code / key for this service area." },
+    "name": { "type": ["string", "null"], "description": "Display name." },
+    "geometry": { "type": ["object", "null"], "description": "GeoJSON geometry (Polygon/MultiPolygon)." },
+    "centroid": { "type": ["array", "null"], "items": { "type": "number" }, "description": "[longitude, latitude]." },
+    "zone": { "type": ["string", "null"] },
+    "division": { "type": ["string", "null"] },
+    "jurisdiction": { "type": ["string", "null"] },
+    "source": { "type": ["string", "null"] },
+    "observed_at": { "type": ["string", "null"] }
+  },
+  "required": ["schema", "id", "service_area_code"],
+  "additionalProperties": true
+}

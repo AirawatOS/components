@@ -197,17 +197,23 @@
     var ok = 0;
     for (var i = 0; i < files.length; i++) {
       try { await uploadOne(files[i]); ok++; }
-      catch (e) { AOS.toast && AOS.toast("Upload failed: " + (files[i].name || "")); }
+      catch (e) { AOS.toast && AOS.toast((files[i].name || "file") + " — " + (e && e.message || "upload failed")); }
     }
     document.getElementById("fx-file").value = "";
     if (ok) AOS.toast && AOS.toast(ok + " file" + (ok > 1 ? "s" : "") + " uploaded");
     await refresh();
   }
   async function uploadOne(f) {
+    if (f.size > 25 * 1024 * 1024)                           // app-host cap — fail fast with a clear message
+      throw new Error("too large (" + (f.size/1048576).toFixed(1) + " MB; max 25 MB) — split the file or use a smaller export");
     var ctype = f.type || "application/octet-stream";
     var q = "?name=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(ctype);
     var res = await fetch("/bridge/file-upload" + q, { method: "POST", headers: { "X-Upload-Type": ctype }, body: f });
-    if (!res.ok) throw new Error("upload " + res.status);
+    if (!res.ok) {                                           // surface the server's real reason, not a generic failure
+      var msg = "upload failed (" + res.status + ")";
+      try { var j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+      throw new Error(msg);
+    }
     var up = await res.json();                              // {file_id, filename, content_type, size}
     await AOS.save({
       schema: "platform.file", id: newId(), kind: "file",

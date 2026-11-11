@@ -312,6 +312,72 @@ def cmd_destroy(args):
     print("✓ sandbox closure torn down (idempotent — safe to re-run; a fresh `aos deploy` re-governs from scratch).")
 
 
+def cmd_upload(args):
+    """Push a LARGE local file straight into the platform's content-addressed filestore, over the public
+    app-host, without the browser's 25MB cap. Writes the platform.file record (so it shows in Files) and prints
+    the file_id to bind to a driver's *_FILE_ID config. Streams the file — never loads it whole into memory."""
+    import urllib.request, urllib.parse, urllib.error, mimetypes
+    from . import config, oidc
+    base = (config.get("app_host") or "").rstrip("/")
+    if not base:
+        sys.exit("set the app host first:  aos config set app-host=http://13.205.13.220\n"
+                 "  (hit the box directly — the TLS front proxy caps bodies at 1MB)")
+    path = args.file
+    if not os.path.isfile(path):
+        sys.exit(f"no such file: {path}")
+    size = os.path.getsize(path)
+    name = args.name or os.path.basename(path)
+    folder = args.folder or "/"
+    ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    # AUTH precedence: explicit AIRAWAT_IDENTITY_TOKEN → a cached `aos login` → a cookie login via the
+    # passwordless/password dev /login (the path that works on a deployment without a configured OIDC issuer).
+    bearer = os.environ.get("AIRAWAT_IDENTITY_TOKEN") or oidc.cached_token(config.get("oidc_issuer"), config.get("oidc_client_id"))
+    cookie = None
+    if not bearer:
+        tenant = args.tenant or config.get("tenant") or config.get("login_tenant")
+        user = args.user or config.get("dev_user") or "devrick"
+        if not tenant:
+            sys.exit("need a tenant to log in — pass --tenant <t> (or: aos config set tenant=<t>)")
+        body = {"realm": tenant, "username": user}
+        pw = config.get("password")
+        if pw:
+            body["password"] = pw
+        try:
+            lr = urllib.request.urlopen(urllib.request.Request(base + "/login",
+                 data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=30)
+            for h in (lr.headers.get_all("Set-Cookie") or []):
+                if h.startswith("airawat_sid="):
+                    cookie = h.split(";", 1)[0]
+        except urllib.error.HTTPError as e:
+            sys.exit(f"✗ login failed ({e.code}) as {user}@{tenant}: {e.read()[:160].decode(errors='replace')}\n"
+                     f"  try a passwordless principal (--user steward) or set a password (aos config set password=…).")
+        if not cookie:
+            sys.exit("✗ login returned no session cookie")
+        print(f"  logged in as {user}@{tenant}")
+    headers = {"Content-Type": "application/octet-stream", "Content-Length": str(size), "X-Upload-Type": ctype}
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
+    if cookie:
+        headers["Cookie"] = cookie
+    url = base + "/bridge/file-push?" + urllib.parse.urlencode({"name": name, "folder": folder, "type": ctype})
+    print(f"→ pushing {name} ({size/1048576:.1f} MB) → {base} …")
+    with open(path, "rb") as fh:
+        req = urllib.request.Request(url, data=fh, method="POST", headers=headers)
+        try:
+            r = json.loads(urllib.request.urlopen(req, timeout=1800).read() or b"{}")
+        except urllib.error.HTTPError as e:
+            sys.exit(f"✗ upload failed ({e.code}): {e.read()[:300].decode(errors='replace')}")
+        except urllib.error.URLError as e:
+            sys.exit(f"✗ could not reach {base}: {e}")
+    print(f"✓ uploaded · file_id = {r.get('file_id')}")
+    if r.get("file_record"):
+        print(f"  platform.file: {r['file_record']}  (folder {folder} · owner {r.get('owner')})")
+    elif r.get("record_error"):
+        print(f"  ⚠ bytes landed but the Files record failed: {r['record_error']} (you can still use the file_id)")
+    print(f"  next → run a driver with it, e.g. in the Console:")
+    print(f"    run <driver> <FILE_KEY>={r.get('file_id')}      (e.g. water-complaints COMPLAINTS_FILE_ID=…)")
+
+
 def cmd_publish(args):
     ok, why = policy.check_publish(args.target, args.env)
     print(f"target={args.target} env={args.env}")
@@ -330,6 +396,7 @@ def main(argv=None):
     p = sub.add_parser("meta"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--write", action="store_true", help="regenerate meta.yaml from code (derived fields), preserving curated ones"); p.set_defaults(f=cmd_meta)
     p = sub.add_parser("deploy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="drive real services over the dev-token (BrokerBackend); default is offline"); p.add_argument("--studio", action="store_true", help="also register a studio.project so the solution appears in Studio (editable); needs --live"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_deploy)
     p = sub.add_parser("destroy"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--sandbox", action="store_true"); p.add_argument("--live", action="store_true", help="tear down the LIVE dev-tenant closure over the dev-token; default is offline"); p.add_argument("--tenant", default="you-dev"); p.set_defaults(f=cmd_destroy)
+    p = sub.add_parser("upload", help="push a large local file into the filestore (no 25MB browser cap) + make it a platform.file"); p.add_argument("file"); p.add_argument("--name", help="name to show in Files (default: the file's basename)"); p.add_argument("--folder", default="/", help="Files folder to place it in (default /)"); p.add_argument("--tenant", help="tenant to log in to (default: config tenant)"); p.add_argument("--user", help="login user for the cookie login (default: config dev_user / devrick)"); p.set_defaults(f=cmd_upload)
     p = sub.add_parser("publish"); p.add_argument("dir", nargs="?", default="."); p.add_argument("--target", required=True, choices=["marketplace", "service-directory"]); p.add_argument("--env", default="development"); p.set_defaults(f=cmd_publish)
     p = sub.add_parser("login"); p.add_argument("--issuer"); p.add_argument("--client-id", dest="client_id"); p.add_argument("--device", action="store_true", help="device-code flow (headless; no loopback browser)"); p.set_defaults(f=cmd_login)
     p = sub.add_parser("logout"); p.add_argument("--issuer"); p.set_defaults(f=cmd_logout)

@@ -61,6 +61,9 @@
   .flbl{display:block;font-size:11.5px;color:var(--dim);margin-bottom:4px}
   .card input{width:100%;box-sizing:border-box;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:7px 9px;font-size:13px}
   .card input:focus{outline:none;border-color:#2f6ba3}
+  .inp{background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:13px}
+  .inp:focus{outline:none;border-color:#2f6ba3}
+  .row{margin:8px 0}
   .caps{display:flex;flex-wrap:wrap;gap:6px;min-height:26px;margin-bottom:6px}
   .cap{display:inline-flex;align-items:center;gap:5px;background:#10233a;border:1px solid #244a6e;border-radius:999px;padding:3px 9px;font-size:12px;color:#cfe4ff}
   .cap b{cursor:pointer;color:#7fa9d6;font-weight:700;margin-left:2px}.cap b:hover{color:#fff}
@@ -68,7 +71,7 @@
   .cap-add{width:100%;box-sizing:border-box;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:6px 9px;font-size:12.5px}
   .cap-add:focus{outline:none;border-color:#2f6ba3}
   </style>
-<header><h1 id="netname">🌐 Network</h1><span class="sub">· Standards Console</span><span class="who" id="who"></span></header>
+<header><h1 id="netname">🌐 Network</h1><span class="sub">· Network Console</span><select id="netsel" hidden title="networks you may manage" style="margin-left:14px;background:#0a0f16;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:4px 8px;font-size:12.5px"></select><span class="who" id="who"></span></header>
 <div class="shell">
   <nav class="rail">
     <div class="rgrp">The Language <span class="rgh">the shared contract</span></div>
@@ -84,6 +87,8 @@
     <a class="ritem" data-v="requests">⚖️ Change Requests<span class="rh">propose → approve</span></a>
     <a class="ritem" data-v="publish">📤 Publish Requests<span class="rh">submit → approve</span></a>
     <a class="ritem" data-v="marketplace">🛒 Marketplace<span class="rh">catalog · lifecycle</span></a>
+    <div class="rgrp">Trust <span class="rgh">authority to act</span></div>
+    <a class="ritem" data-v="capgrants">🔐 Capabilities &amp; Grants<span class="rh">catalog · grants</span></a>
   </nav>
   <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
 </div>
@@ -95,18 +100,47 @@ async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content
 function toast(m,e){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(e?' err':'');setTimeout(()=>t.className='toast',2200);}
 function esc(s){if(s==null)return '';if(typeof s!=='string')s=(s.value!=null?s.value:JSON.stringify(s));return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
-let NETWORK='', PROFILE=null;   // the admin's OWN network (from session) + its profile
+let NETWORK='', PROFILE=null;          // the ACTIVE network's id + its profile
+let NETWORKS=[], ACTIVE=null;          // multi-network console: the networks this principal may manage + the selected one
+// legacy writes work ONLY on the caller's own tenant (authority rule tenant==network); a null ACTIVE means
+// discovery is unavailable → fall back to today's single-network behavior (writable).
+const writable = () => !ACTIVE || !!ACTIVE.cross_network_write_enabled;
+// own-tenant → omit `network` so the bridge injects claims.tenant (byte-equivalent to today); otherwise pass the
+// explicit selected network (the bridge re-verifies it is in the server-derived manageable set before forwarding).
+const netParam = () => (ACTIVE && !ACTIVE.cross_network_write_enabled) ? {network:ACTIVE.network} : {};
+function renderSelector(){
+  const sel=document.getElementById('netsel'); if(!sel) return;
+  if(NETWORKS.length<1){ sel.hidden=true; return; }
+  sel.hidden=false;
+  sel.innerHTML=NETWORKS.map(n=>`<option value="${esc(n.network)}"${ACTIVE&&n.network===ACTIVE.network?' selected':''}>${esc(n.label||n.slug||n.network)}${n.cross_network_write_enabled?'':' 🔒'}</option>`).join('');
+  sel.onchange=()=>setNetwork(sel.value);
+}
+function setNetwork(id){ ACTIVE=NETWORKS.find(n=>n.network===id)||ACTIVE; PROFILE=null; NETWORK=(ACTIVE&&ACTIVE.network)||'';
+  const nm=document.getElementById('netname'); if(nm&&ACTIVE) nm.innerHTML='🌐 '+esc(ACTIVE.label||ACTIVE.slug||ACTIVE.network);
+  renderSelector(); render(); }
 function boot(){
   fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';}).catch(()=>{});
-  // The console is NOT hardcoded to any one network — title + types come from THIS admin's own network profile.
-  jpost('/bridge/network-profile',{}).then(r=>{ PROFILE=(r.j&&r.j.profile)||null; NETWORK=(PROFILE&&PROFILE.network)||'';
-    if(PROFILE){ document.getElementById('netname').innerHTML='🌐 '+esc(PROFILE.label||PROFILE.network); document.title=(PROFILE.label||PROFILE.network)+' · Network Admin'; }
-  }).catch(()=>{});
+  // Multi-network: the networks this principal may MANAGE are derived SERVER-SIDE from Trust role assignments
+  // (GET /bridge/networks-mine). The selector never lists a network the caller holds no role on; a 🔒 marks a
+  // network that is read-only here (legacy writes disabled until the authority rule migrates — Commit D).
+  jget('/bridge/networks-mine').then(d=>{ NETWORKS=(d&&d.result)||[];
+    ACTIVE = NETWORKS.find(n=>n.cross_network_write_enabled) || NETWORKS[0] || null;   // default: the caller's own-tenant network
+    renderSelector();
+    if(ACTIVE){ NETWORK=ACTIVE.network; const nm=document.getElementById('netname'); if(nm) nm.innerHTML='🌐 '+esc(ACTIVE.label||ACTIVE.slug||ACTIVE.network); }
+    loadProfile();
+  }).catch(()=>{ loadProfile(); });   // discovery unavailable → single-network legacy behavior
   document.querySelectorAll('.ritem').forEach(el=>el.onclick=()=>setView(el.dataset.v));
   setView(VIEW);
 }
+function loadProfile(){
+  // the ACTIVE network's profile (console title + the types editor). Own tenant → network injected server-side.
+  jpost('/bridge/network-profile',netParam()).then(r=>{ PROFILE=(r.j&&r.j.profile)||null;
+    if(PROFILE&&!ACTIVE){ NETWORK=PROFILE.network||'';
+      document.getElementById('netname').innerHTML='🌐 '+esc(PROFILE.label||PROFILE.network); document.title=(PROFILE.label||PROFILE.network)+' · Network Console'; }
+  }).catch(()=>{});
+}
 function setView(v){VIEW=v;document.querySelectorAll('.ritem').forEach(x=>x.classList.toggle('on',x.dataset.v===v));render();}
-function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),parttypes:partTypes,participants:participants,membership:membershipReqs,requests:requests,publish:publishReqs,marketplace:marketplace}[VIEW]||specs)(); }
+function render(){ ({specs:specs,verbs:verbs,roles:()=>catalog('roles'),packs:()=>catalog('packs'),parttypes:partTypes,participants:participants,membership:membershipReqs,requests:requests,publish:publishReqs,marketplace:marketplace,capgrants:capGrants}[VIEW]||specs)(); }
 
 // --- Participant Types (ADR-0116): the network admin defines its OWN participant kinds + per-type provide/consume
 //     matrix. This is what makes the join page + portal generic — a Labour network defines employer/staffing-agency;
@@ -154,9 +188,9 @@ async function partTypes(){
     </div>
     <div id="pt-list" style="max-width:900px"></div>
     <div style="max-width:900px;margin:10px 0 24px;display:flex;gap:10px;align-items:center">
-      <button class="btn" id="pt-add">+ Add participant type</button>
-      <button class="btn primary" id="pt-save">Save</button>
-      <span class="muted" id="pt-msg"></span>
+      <button class="btn" id="pt-add"${writable()?'':' disabled'}>+ Add participant type</button>
+      <button class="btn primary" id="pt-save"${writable()?'':' disabled'}>Save</button>
+      <span class="muted" id="pt-msg">${writable()?'':'🔒 read-only — you may view this network but managing it here is disabled until cross-network writes land (Commit D).'}</span>
     </div>`;
     const L=document.getElementById('pt-list');
     L.innerHTML = PT.length ? PT.map((t,i)=>`
@@ -189,8 +223,9 @@ async function partTypes(){
     });
   }
   async function save(){
-    sync();
     const msg=document.getElementById('pt-msg');
+    if(!writable()){ msg.textContent='🔒 read-only on this network (cross-network writes land in Commit D)'; msg.style.color='#e5a23d'; return; }
+    sync();
     const bad=PT.find(t=>!t.id); if(bad){ msg.textContent='every type needs an id'; msg.style.color='#e5484d'; return; }
     const ids=PT.map(t=>t.id); if(new Set(ids).size!==ids.length){ msg.textContent='type ids must be unique'; msg.style.color='#e5484d'; return; }
     const ungoverned=[]; PT.forEach(t=>['provide','consume'].forEach(leg=>(t[leg]||[]).forEach(c=>{ if(!governed(c)) ungoverned.push(t.id+'.'+leg+': '+c.ref); })));
@@ -210,7 +245,7 @@ async function partTypes(){
 // --- Membership (ADR-0116): tenants/participants applying to join THIS network; approving provisions NO tenant ---
 async function membershipReqs(){
   const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
-  let d; try{ const r=await jpost('/bridge/network-requests',{}); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
+  let d; try{ const r=await jpost('/bridge/network-requests',netParam()); if(!r.ok)throw new Error((r.j&&(r.j.error||r.j.detail))||r.status); d=r.j; }
   catch(e){ W.innerHTML='<div class="empty">could not load membership requests ('+esc(String(e))+')</div>'; return; }
   const ALL=(d.participation||[]).slice().sort((a,b)=>String(b.requested_at||'').localeCompare(String(a.requested_at||'')));
   const P=ALL.filter(q=>q.status==='pending'), DEC=ALL.filter(q=>q.status!=='pending').slice(0,25);
@@ -220,17 +255,111 @@ async function membershipReqs(){
     <div class="hint">Tenants and participants applying to join this network (ADR-0116). Approving grants a tenant-free membership — it provisions no tenant — letting them provide services to members or consume this network’s services.</div>
     ${P.length?`<table><tr><th>participant</th><th>direction</th><th>scopes</th><th>requested</th><th></th></tr>
       ${P.map(q=>`<tr><td class="mono">${esc(q.participant)}</td><td>${esc(q.direction||'both')}</td><td class="muted">${esc((q.scopes||[]).join(', ')||'all')}</td><td class="muted">${when(q.requested_at)}</td>
-        <td style="text-align:right"><button class="btn sm" data-ap="${esc(q.participant)}">Approve</button> <button class="btn sm danger" data-rj="${esc(q.participant)}">Reject</button></td></tr>`).join('')}
+        <td style="text-align:right">${writable()?`<button class="btn sm" data-ap="${esc(q.participant)}">Approve</button> <button class="btn sm danger" data-rj="${esc(q.participant)}">Reject</button>`:'<span class="muted">🔒 read-only</span>'}</td></tr>`).join('')}
       </table>`:'<div class="empty">no pending membership requests</div>'}
     ${DEC.length?`<div class="lbl" style="margin-top:22px">Recently decided</div>
       <table><tr><th>participant</th><th>status</th><th>decided</th></tr>
       ${DEC.map(q=>`<tr><td class="mono">${esc(q.participant)}</td><td>${badge(q.status)}</td><td class="muted">${when(q.decided_at)}</td></tr>`).join('')}</table>`:''}`;
   async function decide(participant,decision){
-    const r=await jpost('/bridge/network-decide',{participant:participant,decision:decision});   // network injected server-side
+    if(!writable()){ toast('🔒 read-only on this network (cross-network writes land in Commit D)',true); return; }
+    const r=await jpost('/bridge/network-decide',{participant:participant,decision:decision});   // network injected server-side (own tenant)
     if(r.ok){ toast(decision==='approve'?'Approved':'Rejected'); membershipReqs(); } else { toast((r.j&&(r.j.error||r.j.detail))||'failed',true); }
   }
   W.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decide(b.dataset.ap,'approve'));
   W.querySelectorAll('[data-rj]').forEach(b=>b.onclick=()=>decide(b.dataset.rj,'reject'));
+}
+
+// --- Capabilities & Grants (ADR-0119 Trust plane): the ACTIVE network's capability catalog + CapabilityGrants.
+// Trust-plane governance is authorized by a NETWORK-SCOPED steward role on the ACTIVE network (verified
+// server-side), NOT by tenant==network — so these actions work on any network the signed-in principal
+// stewards, cross-tenant included. The tab forwards ACTIVE.network (the Trust net: id); write controls are
+// gated on the caller's role IN this network (capability.steward to define, grant.steward to issue/revoke).
+const activeRoles=()=>((ACTIVE&&ACTIVE.roles)||[]);
+const canDefineCap=()=>activeRoles().includes('capability.steward');
+const canGrant=()=>activeRoles().includes('grant.steward');
+const govParam=(extra)=>Object.assign({network:(ACTIVE&&ACTIVE.network)||NETWORK},extra||{});
+const ifaceOf=(cap)=>String(cap||'').slice(String(cap||'').indexOf(':')+1);   // "service.call:svc.x" → "svc.x"
+async function capGrants(){
+  const W=document.getElementById('wrap'); W.className='wrap'; W.innerHTML='<div class="empty">loading…</div>';
+  if(!ACTIVE||!(ACTIVE.network)){ W.innerHTML='<div class="empty">select a network to manage its capabilities &amp; grants</div>'; return; }
+  let caps=[], members=[];
+  try{ const c=await jpost('/bridge/gov-capabilities',govParam()); if(!c.ok)throw new Error((c.j&&(c.j.error||c.j.detail))||c.status); caps=(c.j&&c.j.result)||[]; }
+  catch(e){ W.innerHTML='<div class="empty">could not load the capability catalog ('+esc(String(e))+')</div>'; return; }
+  try{ const m=await jpost('/bridge/gov-members',govParam()); members=((m.j&&m.j.result)||[]).filter(x=>x.status==='approved'); }catch(e){ members=[]; }
+  const capRows = caps.length?caps.map(c=>`<tr><td class="mono">${esc(c.capability)}</td><td>${esc(c.version)}</td>
+      <td>${c.status==='active'?'<span class="chip" style="color:#5fd08a">active</span>':'<span class="chip" style="color:#e07a5f">'+esc(c.status||'?')+'</span>'}</td>
+      <td class="muted">${esc((c.scope_types_allowed||[]).join(', '))}</td></tr>`).join('')
+    :'<tr><td colspan="4" class="muted">no capabilities defined yet</td></tr>';
+  const capOpts = caps.filter(c=>c.status==='active').map(c=>`<option value="${esc(c.capability)}|${esc(c.version)}">${esc(c.capability)} · v${esc(c.version)}</option>`).join('');
+  const memOpts = members.length?members.map(m=>`<option value="${esc(m.participant)}">${esc(m.participant)}</option>`).join('')
+    :'<option value="">— no approved members —</option>';
+  W.innerHTML=`
+    <div class="lbl">Capability catalog <span class="muted">· ${esc(ACTIVE.label||ACTIVE.slug||ACTIVE.network)}</span></div>
+    <div class="hint">The service capabilities this network governs (ADR-0119 D3). A capability is minted from a governed interface as <span class="mono">service.provide:&lt;iface&gt;</span> and <span class="mono">service.call:&lt;iface&gt;</span>, then granted to members below. Defining a capability needs the <b>capability.steward</b> role in this network.</div>
+    <table><tr><th>capability</th><th>version</th><th>status</th><th>scope</th></tr>${capRows}</table>
+    <div class="lbl" style="margin-top:22px">Add capability from an interface</div>
+    ${canDefineCap()?`<div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input class="inp" id="cg-iface" placeholder="governed interface id, e.g. svc.worker-onboarding" style="min-width:320px">
+        <button class="btn primary" id="cg-define">Propose capabilities</button>
+        <span class="muted" id="cg-cmsg"></span>
+      </div><div class="hint">Proposes the two capabilities for the interface (provide + call) through the governed <span class="mono">define_capability</span> path — audited and idempotent.</div>`
+      :`<div class="hint">🔒 You hold a role in this network but not <b>capability.steward</b>, so you can view the catalog but not add capabilities here.</div>`}
+    <div class="lbl" style="margin-top:22px">Participant grants</div>
+    <div class="hint">Grant a capability to an approved member. Issuing/revoking needs the <b>grant.steward</b> role in this network.</div>
+    <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="muted">member</label>
+      <select class="inp" id="cg-member">${memOpts}</select>
+    </div>
+    <div id="cg-grants" style="margin-top:10px"><div class="muted">select a member to see their grants</div></div>
+    ${canGrant()?`<div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px">
+        <label class="muted">capability</label>
+        <select class="inp" id="cg-cap">${capOpts||'<option value="">— define a capability first —</option>'}</select>
+        <button class="btn primary" id="cg-issue">Issue grant</button>
+        <span class="muted" id="cg-gmsg"></span>
+      </div>`
+      :`<div class="hint" style="margin-top:12px">🔒 You hold a role in this network but not <b>grant.steward</b>, so grant issue/revoke is disabled here.</div>`}
+  `;
+  async function loadGrants(){
+    const box=document.getElementById('cg-grants'); const grantee=(document.getElementById('cg-member')||{}).value;
+    if(!grantee){ box.innerHTML='<div class="muted">no approved members</div>'; return; }
+    box.innerHTML='<div class="empty">loading…</div>';
+    let gs=[]; try{ const r=await jpost('/bridge/gov-grants',govParam({grantee})); gs=(r.j&&r.j.result)||[]; }catch(e){ box.innerHTML='<div class="empty">could not load grants</div>'; return; }
+    box.innerHTML = gs.length?`<table><tr><th>capability</th><th>v</th><th>scope</th><th>status</th><th></th></tr>
+      ${gs.map(g=>`<tr><td class="mono">${esc(g.capability)}</td><td>${esc(g.capability_version)}</td>
+        <td class="muted">${esc(((g.scope||{}).services||[]).join(', ')||(g.scope||{}).type||'')}</td>
+        <td>${g.status==='ACTIVE'?'<span class="chip" style="color:#5fd08a">ACTIVE</span>':'<span class="chip" style="color:#e07a5f">'+esc(g.status)+'</span>'}</td>
+        <td style="text-align:right">${(canGrant()&&g.status==='ACTIVE')?`<button class="btn sm danger" data-rev="${esc(g.id)}">Revoke</button>`:''}</td></tr>`).join('')}</table>`
+      :'<div class="muted">no grants for this member</div>';
+    box.querySelectorAll('[data-rev]').forEach(b=>b.onclick=()=>revoke(b.dataset.rev));
+  }
+  async function revoke(gid){
+    if(!canGrant())return;
+    const r=await jpost('/bridge/gov-revoke-grant',govParam({grant_id:gid,business_reason:'revoked via Network Console'}));
+    if(r.ok){ toast('Grant revoked'); loadGrants(); } else { toast((r.j&&(r.j.error||r.j.detail))||'revoke failed',true); }
+  }
+  const msel=document.getElementById('cg-member'); if(msel){ msel.onchange=loadGrants; loadGrants(); }
+  const db=document.getElementById('cg-define');
+  if(db) db.onclick=async()=>{
+    const iface=(document.getElementById('cg-iface').value||'').trim(); const m=document.getElementById('cg-cmsg');
+    if(!iface){ m.textContent='enter an interface id'; m.style.color='#e5a23d'; return; }
+    m.textContent='proposing…'; m.style.color='';
+    const defs=[{capability:'service.provide:'+iface,version:1,description:'Provide the '+iface+' service interface'},
+                {capability:'service.call:'+iface,version:1,description:'Call the '+iface+' service interface'}];
+    let okAll=true, lastErr='';
+    for(const d of defs){ const r=await jpost('/bridge/gov-define-capability',govParam(Object.assign({scope_types_allowed:['service'],wildcard:false,status:'active'},d)));
+      if(!r.ok){ okAll=false; lastErr=(r.j&&(r.j.error||r.j.detail))||r.status; } }
+    if(okAll){ toast('Capabilities proposed'); capGrants(); } else { m.textContent='failed: '+lastErr; m.style.color='#e07a5f'; }
+  };
+  const ib=document.getElementById('cg-issue');
+  if(ib) ib.onclick=async()=>{
+    const grantee=(document.getElementById('cg-member')||{}).value; const sel=(document.getElementById('cg-cap')||{}).value; const m=document.getElementById('cg-gmsg');
+    if(!grantee){ m.textContent='no member selected'; m.style.color='#e5a23d'; return; }
+    if(!sel){ m.textContent='no capability selected'; m.style.color='#e5a23d'; return; }
+    const [cap,ver]=sel.split('|'); m.textContent='issuing…'; m.style.color='';
+    const r=await jpost('/bridge/gov-issue-grant',govParam({grantee,capability:cap,capability_version:Number(ver),
+      scope:{type:'service',services:[ifaceOf(cap)]}}));
+    if(r.ok){ toast('Grant issued'); loadGrants(); } else { m.textContent='failed: '+((r.j&&(r.j.error||r.j.detail))||r.status); m.style.color='#e07a5f'; }
+  };
 }
 
 // --- Publish Requests: ADR-0080 developer submits → network steward approves → LIVE in the marketplace ----

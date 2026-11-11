@@ -1,20 +1,23 @@
 component_id: ds:janaagraha:driver/works-ward-rollup
 kind: driver
-version: 0.1.0
+version: 0.2.0
 provider: ds:janaagraha:developer
 entrypoint: run.py
 confinement_min: L1
 title: Works Ward Rollup
 description: >
-  Recompute the materialised aggregates the Public Expenditure Dashboard reads for its overview —
-  works.ward_rollup (per-ward works_count + ₹ paid) and works.city_summary (one city total) — by grouping
-  the governed works.work_order + works.payment. No egress; governed reads + writes only. Re-run after each ingest.
-reads: [works.work_order, works.payment, works.contractor]
-writes: [works.ward_rollup, works.city_summary]
+  Recompute the materialised aggregates the Public Expenditure Dashboard reads — works.ward_rollup (per-ward
+  works_count + ₹ paid), works.city_summary (one city total), and works.contractor_rollup (per-contractor ₹ +
+  works, joining work_order → contract → contractor) — by grouping the governed works.* facts. No egress;
+  governed reads + writes only. Re-run after each ingest.
+reads: [works.work_order, works.payment, works.contract, works.contractor]
+writes: [works.ward_rollup, works.city_summary, works.contractor_rollup]
 config: []
 scopes:
   - { verb: read,  scope: works.work_order, tenant: janaagraha }
   - { verb: read,  scope: works.payment,    tenant: janaagraha }
+  - { verb: read,  scope: works.contract,   tenant: janaagraha }
   - { verb: read,  scope: works.contractor, tenant: janaagraha }
   - { verb: write, scope: works.ward_rollup, tenant: janaagraha }
   - { verb: write, scope: works.city_summary, tenant: janaagraha }
+  - { verb: write, scope: works.contractor_rollup, tenant: janaagraha }

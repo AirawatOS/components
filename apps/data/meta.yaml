@@ -28,6 +28,7 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 data_browser: true
+default_install: true   # base-OS default suite — every tenant receives the Data browser (pairs with Files)
 required_schemas: [ref.source]
 # ADR-0058 declared interfaces: the governed capabilities this app calls. The app-host's generic /bridge/gov
 # dispatcher (ADR-0087 R1) verifies this list (fail-closed) before proxying any Data-Exchange op to the network.
