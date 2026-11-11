@@ -39,7 +39,7 @@ def defn():
                            "null field means that layer has not been built for this cell, never zero; `layers` maps each "
                            "source schema to its observation time.",
             "additionalProperties": False,
-            "required": ["schema", "id", "tenant", "cell_ref", "layers", "layers_present", "observed_at"],
+            "required": ["schema", "id", "tenant", "cell_ref", "layers", "layers_present", "observed_at", "prov"],   # house rule R5: a measure requires prov
             "properties": {
                 "schema": {"const": SID}, "id": {"type": "string", "pattern": IDP}, "tenant": S, "aoi": S,
                 "cell_ref": {"type": "object", "required": ["h3_id"],
@@ -74,7 +74,12 @@ def main():
              "justification": "City Profile rollup: one joined record per cell for City Scan Ask and apps."}, dev)
     except urllib.error.HTTPError as e:
         if e.code != 409:
-            raise SystemExit("FAIL: " + json.loads(e.read() or b"{}").get("detail", str(e)))
+            raw = e.read() or b"{}"
+            try:
+                d = json.loads(raw).get("detail", raw.decode(errors="replace"))
+            except Exception:
+                d = raw.decode(errors="replace")
+            raise SystemExit("FAIL (%s): %s" % (e.code, json.dumps(d) if not isinstance(d, str) else d))
     call(NETWORK + "/v1/schema-requests/decide", {"schema_id": SID, "version": VER, "decision": "approve"}, steward)
     print("ok %s@%s governed" % (SID, VER))
     return 0
