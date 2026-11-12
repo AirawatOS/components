@@ -1,7 +1,7 @@
 # An ENGINE (kind=engine) — confined; reads facts, writes derived facts.
 component_id: ds:airawatdeveloper:engine/hotspot-detection
 kind: engine
-version: 0.2.0   # +HOUR env: detect hotspots on a specific air.quality hour (winter demo)
+version: 0.3.0   # 0.3.0: hotspots are the city's own top 5% (HOTSPOT_PCTL, default 95; floor HOTSPOT_FLOOR 30 µg/m³ = CPCB Good), severity stays the CPCB tier at the peak — a fixed 60 µg/m³ made broadly-elevated Bengaluru one giant cluster. 0.2.0: +HOUR env
 provider: ds:airawat:developer
 display_name: Air Pollution Hotspot Detection
 entrypoint: run.py
