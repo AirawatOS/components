@@ -18,10 +18,11 @@ confined model (ctx["ai_complete"]) on ONLY those facts, and returns {answer, so
     layers exist.
 AI informs; a human decides (ADR-0029).
 """
-import json, math, os, re
+import collections, json, math, os, re
 
 HOT_FLOOD = ("high", "severe")
 TOP = 8
+PRIORITY_TOKENS = 2600   # 0.4.8: an open 'top 5 priorities' question used all 3,000 tokens reasoning (finish=length, empty)
 ANSWER_TOKENS = 1800   # 0.4.1: a reasoning model spends tokens thinking first; 900 left nothing for the answer (finish=length, empty)
 
 # raw-layer fallback when no city.cell_profile exists: schema → {profile field: source field}
@@ -71,13 +72,15 @@ TOPICS = {   # topic → (question keywords, profile fields that answer it)
                   ("census_density_per_km2", "paid_per_person", "dist_metro_m", "pm25")),
 }
 WHOLE_WORD = {"hot", "air", "cool", "stop", "dust"}      # 'air' ≠ airport / repair; 'hot' ≠ hotspot
-NEED_WITH = ("population", "transit", "air")              # works + any of these → the need-vs-spend ranking
+NEED_WITH = ("population", "transit", "air")
+PRIORITY_RE = re.compile(r"\bpriorit|\btop (3|5|three|five|ten)\b|\bif you were\b|\bresponsible for the city\b|\bbiggest (problem|issue|challenge)"
+                         r"|\bmost urgent\b|\bagenda\b|\bwhere should (we|i|the city) (start|begin|focus)\b|\bwhat should (we|i|the city) (do|focus|fix)")              # works + any of these → the need-vs-spend ranking
 INVENTORY_RE = re.compile(r"\b(what|which|list|show|tell me)\b.{0,40}\b(data|datasets?|layers?|sources?)\b"
                           r"|\b(data|datasets?|layers?)\b.{0,25}\b(you have|do you have|available|have access)\b"
                           r"|\bwhat can you (answer|do|tell)\b")
 FIELD_LAYER.update({"pm25": "air.quality", "census_density_per_km2": "demographics.census_ward", "paid_per_person": "works.ward_cell"})
-CATEGORY_WORDS = {"health": ("health", "hospital", "clinic"), "education": ("school", "education", "college"),
-                  "emergency": ("fire", "police", "emergency")}
+CATEGORY_WORDS = {"healthcare": ("health", "hospital", "clinic"), "education": ("school", "education", "college"),
+                  "emergency": ("fire", "police", "emergency")}   # 0.4.8: keys = the facility CATEGORIES as written ('healthcare', not 'health')
 
 
 def _h3(o):
@@ -273,6 +276,8 @@ def topics_of(question):
     q = question.lower()
     if INVENTORY_RE.search(q):
         return ["inventory"]
+    if PRIORITY_RE.search(q):
+        return ["priorities"]
     t = [k for k, (words, _) in TOPICS.items() if any(_says(q, w) for w in words)]
     if "need" in t or ("works" in t and any(x in t for x in NEED_WITH)):
         return ["need"]
@@ -300,7 +305,9 @@ def topic_facts(topic, cells, question):
     elif topic == "services":
         q = question.lower()
         cats = [c for c, words in CATEGORY_WORDS.items() if any(w in q for w in words)] or None
-        has = (lambda c: any((c.get("facilities") or {}).get(k) for k in cats)) if cats else (lambda c: (c.get("facility_count") or 0) > 0)
+        alias = {"healthcare": ("healthcare", "health")}
+        has = (lambda c: any((c.get("facilities") or {}).get(k2) for k in cats for k2 in alias.get(k, (k,)))) if cats \
+            else (lambda c: (c.get("facility_count") or 0) > 0)
         any_fac = any(c.get("facility_count") is not None for c in cells.values())
         f["facility_layer_present"] = any_fac
         f["category_asked"] = cats or "any"
@@ -582,6 +589,106 @@ def need_facts(kfind, cells, places=None):
     return f, map_cells, counts
 
 
+CPCB_PM25_24H = 60.0          # India's national ambient standard for PM2.5, 24-hour mean (µg/m³)
+FLOOD_HIGH = 0.9              # flood_susceptibility at or above → the lowest-lying cells
+HEALTH_FAR_KM = 1.5
+BUS_FAR_M, METRO_FAR_M = 800, 2000
+
+
+def _nearest_km(pts, lon, lat, cell=0.01):
+    """Distance (km) to the nearest point in a pre-gridded {(ix, iy): [(lon, lat)]} — ring search, city scale."""
+    k = math.cos(math.radians(lat)); ix, iy = int(lon / cell), int(lat / cell); best = float("inf")
+    for r in range(0, 12):
+        for i in range(-r, r + 1):
+            for j in range(-r, r + 1):
+                if max(abs(i), abs(j)) != r:
+                    continue
+                for (a, b) in pts.get((ix + i, iy + j), ()):
+                    best = min(best, 111.32 * math.hypot((a - lon) * k, b - lat))
+        if best <= r * cell * 111.32 * k:
+            break
+    return best
+
+
+def _where(cells_sorted, places, n=3):
+    out = []
+    for c in cells_sorted:
+        cen = (c.get("cell_ref") or {}).get("centroid") or []
+        name = nearest_place(places, cen[0], cen[1]) if len(cen) >= 2 else None
+        name = re.sub(r"^near ", "", re.sub(r" \([0-9.]+ km\)$", "", name)) if name else None
+        if name and name not in out:
+            out.append(name)
+        if len(out) >= n:
+            break
+    return ", ".join(out) or "—"
+
+
+def priorities_facts(kfind, cells, places, air_meta, need):
+    """0.4.8 — CANDIDATE PRIORITIES computed by the engine (the model only chooses and phrases): each with the people
+    affected (GHSL population; implausible cells excluded), where (top named places), the measure and a caveat. Ranked by
+    people affected — a starting order, not a weighting. Layers that cannot support a priority are said, not ranked."""
+    live = [c for c in cells.values() if plausible(c) and isinstance(c.get("population"), (int, float))]
+    ppl = lambda cs: int(round(sum(c.get("population") or 0 for c in cs)))
+    cand, not_ranked = [], []
+    fl = [c for c in live if (c.get("flood_susceptibility") or 0) >= FLOOD_HIGH]
+    if fl:
+        cand.append({"priority": "Flood-prone low-lying areas", "people_affected": ppl(fl),
+                     "where": _where(sorted(fl, key=lambda c: -(c["population"] * c["flood_susceptibility"])), places),
+                     "measure": "people in the lowest-lying cells (flood susceptibility ≥ %.1f, height above drainage)" % FLOOD_HIGH,
+                     "caveat": "terrain-based susceptibility, not observed flooding", "evidence": "cell.hydrology"})
+    # stricter than the driver's 'underserved' (> 500 m from a bus stop), which counts cells only just past the line
+    # (a Shivajinagar cell 520 m from a stop topped it): a ~10-minute walk to a bus AND no metro within 2 km
+    tr = [c for c in live if (c.get("dist_bus_stop_m") or 0) > BUS_FAR_M and (c.get("dist_metro_m") or 0) > METRO_FAR_M]
+    if tr:
+        cand.append({"priority": "Transit gaps (far from bus and metro)", "people_affected": ppl(tr),
+                     "where": _where(sorted(tr, key=lambda c: -(c["dist_bus_stop_m"] * c["population"])), places),
+                     "measure": "people more than %d m from a bus stop AND %.0f km from a metro station (straight line)" % (BUS_FAR_M, METRO_FAR_M / 1000),
+                     "caveat": "OSM stops; straight-line distance, not walking routes or frequency", "evidence": "mobility.transit_access"})
+    hp = collections.defaultdict(list)
+    for c in cells.values():
+        f = c.get("facilities") or {}
+        cen = (c.get("cell_ref") or {}).get("centroid") or []
+        if (f.get("healthcare") or f.get("health")) and len(cen) >= 2:
+            hp[(int(cen[0] / 0.01), int(cen[1] / 0.01))].append((cen[0], cen[1]))
+    if hp:
+        far = [c for c in live if c["population"] > 0 and len((c.get("cell_ref") or {}).get("centroid") or []) >= 2
+               and _nearest_km(hp, *c["cell_ref"]["centroid"][:2]) > HEALTH_FAR_KM]
+        if far:
+            cand.append({"priority": "Health access (no facility nearby)", "people_affected": ppl(far),
+                         "where": _where(sorted(far, key=lambda c: -c["population"]), places),
+                         "measure": "people more than %.1f km (straight line) from any mapped health facility" % HEALTH_FAR_KM,
+                         "caveat": "OSM-mapped facilities; size and capacity unknown", "evidence": "geo.facility"})
+    rows = (need or {}).get("wards_with_most_need_for_least_spend") or []
+    if rows:
+        cand.append({"priority": "Under-funded dense wards (need vs spend)", "people_affected": int(sum(r.get("census_population") or 0 for r in rows)),
+                     "where": ", ".join(r["place"] for r in rows[:3]),
+                     "measure": "the %d wards with the most need for the least works spend per person (%s)" % (len(rows), need.get("works_period")),
+                     "caveat": "2011 census population; equal-weight ranking aid", "evidence": "works.ward_cell + demographics.census_ward"})
+    if air_meta:
+        hi = [c for c in live if (c.get("pm25") or 0) > CPCB_PM25_24H]
+        hot = sorted((c for c in live if isinstance(c.get("pm25"), (int, float))), key=lambda c: -c["pm25"])
+        cand.append({"priority": "Air pollution exposure", "people_affected": ppl(hi),
+                     "where": _where(hot, places),
+                     "measure": "people where the latest hour's PM2.5 is above India's 24-hour standard (%d µg/m³)" % CPCB_PM25_24H,
+                     "caveat": "one hour, interpolated from %d stations — confirm with a 24-hour mean" % len(air_meta["stations"]),
+                     "evidence": "air.quality"})
+    cand.sort(key=lambda r: -r["people_affected"])
+    hs = _stats(cells, "heat_c")
+    if hs and hs["max"] - hs["min"] < 3:
+        not_ranked.append("heat — the layer varies only %.1f °C across the city, so it does not single out places" % (hs["max"] - hs["min"]))
+    gs = _stats(cells, "green_frac")
+    if gs and gs["median"] < 0.02:
+        not_ranked.append("green cover — the layer looks unreliable (the median cell is %.1f%% green), so it is not used" % (100 * gs["median"]))
+    issues = _try(kfind, "civic.issue")
+    sig = collections.Counter(o.get("category") for o in issues if o.get("category") not in (None, "other"))
+    out = {"how_ranked": "by people affected (GHSL population; cells denser than the densest census ward excluded) — a starting order, not a weighting",
+           "candidates": cand, "not_ranked": not_ranked}
+    if issues:
+        out["news_signal"] = {"civic_issues": len(issues), "high_severity": sum(1 for o in issues if o.get("severity") == "high"),
+                              "top_categories": dict(sig.most_common(4))}
+    return out
+
+
 INVENTORY = [   # (schema, friendly name, unit, what it is) — the order the inventory table lists them
     ("demographics.population", "Population (GHSL 2020 model)", "cells", "people per 250 m grid cell, modelled"),
     ("demographics.census_ward", "Census 2011 by ward", "cells", "ward population and density"),
@@ -660,9 +767,10 @@ COLS = {   # field → (header, scale) — percentages from fractions; everythin
     "severity": ("Severity", 1), "hotspot_cells": ("Cells in hotspot", 1),
     "underserved_share": ("Far from transit (%)", 100), "paid_per_person": ("Works paid per person (₹)", 1),
     "need_vs_spend": ("Need vs spend (/100)", 1),
+    "people_affected": ("People affected", 1), "where": ("Where (top places)", 1), "measure": ("Measure", 1),
     "records": ("Records", 1), "unit": ("Unit", 1), "as_of": ("As of", 1), "what": ("What it is", 1),
 }
-_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities", "layer"}
+_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities", "layer", "priority", "caveat", "evidence"}
 
 
 def _num(v):
@@ -701,6 +809,9 @@ def fact_tables(facts):
         for k, v in block.items():
             if isinstance(v, list) and v and isinstance(v[0], dict) and ("h3" in v[0] or "centroid" in v[0]):
                 out.append("**%s**\n\n%s" % (_title(k), _table(v[:TOP], None, "Location")))
+    pr = (facts.get("priorities") or {}).get("candidates")
+    if pr:
+        out.append("**Candidate priorities (ranked by people affected)**\n\n" + _table(pr, "priority", "Priority"))
     inv = (facts.get("inventory") or {}).get("layers")
     if inv:
         out.append("**Data available to the analyst**\n\n" + _table(inv, "layer", "Layer"))
@@ -803,10 +914,10 @@ def h_ask(ctx):
 
     topics = topics_of(question)
     cells, layer_counts, cell_source = city_cells(kfind)
-    if any(t in topics for t in ("access", "transit", "walk", "need", "inventory")):
+    if any(t in topics for t in ("access", "transit", "walk", "need", "inventory", "priorities")):
         layer_counts.update(join_mobility(kfind, cells))
     air_meta = None
-    if any(t in topics for t in ("air", "need", "inventory")):
+    if any(t in topics for t in ("air", "need", "inventory", "priorities")):
         air_meta = join_air(kfind, cells)
         if air_meta:
             layer_counts["air.quality"] = air_meta["cells"]
@@ -815,18 +926,27 @@ def h_ask(ctx):
     if cells:
         facts["city_cells"] = {"source": cell_source, "cells": len(cells)}
         for t in topics:
-            if t in ("works", "need", "inventory"):
+            if t in ("works", "need", "inventory", "priorities"):
                 continue
             tf = air_facts(cells, air_meta) if t == "air" and air_meta else (topic_facts(t, cells, question) if t != "air" else None)
             if tf:
                 facts[t] = tf
         sources.append(cell_source.split(" ")[0] if cell_source.startswith("city.") else "raw cell layers")
-    if "need" in topics:
+    if "need" in topics or "priorities" in topics:
         nf, map_cells, nc = need_facts(kfind, cells)
         if nf:
             facts["need"] = nf
             layer_counts.update(nc)
             sources.append("ward need-vs-spend (census 2011 + works + transit + air)")
+            if "priorities" in topics:                 # the ward list feeds a candidate; its full table is not shown
+                facts.pop("need", None); facts["_need"] = nf; map_cells = []
+    if "priorities" in topics:
+        try:
+            _pl = load_places(kfind)
+        except Exception:
+            _pl = []
+        facts["priorities"] = priorities_facts(kfind, cells, _pl, air_meta, facts.pop("_need", None))
+        layer_counts.update({"cell.hydrology": layer_counts.get("cell.hydrology", 0)})
     if "inventory" in topics:
         facts["inventory"] = inventory_facts(kfind, layer_counts, air_meta)
     if "works" in topics or "overview" in topics:      # (not for "need" — its ward table already carries the spend)
@@ -886,13 +1006,17 @@ def h_ask(ctx):
               "grounded in the facts and any open recommendations. If facts.need is present: name the top 2–3 wards, compare the "
               "first with facts.need.city_median_ward (e.g. '3.8× the median density, a third of the median spend per "
               "person'), and say need_vs_spend is an equal-weight ranking aid, not a verdict. If facts.inventory is "
-              "present: summarise the data in 3–4 grouped bullets and name what is not available. "
+              "present: summarise the data in 3–4 grouped bullets and name what is not available. If facts.priorities is "
+              "present: give EXACTLY 5 numbered priorities chosen from facts.priorities.candidates (you may merge or reorder "
+              "them, say why in a few words), each ONE line: what, where (from its 'where'), how many people, a first step; "
+              "then one line naming facts.priorities.not_ranked; this overrides the 4-bullet limit. Decide quickly — the "
+              "candidates are already computed. "
               "Do NOT show reasoning or restate the question. End with "
               "the single line 'Evidence quality: ok' (the full evidence line is appended for you). You inform; officials decide.")
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts, default=str)[:12000] + "\n\nQUESTION: " + question}]
     try:
-        ans = (ctx["ai_complete"](msgs, ANSWER_TOKENS) or "").strip()
+        ans = (ctx["ai_complete"](msgs, PRIORITY_TOKENS if "priorities" in topics else ANSWER_TOKENS) or "").strip()
     except Exception as e:                                             # unavailable / timed out: still answer with the facts
         return {"answer": facts_summary(facts, "is unavailable (%s)" % str(e)[:80]), "sources": sources, "facts": _with_map(facts, map_cells)}, None
     ans = re.sub(r"(?is)<think>.*?</think>", "", ans).strip()
@@ -902,6 +1026,10 @@ def h_ask(ctx):
         if blocks:
             ans = blocks[-1].strip()
     if not ans.strip():                                                # the model spent its budget reasoning / returned nothing
+        if fact_tables(facts):                                         # 0.4.8: the computed tables ARE the answer
+            note = ("_The analyst's commentary is unavailable this time (the model used its budget reasoning); the "
+                    "computed figures below are complete._\nEvidence quality: ok")
+            return {"answer": compose_answer(note, facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
         return {"answer": facts_summary(facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
     return {"answer": compose_answer(ans, facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
 

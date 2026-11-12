@@ -80,12 +80,17 @@ check("…the ranking is a labelled PROXY, not 'congestion'", proxy_key and "NOT
 check("…proxy ranks dense people on sparse roads first (cell a)", (acc.get(proxy_key) or [{}])[0].get("h3") == "a", acc.get(proxy_key))
 check("…the model is told proxies are proxies and to use only the facts", "PROXY" in sysmsg and "ONLY the FACTS" in sysmsg)
 
+out, err, f, _ = ask("where should we add healthcare centres?", dict(BASE, **{"city.cell_profile": [
+    dict(p, facilities={"healthcare": 1}) if p.get("facilities", {}).get("health") else p for p in PROFILES]}))
+svc = f.get("services") or {}
+check("0.4.8 the facility category as WRITTEN ('healthcare') counts — before, every cell looked uncovered",
+      [r["h3"] for r in (svc.get(next((k for k in svc if k.startswith("populous_cells_without")), "")) or [])] == ["a", "c"])
 out, err, f, _ = ask("where should we add healthcare centres?", BASE)
 svc = f.get("services") or {}
 gap_key = next((k for k in svc if k.startswith("populous_cells_without")), "")
 gaps = [r["h3"] for r in (svc.get(gap_key) or [])]
 check("health centres → populous cells WITHOUT a health facility, by population (a before c; b has one)",
-      gaps == ["a", "c"] and svc.get("category_asked") == ["health"], (gaps, svc.get("category_asked")))
+      gaps == ["a", "c"] and svc.get("category_asked") == ["healthcare"], (gaps, svc.get("category_asked")))
 
 out, err, f, _ = ask("what are the hottest areas?", BASE)
 heat = f.get("heat") or {}
@@ -133,8 +138,8 @@ def ask_empty_model(question, data):
 out, err, n = ask_empty_model("where are the hottest areas and how many people live there?", BASE)
 ans = (out or {}).get("answer") or ""
 check("the model gets an answer budget of 1800 tokens (900 left a reasoning model nothing to answer with)", n == 1800, n)
-check("an empty model reply never becomes 'No answer' — the computed facts are shown instead, numbers included",
-      ans.startswith("The analyst model returned no text") and "cell a (lon 77.5, lat 12.9)" in ans and "heat_c 33.5" in ans and "population 12,000" in ans, ans[:300])
+check("an empty model reply never becomes 'No answer' — 0.4.8: the engine's tables are shown with a note, numbers included",
+      ans.startswith("_The analyst's commentary is unavailable this time") and "| 12.9000, 77.5000 |" in ans and "33.5" in ans and "12,000" in ans, ans[:300])
 check("…and it still ends with the evidence-quality line", "Evidence quality:" in ans and "city.cell_profile" in ans, ans[-160:])
 
 def boom(msgs, n):
@@ -301,6 +306,39 @@ ans, err = ask_text("List the data you have access to", AIR, "**x**\nEvidence qu
 check("…the inventory answer is ONE data table — air, census, works and news included, no congestion proxy",
       "Data available to the analyst" in ans and "Census 2011 by ward" in ans and "Air quality — PM2.5 surface" in ans
       and "News articles" in ans and "Proxy" not in ans, ans[:500])
+
+# 0.4.8 — priorities: engine-computed candidates, ranked by people affected
+check("0.4.8 'if you were responsible… top 5 priorities?' → the priorities topic alone",
+      ci.topics_of("Given this data, if you were responsible for the city.. what would be your top 5 priorities?") == ["priorities"])
+PRI = dict(AIR, **{"city.cell_profile": [
+    profile("a", 77.50, 12.90, population=12000, density_per_km2=48000, flood_susceptibility=0.95, heat_c=28.0, green_frac=0.005,
+            facilities={"education": 1}),
+    profile("b", 77.60, 12.95, population=9000, density_per_km2=36000, flood_susceptibility=0.2, heat_c=28.5, green_frac=0.01,
+            facilities={"healthcare": 2}),
+    profile("c", 77.70, 13.00, population=500, density_per_km2=2000, flood_susceptibility=0.92, heat_c=27.9, green_frac=0.30)],
+    "space.place": [{"kind": "locality", "name": "Nilasandra", "centroid": [77.5001, 12.9001]}],
+    "civic.issue": [{"category": "roads_transport", "severity": "high"}, {"category": "other", "severity": "low"}]})
+seen_n = {}
+def pmodel(msgs, n):
+    seen_n["n"] = n; seen_n["facts"] = json.loads(msgs[1]["content"].split("FACTS:\n", 1)[1].split("\n\nQUESTION:", 1)[0])
+    return ""
+out, err = ci.h_ask({"body": {"question": "what would be your top 5 priorities?"}, "kfind": lambda s, where=None: list(PRI.get(s, [])), "ai_complete": pmodel})
+pf = seen_n["facts"].get("priorities") or {}
+names = [c["priority"] for c in pf.get("candidates", [])]
+check("…candidates computed by the engine, ranked by people affected",
+      names and [c["people_affected"] for c in pf["candidates"]] == sorted([c["people_affected"] for c in pf["candidates"]], reverse=True), names)
+fl = next((c for c in pf.get("candidates", []) if c["priority"].startswith("Flood")), {})
+check("…flood: people in cells ≥ 0.9 susceptibility (a + c = 12,500), named by place", fl.get("people_affected") == 12500 and "Nilasandra" in fl.get("where", ""), fl)
+hc = next((c for c in pf.get("candidates", []) if c["priority"].startswith("Health")), {})
+check("…health access counts people > 1.5 km from a 'healthcare' facility (a is ~12 km from b; b has one)",
+      hc.get("people_affected") == 12500, hc)
+check("…the under-funded wards are a candidate (their full table is not attached)",
+      any(n.startswith("Under-funded") for n in names) and "need" not in seen_n["facts"], names)
+check("…heat (1 °C spread) and an unreliable green layer are NOT ranked, and say why",
+      any(x.startswith("heat") for x in pf.get("not_ranked", [])) and any(x.startswith("green cover") for x in pf.get("not_ranked", [])), pf.get("not_ranked"))
+check("…the news signal counts civic issues by category (not 'other')", pf.get("news_signal", {}).get("top_categories") == {"roads_transport": 1}, pf.get("news_signal"))
+check("…a larger answer budget for this open question", seen_n["n"] == ci.PRIORITY_TOKENS > ci.ANSWER_TOKENS, seen_n["n"])
+check("…an empty reply still shows the candidate table", "Candidate priorities (ranked by people affected)" in (out or {}).get("answer", ""), (out or {}).get("answer", "")[:200])
 
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
