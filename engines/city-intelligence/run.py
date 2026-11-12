@@ -48,7 +48,8 @@ MOBILITY = {
 FIELD_LAYER.update({f: s for s, m in MOBILITY.items() for f in m})
 
 TOPICS = {   # topic → (question keywords, profile fields that answer it)
-    "heat":      (("heat", "hot", "temperature", "cool"), ("heat_c", "population")),
+    "heat":      (("heat", "hot", "hottest", "hotter", "temperature", "cool"), ("heat_c", "population")),
+    "air":       (("air", "pollut", "pm2", "pm 2", "aqi", "smog", "dust", "breath", "hotspot", "emission"), ("pm25", "population")),
     "flood":     (("flood", "water", "drain", "rain", "monsoon", "inundat", "storm"),
                   ("flood_susceptibility", "rainfall_mm", "forecast_peak_precip_mm", "population")),
     "services":  (("health", "hospital", "clinic", "school", "facility", "facilities", "service", "amenit", "centre", "center"),
@@ -64,7 +65,17 @@ TOPICS = {   # topic → (question keywords, profile fields that answer it)
                   ("building_coverage", "built_volume_m3", "density_per_km2")),
     "population": (("population", "people", "resident", "crowd", "where do people"), ("population", "density_per_km2")),
     "works":     (("works", "spend", "spent", "contract", "tender", "ward", "budget", "payment", "project", "procure"), ()),
+    # 0.4.7 — ward-level NEED vs SPEND (census density, PM2.5, metro distance against works paid per person)
+    "need":      (("per person", "per capita", "per head", "underfund", "under-fund", "neglect", "low spend", "least spend",
+                   "fair share", "equit", "inequit", "deserv", "mismatch", "need vs", "need versus", "need and spend"),
+                  ("census_density_per_km2", "paid_per_person", "dist_metro_m", "pm25")),
 }
+WHOLE_WORD = {"hot", "air", "cool", "stop", "dust"}      # 'air' ≠ airport / repair; 'hot' ≠ hotspot
+NEED_WITH = ("population", "transit", "air")              # works + any of these → the need-vs-spend ranking
+INVENTORY_RE = re.compile(r"\b(what|which|list|show|tell me)\b.{0,40}\b(data|datasets?|layers?|sources?)\b"
+                          r"|\b(data|datasets?|layers?)\b.{0,25}\b(you have|do you have|available|have access)\b"
+                          r"|\bwhat can you (answer|do|tell)\b")
+FIELD_LAYER.update({"pm25": "air.quality", "census_density_per_km2": "demographics.census_ward", "paid_per_person": "works.ward_cell"})
 CATEGORY_WORDS = {"health": ("health", "hospital", "clinic"), "education": ("school", "education", "college"),
                   "emergency": ("fire", "police", "emergency")}
 
@@ -251,9 +262,20 @@ def _stats(cells, f):
     return {"cells": len(v), "min": v[0], "median": v[len(v) // 2], "max": v[-1]}
 
 
+def _says(q, w):
+    return re.search(r"\b" + re.escape(w) + (r"\b" if w in WHOLE_WORD else ""), q) is not None
+
+
 def topics_of(question):
+    """0.4.7: keywords match at a word start ('air' is not 'repair'; 'hot' is not 'hotspot'); a question about the data
+    itself is the INVENTORY (never a topic — 'what data do you have access to' is not an access question); works plus
+    people / transit / air is the ward NEED-vs-SPEND ranking, answered on its own."""
     q = question.lower()
-    t = [k for k, (words, _) in TOPICS.items() if any(w in q for w in words)]
+    if INVENTORY_RE.search(q):
+        return ["inventory"]
+    t = [k for k, (words, _) in TOPICS.items() if any(_says(q, w) for w in words)]
+    if "need" in t or ("works" in t and any(x in t for x in NEED_WITH)):
+        return ["need"]
     return t or ["overview"]
 
 
@@ -397,6 +419,218 @@ def works_facts(kfind):
             "contractors_by_spend": [pick(o, ("name", "contractor", "works_count", "paid_net_total")) for o in contr[:TOP]]}
 
 
+# ---------------------------------------------------------------- 0.4.7: air quality, ward need-vs-spend, inventory
+def _try(kfind, schema, where=None):
+    try:
+        return kfind(schema, where) if where else kfind(schema)
+    except Exception:                          # a refused / absent read is reported missing, never fatal
+        return []
+
+
+def join_air(kfind, cells):
+    """PM2.5 of the LATEST interpolated hour onto the cells (by h3) → meta, or None. The hour comes from the newest
+    hotspot run (it is computed from that hour), else the newest station hour; an hour with only a handful of cells
+    (a partial run) is skipped. Never mixes hours — an older, superseded hour can never leak into the answer."""
+    hours = sorted({o.get("observed_at") for o in _try(kfind, "air.hotspot") if o.get("observed_at")}, reverse=True)
+    stations = _try(kfind, "air.sensor_reading")
+    hours += [h for h in sorted({o.get("observed_at") for o in stations if o.get("observed_at")}, reverse=True) if h not in hours]
+    for hour in hours[:4]:
+        rows = [o for o in _try(kfind, "air.quality", {"observed_at": hour}) if o.get("observed_at") == hour]
+        if len(rows) < 50:
+            continue
+        n = 0
+        for o in rows:
+            h, v = _h3(o), o.get("pm25")
+            if not h or not isinstance(v, (int, float)):
+                continue
+            c = cells.get(h)
+            if c is None:
+                c = cells[h] = {"cell_ref": {"h3_id": h, "centroid": (o.get("space") or {}).get("centroid")}}
+            c["pm25"] = v; n += 1
+        latest = {}                                  # each station's NEWEST measured reading (may be newer than the surface)
+        for o in stations:
+            if isinstance(o.get("pm25"), (int, float)) and o.get("observed_at"):
+                k = o.get("sensor_id")
+                if k not in latest or o["observed_at"] > latest[k]["observed_at"]:
+                    latest[k] = o
+        st = list(latest.values())
+        hs = [o for o in _try(kfind, "air.hotspot") if o.get("observed_at") == hour]
+        return {"observed_at": hour, "cells": n, "method": (rows[0].get("method") or "idw"), "stations": st, "hotspots": hs}
+    return None
+
+
+def _station_name(sid):
+    s = str(sid or "")
+    s = re.sub(r"^cpcb-", "", s).split("--")[0]
+    return " ".join(w[:1].upper() + w[1:] for w in s.replace("-", " ").split()) or "station"
+
+
+def air_facts(cells, meta):
+    num = lambda c: c.get("pm25") if isinstance(c.get("pm25"), (int, float)) else None
+    f = {"pm25_hour": meta["observed_at"],
+         "how_estimated": "%s interpolation from %d monitoring stations — an ESTIMATE between stations, not a measurement "
+                          "in every cell" % (str(meta["method"]).upper(), len(meta["stations"])),
+         "pm25": _stats(cells, "pm25")}
+    f["most_polluted_cells"], _ = _top(cells, num, ("pm25", "population"))
+    rows, _ = _top(cells, lambda c: (c.get("pm25") or 0) * (c.get("population") or 0), ("pm25", "population"),
+                   cond=lambda c: num(c) is not None and c.get("population") is not None and plausible(c))
+    f["exposure_cells (PM2.5 × people)"] = rows
+    f["hotspots (top 5% of the city surface)"] = [
+        {"h3": _h3(o), "centroid": (o.get("space") or {}).get("centroid"), "pm25": o.get("value"),
+         "severity": o.get("severity"), "hotspot_cells": o.get("cell_count")}
+        for o in sorted(meta["hotspots"], key=lambda o: -(o.get("value") or 0))[:TOP]]
+    f["stations (measured)"] = [
+        {"h3": _h3(o), "centroid": (o.get("space") or {}).get("centroid"), "station": _station_name(o.get("sensor_id")),
+         "pm25": o.get("pm25"), "reading_at": (o.get("observed_at") or "")[11:16] + " UTC"} for o in sorted(meta["stations"], key=lambda o: -(o.get("pm25") or 0))[:TOP]]
+    return {k: v for k, v in f.items() if v not in (None, [], {})}
+
+
+def _pct_rank(vals):
+    """value → percentile rank in [0, 1] (ties share the lower rank), as Postgres percent_rank."""
+    v = sorted(vals); n = len(v)
+    import bisect
+    return (lambda x: (bisect.bisect_left(v, x) / (n - 1)) if n > 1 else 0.0)
+
+
+def need_facts(kfind, cells, places=None):
+    """0.4.7 — the WARD need-vs-spend ranking. Per ward (2011 census wards = the works data's ward numbering): census
+    density, the mean PM2.5 / straight-line metro distance / share of cells far from transit over the ward's cells, and
+    works paid per person (all works paid 2012–2022 ÷ census population). need_vs_spend = the mean of four percentile
+    ranks (denser, dirtier air, further from metro, LESS paid per person → higher) — an equal-weight ranking aid, not a
+    verdict. → (facts, map_cells, layer_counts)."""
+    cw = _try(kfind, "demographics.census_ward")
+    if not cw:
+        return None, [], {}
+    wards = {}
+    for o in cw:
+        w = str(o.get("ward_no") or "")
+        h = _h3(o)
+        if not w or not h:
+            continue
+        d = wards.setdefault(w, {"name": o.get("ward_name"), "pop": o.get("census_population"),
+                                 "dens": o.get("census_density_per_km2"), "cells": []})
+        d["cells"].append(h)
+    counts = {"demographics.census_ward": len(cw)}
+    wk = _try(kfind, "works.ward_cell")
+    years = set()
+    for o in wk:
+        d = wards.get(str(o.get("ward_no") or ""))
+        if d is not None and "paid" not in d:
+            d["paid"] = o.get("paid_net_total"); d["works"] = o.get("works_count")
+            years |= {str(s.get("t")) for s in (o.get("series") or []) if s.get("t")}
+    if wk:
+        counts["works.ward_cell"] = len(wk)
+    for o in _try(kfind, "procurement.ward_cell"):
+        d = wards.get(str(o.get("ward_no") or ""))
+        if d is not None and "tenders" not in d:
+            d["tenders"] = o.get("tenders_count")
+    mean = lambda xs: (sum(xs) / len(xs)) if xs else None
+    for d in wards.values():
+        cs = [cells.get(h) or {} for h in d["cells"]]
+        d["pm25"] = mean([c["pm25"] for c in cs if isinstance(c.get("pm25"), (int, float))])
+        d["metro"] = mean([c["dist_metro_m"] for c in cs if isinstance(c.get("dist_metro_m"), (int, float))])
+        gaps = [c["transit_gap_score"] for c in cs if isinstance(c.get("transit_gap_score"), (int, float))]
+        d["under"] = (sum(1 for g in gaps if g > 0) / len(gaps)) if gaps else None
+        d["ppp"] = (d["paid"] / d["pop"]) if isinstance(d.get("paid"), (int, float)) and d.get("pop") else None
+    dims = (("dens", False), ("pm25", False), ("metro", False), ("ppp", True))     # (field, lower-is-needier)
+    ranks = {}
+    for f, low in dims:
+        vals = [d[f] for d in wards.values() if isinstance(d.get(f), (int, float))]
+        if len(vals) > 1:
+            pr = _pct_rank(vals)
+            ranks[f] = (lambda x, pr=pr, low=low: (1 - pr(x)) if low else pr(x))
+    for d in wards.values():
+        rs = [ranks[f](d[f]) for f, _ in dims if f in ranks and isinstance(d.get(f), (int, float))]
+        d["score"] = round(100 * sum(rs) / len(rs)) if len(rs) >= 2 else None
+
+    def rep_cell(d):                       # the ward cell nearest its cells' mean centroid — one anchor for the map
+        pts = [(h, (cells.get(h) or {}).get("cell_ref", {}).get("centroid")) for h in d["cells"]]
+        pts = [(h, c) for h, c in pts if isinstance(c, (list, tuple)) and len(c) >= 2]
+        if not pts:
+            return d["cells"][0], None
+        mx, my = mean([c[0] for _, c in pts]), mean([c[1] for _, c in pts])
+        return min(pts, key=lambda p: (p[1][0] - mx) ** 2 + (p[1][1] - my) ** 2)
+
+    ranked = sorted((d for d in wards.values() if d["score"] is not None), key=lambda d: -d["score"])
+    label = lambda w, d: "%s (ward %s)" % (d.get("name") or "Ward", w)
+    wid = {id(d): w for w, d in wards.items()}
+    rows, map_cells = [], []
+    for d in ranked[:TOP]:
+        w = wid[id(d)]
+        r = {"h3": rep_cell(d)[0], "place": label(w, d), "census_density_per_km2": d.get("dens"),
+             "census_population": d.get("pop"), "pm25": d.get("pm25"), "dist_metro_m": d.get("metro"),
+             "underserved_share": d.get("under"), "works_count": d.get("works"), "paid_per_person": d.get("ppp"),
+             "need_vs_spend": d["score"]}
+        rows.append({k: (round(v, 1) if isinstance(v, float) else v) for k, v in r.items() if v is not None})
+        map_cells += [{"h3": h, "place": r["place"]} for h in d["cells"]]
+
+    def med(f):
+        v = sorted(d[f] for d in wards.values() if isinstance(d.get(f), (int, float)))
+        return round(v[len(v) // 2], 1) if v else None
+    yrs = sorted(years)
+    f = {"wards": len(wards),
+         "how_ranked": "need_vs_spend = mean of 4 percentile ranks across all wards: denser (census 2011), worse PM2.5 "
+                       "(latest hour, interpolated), further from metro (straight line), LESS works paid per person — "
+                       "equal weights, a RANKING AID, not a verdict",
+         "works_period": ("%s–%s" % (yrs[0], yrs[-1])) if yrs else "all recorded years",
+         "city_median_ward": {"census_density_per_km2": med("dens"), "pm25": med("pm25"), "dist_metro_m": med("metro"),
+                              "paid_per_person": med("ppp")},
+         "caveats": ["population and ward boundaries are the 2011 census (198 wards; the works data uses the same numbering)",
+                     "works paid per person divides all works paid over the period by the 2011 census population",
+                     "PM2.5 is interpolated between a few stations — small differences between wards are within its error"],
+         "wards_with_most_need_for_least_spend": rows}
+    return f, map_cells, counts
+
+
+INVENTORY = [   # (schema, friendly name, unit, what it is) — the order the inventory table lists them
+    ("demographics.population", "Population (GHSL 2020 model)", "cells", "people per 250 m grid cell, modelled"),
+    ("demographics.census_ward", "Census 2011 by ward", "cells", "ward population and density"),
+    ("air.quality", "Air quality — PM2.5 surface", "cells", "latest hour, interpolated from stations"),
+    ("air.sensor_reading", "Air monitoring stations (CPCB)", "readings", "measured PM2.5 / NO₂ / O₃"),
+    ("air.hotspot", "Air pollution hotspots", "hotspots", "top 5% of the PM2.5 surface"),
+    ("cell.heat", "Heat", "cells", "land surface temperature"),
+    ("cell.hydrology", "Flood susceptibility", "cells", "height above nearest drainage"),
+    ("cell.rainfall", "Rainfall (normal)", "cells", "annual climate normal"),
+    ("cell.weather_forecast", "Rain forecast (48 h)", "cells", "forecast precipitation"),
+    ("cell.greencover", "Green cover", "cells", "vegetation share"),
+    ("cell.builtup", "Built-up area", "cells", "built-up share"),
+    ("cell.buildings", "Buildings", "cells", "coverage, height, volume"),
+    ("cell.roads", "Road density", "cells", "OSM road length per km²"),
+    ("geo.facility", "Facilities (cells with one)", "cells", "health, schools, police, government…"),
+    ("mobility.transit_access", "Transit access", "cells", "distance to bus stop / metro"),
+    ("mobility.walkability", "Walkability", "cells", "street-grid score"),
+    ("mobility.chokepoint", "Road-network chokepoints", "cells", "route concentration — a proxy, not traffic"),
+    ("works.ward_cell", "Public works by ward", "cells", "works and amounts paid, 2012–2022"),
+    ("procurement.ward_cell", "Tenders by ward", "cells", "tender counts"),
+    ("news.item", "News articles", "articles", "local news (RSS / GDELT)"),
+    ("civic.issue", "Civic issues from news", "issues", "classified, geocoded where possible"),
+    ("space.place", "Place names (gazetteer)", "places", "OpenStreetMap localities and wards"),
+    ("governance.recommendation", "Open recommendations", "items", "for officials to review"),
+]
+
+
+NO_AS_OF = {"works.ward_cell", "procurement.ward_cell", "space.place"}   # their observed_at is the build time, not the data's
+
+
+def inventory_facts(kfind, layer_counts, air_meta):
+    rows = []
+    for schema, name, unit, what in INVENTORY:
+        if schema == "air.quality" and air_meta:
+            n, as_of = air_meta["cells"], air_meta["observed_at"][:16].replace("T", " ") + " UTC"
+        elif schema in layer_counts:
+            n, as_of = layer_counts[schema], None
+        else:
+            rs = _try(kfind, schema)
+            n = len(rs)
+            ts = [o.get("observed_at") for o in rs if isinstance(o.get("observed_at"), str)]
+            as_of = (max(ts)[:10] if ts and schema not in NO_AS_OF else None)
+        if n:
+            rows.append({"layer": name, "records": n, "unit": unit, "what": what, **({"as_of": as_of} if as_of else {})})
+    missing = ["observed traffic / congestion counts", "satellite aerosol (AOD) and night lights (not yet run)",
+               "property tax / survey records"]
+    return {"layers": rows, "not_available": missing}
+
+
 def _fmt(v):
     if isinstance(v, float):
         return ("%.3f" % v).rstrip("0").rstrip(".") if abs(v) < 100 else "{:,.0f}".format(v)
@@ -408,7 +642,9 @@ def _fmt(v):
 # 0.4.4 — the ENGINE writes the tables (deterministic, never truncated, exact place labels for the map link); the model
 # writes only a short headline + bullets. A reasoning model spent 2,859 of 3,000 tokens thinking and its table was cut
 # after the header row (staging, finish=length).
-COLS = {   # field → (header, scale) — percentages from fractions; everything else as stored
+COLS = {   # field → (header, scale) — percentages from fractions; everything else as stored. ORDER = column order.
+    "census_density_per_km2": ("Density, census 2011 (/km²)", 1), "census_population": ("People, census 2011", 1),
+    "pm25": ("PM2.5 (µg/m³)", 1), "station": ("Station", 1), "reading_at": ("Reading at", 1),
     "density_per_km2": ("Pop. density (/km²)", 1), "population": ("Population", 1),
     "road_density_km_per_km2": ("Road density (km/km²)", 1), "road_length_m": ("Road length (m)", 1),
     "heat_c": ("Heat (°C)", 1), "rainfall_mm": ("Rainfall (mm)", 1), "forecast_peak_precip_mm": ("Forecast peak (mm)", 1),
@@ -416,12 +652,17 @@ COLS = {   # field → (header, scale) — percentages from fractions; everythin
     "builtup_frac": ("Built-up (%)", 100), "flood_susceptibility": ("Flood susceptibility", 1),
     "hand_mean_m": ("Height above drainage (m)", 1), "building_coverage": ("Building coverage (%)", 100),
     "mean_height_m": ("Mean height (m)", 1), "built_volume_m3": ("Built volume (m³)", 1),
-    "facility_count": ("Facilities", 1), "works_count": ("Works", 1), "paid_net_total": ("Paid (₹)", 1),
+    "facility_count": ("Facilities", 1),
     "walkability_score": ("Walkability (/100)", 1), "intersection_density_per_km2": ("Junctions (/km²)", 1),
     "transit_gap_score": ("Transit gap (/100)", 1), "dist_bus_stop_m": ("Nearest bus stop (m)", 1),
     "dist_metro_m": ("Nearest metro (m)", 1), "chokepoint_score": ("Chokepoint (/100)", 1),
+    "works_count": ("Works", 1), "paid_net_total": ("Paid (₹)", 1),
+    "severity": ("Severity", 1), "hotspot_cells": ("Cells in hotspot", 1),
+    "underserved_share": ("Far from transit (%)", 100), "paid_per_person": ("Works paid per person (₹)", 1),
+    "need_vs_spend": ("Need vs spend (/100)", 1),
+    "records": ("Records", 1), "unit": ("Unit", 1), "as_of": ("As of", 1), "what": ("What it is", 1),
 }
-_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities"}
+_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities", "layer"}
 
 
 def _num(v):
@@ -460,6 +701,9 @@ def fact_tables(facts):
         for k, v in block.items():
             if isinstance(v, list) and v and isinstance(v[0], dict) and ("h3" in v[0] or "centroid" in v[0]):
                 out.append("**%s**\n\n%s" % (_title(k), _table(v[:TOP], None, "Location")))
+    inv = (facts.get("inventory") or {}).get("layers")
+    if inv:
+        out.append("**Data available to the analyst**\n\n" + _table(inv, "layer", "Layer"))
     ex = facts.get("excluded_as_implausible") or {}
     if ex.get("cells"):
         out.append("**Not ranked — modelled density looks implausible**\n\n" + _table(ex["cells"][:TOP], None, "Location")
@@ -518,10 +762,11 @@ def facts_summary(facts, why="returned no text"):
                 rows = []
                 for r in v[:5]:
                     c = r.get("centroid")
-                    where = ("cell %s (lon %s, lat %s)" % (r.get("h3"), c[0], c[1])) if c else "cell %s" % r.get("h3")
+                    where = ("cell %s (lon %s, lat %s)" % (r.get("h3"), c[0], c[1])) if c else (
+                        "cell %s" % r.get("h3") if r.get("h3") else str(r.get("layer") or r.get("place") or "—"))
                     if r.get("place"):
                         where = "%s — %s" % (r["place"], where)
-                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid", "lat_lon", "place"))
+                    vals = ", ".join("%s %s" % (kk, _fmt(vv)) for kk, vv in r.items() if kk not in ("h3", "centroid", "lat_lon", "place", "layer"))
                     rows.append("%s: %s" % (where, vals))
                 lines.append("- %s — " % k.replace("_", " ") + "; ".join(rows))
             elif isinstance(v, dict) and {"min", "max"} <= set(v):
@@ -558,19 +803,33 @@ def h_ask(ctx):
 
     topics = topics_of(question)
     cells, layer_counts, cell_source = city_cells(kfind)
-    if any(t in topics for t in ("access", "transit", "walk")):
+    if any(t in topics for t in ("access", "transit", "walk", "need", "inventory")):
         layer_counts.update(join_mobility(kfind, cells))
+    air_meta = None
+    if any(t in topics for t in ("air", "need", "inventory")):
+        air_meta = join_air(kfind, cells)
+        if air_meta:
+            layer_counts["air.quality"] = air_meta["cells"]
     facts = {"question_topics": topics}
-    sources = []
+    sources, map_cells = [], []
     if cells:
         facts["city_cells"] = {"source": cell_source, "cells": len(cells)}
         for t in topics:
-            if t != "works":
-                tf = topic_facts(t, cells, question)
-                if tf:
-                    facts[t] = tf
+            if t in ("works", "need", "inventory"):
+                continue
+            tf = air_facts(cells, air_meta) if t == "air" and air_meta else (topic_facts(t, cells, question) if t != "air" else None)
+            if tf:
+                facts[t] = tf
         sources.append(cell_source.split(" ")[0] if cell_source.startswith("city.") else "raw cell layers")
-    if "works" in topics or "overview" in topics:
+    if "need" in topics:
+        nf, map_cells, nc = need_facts(kfind, cells)
+        if nf:
+            facts["need"] = nf
+            layer_counts.update(nc)
+            sources.append("ward need-vs-spend (census 2011 + works + transit + air)")
+    if "inventory" in topics:
+        facts["inventory"] = inventory_facts(kfind, layer_counts, air_meta)
+    if "works" in topics or "overview" in topics:      # (not for "need" — its ward table already carries the spend)
         wf = works_facts(kfind)
         if wf:
             facts["public_works"] = wf
@@ -624,14 +883,18 @@ def h_ask(ctx):
               "headline, then at most 4 short '- ' bullets (name at most the top 3 places). Do NOT write any table and do NOT "
               "list every cell — the full ranked tables are appended automatically below your text. Round to at most 1 "
               "decimal, with thousands separators. Keep it under 120 words. If the question asks what to do, suggest options "
-              "grounded in the facts and any open recommendations. Do NOT show reasoning or restate the question. End with "
+              "grounded in the facts and any open recommendations. If facts.need is present: name the top 2–3 wards, compare the "
+              "first with facts.need.city_median_ward (e.g. '3.8× the median density, a third of the median spend per "
+              "person'), and say need_vs_spend is an equal-weight ranking aid, not a verdict. If facts.inventory is "
+              "present: summarise the data in 3–4 grouped bullets and name what is not available. "
+              "Do NOT show reasoning or restate the question. End with "
               "the single line 'Evidence quality: ok' (the full evidence line is appended for you). You inform; officials decide.")
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts, default=str)[:12000] + "\n\nQUESTION: " + question}]
     try:
         ans = (ctx["ai_complete"](msgs, ANSWER_TOKENS) or "").strip()
     except Exception as e:                                             # unavailable / timed out: still answer with the facts
-        return {"answer": facts_summary(facts, "is unavailable (%s)" % str(e)[:80]), "sources": sources, "facts": facts}, None
+        return {"answer": facts_summary(facts, "is unavailable (%s)" % str(e)[:80]), "sources": sources, "facts": _with_map(facts, map_cells)}, None
     ans = re.sub(r"(?is)<think>.*?</think>", "", ans).strip()
     _tells = ("the user wants", "the facts", "system prompt", "need to", "we need", "let me", "i should")
     if any(t in ans[:120].lower() for t in _tells):
@@ -639,8 +902,14 @@ def h_ask(ctx):
         if blocks:
             ans = blocks[-1].strip()
     if not ans.strip():                                                # the model spent its budget reasoning / returned nothing
-        return {"answer": facts_summary(facts), "sources": sources, "facts": facts}, None
-    return {"answer": compose_answer(ans, facts), "sources": sources, "facts": facts}, None
+        return {"answer": facts_summary(facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
+    return {"answer": compose_answer(ans, facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
+
+
+def _with_map(facts, map_cells):
+    """Every cell of each listed ward, labelled with the ward — the map lights the whole ward on hover. Kept out of the
+    FACTS the model sees (thousands of rows), added to the returned facts only."""
+    return dict(facts, map_cells=map_cells) if map_cells else facts
 
 
 HANDLERS = {"city-ask": h_ask}

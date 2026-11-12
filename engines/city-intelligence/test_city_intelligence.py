@@ -248,6 +248,60 @@ out, err = ci.h_ask({"body": {"question": "where is bus access worst?"}, "kfind"
 check("…a refused mobility read (stale grant) → reported missing, the answer still comes back",
       not err and "mobility.transit_access" in (out or {}).get("facts", {}).get("layers_missing_for_this_question", []), err)
 
+# 0.4.7 — the data inventory, air quality, and the ward need-vs-spend ranking
+check("0.4.7 'list the data you have access to' → the INVENTORY only (not the access/congestion topic)",
+      ci.topics_of("List the data you have access to") == ["inventory"] and ci.topics_of("what data do you have?") == ["inventory"],
+      ci.topics_of("List the data you have access to"))
+check("…'hotspot' is air, not heat; 'airport' is not air", ci.topics_of("where are the pollution hotspots?") == ["air"]
+      and "air" not in ci.topics_of("roads near the airport"), (ci.topics_of("where are the pollution hotspots?"), ci.topics_of("roads near the airport")))
+check("…works + people / metro → the need-vs-spend ranking alone",
+      ci.topics_of("Which crowded wards have weak metro access and low works spending?") == ["need"]
+      and ci.topics_of("works spend per person by ward") == ["need"] and ci.topics_of("which ward got the most works spend?") == ["works"],
+      ci.topics_of("Which crowded wards have weak metro access and low works spending?"))
+H = "2026-11-12T16:30:00Z"
+def aq(h, v, hour=H): return {"schema": "air.quality", "space": {"h3": h, "centroid": [77.6, 12.9]}, "pm25": v, "observed_at": hour, "method": "idw"}
+AIR = dict(MOB, **{
+    "air.hotspot": [{"space": {"h3": "a", "centroid": [77.50, 12.90]}, "value": 66.2, "severity": "info", "cell_count": 40, "observed_at": H}],
+    "air.sensor_reading": [{"space": {"h3": "b", "centroid": [77.60, 12.95]}, "sensor_id": "cpcb-jayanagar-5th-block--bengaluru---kspcb", "pm25": 91.5, "observed_at": "2026-11-12T17:30:00Z"}],
+    # the CURRENT hour (50+ cells so it is not a partial run) and an OLD, superseded hour with absurd values
+    "air.quality": [aq("a", 60.0), aq("b", 50.0), aq("c", 40.0)] + [aq("x%d" % i, 45.0) for i in range(60)]
+                   + [aq("a", 400.0, "2026-11-11T17:30:00Z"), aq("b", 380.0, "2026-11-11T17:30:00Z")],
+    "demographics.census_ward": [
+        {"ward_no": "116", "ward_name": "Nilasandra", "census_population": 30000, "census_density_per_km2": 67000, "cell_ref": {"h3_id": "a"}},
+        {"ward_no": "7", "ward_name": "Leafy", "census_population": 30000, "census_density_per_km2": 9000, "cell_ref": {"h3_id": "b"}},
+        {"ward_no": "9", "ward_name": "Outer", "census_population": 5000, "census_density_per_km2": 2000, "cell_ref": {"h3_id": "c"}}],
+    "works.ward_cell": [{"ward_no": "116", "paid_net_total": 1.5e8, "works_count": 70, "cell_ref": {"h3_id": "a"}, "series": [{"t": "2012"}, {"t": "2022"}]},
+                        {"ward_no": "7", "paid_net_total": 9.0e8, "works_count": 300, "cell_ref": {"h3_id": "b"}},
+                        {"ward_no": "9", "paid_net_total": 2.0e8, "works_count": 50, "cell_ref": {"h3_id": "c"}}],
+    "news.item": [{"title": "n1"}, {"title": "n2"}]})
+out, err, f, _ = ask("where is air pollution worst?", AIR)
+a_ = f.get("air") or {}
+check("…air question → the LATEST hour only (the stale 400 µg/m³ hour never appears)",
+      a_.get("pm25_hour") == H and (a_.get("pm25") or {}).get("max") == 60.0, a_.get("pm25"))
+check("…most polluted first, hotspots and the measured stations listed, and it says it is an estimate",
+      a_["most_polluted_cells"][0]["h3"] == "a" and a_["hotspots (top 5% of the city surface)"][0]["severity"] == "info"
+      and a_["stations (measured)"][0]["station"] == "Jayanagar 5th Block" and "ESTIMATE" in a_.get("how_estimated", ""), a_.get("stations (measured)"))
+check("…air.quality counts as used evidence", "air.quality" in f.get("layers_used_for_this_question", []), f.get("layers_used_for_this_question"))
+out, err, f, _ = ask("Which crowded wards have weak metro access and low works spending per person?", AIR)
+nd = f.get("need") or {}
+rows = nd.get("wards_with_most_need_for_least_spend") or []
+check("…need question → the dense, polluted, far-from-metro, under-spent ward ranks first",
+      [r["place"] for r in rows][:1] == ["Nilasandra (ward 116)"] and rows[0]["paid_per_person"] == 5000.0 and rows[0]["need_vs_spend"] >= rows[-1]["need_vs_spend"],
+      [(r["place"], r.get("need_vs_spend")) for r in rows])
+check("…it states the period, the city median ward and that it is a ranking aid",
+      nd.get("works_period") == "2012–2022" and nd["city_median_ward"]["paid_per_person"] and "RANKING AID" in nd.get("how_ranked", ""), nd.get("city_median_ward"))
+check("…no generic works / transit tables are attached to it", "public_works" not in f and "transit" not in f, list(f))
+check("…the ward's map cells are NOT sent to the model", "map_cells" not in f)
+check("…but are returned for the map (every cell labelled with its ward)",
+      {"h3": "a", "place": "Nilasandra (ward 116)"} in (out or {}).get("facts", {}).get("map_cells", []), (out or {}).get("facts", {}).get("map_cells"))
+ans, err = ask_text("Which crowded wards have weak metro access and low works spending per person?", AIR, "**x**\nEvidence quality: ok")
+check("…the answer carries the ward table with its headers",
+      "Nilasandra (ward 116)" in ans and "Works paid per person (₹)" in ans and "Need vs spend (/100)" in ans, ans[:400])
+ans, err = ask_text("List the data you have access to", AIR, "**x**\nEvidence quality: ok")
+check("…the inventory answer is ONE data table — air, census, works and news included, no congestion proxy",
+      "Data available to the analyst" in ans and "Census 2011 by ward" in ans and "Air quality — PM2.5 surface" in ans
+      and "News articles" in ans and "Proxy" not in ans, ans[:500])
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 
