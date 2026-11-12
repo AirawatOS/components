@@ -1,0 +1,22 @@
+# An ENGINE (kind=engine) — public works and tenders on the map, by ward. Works orders and tenders carry a ward number,
+# not coordinates; this joins the per-ward figures onto every H3 cell of the ward (space.ward_cell from ward-h3-map),
+# writing works.ward_cell (works count + spend) and procurement.ward_cell (tender count) for Visualize's Public Works layers.
+component_id: ds:airawat:engine/ward-works
+kind: engine
+version: 0.2.1   # 0.2.1: reports the true refused-write count (error_count, not the 50-per-call errors[]) and the kernel's messages. 0.2.0: a yearly series per ward (by work-order year, YEAR_FROM–YEAR_TO, default 2012–2022) that Visualize animates; payments joined to their work order. 0.1.1: tenders from 2022 on placed only when the title's ward name confirms the 2010 ward
+provider: ds:airawat:developer
+display_name: Ward Works (works and tenders by ward, on the map)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.ward_cell, city.cell_profile, works.ward_rollup, works.work_order, works.payment, procurement.tender]
+writes: [works.ward_cell, procurement.ward_cell]
+scopes:
+  - { verb: read,  scope: space.ward_cell }
+  - { verb: read,  scope: city.cell_profile }      # cell centroids (for place names on hover)
+  - { verb: read,  scope: works.ward_rollup }
+  - { verb: read,  scope: works.work_order }
+  - { verb: read,  scope: works.payment }
+  - { verb: read,  scope: procurement.tender }
+  - { verb: write, scope: works.ward_cell }
+  - { verb: write, scope: procurement.ward_cell }
+config: [YEAR_FROM, YEAR_TO, NEW_NUMBERING_FROM]
