@@ -1043,7 +1043,7 @@ function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true
 // layers; crowd-safety adds "People › Crowds". Nothing about air/flood/waste is baked into City Scan.
 const GRP_ORDER=["Environment","Built Environment","Mobility","People","Utilities","Land","Other"];  // display order; unknown groups append
 // LEGACY fallback — only for a layer whose descriptor predates the group tag.
-const LEGACY_G={"cell.builtup":"Built Environment","cell.greencover":"Environment","geo.terrain":"Built Environment",
+const LEGACY_G={"cell.builtup":"Built Environment","cell.greencover":"Environment","geo.terrain":"Environment",
   "cell.heat":"Environment","cell.rainfall":"Environment","cell.weather_forecast":"Environment","cell.hydrology":"Environment",
   "cell.buildings":"Built Environment","demographics.population":"People"};
 // Vector OVERLAYS (lines/points) are geometry, not choropleths — slot them into the same tree.
