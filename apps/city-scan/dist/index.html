@@ -619,7 +619,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
     const one=cls=>qpage("geo.osm_feature", (rows)=>{
         for(const o of rows){ const path=((o.geometry||{}).coordinates)||[];
           if(Array.isArray(path)&&path.length>1&&Array.isArray(path[0])&&inB(path[0])) DATA.roads.push({path,feature:o.feature}); }
-        OV_STAT.roads.loaded=DATA.roads.length; ovProgress("roads"); setBusy("Loading arterial roads… "+DATA.roads.length.toLocaleString());
+        DATA.roads=DATA.roads.slice(); OV_STAT.roads.loaded=DATA.roads.length; ovProgress("roads"); setBusy("Loading arterial roads… "+DATA.roads.length.toLocaleString());
         try{ render(); }catch(e){}
       }, 10000, 60000, {feature:cls}, ["geometry","feature"]);
     const rs=[], queue=ARTERIAL.slice();
@@ -637,7 +637,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
         const path=((o.geometry||{}).coordinates)||[];         // LINES only (osm-transit also writes stop POINTS here)
         if(Array.isArray(path)&&path.length>1&&Array.isArray(path[0])&&inB(path[0])) DATA.roads_local.push({path,feature:o.feature});
       }
-      OV_STAT.roads_local.loaded=DATA.roads_local.length; OV_STAT.roads_local.fetched=fetched; ovProgress("roads_local");
+      DATA.roads_local=DATA.roads_local.slice(); OV_STAT.roads_local.loaded=DATA.roads_local.length; OV_STAT.roads_local.fetched=fetched; ovProgress("roads_local");
       setBusy("Loading local roads… "+DATA.roads_local.length.toLocaleString());
       try{ render(); }catch(e){}
     }, 10000, 300000, null, ["geometry","feature"]);
@@ -648,7 +648,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
     DATA.water=[]; OV_STAT.water={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
     const r=await qpage("geo.hydro_feature",(rows,fetched)=>{ // PAGE-BY-PAGE: a big drainage/canal network can be tens of
       for(const o of rows){ if(o.geometry&&inB(firstpt(o.geometry))) DATA.water.push(o); }  // thousands of line features.
-      OV_STAT.water.loaded=DATA.water.length; OV_STAT.water.fetched=fetched; ovProgress("water");
+      DATA.water=DATA.water.slice(); OV_STAT.water.loaded=DATA.water.length; OV_STAT.water.fetched=fetched; ovProgress("water");
       try{ render(); }catch(e){}
     }, 20000, 300000, null, ["geometry","feature","name","stream_order"]);
     Object.assign(OV_STAT.water,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("water");
@@ -661,7 +661,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
         const c=((o.geometry||{}).coordinates)||o.centroid;
         if(Array.isArray(c)&&c.length===2&&inB(c)) DATA.facilities.push({c,cat:o.category,sub:o.subcategory,name:o.name,h3:o.h3_id});
       }
-      OV_STAT.facilities.loaded=DATA.facilities.length; OV_STAT.facilities.fetched=fetched; ovProgress("facilities");
+      DATA.facilities=DATA.facilities.slice(); OV_STAT.facilities.loaded=DATA.facilities.length; OV_STAT.facilities.fetched=fetched; ovProgress("facilities");
       try{ render(); }catch(e){}
     }, 8000, 200000);
     Object.assign(OV_STAT.facilities,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("facilities");
@@ -682,7 +682,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
         if(Array.isArray(c)&&c.length>=2&&typeof c[0]==="number"&&inB(c))
           DATA.issues.push({_iss:1,c:[c[0],c[1]],cat:o.category||"other",title:o.title||"",sev:o.severity||"",place:o.place_label||"",status:o.status||""});
       }
-      OV_STAT.issues.loaded=DATA.issues.length; OV_STAT.issues.fetched=fetched; ovProgress("issues");
+      DATA.issues=DATA.issues.slice(); OV_STAT.issues.loaded=DATA.issues.length; OV_STAT.issues.fetched=fetched; ovProgress("issues");
       try{ render(); }catch(e){}
     }, 8000, 200000);
     Object.assign(OV_STAT.issues,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("issues");
