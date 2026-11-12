@@ -449,7 +449,7 @@ function askLayer(){
     getFillColor:[56,189,248,55],getLineColor:[56,189,248,255],lineWidthUnits:"pixels",getLineWidth:2.5,pickable:false});
 }
 let tIdx=0, tPlaying=false, tTimer=null;   // TIME SCRUBBER: current frame index, playing?, animation timer
-let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=false, showIssues=false;   // drilled cell state + overlays
+let drillBuildings=[], footLoading=false, showBuildings=true, panelCollapsed=false, showFacilities=false, showSensors=false, showSites=false, showIssues=false, showTransit=false;   // drilled cell state + overlays
 let showPlan=false, PLAN=null, PLAN_BLD=null;   // greenfield land-use plan (3D): developable cells → zoning → massing
 let layerAlpha=0.6;    // user-controllable choropleth opacity (slider) — lower ⇒ basemap + places show through
 const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towers) — taller ⇒ value differences read clearly
@@ -644,7 +644,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
     setBusy("Loading local roads…");
     const r=await qpage("geo.osm_feature", (rows,fetched)=>{   // full network minus the arterial classes (kept client-side)
       for(const o of rows){
-        if(ARTSET.has(o.feature)) continue;                    // arterial lives in its own layer
+        if(ARTSET.has(o.feature)||TRANSIT_SET.has(o.feature)) continue;   // arterial + transit live in their own layers
         const path=((o.geometry||{}).coordinates)||[];         // LINES only (osm-transit also writes stop POINTS here)
         if(Array.isArray(path)&&path.length>1&&Array.isArray(path[0])&&inB(path[0])) DATA.roads_local.push({path,feature:o.feature});
       }
@@ -654,6 +654,22 @@ async function ensureOverlay(kind){                            // lazy-load the 
     }, 10000, 300000, null, ["geometry","feature"]);
     setBusy(null);
     Object.assign(OV_STAT.roads_local,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("roads_local");
+  }
+  else if(kind==="transit" && DATA.transit==null){            // metro / rail lines + stations + bus stops (osm-transit)
+    DATA.transit={lines:[],stops:[]}; OV_STAT.transit={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false,unit:"features"};
+    const add=(rows)=>{ const T={lines:DATA.transit.lines.slice(),stops:DATA.transit.stops.slice()};
+      for(const o of rows){ const g=o.geometry||{}, c=g.coordinates, t=o.tags||{};
+        if(g.type==="LineString"&&Array.isArray(c)&&c.length>1&&inB(c[0])) T.lines.push({path:c,metro:isMetro(t)||o.feature==="subway"||o.feature==="light_rail"||o.feature==="monorail",mode:o.feature});
+        else if(g.type==="Point"&&Array.isArray(c)&&c.length===2&&inB(c)){
+          const bus=o.feature==="bus_stop"||o.feature==="platform"||t._transit_mode==="bus";
+          T.stops.push({_tr:1,c,name:t.name||t["name:en"]||"",kind:bus?"bus stop":(isMetro(t)?"metro station":"rail station"),bus,metro:!bus&&isMetro(t)}); } }
+      DATA.transit=T; OV_STAT.transit.loaded=T.lines.length+T.stops.length; ovProgress("transit");
+      setBusy("Loading public transport… "+OV_STAT.transit.loaded.toLocaleString()); try{ render(); }catch(e){} };
+    const queue=[...TRANSIT_LINES,...TRANSIT_PTS]; let anyErr=false;
+    await Promise.all([0,1,2].map(async()=>{ while(queue.length){ const f=queue.shift();
+      const r=await qpage("geo.osm_feature",add,10000,60000,{feature:f},["geometry","feature","tags"]); anyErr=anyErr||r.err; } }));
+    setBusy(null);
+    Object.assign(OV_STAT.transit,{loading:false,done:true,err:anyErr}); ovProgress("transit");
   }
   else if(kind==="water" && DATA.water==null){
     DATA.water=[]; OV_STAT.water={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
@@ -905,6 +921,15 @@ function overlayLayers(){
       getColor:roadCol("arterial",drill),getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
       updateTriggers:{getWidth:[drill],getColor:[drill,basemap]}}));
   }
+  if(showTransit && DATA.transit && (DATA.transit.lines.length||DATA.transit.stops.length)){
+    const T=DATA.transit;
+    out.push(new deck.PathLayer({id:"transit-lines",data:T.lines,getPath:l=>l.path,widthUnits:"pixels",
+      getWidth:l=>l.metro?(drill?5:3.2):(drill?3:1.8),getColor:l=>l.metro?[126,34,206,240]:[55,65,81,220],capRounded:true,jointRounded:true,pickable:false}));
+    out.push(new deck.ScatterplotLayer({id:"transit-stops",data:T.stops.filter(x=>!x.bus).concat(T.stops.filter(x=>x.bus)),
+      getPosition:x=>x.c,radiusUnits:"pixels",getRadius:x=>x.bus?(drill?4:2.4):(x.metro?6.5:5),
+      getFillColor:x=>x.bus?[234,88,12,230]:(x.metro?[126,34,206,255]:[75,85,99,255]),stroked:true,getLineColor:[255,255,255,230],
+      lineWidthUnits:"pixels",getLineWidth:x=>x.bus?0.6:1.5,pickable:true}));
+  }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
   const iss=issuesLayer(); if(iss) out.push(iss);
   const sen=sensorsLayer(); if(sen) out.push(sen);
@@ -1105,6 +1130,7 @@ function tip(info){
   const L=LAYERS.find(l=>l.key===active);
   const o=info.object;
   const label = (o.prov&&o.status) ? ('<b style=\'color:'+(o.status==="tax-unregistered"?"#ff6b6b":"#6ab0e0")+'\'>'+(o.status==="tax-unregistered"?"UNREGISTERED property":"Registered property")+'</b>'+'<br>Owner: '+(o.prov.owner||'\u2014')+'<br>Survey UID: '+(o.prov.uid||'\u2014')+'<br>Tax record: '+(o.status==="tax-registered"?("Property #"+(o.prov.property_id||o.prov.uid)):"NOT ON TAX REGISTER")+'<br>Ward: '+(o.prov.ward||'\u2014')+'<br>Mobile: '+(o.prov.mobile||'\u2014')+'<br>Use: '+(o.prov.land_use||'\u2014')+'<br>Confidence: '+(o.prov.confidence==null?'\u2014':o.prov.confidence)) : o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
+              : o._tr ? `<b>${esc(o.name||o.kind)}</b> · <span style="color:var(--muted)">${esc(o.kind)}</span>`
               : o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
               : o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
               : o.feature!==undefined ? esc(o.feature||"road")
@@ -1132,11 +1158,17 @@ const OVL=[{id:"water",label:"Natural Drainage",grp:"Environment",sub:"Water",do
             interp:"The through-road hierarchy — motorway, trunk, primary, secondary, tertiary and their link ramps (OpenStreetMap). The light ~12k-segment overview of how the city connects; a traffic-emission proxy to correlate with the PM2.5 surface. Add 'Local & Residential Roads' for the full street mesh."},
            {id:"roads_local",label:"Local & Residential Roads",grp:"Mobility",sub:"Roads",dot:"#64748b",
             interp:"Every other street — residential, service, living-street, lanes, tracks and paths (~178k segments). Heavy, so it loads only on demand; use it when you need the full street-level detail rather than the arterial overview."},
+           {id:"transit",label:"Public transport",grp:"Mobility",sub:"Public transport",dot:"#7e22ce",
+            interp:"Metro lines (purple), suburban rail (grey), metro stations (large purple dots), rail stations (grey) and bus stops (small orange dots) from OpenStreetMap. Hover a stop or station for its name. OSM coverage of bus stops may be incomplete."},
            {id:"facilities",label:"Facilities",grp:"Built Environment",sub:"Facilities",dot:"#ef4444",
             interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."},
            {id:"issues",label:"Civic Issues",grp:"People",sub:"Civic",dot:"#a855f7",
             interp:"Geocoded civic issues — coloured by CATEGORY (law & order, water, roads, health…). Each point is a real, governed civic.issue placed on the map from the locality named in a news report or filed in a field report; issues that name no locality are not shown (never guessed). Hover a point for its category, severity and place. News is pulled and categorised per tenant, so the mix of categories reflects this city."}];
-const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities,issues:()=>showIssues};
+const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities,issues:()=>showIssues,transit:()=>showTransit};
+// OSM transit features (driver/osm-transit writes them into geo.osm_feature alongside the roads)
+const TRANSIT_LINES=["subway","light_rail","monorail","rail","tram"], TRANSIT_PTS=["station","halt","bus_stop","platform","stop","tram_stop"];
+const TRANSIT_SET=new Set([...TRANSIT_LINES,...TRANSIT_PTS]);
+const isMetro=t=>{ t=t||{}; return t.station==="subway"||t.railway==="subway"||t.subway==="yes"||/metro|bmrcl|namma/i.test((t.network||"")+(t.operator||"")+(t.name||"")); };
 let treeOpen=null;                                    // "g:<group>" / "s:<group>/<sub>" → open? (null = default all-COLLAPSED)
 let explainKey=null;                                  // which leaf's explanation is pinned in the bottom panel
 function buildTree(){                                  // → {group:{sub:[leaf]}} merging choropleths + overlays
@@ -1222,8 +1254,9 @@ async function reloadOverlay(kind){                            // clear the cach
   FRESH=true; try{ return await _reloadOverlay(kind); } finally { FRESH=false; }
 }
 async function _reloadOverlay(kind){
-  if(["roads","roads_local","water","facilities","issues"].includes(kind)){
+  if(["roads","roads_local","water","facilities","issues","transit"].includes(kind)){
     DATA[kind]=null;                                           // drop cached features → ensureOverlay re-fetches
+    if(kind==="transit") showTransit=true; else
     if(kind==="roads") showRoads=true; else if(kind==="roads_local") showRoadsLocal=true;
     else if(kind==="water") showWater=true; else if(kind==="issues") showIssues=true; else showFacilities=true;
     drawLayers(); drawExplain();
@@ -1282,10 +1315,10 @@ function drawLayers(){
     drawLayers(); render();
   });
   document.querySelectorAll('.layer-btn[data-ov]').forEach(b=>b.onclick=async()=>{            // vector OVERLAY (additive on/off) + pin explanation
-    const id=b.dataset.ov, lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities",issues:"civic issues"}[id];
+    const id=b.dataset.ov, lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities",issues:"civic issues",transit:"public transport"}[id];
     if(id==="water") showWater=!showWater; else if(id==="roads") showRoads=!showRoads;
     else if(id==="roads_local") showRoadsLocal=!showRoadsLocal; else if(id==="facilities") showFacilities=!showFacilities;
-    else if(id==="issues") showIssues=!showIssues;
+    else if(id==="issues") showIssues=!showIssues; else if(id==="transit") showTransit=!showTransit;
     setExplain(id);
     if(OVLON[id]()){ setBusy("Loading "+lbl+"…"); await ensureOverlay(id); setBusy(null); }
     drawLayers(); render();
