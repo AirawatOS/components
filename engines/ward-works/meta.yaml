@@ -1,0 +1,20 @@
+# An ENGINE (kind=engine) — public works and tenders on the map, by ward. Works orders and tenders carry a ward number,
+# not coordinates; this joins the per-ward figures onto every H3 cell of the ward (space.ward_cell from ward-h3-map),
+# writing works.ward_cell (works count + spend) and procurement.ward_cell (tender count) for Visualize's Public Works layers.
+component_id: ds:airawat:engine/ward-works
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Ward Works (works and tenders by ward, on the map)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.ward_cell, city.cell_profile, works.ward_rollup, procurement.tender]
+writes: [works.ward_cell, procurement.ward_cell]
+scopes:
+  - { verb: read,  scope: space.ward_cell }
+  - { verb: read,  scope: city.cell_profile }      # cell centroids (for place names on hover)
+  - { verb: read,  scope: works.ward_rollup }
+  - { verb: read,  scope: procurement.tender }
+  - { verb: write, scope: works.ward_cell }
+  - { verb: write, scope: procurement.ward_cell }
+config: []
