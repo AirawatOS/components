@@ -2,7 +2,7 @@
 # them (install-as-grant). Uses the host bridge /bridge/market (browse) + /bridge/install (as the user).
 component_id: ds:airawat:app/storefront
 kind: app
-version: 0.1.1
+version: 0.1.2   # 0.1.2: search box — name, id, kind, description, solution members; combines with the kind filter
 provider: ds:airawat:developer
 display_name: Marketplace
 icon: 🛒
