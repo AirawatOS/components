@@ -201,11 +201,20 @@ def build(read, tenant, now):
 
 
 def _write(rows, now):
+    """Batched writes. The kernel caps errors[] at 50 per call, so the TRUE count is error_count; the first distinct
+    messages are printed so a refused write says why (0.2.0 on staging failed 'silently': 200 counted, no reason)."""
     written = failed = 0
+    seen = {}
     for i in range(0, len(rows), BATCH):
         items = [{"scope": r["schema"], "id": r["id"], "object": r, "valid_time": {"from": now}} for r in rows[i:i + BATCH]]
         res = _call("/v1/write/batch", {"items": items, "asserted_at": now})
-        written += int(res.get("written", 0)); failed += len(res.get("errors") or [])
+        written += int(res.get("written", 0))
+        failed += int(res.get("error_count", len(res.get("errors") or [])))
+        for e in res.get("errors") or []:
+            msg = str(e.get("error"))[:300]
+            if msg not in seen and len(seen) < 5:
+                seen[msg] = e.get("id")
+                print("  ⚠ write refused (%s): %s" % (e.get("id"), msg), flush=True)
     return written, failed
 
 

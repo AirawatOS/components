@@ -3,7 +3,7 @@
 # writing works.ward_cell (works count + spend) and procurement.ward_cell (tender count) for Visualize's Public Works layers.
 component_id: ds:airawat:engine/ward-works
 kind: engine
-version: 0.2.0   # 0.2.0: a yearly series per ward (by work-order year, YEAR_FROM–YEAR_TO, default 2012–2022) that Visualize animates; payments joined to their work order. 0.1.1: tenders from 2022 on placed only when the title's ward name confirms the 2010 ward
+version: 0.2.1   # 0.2.1: reports the true refused-write count (error_count, not the 50-per-call errors[]) and the kernel's messages. 0.2.0: a yearly series per ward (by work-order year, YEAR_FROM–YEAR_TO, default 2012–2022) that Visualize animates; payments joined to their work order. 0.1.1: tenders from 2022 on placed only when the title's ward name confirms the 2010 ward
 provider: ds:airawat:developer
 display_name: Ward Works (works and tenders by ward, on the map)
 entrypoint: run.py
