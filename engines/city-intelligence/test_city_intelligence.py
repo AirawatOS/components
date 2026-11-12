@@ -194,6 +194,22 @@ ans, err = ask_text("which wards spent the most on works?", BASE, "**Ward 7 lead
 check("…works rollups become Ward / Contractor tables", "| # | Ward | Works | Paid (₹) |" in ans and "| 1 | Ward 7 | 1,200 | 610,000,000 |" in ans
       and "| 1 | Acme Roads |" in ans, ans)
 
+# 0.4.5 — a GHSL density above the densest census ward (staging: Cottonpete cell 197,759 /km²) is not ranked on density
+SPIKE = dict(OUT, **{"city.cell_profile": OUT["city.cell_profile"] + [
+    profile("s", 77.5638, 12.9722, population=21446, density_per_km2=197759, road_density_km_per_km2=35.7)],
+    "space.place": [{"kind": "locality", "name": "Nagamma Nagar", "centroid": [77.5641, 12.9725]}]})
+out, err, f, _ = ask("which areas are most congested?", SPIKE)
+acc = f.get("access") or {}
+prox = acc.get(next((k for k in acc if k.startswith("PROXY")), ""), [])
+ex = f.get("excluded_as_implausible") or {}
+check("0.4.5 the implausible spike is NOT ranked in the congestion proxy", "s" not in [r.get("h3") for r in prox], [r.get("h3") for r in prox])
+check("…it is listed (with its place) under excluded_as_implausible, with the reason",
+      [r.get("h3") for r in ex.get("cells", [])] == ["s"] and ex["cells"][0].get("place", "").startswith("Nagamma Nagar") and "census" in ex.get("why", ""), ex)
+ans, err = ask_text("which areas are most congested?", SPIKE, "**x**\nEvidence quality: ok")
+check("…and the answer carries a 'Not ranked — modelled density looks implausible' table", "Not ranked — modelled density looks implausible" in ans and "Nagamma Nagar" in ans)
+out, err, f, _ = ask("which areas are most populated?", SPIKE)
+check("…and is not in the most-populous list either", "s" not in [r.get("h3") for r in (f.get("population") or {}).get("most_populous_cells", [])])
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 

@@ -18,7 +18,7 @@ confined model (ctx["ai_complete"]) on ONLY those facts, and returns {answer, so
     layers exist.
 AI informs; a human decides (ADR-0029).
 """
-import json, math, re
+import json, math, os, re
 
 HOT_FLOOD = ("high", "severe")
 TOP = 8
@@ -177,6 +177,17 @@ def city_cells(kfind):
     return cells, {s: k for s, k in counts.items() if k}, ("raw layers (no city.cell_profile yet — run City Profile)" if cells else None)
 
 
+# 0.4.5 — the GHSL population grid is a MODEL that can over-allocate dense commercial cores (staging: a Cottonpete cell at
+# 197,759 /km², 1.7x the densest census ward). A cell denser than the densest 2011 census ward is not ranked on density;
+# it is listed under excluded_as_implausible instead (never silently dropped).
+DENSITY_MAX = float(os.environ.get("DENSITY_PLAUSIBLE_MAX", "113590"))
+
+
+def plausible(c):
+    d = c.get("density_per_km2")
+    return not (isinstance(d, (int, float)) and d > DENSITY_MAX)
+
+
 def _row(c, fields):
     cen = (c.get("cell_ref") or {}).get("centroid")
     r = {"h3": _h3(c), "centroid": cen}
@@ -251,13 +262,13 @@ def topic_facts(topic, cells, question):
             cells, lambda c: (c.get("density_per_km2") or 0) / max(c.get("road_density_km_per_km2") or 1.0, 1.0),
             ("density_per_km2", "road_density_km_per_km2"),
             cond=lambda c: c.get("density_per_km2") is not None and c.get("road_density_km_per_km2") is not None
-            and c["density_per_km2"] >= _med)
+            and c["density_per_km2"] >= _med and plausible(c))
     elif topic == "buildings":
         f["building_coverage"] = _stats(cells, "building_coverage")
         f["most_built_up_cells"], _ = _top(cells, num("built_volume_m3"), ("built_volume_m3", "building_coverage", "mean_height_m", "density_per_km2"))
     elif topic == "population":
         f["population"] = _stats(cells, "population")
-        f["most_populous_cells"], _ = _top(cells, num("population"), ("population", "density_per_km2"))
+        f["most_populous_cells"], _ = _top(cells, num("population"), ("population", "density_per_km2"), cond=plausible)
     elif topic == "overview":
         for k in ("heat_c", "rainfall_mm", "flood_susceptibility", "population", "green_frac", "building_coverage", "road_density_km_per_km2"):
             s = _stats(cells, k)
@@ -389,6 +400,10 @@ def fact_tables(facts):
         for k, v in block.items():
             if isinstance(v, list) and v and isinstance(v[0], dict) and ("h3" in v[0] or "centroid" in v[0]):
                 out.append("**%s**\n\n%s" % (_title(k), _table(v[:TOP], None, "Location")))
+    ex = facts.get("excluded_as_implausible") or {}
+    if ex.get("cells"):
+        out.append("**Not ranked — modelled density looks implausible**\n\n" + _table(ex["cells"][:TOP], None, "Location")
+                   + "\n\n_" + ex["why"] + "._")
     pw = facts.get("public_works") or {}
     if pw.get("wards_by_spend"):
         out.append("**Wards by works spend**\n\n" + _table(pw["wards_by_spend"][:TOP], "ward", "Ward"))
@@ -510,6 +525,14 @@ def h_ask(ctx):
     if annotate_places(facts, places):
         facts["places_source"] = "space.place gazetteer (OpenStreetMap names; nearest named place to each cell centroid)"
         sources.append("space.place")
+    if any(t in topics for t in ("access", "population", "services")):
+        odd = sorted((c for c in cells.values() if not plausible(c)), key=lambda c: -(c.get("density_per_km2") or 0))
+        if odd:
+            facts["excluded_as_implausible"] = {
+                "why": "GHSL modelled density above the densest 2011 census ward (%s /km²) — likely an overestimate in a "
+                       "commercial core; not ranked on density" % "{:,.0f}".format(DENSITY_MAX),
+                "cells": [_row(c, ("population", "density_per_km2")) for c in odd[:TOP]]}
+            annotate_places({"x": facts["excluded_as_implausible"]}, places)    # name them too (built after the main pass)
     present = sorted(layer_counts)
     wanted = sorted({FIELD_LAYER[f] for t in topics for f in TOPICS.get(t, ((), ()))[1] if f in FIELD_LAYER})
     facts["layers_present"] = {s: layer_counts[s] for s in present}
