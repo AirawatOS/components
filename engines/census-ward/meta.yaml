@@ -1,0 +1,16 @@
+# An ENGINE (kind=engine) — the official 2011 census, by ward, on the city grid: every H3 cell of a ward carries its
+# ward's census population, area and density (demographics.census_ward) — a cross-check beside the GHSL 2020 model.
+component_id: ds:airawat:engine/census-ward
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Census Ward (2011 census by ward, on the map)
+entrypoint: run.py
+confinement_min: L1
+reads: [space.ward_cell, city.cell_profile]
+writes: [demographics.census_ward]
+config: [WARD_GEOJSON, WARD_NO_KEY, POP_KEY, AREA_KEY, CENSUS_YEAR]
+scopes:
+  - { verb: read,  scope: space.ward_cell }
+  - { verb: read,  scope: city.cell_profile }     # cell centroids (place names on hover)
+  - { verb: write, scope: demographics.census_ward }
