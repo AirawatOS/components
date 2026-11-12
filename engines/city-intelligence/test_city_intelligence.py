@@ -210,6 +210,44 @@ check("…and the answer carries a 'Not ranked — modelled density looks implau
 out, err, f, _ = ask("which areas are most populated?", SPIKE)
 check("…and is not in the most-populous list either", "s" not in [r.get("h3") for r in (f.get("population") or {}).get("most_populous_cells", [])])
 
+# 0.4.6 — mobility layers (driver/mobility-indexes) joined by h3
+MOB = dict(BASE, **{
+    "mobility.walkability": [{"cell_ref": {"h3_id": "a"}, "walkability_score": 12.0, "intersection_density_per_km2": 40.0},
+                             {"cell_ref": {"h3_id": "b"}, "walkability_score": 88.0, "intersection_density_per_km2": 210.0},
+                             {"cell_ref": {"h3_id": "c"}, "walkability_score": 50.0, "intersection_density_per_km2": 120.0}],
+    "mobility.transit_access": [{"cell_ref": {"h3_id": "a"}, "transit_gap_score": 95.0, "dist_bus_stop_m": 2100, "dist_metro_m": 5200},
+                                {"cell_ref": {"h3_id": "b"}, "transit_gap_score": 0.0, "dist_bus_stop_m": 120, "dist_metro_m": 800},
+                                {"cell_ref": {"h3_id": "c"}, "transit_gap_score": 40.0, "dist_bus_stop_m": 900, "dist_metro_m": 6000}],
+    "mobility.chokepoint": [{"cell_ref": {"h3_id": "b"}, "chokepoint_score": 100.0}, {"cell_ref": {"h3_id": "c"}, "chokepoint_score": 35.0}]})
+out, err, f, _ = ask("where is bus and metro access worst?", MOB)
+tr = f.get("transit") or {}
+gaps = tr.get(next((k for k in tr if k.startswith("worst_transit_gaps")), ""), [])
+check("0.4.6 transit question → worst gaps first (a, then c); a cell with no gap is not listed",
+      [r["h3"] for r in gaps] == ["a", "c"] and gaps[0]["dist_bus_stop_m"] == 2100, [r.get("h3") for r in gaps])
+check("…underserved cells and people counted", tr.get("underserved_cells") == 2 and tr.get("people_in_underserved_cells") == 12500, tr)
+check("…the transit layer counts as used evidence", "mobility.transit_access" in f.get("layers_used_for_this_question", []), f.get("layers_used_for_this_question"))
+out, err, f, _ = ask("which areas are least walkable?", MOB)
+wk = f.get("walk") or {}
+least = wk.get(next((k for k in wk if k.startswith("least_walkable")), ""), [])
+check("…walkability question → least walkable POPULATED cells first (a; c has < 2,000 people)", [r["h3"] for r in least] == ["a", "b"], [r.get("h3") for r in least])
+out, err, f, _ = ask("which areas are most congested?", MOB)
+acc = f.get("access") or {}
+ck = acc.get(next((k for k in acc if "chokepoint" in k), ""), [])
+check("…congestion question also gets the chokepoint PROXY (b first), labelled not observed traffic",
+      [r["h3"] for r in ck][:1] == ["b"] and any("NOT observed traffic" in k for k in acc), list(acc))
+ans, err = ask_text("where is bus and metro access worst?", MOB, "**x**\nEvidence quality: ok")
+check("…tables carry mobility column headers", "Transit gap (/100)" in ans and "Nearest bus stop (m)" in ans, ans[:300])
+out, err, f, _ = ask("where is bus and metro access worst?", BASE)
+check("…with no mobility layers built, the transit layer is reported MISSING (not an all-clear)",
+      "mobility.transit_access" in f.get("layers_missing_for_this_question", []), f.get("layers_missing_for_this_question"))
+
+def refusing(s, where=None):
+    if s.startswith("mobility."): raise PermissionError("403 no read grant")
+    return list(MOB.get(s, []))
+out, err = ci.h_ask({"body": {"question": "where is bus access worst?"}, "kfind": refusing, "ai_complete": lambda m, n: "x\nEvidence quality: ok"})
+check("…a refused mobility read (stale grant) → reported missing, the answer still comes back",
+      not err and "mobility.transit_access" in (out or {}).get("facts", {}).get("layers_missing_for_this_question", []), err)
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 

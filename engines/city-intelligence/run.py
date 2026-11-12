@@ -37,6 +37,15 @@ RAW = {
 # profile field → the layer it comes from (for present / missing reporting)
 FIELD_LAYER = {f: s for s, m in RAW.items() for f in m}
 FIELD_LAYER["facility_count"] = "geo.facility"
+# 0.4.6 — mobility layers (driver/mobility-indexes), joined onto the cells by h3 whenever a mobility question is asked
+MOBILITY = {
+    "mobility.walkability": {"walkability_score": "walkability_score", "intersection_density_per_km2": "intersection_density_per_km2",
+                             "street_density_km_per_km2": "street_density_km_per_km2", "dead_end_share": "dead_end_share"},
+    "mobility.transit_access": {"transit_gap_score": "transit_gap_score", "dist_bus_stop_m": "dist_bus_stop_m",
+                                "dist_metro_m": "dist_metro_m"},
+    "mobility.chokepoint": {"chokepoint_score": "chokepoint_score"},
+}
+FIELD_LAYER.update({f: s for s, m in MOBILITY.items() for f in m})
 
 TOPICS = {   # topic → (question keywords, profile fields that answer it)
     "heat":      (("heat", "hot", "temperature", "cool"), ("heat_c", "population")),
@@ -45,8 +54,12 @@ TOPICS = {   # topic → (question keywords, profile fields that answer it)
     "services":  (("health", "hospital", "clinic", "school", "facility", "facilities", "service", "amenit", "centre", "center"),
                   ("facility_count", "population")),
     "green":     (("green", "tree", "park", "open space", "vegetation", "canopy"), ("green_frac", "builtup_frac", "population")),
-    "access":    (("road", "traffic", "congest", "transport", "mobility", "access", "connect"),
-                  ("road_density_km_per_km2", "density_per_km2")),
+    "access":    (("road", "traffic", "congest", "transport", "mobility", "access", "connect", "bottleneck", "chokepoint"),
+                  ("road_density_km_per_km2", "density_per_km2", "chokepoint_score")),
+    "transit":   (("bus", "metro", "transit", "public transport", "stop", "commut", "station", "last mile", "last-mile"),
+                  ("transit_gap_score", "dist_bus_stop_m", "dist_metro_m", "population")),
+    "walk":      (("walk", "pedestrian", "footpath", "sidewalk", "street grid", "cycl", "15-minute", "15 minute"),
+                  ("walkability_score", "intersection_density_per_km2", "population")),
     "buildings": (("building", "housing", "construct", "dense", "density", "height", "built"),
                   ("building_coverage", "built_volume_m3", "density_per_km2")),
     "population": (("population", "people", "resident", "crowd", "where do people"), ("population", "density_per_km2")),
@@ -140,6 +153,32 @@ def crowd_facts(kfind, cov):
 
 
 # ── the city layers: the cell profile (or the raw layers as a fallback) ────────────────────────────────────────────
+def join_mobility(kfind, cells):
+    """Add the mobility fields onto the cells (by h3; a cell missing from the base set is added). → {schema: n}."""
+    counts = {}
+    for schema, fmap in MOBILITY.items():
+        n = 0
+        try:
+            rows = kfind(schema)
+        except Exception:                      # e.g. this engine's grant predates the mobility reads → reported missing
+            rows = []
+        for o in rows:
+            h = _h3(o)
+            if not h:
+                continue
+            c = cells.get(h)
+            if c is None:
+                c = cells[h] = {"cell_ref": {"h3_id": h, "centroid": (o.get("cell_ref") or {}).get("centroid")}}
+            for dst, src in fmap.items():
+                v = _get(o, src)
+                if v is not None:
+                    c[dst] = v
+            n += 1
+        if n:
+            counts[schema] = n
+    return counts
+
+
 def city_cells(kfind):
     """(cells {h3: profile-shaped dict}, layer_counts {schema: n}, source) — the rollup if present, else the raw join."""
     prof = kfind("city.cell_profile")
@@ -263,6 +302,24 @@ def topic_facts(topic, cells, question):
             ("density_per_km2", "road_density_km_per_km2"),
             cond=lambda c: c.get("density_per_km2") is not None and c.get("road_density_km_per_km2") is not None
             and c["density_per_km2"] >= _med and plausible(c))
+        if any(isinstance(c.get("chokepoint_score"), (int, float)) for c in cells.values()):
+            f["PROXY_network_chokepoints (routes concentrate here — sampled betweenness on the arterial network; NOT observed traffic)"], _ = _top(
+                cells, num("chokepoint_score"), ("chokepoint_score",), cond=lambda c: isinstance(c.get("chokepoint_score"), (int, float)))
+    elif topic == "transit":
+        f["dist_bus_stop_m"] = _stats(cells, "dist_bus_stop_m")
+        f["dist_metro_m"] = _stats(cells, "dist_metro_m")
+        under = [c for c in cells.values() if isinstance(c.get("transit_gap_score"), (int, float)) and c["transit_gap_score"] > 0]
+        f["underserved_cells"] = len(under)
+        f["people_in_underserved_cells"] = round(sum(c.get("population") or 0 for c in under if plausible(c)))
+        f["worst_transit_gaps (people far from a bus stop / metro; straight-line distance)"], _ = _top(
+            cells, num("transit_gap_score"), ("transit_gap_score", "population", "dist_bus_stop_m", "dist_metro_m"),
+            cond=lambda c: (c.get("transit_gap_score") or 0) > 0 and plausible(c))
+    elif topic == "walk":
+        f["walkability_score"] = _stats(cells, "walkability_score")
+        f["least_walkable_populated_cells (street layout only)"], _ = _top(
+            cells, num("walkability_score"), ("walkability_score", "intersection_density_per_km2", "population"), reverse=False,
+            cond=lambda c: isinstance(c.get("walkability_score"), (int, float)) and (c.get("population") or 0) >= 2000 and plausible(c))
+        f["most_walkable_cells"], _ = _top(cells, num("walkability_score"), ("walkability_score", "intersection_density_per_km2"))
     elif topic == "buildings":
         f["building_coverage"] = _stats(cells, "building_coverage")
         f["most_built_up_cells"], _ = _top(cells, num("built_volume_m3"), ("built_volume_m3", "building_coverage", "mean_height_m", "density_per_km2"))
@@ -360,6 +417,9 @@ COLS = {   # field → (header, scale) — percentages from fractions; everythin
     "hand_mean_m": ("Height above drainage (m)", 1), "building_coverage": ("Building coverage (%)", 100),
     "mean_height_m": ("Mean height (m)", 1), "built_volume_m3": ("Built volume (m³)", 1),
     "facility_count": ("Facilities", 1), "works_count": ("Works", 1), "paid_net_total": ("Paid (₹)", 1),
+    "walkability_score": ("Walkability (/100)", 1), "intersection_density_per_km2": ("Junctions (/km²)", 1),
+    "transit_gap_score": ("Transit gap (/100)", 1), "dist_bus_stop_m": ("Nearest bus stop (m)", 1),
+    "dist_metro_m": ("Nearest metro (m)", 1), "chokepoint_score": ("Chokepoint (/100)", 1),
 }
 _SKIP = {"h3", "centroid", "lat_lon", "place", "facilities"}
 
@@ -498,6 +558,8 @@ def h_ask(ctx):
 
     topics = topics_of(question)
     cells, layer_counts, cell_source = city_cells(kfind)
+    if any(t in topics for t in ("access", "transit", "walk")):
+        layer_counts.update(join_mobility(kfind, cells))
     facts = {"question_topics": topics}
     sources = []
     if cells:

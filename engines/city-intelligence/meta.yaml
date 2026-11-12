@@ -8,7 +8,7 @@
 # resolves here with NO host code and NO baking — swap or upgrade by publishing a new version.
 component_id: ds:airawatdeveloper:engine/city-intelligence
 kind: engine
-version: 0.4.5   # 0.4.5: cells denser than the densest 2011 census ward (113,590 /km²; DENSITY_PLAUSIBLE_MAX) are not ranked on density — shown under 'not ranked — modelled density looks implausible' (GHSL over-allocates commercial cores). 0.4.4: the engine writes the ranked tables (never truncated; exact place labels for the map link) and the evidence line; the model writes only a short headline + bullets; a cut-off reply drops its dangling fragment and is marked shortened. 0.4.3: cells named by their nearest gazetteer place ('near Jayanagar (1.6 km)'), from space.place; lat/lon only when no named place is within 2.5 km. 0.4.2: Markdown answers (tables for ranked cells, lat/lon not h3 ids, one short evidence line); the congestion proxy ranks only the denser half of the city (outskirts with almost no roads no longer top it). 0.4.1: answer budget 900 → 1800 (the reasoning model used it all thinking → empty answer); an empty model reply shows the computed facts instead of 'No answer'. 0.4.0: a general city analyst — reads the city.cell_profile rollup (raw cell layers as fallback), the works rollups and ALL open recommendations; topic-chosen facts; missing layers stated; proxies labelled
+version: 0.4.6   # 0.4.6: mobility — joins walkability, transit access and chokepoints (driver/mobility-indexes); transit and walkability topics; congestion questions also get the chokepoint PROXY. 0.4.5: cells denser than the densest 2011 census ward (113,590 /km²; DENSITY_PLAUSIBLE_MAX) are not ranked on density — shown under 'not ranked — modelled density looks implausible' (GHSL over-allocates commercial cores). 0.4.4: the engine writes the ranked tables (never truncated; exact place labels for the map link) and the evidence line; the model writes only a short headline + bullets; a cut-off reply drops its dangling fragment and is marked shortened. 0.4.3: cells named by their nearest gazetteer place ('near Jayanagar (1.6 km)'), from space.place; lat/lon only when no named place is within 2.5 km. 0.4.2: Markdown answers (tables for ranked cells, lat/lon not h3 ids, one short evidence line); the congestion proxy ranks only the denser half of the city (outskirts with almost no roads no longer top it). 0.4.1: answer budget 900 → 1800 (the reasoning model used it all thinking → empty answer); an empty model reply shows the computed facts instead of 'No answer'. 0.4.0: a general city analyst — reads the city.cell_profile rollup (raw cell layers as fallback), the works rollups and ALL open recommendations; topic-chosen facts; missing layers stated; proxies labelled
 provider: ds:airawat:developer
 display_name: City Intelligence
 entrypoint: run.py
@@ -17,7 +17,7 @@ implements: [city.analyst@0.1.0]
 verbs:
   city-ask: city.analyst@0.1.0
 required_schemas: [governance.recommendation, city.coverage]   # 0.4.0: every other layer is OPTIONAL — absent layers are reported, not required
-reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness, city.cell_profile, cell.heat, cell.rainfall, cell.weather_forecast, cell.builtup, cell.greencover, cell.hydrology, demographics.population, cell.buildings, cell.roads, geo.facility, works.city_summary, works.ward_rollup, works.contractor_rollup, space.place]
+reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness, city.cell_profile, cell.heat, cell.rainfall, cell.weather_forecast, cell.builtup, cell.greencover, cell.hydrology, demographics.population, cell.buildings, cell.roads, geo.facility, works.city_summary, works.ward_rollup, works.contractor_rollup, space.place, mobility.walkability, mobility.transit_access, mobility.chokepoint]
 writes: []
 scopes:
   - { verb: read, scope: risk.flood }
@@ -41,3 +41,6 @@ scopes:
   - { verb: read, scope: works.ward_rollup }
   - { verb: read, scope: works.contractor_rollup }
   - { verb: read, scope: space.place }
+  - { verb: read, scope: mobility.walkability }
+  - { verb: read, scope: mobility.transit_access }
+  - { verb: read, scope: mobility.chokepoint }
