@@ -13,7 +13,7 @@ IDENTITY = os.environ.get("IDENTITY_URL", "http://identity:8093")
 DEV_USER = os.environ.get("DEV_USER", "devrick")
 DEV_REALM = os.environ.get("DEV_REALM", "")
 STEWARD_USER = os.environ.get("STEWARD_USER", "steward")
-VER = "0.1.0"
+VER = os.environ.get("SCHEMA_VERSION", "0.2.0")        # 0.2.0 adds works.ward_cell.series
 IDP = r"^ds:[a-z0-9-]+:\S+$"
 
 
@@ -38,6 +38,9 @@ def defn(sid, domain, desc, values, subject):
              "cell_ref": {"type": "object", "required": ["h3_id"], "properties": {"h3_id": S, "centroid": {"type": "array"}}},
              "ward_no": S, "ward_name": {"type": ["string", "null"]}, "observed_at": S, "prov": {"type": "object"}}
     props.update({k: N for k in values})
+    if sid == "works.ward_cell":                         # 0.2.0: yearly series (by work-order year) for the time slider
+        props["series"] = {"type": "array", "items": {"type": "object", "required": ["t"], "additionalProperties": False,
+                           "properties": {"t": S, **{k: N for k in values}}}}
     return {"$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "https://airawat.org/domain/%s/0001/%s.schema.json" % (domain, sid),
             "title": sid, "type": "object", "x-kind": "measure", "x-subject": subject, "x-layer": "L3",

@@ -6,7 +6,8 @@ ward rollup; tenders: "…in Ward No-164 Vidyapeeta…" in the title). This engi
 H3 cell of the ward (space.ward_cell, written by ward-h3-map from the uploaded ward boundary) so Visualize can colour the
 city by ward:
 
-  works.ward_cell        — the ward's works_count and paid_net_total (₹), from works.ward_rollup
+  works.ward_cell        — the ward's works_count and paid_net_total (₹), from works.ward_rollup, plus (0.2.0) a
+                           yearly `series` by work-order year (YEAR_FROM–YEAR_TO) that Visualize animates
   procurement.ward_cell  — the ward's tenders_count, from procurement.tender titles
 
 Rules: a ward with no works / no tenders gets NO record for that layer (absence, not zero-filled); a tender whose title
@@ -26,6 +27,10 @@ _WARD_IN_TITLE = re.compile(r"\bward\s*(?:no\.?|number|num\.?)?\s*[-:#.]?\s*(\d{
 # BBMP renumbered its wards (198 → 243) in 2022: tenders up to 2021 always use the 2010 numbering; from 2022 on many use
 # the new one (staging: 981 titles name a 2022 ward, 644 a number above 198). The map's boundaries are the 2010 wards.
 NEW_NUMBERING_FROM = int(os.environ.get("NEW_NUMBERING_FROM", "2022"))
+# 0.2.0 — a YEARLY series per ward (by work-order year) so Visualize can animate spend over the years. The register's
+# payments carry no dates, so a work's net payment is attributed to the year its work order was issued.
+YEAR_FROM = int(os.environ.get("YEAR_FROM", "2012"))
+YEAR_TO = int(os.environ.get("YEAR_TO", "2022"))
 
 
 def _call(path, body):
@@ -97,6 +102,42 @@ def tender_ward(t, names=None):
     return w, None
 
 
+def order_year(wo):
+    """Year of a work order from work_order_date ('2015-04-01', '01/04/2015', '01-Apr-15'…) or sanctioned_year ('2023-24')."""
+    for k in ("work_order_date", "sanctioned_year"):
+        v = str(wo.get(k) or "")
+        m = re.search(r"(?<!\d)((?:19|20)\d{2})(?!\d)", v)
+        if m:
+            return int(m.group(1))
+        m = re.match(r"^\d{1,2}[-/][A-Za-z]{3}[-/](\d{2})$", v)
+        if m:
+            return 2000 + int(m.group(1))
+    return None
+
+
+def yearly(read, tenant):
+    """→ ({ward: {year: {"works_count", "paid_net_total"}}}, undated). Payments are joined to their work order."""
+    paid = {}
+    for p in read("works.payment"):
+        if _mine(p, tenant) and p.get("work_order") and isinstance(p.get("paid_net"), (int, float)):
+            paid[p["work_order"]] = paid.get(p["work_order"], 0.0) + p["paid_net"]
+    by, undated = {}, 0
+    for wo in read("works.work_order"):
+        if not _mine(wo, tenant):
+            continue
+        w, y = ward_no(wo.get("ward")), order_year(wo)
+        if not w:
+            continue
+        if y is None:
+            undated += 1; continue
+        if not (YEAR_FROM <= y <= YEAR_TO):
+            continue
+        cell = by.setdefault(w, {}).setdefault(y, {"works_count": 0, "paid_net_total": 0.0})
+        cell["works_count"] += 1
+        cell["paid_net_total"] += paid.get(wo.get("id"), 0.0)
+    return by, undated
+
+
 def _mine(o, tenant):
     return str(o.get("id") or "").startswith("ds:%s:" % tenant)
 
@@ -114,6 +155,8 @@ def build(read, tenant, now):
         ref = p.get("cell_ref") or {}
         if _mine(p, tenant) and ref.get("h3_id") and ref.get("centroid"):
             centroid[ref["h3_id"]] = ref["centroid"]
+    by_year, undated = yearly(read, tenant)
+    years = list(range(YEAR_FROM, YEAR_TO + 1))
     works = {}
     for r in read("works.ward_rollup"):
         w = ward_no(r.get("ward"))
@@ -140,14 +183,19 @@ def build(read, tenant, now):
             ref["centroid"] = centroid[h]
         base = {"tenant": tenant, "cell_ref": ref, "ward_no": w, "ward_name": name, "observed_at": now, "prov": prov}
         if w in works:
-            wrows.append(dict(base, schema="works.ward_cell", id="ds:%s:works/ward_cell/%s" % (tenant, h),
-                              **{k: v for k, v in works[w].items() if v is not None}))
+            row = dict(base, schema="works.ward_cell", id="ds:%s:works/ward_cell/%s" % (tenant, h),
+                       **{k: v for k, v in works[w].items() if v is not None})
+            if w in by_year:                      # every year in the window: a year with no work orders IS zero for the ward
+                row["series"] = [{"t": str(y), "works_count": by_year[w].get(y, {}).get("works_count", 0),
+                                  "paid_net_total": round(by_year[w].get(y, {}).get("paid_net_total", 0.0), 2)} for y in years]
+            wrows.append(row)
         if w in tenders:
             trows.append(dict(base, schema="procurement.ward_cell", id="ds:%s:procurement/ward_cell/%s" % (tenant, h),
                               tenders_count=tenders[w]))
     stats = {"cells_with_ward": len(cells), "wards_with_works": len(works), "wards_with_tenders": len(tenders),
              "tenders_placed": sum(tenders.values()), "tenders_unplaced": unplaced, "unplaced_by_reason": why,
-             "works_wards_not_on_map": sorted(set(works) - {w for w, _ in cells.values()}, key=int)[:20]}
+             "works_wards_not_on_map": sorted(set(works) - {w for w, _ in cells.values()}, key=int)[:20],
+             "series_years": "%d-%d" % (YEAR_FROM, YEAR_TO), "wards_with_series": len(by_year), "work_orders_undated": undated}
     return [{k: v for k, v in r.items() if v is not None} for r in wrows], \
            [{k: v for k, v in r.items() if v is not None} for r in trows], stats
 

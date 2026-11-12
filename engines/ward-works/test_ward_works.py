@@ -67,6 +67,41 @@ except Exception as e:
     ok, why = False, str(e)[:160]
 check("the governed definitions accept the records", ok, why)
 
+# 0.2.0 — yearly series by work-order year (staging dates: '2015-04-01', '01/04/2015', and a sanctioned_year '2023-24')
+check("order_year reads the staging date formats",
+      [ww.order_year(x) for x in ({"work_order_date": "2023-06-12"}, {"work_order_date": "01/04/2015"},
+                                  {"work_order_date": "01-Apr-15"}, {"sanctioned_year": "2023-24"}, {})] == [2023, 2015, 2015, 2023, None])
+Y = dict(DATA, **{
+    "works.work_order": [{"id": "ds:janaagraha:works/work_order/1", "ward": "154", "work_order_date": "01/04/2015"},
+                         {"id": "ds:janaagraha:works/work_order/2", "ward": "154", "work_order_date": "2015-09-01"},
+                         {"id": "ds:janaagraha:works/work_order/3", "ward": "154", "work_order_date": "2019-01-20"},
+                         {"id": "ds:janaagraha:works/work_order/4", "ward": "154"},                                   # undated
+                         {"id": "ds:janaagraha:works/work_order/5", "ward": "164", "work_order_date": "2008-03-03"}],  # outside window
+    "works.payment": [{"id": "p1", "work_order": "ds:janaagraha:works/work_order/1", "paid_net": 100.0},
+                      {"id": "p2", "work_order": "ds:janaagraha:works/work_order/2", "paid_net": 50.0},
+                      {"id": "p2b", "work_order": "ds:janaagraha:works/work_order/2", "paid_net": 25.0},
+                      {"id": "p3", "work_order": "ds:janaagraha:works/work_order/3", "paid_net": 10.0}]})
+ids_ok = all(p["id"].startswith("p") for p in Y["works.payment"])
+Y["works.payment"] = [dict(p, id="ds:janaagraha:works/payment/" + p["id"]) for p in Y["works.payment"]]
+works2, _, st2 = ww.build(lambda s: list(Y.get(s, [])), T, "2026-11-12T03:00:00Z")
+W2 = {r["cell_ref"]["h3_id"]: r for r in works2}
+ser = {e["t"]: e for e in W2.get("c1", {}).get("series", [])}
+check("0.2.0 every year of the window is a frame (2012–2022)", sorted(ser) == [str(y) for y in range(2012, 2023)], sorted(ser))
+check("…2015 = 2 works, ₹175 net (payments joined to their order); 2019 = 1 work, ₹10",
+      (ser.get("2015", {}).get("works_count"), ser.get("2015", {}).get("paid_net_total"),
+       ser.get("2019", {}).get("works_count"), ser.get("2019", {}).get("paid_net_total")) == (2, 175.0, 1, 10.0), (ser.get("2015"), ser.get("2019")))
+check("…a year with no work orders is 0 for that ward (2016)", ser.get("2016") == {"t": "2016", "works_count": 0, "paid_net_total": 0.0})
+check("…undated orders are counted and left out of the series", st2["work_orders_undated"] == 1)
+check("…a ward whose only order is outside the window gets no series", "series" not in W2.get("c3", {}), W2.get("c3", {}).get("series"))
+try:
+    import jsonschema
+    jsonschema.validate(W2["c1"], gov.defn(*gov.SCHEMAS[0])); ok, why = True, ""
+except ImportError:
+    d = gov.defn(*gov.SCHEMAS[0]); ok, why = "series" in d["properties"] and not (set(W2["c1"]) - set(d["properties"])), ""
+except Exception as e:
+    ok, why = False, str(e)[:160]
+check("…the 0.2.0 works.ward_cell definition accepts the series", ok, why)
+
 # paging: 3 pages of the cap, then a short page; a source that ignores the cursor (repeats page 1) must not loop forever
 pages = {None: [{"id": "t%d" % i} for i in range(ww.PAGE)], "p2": [{"id": "u%d" % i} for i in range(ww.PAGE)], "p3": [{"id": "v1"}]}
 nxt = {None: "p2", "p2": "p3", "p3": None}
