@@ -50,10 +50,10 @@ check("the centroid is carried for place names on hover", W["c1"]["cell_ref"].ge
 check("ids are the tenant's own and deterministic", W["c1"]["id"] == "ds:janaagraha:works/ward_cell/c1" and P["c3"]["id"] == "ds:janaagraha:procurement/ward_cell/c3")
 try:
     import jsonschema
-    jsonschema.validate(W["c1"], gov.defn(*gov.SCHEMAS[0][:2], gov.SCHEMAS[0][2], gov.SCHEMAS[0][3]))
-    jsonschema.validate(P["c3"], gov.defn(*gov.SCHEMAS[1][:2], gov.SCHEMAS[1][2], gov.SCHEMAS[1][3])); ok, why = True, ""
+    jsonschema.validate(W["c1"], gov.defn(*gov.SCHEMAS[0]))
+    jsonschema.validate(P["c3"], gov.defn(*gov.SCHEMAS[1])); ok, why = True, ""
 except ImportError:
-    d = gov.defn(*gov.SCHEMAS[0][:2], gov.SCHEMAS[0][2], gov.SCHEMAS[0][3]); extra = set(W["c1"]) - set(d["properties"])
+    d = gov.defn(*gov.SCHEMAS[0]); extra = set(W["c1"]) - set(d["properties"])
     ok, why = not extra and all(k in W["c1"] for k in d["required"]), extra
 except Exception as e:
     ok, why = False, str(e)[:160]
