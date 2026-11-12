@@ -22,7 +22,10 @@ TENANT = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""
 CID = os.environ.get("AIROS_COMPONENT_ID", "ds:airawat:engine/ward-works")
 CVER = os.environ.get("AIROS_COMPONENT_VERSION", "0.1.0")
 BATCH, PAGE = 2000, 20000
-_WARD_IN_TITLE = re.compile(r"\bward\s*(?:no\.?|number|num\.?)?\s*[-:#.]?\s*(\d{1,3})\b", re.I)
+_WARD_IN_TITLE = re.compile(r"\bward\s*(?:no\.?|number|num\.?)?\s*[-:#.]?\s*(\d{1,3})\b[\s,.-]*([A-Za-z][A-Za-z .]{2,30})?", re.I)
+# BBMP renumbered its wards (198 → 243) in 2022: tenders up to 2021 always use the 2010 numbering; from 2022 on many use
+# the new one (staging: 981 titles name a 2022 ward, 644 a number above 198). The map's boundaries are the 2010 wards.
+NEW_NUMBERING_FROM = int(os.environ.get("NEW_NUMBERING_FROM", "2022"))
 
 
 def _call(path, body):
@@ -60,12 +63,38 @@ def ward_no(v):
     return str(int(m.group(1))) if m else None
 
 
-def tender_ward(t):
+def _norm(s):
+    return re.sub(r"[^a-z]", "", str(s or "").lower().replace("ward", ""))
+
+
+def _year(t):
+    for k in ("published_at", "closing_at", "awarded_at"):
+        m = re.match(r"(\d{4})", str(t.get(k) or ""))
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def tender_ward(t, names=None):
+    """→ (ward_no, reason). The ward number from the `ward` field or the title, accepted only when it is a ward ON THE MAP
+    and — for a tender from NEW_NUMBERING_FROM on, when BBMP's 243-ward numbering was in use — only when the ward name in
+    the title matches the mapped ward of that number. Anything else is unplaced, with the reason; never guessed."""
+    names = names or {}
     w = ward_no(t.get("ward")) if t.get("ward") not in (None, "") else None
-    if w:
-        return w
-    m = _WARD_IN_TITLE.search(str(t.get("title") or ""))
-    return str(int(m.group(1))) if m else None
+    nm = ""
+    if not w:
+        m = _WARD_IN_TITLE.search(str(t.get("title") or ""))
+        if not m:
+            return None, "no ward in title"
+        w, nm = str(int(m.group(1))), _norm(m.group(2))
+    if names and w not in names:
+        return None, "not a ward on the map (newer numbering)"
+    y = _year(t)
+    if names and y is not None and y >= NEW_NUMBERING_FROM:
+        mapped = _norm(names.get(w))
+        if not (len(nm) >= 4 and mapped and nm[:5] == mapped[:5]):
+            return None, "%d+ tender, ward name does not confirm the 2010 numbering" % NEW_NUMBERING_FROM
+    return w, None
 
 
 def _mine(o, tenant):
@@ -90,15 +119,18 @@ def build(read, tenant, now):
         w = ward_no(r.get("ward"))
         if _mine(r, tenant) and w:
             works[w] = {"works_count": r.get("works_count"), "paid_net_total": r.get("paid_net_total")}
-    tenders, unplaced = {}, 0
+    names = {}
+    for w, nm in cells.values():
+        names.setdefault(w, nm)
+    tenders, unplaced, why = {}, 0, {}
     for t in read("procurement.tender"):
         if not _mine(t, tenant):
             continue
-        w = tender_ward(t)
+        w, reason = tender_ward(t, names)
         if w:
             tenders[w] = tenders.get(w, 0) + 1
         else:
-            unplaced += 1
+            unplaced += 1; why[reason] = why.get(reason, 0) + 1
     prov = {"component": "%s@%s" % (CID, CVER), "method": "ward figures joined onto the ward's H3 cells (space.ward_cell)",
             "observed_at": now}
     wrows, trows = [], []
@@ -114,7 +146,7 @@ def build(read, tenant, now):
             trows.append(dict(base, schema="procurement.ward_cell", id="ds:%s:procurement/ward_cell/%s" % (tenant, h),
                               tenders_count=tenders[w]))
     stats = {"cells_with_ward": len(cells), "wards_with_works": len(works), "wards_with_tenders": len(tenders),
-             "tenders_placed": sum(tenders.values()), "tenders_unplaced": unplaced,
+             "tenders_placed": sum(tenders.values()), "tenders_unplaced": unplaced, "unplaced_by_reason": why,
              "works_wards_not_on_map": sorted(set(works) - {w for w, _ in cells.values()}, key=int)[:20]}
     return [{k: v for k, v in r.items() if v is not None} for r in wrows], \
            [{k: v for k, v in r.items() if v is not None} for r in trows], stats

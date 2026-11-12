@@ -3,7 +3,7 @@
 # writing works.ward_cell (works count + spend) and procurement.ward_cell (tender count) for Visualize's Public Works layers.
 component_id: ds:airawat:engine/ward-works
 kind: engine
-version: 0.1.0
+version: 0.1.1   # 0.1.1: tenders from 2022 on (BBMP's 243-ward renumbering) are placed only when the ward name in the title confirms the 2010 ward; a number not on the map is unplaced
 provider: ds:airawat:developer
 display_name: Ward Works (works and tenders by ward, on the map)
 entrypoint: run.py

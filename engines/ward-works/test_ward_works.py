@@ -30,11 +30,15 @@ DATA = {
     "works.ward_rollup": [{"id": "ds:janaagraha:works/ward_rollup/154", "ward": "Ward 154", "works_count": 900, "paid_net_total": 4.2e8},
                           {"id": "ds:janaagraha:works/ward_rollup/164", "ward": 164, "works_count": 300, "paid_net_total": 1.1e8},
                           {"id": "ds:other:works/ward_rollup/2", "ward": "2", "works_count": 5}],
-    "procurement.tender": [{"id": "ds:janaagraha:procurement/tender/a", "title": "Maintainance of Road … in Ward No-164 Vidyapeeta call 3"},
-                           {"id": "ds:janaagraha:procurement/tender/b", "title": "Maintenance of road, drain and footpath work in ward no 154 Basavanagudi"},
-                           {"id": "ds:janaagraha:procurement/tender/c", "title": "Desilting in WARD 154"},
+    "procurement.tender": [{"id": "ds:janaagraha:procurement/tender/a", "title": "Maintainance of Road … in Ward No-164 Vidyapeeta call 3", "published_at": "2023-10-01"},
+                           {"id": "ds:janaagraha:procurement/tender/b", "title": "Maintenance of road, drain and footpath work in ward no 154 Basavanagudi", "published_at": "2019-04-02"},
+                           {"id": "ds:janaagraha:procurement/tender/c", "title": "Desilting in WARD 154", "published_at": "2016-01-10"},
                            {"id": "ds:janaagraha:procurement/tender/d", "title": "Supply of streetlights (city-wide)"},
-                           {"id": "ds:janaagraha:procurement/tender/e", "title": "Repairs", "ward": "2.0"}],
+                           {"id": "ds:janaagraha:procurement/tender/e", "title": "Repairs", "ward": "2.0"},
+                           # 2022+ tenders in BBMP's NEW 243-ward numbering — must NOT land on the 2010 ward of that number
+                           {"id": "ds:janaagraha:procurement/tender/f", "title": "Road works in Ward No 164 Avalahalli", "published_at": "2023-05-01"},
+                           {"id": "ds:janaagraha:procurement/tender/g", "title": "Footpath in ward 154", "published_at": "2024-02-01"},
+                           {"id": "ds:janaagraha:procurement/tender/h", "title": "Drains in Ward No-230 Hemmigepura", "published_at": "2022-08-01"}],
 }
 works, tenders, st = ww.build(lambda s: list(DATA.get(s, [])), T, "2026-11-12T03:00:00Z")
 W = {r["cell_ref"]["h3_id"]: r for r in works}; P = {r["cell_ref"]["h3_id"]: r for r in tenders}
@@ -45,7 +49,11 @@ check("a ward with no works gets no works record (no zero-fill)", "c4" not in W)
 check("another tenant's cell / rollup is ignored", "c9" not in W and "c9" not in P)
 check("tenders counted per ward from titles ('Ward No-164', 'ward no 154', 'WARD 154') and a ward field ('2.0')",
       (P.get("c1", {}).get("tenders_count"), P.get("c3", {}).get("tenders_count"), P.get("c4", {}).get("tenders_count")) == (2, 1, 1), P)
-check("a tender naming no ward is reported unplaced, not guessed", st["tenders_unplaced"] == 1 and st["tenders_placed"] == 4, st)
+check("a tender naming no ward is reported unplaced, not guessed", st["tenders_placed"] == 4 and st["unplaced_by_reason"].get("no ward in title") == 1, st)
+check("0.1.1 a 2022+ tender in the NEW numbering never lands on the 2010 ward of that number (164 Avalahalli, bare 154, 230)",
+      st["tenders_unplaced"] == 4 and st["unplaced_by_reason"].get("not a ward on the map (newer numbering)") == 1
+      and st["unplaced_by_reason"].get("2022+ tender, ward name does not confirm the 2010 numbering") == 2, st["unplaced_by_reason"])
+check("…while a 2022+ tender whose title names the 2010 ward (164 Vidyapeeta) is placed", P.get("c3", {}).get("tenders_count") == 1)
 check("the centroid is carried for place names on hover", W["c1"]["cell_ref"].get("centroid") == [77.57, 12.94])
 check("ids are the tenant's own and deterministic", W["c1"]["id"] == "ds:janaagraha:works/ward_cell/c1" and P["c3"]["id"] == "ds:janaagraha:procurement/ward_cell/c3")
 try:
