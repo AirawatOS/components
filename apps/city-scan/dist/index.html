@@ -929,9 +929,9 @@ function overlayLayers(){
     out.push(new deck.PathLayer({id:"transit-lines",data:T.lines,getPath:l=>l.path,widthUnits:"pixels",
       getWidth:l=>l.metro?(drill?5.5:4.5):(drill?3:2.5),getColor:l=>l.metro?[126,34,206,255]:[55,65,81,240],capRounded:true,jointRounded:true,pickable:false}));
     out.push(new deck.ScatterplotLayer({id:"transit-stops",data:T.bus_last||(T.bus_last=T.stops.filter(x=>x.bus).concat(T.stops.filter(x=>!x.bus))),
-      getPosition:x=>x.c,radiusUnits:"pixels",radiusMinPixels:3,getRadius:x=>x.bus?(drill?5:3.6):(x.metro?8:6.5),
+      getPosition:x=>x.c,radiusUnits:"pixels",radiusMinPixels:4,getRadius:x=>x.bus?(drill?6:5):(x.metro?10:8),
       getFillColor:x=>x.bus?[234,88,12,230]:(x.metro?[126,34,206,255]:[75,85,99,255]),stroked:true,getLineColor:[255,255,255,230],
-      lineWidthUnits:"pixels",getLineWidth:x=>x.bus?0.6:1.5,pickable:true}));
+      lineWidthUnits:"pixels",getLineWidth:x=>x.bus?1.2:2,lineWidthMinPixels:1,pickable:true}));
   }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
   const iss=issuesLayer(); if(iss) out.push(iss);
