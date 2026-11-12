@@ -614,12 +614,16 @@ async function ensureOverlay(kind){                            // lazy-load the 
     DATA.roads=[]; OV_STAT.roads={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
     let anyErr=false;
     setBusy("Loading arterial roads…");
-    const rs=await Promise.all(ARTERIAL.map(cls=>qpage("geo.osm_feature", (rows)=>{   // all classes IN PARALLEL
+    // THREE classes at a time: 10 parallel filtered scans exhausted the staging Postgres's 64 MB shared memory
+    // ("could not resize shared memory segment") → 502s and a stalled counter.
+    const one=cls=>qpage("geo.osm_feature", (rows)=>{
         for(const o of rows){ const path=((o.geometry||{}).coordinates)||[];
           if(Array.isArray(path)&&path.length>1&&Array.isArray(path[0])&&inB(path[0])) DATA.roads.push({path,feature:o.feature}); }
         OV_STAT.roads.loaded=DATA.roads.length; ovProgress("roads"); setBusy("Loading arterial roads… "+DATA.roads.length.toLocaleString());
         try{ render(); }catch(e){}
-      }, 20000, 60000, {feature:cls}, ["geometry","feature"])));
+      }, 10000, 60000, {feature:cls}, ["geometry","feature"]);
+    const rs=[], queue=ARTERIAL.slice();
+    await Promise.all([0,1,2].map(async()=>{ while(queue.length){ rs.push(await one(queue.shift())); } }));
     anyErr=rs.some(r=>r.err);
     setBusy(null);
     Object.assign(OV_STAT.roads,{loading:false,done:true,capped:false,err:anyErr}); ovProgress("roads");
@@ -636,7 +640,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
       OV_STAT.roads_local.loaded=DATA.roads_local.length; OV_STAT.roads_local.fetched=fetched; ovProgress("roads_local");
       setBusy("Loading local roads… "+DATA.roads_local.length.toLocaleString());
       try{ render(); }catch(e){}
-    }, 20000, 300000, null, ["geometry","feature"]);
+    }, 10000, 300000, null, ["geometry","feature"]);
     setBusy(null);
     Object.assign(OV_STAT.roads_local,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("roads_local");
   }
