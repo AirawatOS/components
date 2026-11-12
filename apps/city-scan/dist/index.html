@@ -679,6 +679,13 @@ const BASEMAPS={
   satellite:{label:"Satellite", opacity:1.0,  attr:"Imagery © Esri, Maxar, Earthstar Geographics", url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`}  // Esri: {z}/{y}/{x}
 };
 let basemap="standard";
+// Road overlay colours follow the BASEMAP: the light OSM "Standard" tiles need dark, saturated lines (the old near-white
+// arterials vanished on them); dark satellite imagery keeps light lines.
+function roadCol(kind,drill){
+  const light=basemap!=="satellite";
+  if(kind==="arterial") return light?(drill?[67,56,202,250]:[79,70,229,235]):(drill?[241,245,249,245]:[240,244,248,235]);
+  return light?(drill?[51,65,85,220]:[71,85,105,175]):(drill?[148,163,184,200]:[138,160,180,150]);
+}
 async function tileImage(x,y,z){
   const bm=BASEMAPS[basemap]||BASEMAPS.standard;
   const d=await bridge("/bridge/fetch",{app_id:APPID,url:bm.url(z,x,y)});
@@ -810,14 +817,14 @@ function overlayLayers(){
   if(showRoadsLocal && (DATA.roads_local||[]).length){         // LOCAL/residential mesh → thin, dim, UNDER the arterial layer
     out.push(new deck.PathLayer({id:"roads-local-ov",data:DATA.roads_local,widthUnits:"pixels",
       getWidth:drill?2:0.7,widthMinPixels:drill?1.2:0.5,
-      getColor:drill?[148,163,184,200]:[138,160,180,150],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
-      updateTriggers:{getWidth:[drill],getColor:[drill]}}));
+      getColor:roadCol("local",drill),getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      updateTriggers:{getWidth:[drill],getColor:[drill,basemap]}}));
   }
   if(showRoads && (DATA.roads||[]).length){                    // ARTERIAL network (geo.osm_feature) → brighter paths on top
     out.push(new deck.PathLayer({id:"roads-ov",data:DATA.roads,widthUnits:"pixels",
       getWidth:drill?4:1.8,widthMinPixels:drill?2:1.3,   // city-level roads were 0.5px @ alpha150 → washed out over the choropleth
-      getColor:drill?[241,245,249,245]:[240,244,248,235],getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
-      updateTriggers:{getWidth:[drill],getColor:[drill]}}));
+      getColor:roadCol("arterial",drill),getPath:p=>p.path,capRounded:true,jointRounded:true,pickable:false,
+      updateTriggers:{getWidth:[drill],getColor:[drill,basemap]}}));
   }
   const fac=facilitiesLayer(); if(fac) out.push(fac);
   const iss=issuesLayer(); if(iss) out.push(iss);
@@ -1041,9 +1048,9 @@ const LEGACY_G={"cell.builtup":"Built Environment","cell.greencover":"Environmen
 // Vector OVERLAYS (lines/points) are geometry, not choropleths — slot them into the same tree.
 const OVL=[{id:"water",label:"Natural Drainage",grp:"Environment",sub:"Water",dot:"#2dd4bf",
             interp:"The natural river / stream / drain network (MERIT Hydro). Overlay it on flood susceptibility to see where water pools."},
-           {id:"roads",label:"Arterial Roads",grp:"Mobility",sub:"Roads",dot:"#e2e8f0",
+           {id:"roads",label:"Arterial Roads",grp:"Mobility",sub:"Roads",dot:"#4f46e5",
             interp:"The through-road hierarchy — motorway, trunk, primary, secondary, tertiary and their link ramps (OpenStreetMap). The light ~12k-segment overview of how the city connects; a traffic-emission proxy to correlate with the PM2.5 surface. Add 'Local & Residential Roads' for the full street mesh."},
-           {id:"roads_local",label:"Local & Residential Roads",grp:"Mobility",sub:"Roads",dot:"#8aa0b4",
+           {id:"roads_local",label:"Local & Residential Roads",grp:"Mobility",sub:"Roads",dot:"#64748b",
             interp:"Every other street — residential, service, living-street, lanes, tracks and paths (~178k segments). Heavy, so it loads only on demand; use it when you need the full street-level detail rather than the arterial overview."},
            {id:"facilities",label:"Facilities",grp:"Built Environment",sub:"Facilities",dot:"#ef4444",
             interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."},
