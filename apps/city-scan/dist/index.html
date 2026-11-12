@@ -923,10 +923,13 @@ function overlayLayers(){
   }
   if(showTransit && DATA.transit && (DATA.transit.lines.length||DATA.transit.stops.length)){
     const T=DATA.transit;
+    // a white CASING under each line, so metro / rail read on any basemap and over any layer colour
+    out.push(new deck.PathLayer({id:"transit-casing",data:T.lines,getPath:l=>l.path,widthUnits:"pixels",
+      getWidth:l=>(l.metro?(drill?8:6.5):(drill?5:4)),getColor:[255,255,255,230],capRounded:true,jointRounded:true,pickable:false}));
     out.push(new deck.PathLayer({id:"transit-lines",data:T.lines,getPath:l=>l.path,widthUnits:"pixels",
-      getWidth:l=>l.metro?(drill?5:3.2):(drill?3:1.8),getColor:l=>l.metro?[126,34,206,240]:[55,65,81,220],capRounded:true,jointRounded:true,pickable:false}));
-    out.push(new deck.ScatterplotLayer({id:"transit-stops",data:T.stops.filter(x=>!x.bus).concat(T.stops.filter(x=>x.bus)),
-      getPosition:x=>x.c,radiusUnits:"pixels",getRadius:x=>x.bus?(drill?4:2.4):(x.metro?6.5:5),
+      getWidth:l=>l.metro?(drill?5.5:4.5):(drill?3:2.5),getColor:l=>l.metro?[126,34,206,255]:[55,65,81,240],capRounded:true,jointRounded:true,pickable:false}));
+    out.push(new deck.ScatterplotLayer({id:"transit-stops",data:T.bus_last||(T.bus_last=T.stops.filter(x=>x.bus).concat(T.stops.filter(x=>!x.bus))),
+      getPosition:x=>x.c,radiusUnits:"pixels",radiusMinPixels:3,getRadius:x=>x.bus?(drill?5:3.6):(x.metro?8:6.5),
       getFillColor:x=>x.bus?[234,88,12,230]:(x.metro?[126,34,206,255]:[75,85,99,255]),stroked:true,getLineColor:[255,255,255,230],
       lineWidthUnits:"pixels",getLineWidth:x=>x.bus?0.6:1.5,pickable:true}));
   }
