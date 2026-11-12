@@ -274,7 +274,24 @@ const RAMPS={
   reds:   [[38,22,16],[103,37,28],[176,58,42],[227,120,64],[255,214,150]],
   blues:  [[8,29,49],[16,73,115],[28,130,182],[70,175,230],[176,224,252]],
   aqi:    [[38,138,66],[190,204,50],[245,170,50],[230,72,58],[126,40,120]],  // green→yellow→orange→red→purple
-  greys:  [[26,32,40],[74,86,99],[136,150,163],[208,218,230]]};
+  greys:  [[26,32,40],[74,86,99],[136,150,163],[208,218,230]],
+  // SEMANTIC ramps — ONE meaning per colour across every layer (light → dark = less → more on the Standard map):
+  sem_worse:  [[255,255,204],[254,217,118],[253,141,60],[227,26,28],[128,0,38]],     // hazard / risk / gap: yellow → deep red
+  sem_better: [[247,252,245],[199,233,192],[116,196,118],[35,139,69],[0,68,27]],     // good things: pale → deep green
+  sem_neutral:[[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]]};  // amounts, no judgement: pale → deep blue
+// A layer's colour comes from its POLARITY (viz.layer `polarity`: worse | better | neutral | scale), not a per-layer
+// pick. `scale` keeps the layer's own published scale (e.g. CPCB AQI colours). Without `polarity`, higher_is_worse:true
+// → worse, else neutral. Darker = more on the light Standard map; on dark satellite imagery the ramp is reversed so
+// brighter = more (dark colours vanish there). The legend always uses the same ramp.
+// The governed viz.layer has no `polarity` field (additionalProperties:false), so its color_scale enum CARRIES the meaning:
+// reds = worse · viridis = better · blues = neutral · aqi = the published scale. An explicit `polarity` wins if present.
+const SCALE_POLARITY={reds:"worse",viridis:"better",blues:"neutral",aqi:"scale"};
+function polarityOf(d){ const p=String(d.polarity||"").toLowerCase();
+  if(["worse","better","neutral","scale"].includes(p)) return p;
+  return SCALE_POLARITY[String(d.color_scale||"").toLowerCase()]||(d.higher_is_worse===true?"worse":"neutral"); }
+function layerRamp(L){ if(!L) return RAMPS.sem_neutral;
+  if(L.pol==="scale") return L.ramp||RAMPS.viridis;
+  const r=RAMPS["sem_"+L.pol]||RAMPS.sem_neutral; return basemap==="satellite"?[...r].reverse():r; }
 const EMPTY_RGBA=[28,34,44,110];   // a TRUE-zero cell (absence) → muted slate, recedes as background vs low-but-present
 const GAMMA=0.55;                  // perceptual curve: spread skewed distributions (few dense cells) across the range
 const clamp01=t=>Math.max(0,Math.min(1,t));
@@ -657,7 +674,7 @@ async function load(){
   const seen={}, specs=[];
   for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
     specs.push({key:d.source_schema,label:d.label||d.source_schema,desc:d.description||"",vf:d.value_field,
-                unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,fmt:fmtFor(d.unit),
+                unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,pol:polarityOf(d),fmt:fmtFor(d.unit),
                 grp:d.group||"",sub:d.subgroup||"",sol:d.solution||"",
                 interp:d.interpretation||d.description||""}); }   // tree taxonomy + "how to read it" — REGISTRY-driven
   LAYERS=specs;
@@ -706,7 +723,7 @@ function setBasemap(key){
   if(!BASEMAPS[key]) return; basemap=key;
   const a=$("attrib"); if(a) a.textContent="Basemap "+BASEMAPS[key].attr;
   document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===key));
-  render();
+  render(); if(typeof drawLayers==="function") drawLayers();   // ramps (and their swatches) follow the basemap
 }
 function dataLayer(){
   const L=LAYERS.find(l=>l.key===active); if(!L||!DATA.data[L.key]) return null;
@@ -726,9 +743,9 @@ function dataLayer(){
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
     getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
     getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?Math.min(0.95,layerAlpha+0.28):layerAlpha),   // user-set alpha; a touch more solid in 3D so towers read
-    getFillColor:c=> askRed(c.h3) ? [239,68,68,255] : zero(c) ? EMPTY_RGBA : [...rampColor(L.ramp,pnorm(c)),255],
+    getFillColor:c=> askRed(c.h3) ? [239,68,68,255] : zero(c) ? EMPTY_RGBA : [...rampColor(layerRamp(L),pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
-    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx,ASK_HOVER_KEY], opacity:[!!drillCell,mode3d,layerAlpha]}});
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx,ASK_HOVER_KEY,basemap], opacity:[!!drillCell,mode3d,layerAlpha]}});
 }
 function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
 const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
@@ -958,7 +975,7 @@ function render(){
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
-    $("legbar").style.background=rampCSS(L.ramp);
+    $("legbar").style.background=rampCSS(layerRamp(L));
     if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=L.fmt(d.thi); }
     else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi); }
     // per-layer provenance: freshness (newest observation in THIS layer), mean confidence, method/model.
@@ -1179,7 +1196,7 @@ function drawLayers(){
         if(it.t==="layer"){ const L=it.L, d=DATA.data[L.key], n=d?d.rows.length:0, on=L.key===active, pin=explainKey===L.key;
           const meta = d?`${n} ${d.type==="path"?"segments":"cells"}`:"";
           html+=`<button class="layer-btn ${on?"on":""} ${pin?"pin":""}" data-k="${L.key}">
-            <span class="swatch" style="background:${rampCSS(L.ramp).replace('90deg','135deg')}"></span>
+            <span class="swatch" style="background:${rampCSS(layerRamp(L)).replace('90deg','135deg')}"></span>
             <span class="lb"><b>${esc(L.label)}</b>${meta?`<span>${meta}</span>`:""}</span></button>`;
         } else { const o=it.o, on=OVLON[o.id](), pin=explainKey===o.id;
           html+=`<button class="layer-btn ${on?"on":""} ${pin?"pin":""}" data-ov="${o.id}">
