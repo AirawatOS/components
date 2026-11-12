@@ -184,6 +184,17 @@
     background:#0a1320d9;border:1px solid var(--edge2);border-radius:999px;padding:4px 13px;color:var(--muted);
     font-size:11.5px;opacity:0;transition:opacity .3s}
   .drillhint.show{opacity:1}
+  /* place search — find a named place, fly there and open its cell (as a click would) */
+  .psearch{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:9;width:min(320px,60%)}
+  .psearch input{width:100%;box-sizing:border-box;background:#0e1c2ae6;border:1px solid var(--edge2);border-radius:9px;
+    color:inherit;font:inherit;font-size:13px;padding:7px 11px 7px 30px;outline:none}
+  .psearch input:focus{border-color:var(--accent)}
+  .psearch .pico{position:absolute;left:10px;top:7px;font-size:13px;opacity:.7;pointer-events:none}
+  .psres{margin-top:4px;background:#0c1622f7;border:1px solid var(--edge2);border-radius:9px;overflow:hidden;box-shadow:0 8px 24px #0006}
+  .psres:empty{display:none}
+  .psres div{padding:6px 11px;font-size:12.5px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+  .psres div span{color:var(--muted);font-size:11px}
+  .psres div.on,.psres div:hover{background:#ffffff14}
   /* lazy-load busy pill (shown while a layer/overlay fetches on demand) */
   .busy{position:absolute;left:50%;top:54px;transform:translateX(-50%);z-index:8;pointer-events:none;
     background:#0c1622f2;border:1px solid var(--edge2);border-radius:999px;padding:6px 15px;color:var(--muted);
@@ -232,6 +243,7 @@
     <div class="loading" id="mapload">initialising map…</div>
     <div class="cellpanel" id="cellpanel" hidden></div>
     <div class="drillhint" id="drillhint">click a cell to drill in · Esc to exit</div>
+    <div class="psearch"><span class="pico">🔍</span><input id="psq" type="search" autocomplete="off" placeholder="Find a place — e.g. Nilasandra, Jayanagar…" aria-label="Find a place"><div class="psres" id="psres"></div></div>
     <div class="scrubber" id="scrubber" hidden></div>
     <div class="busy" id="busy" hidden></div>
     <div class="tip" id="tip"></div>
@@ -1112,7 +1124,59 @@ async function loadPlaces(){
   if(PLACES) return;
   const rows=await q("space.place");
   PLACES=rows.filter(p=>(p.kind==="locality"||p.kind==="ward")&&p.name&&Array.isArray(p.centroid)&&p.centroid.length>=2)
-             .map(p=>[+p.centroid[0],+p.centroid[1],String(p.name)]);
+             .map(p=>[+p.centroid[0],+p.centroid[1],String(p.name),p.kind==="ward"?"ward":"locality"]);
+}
+// ── place search: gazetteer localities + wards → fly there and open the cell, exactly as a click on the map would ──
+let PS_HITS=[], PS_SEL=0, PS_X=null;
+// beyond the gazetteer's localities: the city's WARDS (space.ward — the gazetteer has none) and metro / rail STATIONS
+// (osm-transit), so "Nilasandra" or "MG Road" are findable. Loaded once, centroids only (field projection).
+async function psExtra(){
+  if(PS_X) return; PS_X=[];
+  const get=async(body)=>{ try{ const d=await bridge("/bridge/query",Object.assign({app_id:APPID,limit:5000},body));
+    return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } };
+  const [wards,st]=await Promise.all([get({schema:"space.ward",fields:["name","ward_no","centroid"]}),
+                                      get({schema:"geo.osm_feature",filter:{feature:"station"},fields:["geometry","tags","feature"]})]);
+  for(const w of wards){ const c=w.centroid; if(w.name&&Array.isArray(c)&&c.length>=2)
+    PS_X.push([+c[0],+c[1],String(w.name).replace(/\s+Ward$/i,""),"ward "+(w.ward_no||"")]); }
+  for(const o of st){ const c=(o.geometry||{}).coordinates, t=o.tags||{}, n=t.name||t["name:en"];
+    if(n&&Array.isArray(c)&&c.length===2&&typeof c[0]==="number") PS_X.push([c[0],c[1],String(n),(isMetro(t)?"metro":"rail")+" station"]); }
+}
+function psFind(qs){
+  const q=qs.trim().toLowerCase(); if(q.length<2) return [];
+  const seen=new Set(), out=[];
+  for(const p of (PS_X||[]).concat(PLACES||[])){ const n=p[2].toLowerCase(), i=n.indexOf(q); if(i<0) continue;
+    const key=n+"|"+p[0].toFixed(3)+","+p[1].toFixed(3); if(seen.has(key)) continue; seen.add(key);
+    out.push({p, rank:(i===0?0:(n[i-1]===" "?1:2)), len:n.length}); }
+  out.sort((a,b)=>a.rank-b.rank||a.len-b.len||a.p[2].localeCompare(b.p[2]));
+  return out.slice(0,8).map(x=>x.p);
+}
+function psDraw(){
+  $("psres").innerHTML=PS_HITS.map((p,i)=>`<div data-i="${i}" class="${i===PS_SEL?'on':''}">${esc(p[2])}<span>${esc(p[3]||'')}</span></div>`).join("");
+}
+function psGo(p){
+  if(!p||!window.h3) return;
+  const rows=(DATA.data&&DATA.data[active]&&DATA.data[active].rows)||[];
+  let res=9; try{ const any=rows.find(r=>r.h3); if(any) res=h3.getResolution(any.h3); }catch(e){}
+  const h=h3.latLngToCell(p[1],p[0],res), ll=h3.cellToLatLng(h);
+  const cell=rows.find(r=>r.h3===h)||{h3:h, c:[ll[1],ll[0]], b:h3.cellToBoundary(h,true)};
+  $("psq").value=p[2]; PS_HITS=[]; psDraw(); $("psq").blur();
+  if(typeof setAskPin==="function") setAskPin([h]);                 // mark the spot (red outline / bar), as the analyst's pin does
+  drillInto(cell);
+}
+function initPlaceSearch(){
+  const inp=$("psq"); if(!inp) return;
+  const refresh=()=>Promise.all([loadPlaces(),psExtra()]).then(()=>{ PS_HITS=psFind(inp.value); PS_SEL=0; psDraw(); }).catch(()=>{});
+  inp.addEventListener("focus",refresh);
+  inp.addEventListener("input",refresh);
+  inp.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"){ PS_SEL=Math.min(PS_SEL+1,PS_HITS.length-1); psDraw(); e.preventDefault(); }
+    else if(e.key==="ArrowUp"){ PS_SEL=Math.max(PS_SEL-1,0); psDraw(); e.preventDefault(); }
+    else if(e.key==="Enter"){ if(PS_HITS[PS_SEL]) psGo(PS_HITS[PS_SEL]); e.preventDefault(); }
+    else if(e.key==="Escape"){ PS_HITS=[]; psDraw(); inp.blur(); }
+    e.stopPropagation();                                            // typing here never triggers the map's shortcuts
+  });
+  inp.addEventListener("blur",()=>setTimeout(()=>{ PS_HITS=[]; psDraw(); },180));
+  $("psres").addEventListener("mousedown",e=>{ const d=e.target.closest("div[data-i]"); if(d){ e.preventDefault(); psGo(PS_HITS[+d.dataset.i]); } });
 }
 function cellWhere(o){
   const c=o&&o.c; if(!Array.isArray(c)||c.length<2) return "";
@@ -1449,7 +1513,8 @@ function fitView(bbox){
   $("togL").onclick=()=>{g.classList.toggle("lc0");$("togL").textContent=g.classList.contains("lc0")?"›":"‹";};
   $("togR").onclick=()=>{g.classList.toggle("rc0");$("togR").textContent=g.classList.contains("rc0")?"‹":"›";};
   $("togR").textContent=g.classList.contains("rc0")?"‹":"›";   // right rail (Coverage & trust) starts collapsed
-  document.addEventListener("keydown",e=>{ if(e.key==="Escape") exitDrill(); });   // Esc leaves the drilled cell
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") exitDrill(); });
+  initPlaceSearch();   // Esc leaves the drilled cell
   const hint=$("drillhint"); hint.classList.add("show"); setTimeout(()=>hint.classList.remove("show"),4200);
 })();
 </script>
