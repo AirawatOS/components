@@ -302,7 +302,7 @@ function rampColor(stops,t){       // interpolate a multi-stop ramp at t∈[0,1]
 const rampCSS=stops=>`linear-gradient(90deg,${stops.map((c,i)=>`rgb(${c[0]},${c[1]},${c[2]}) ${Math.round(i/(stops.length-1)*100)}%`).join(",")})`;
 const dget=(o,path)=>String(path||"value").split(".").reduce((v,k)=>(v==null?v:v[k]),o);
 const fmtFor=u=> u==="%"?(v=>Math.round(v*100)+"%"): u==="°C"?(v=>v.toFixed(1)+"°"): u==="m"?(v=>Math.round(v)+" m")
-              : (v=>(Math.round(v*100)/100)+(u?(" "+u):""));
+              : (v=>(Math.abs(v)>=100 ? Math.round(v).toLocaleString() : String(Math.round(v*100)/100))+(u?(" "+u):""));   // whole numbers at ≥100 (no "197759.0")
 let APPID="city-scan";
 
 let _reauthing=false;
@@ -567,6 +567,16 @@ function updateHeader(){                       // the header names the place + t
   bits.push(LAYERS.length+" indicator layers");
   $("sub").innerHTML=bits.join('<span class="dot">·</span>');
 }
+// ROBUST colour scale: when one or two cells sit far above the rest (e.g. a modelled population spike), a min→max scale
+// washes everything else into the bottom colour. For single-frame layers, stop the scale at the 99th percentile when the
+// max is > 1.5x it; values above it take the top colour and the legend reads "≥ p99". The true max stays in d.max.
+function robustScale(dd,L){
+  if(!dd||dd.type!=="hex"||!Array.isArray(dd.rows)||dd.rows.length<200||(L&&L.temporal)) return;
+  const v=dd.rows.map(c=>c.v).filter(x=>typeof x==="number").sort((a,b)=>a-b);
+  if(v.length<200) return;
+  const p99=v[Math.floor(v.length*0.99)], mx=v[v.length-1];
+  if(p99>dd.lo && mx>1.5*p99){ dd.max=mx; dd.hi=p99; dd.hiClip=true; }
+}
 // the fields a cell layer actually draws (its cell, time frames and value) — provenance is sampled separately
 function cellFields(L){ const top=String(L.vf||"").split(".")[0];
   return ["cell_ref","space","observed_at","series","h3_id"].concat(top?[top]:[]); }
@@ -583,6 +593,7 @@ async function ensureLayer(L){                                 // fetch a chorop
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
     : parseCells(rows,L);
   const dd=DATA.data[L.key];
+  robustScale(dd,L);
   Object.assign(LAYER_STAT[L.key],{loading:false, loaded:(dd&&dd.rows?dd.rows.length:0),
     complete:(L.key==="geo.osm_feature")?true:(LAYER_STAT[L.key].complete!==false&&!LAYER_STAT[L.key].err)});
   L._loading=false; ovProgress(L.key); updateHeader();
@@ -1028,7 +1039,7 @@ function render(){
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
     $("legbar").style.background=rampCSS(layerRamp(L));
     if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=L.fmt(d.thi); }
-    else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=L.fmt(d.hi); }
+    else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=(d.hiClip?"≥ ":"")+L.fmt(d.hi); }
     // per-layer provenance: freshness (newest observation in THIS layer), mean confidence, method/model.
     const m=SURFMETA[L.key]; const lm=$("legmeta");
     if(lm){ if(m){ const parts=[];
