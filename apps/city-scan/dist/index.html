@@ -325,10 +325,16 @@ async function has(schema){   // cheap existence probe (limit 1) — does THIS t
   try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,limit:1});
        return ((d.results||d.objects||d||[]).length>0); }catch(e){ return false; }
 }
-async function qAll(schema,cap=400000,statusKey){  // PAGINATE the full set — a temporal layer (air.quality) accumulates
+async function qAll(schema,cap=400000,statusKey,fields){  // cached wrapper around the paginated full-set fetch
+  const r=await cachedFetch(schema,null,fields,async()=>{ const rows=await qAllFetch(schema,cap,statusKey,fields);
+    const st=(statusKey&&LAYER_STAT[statusKey])||{}; return {rows, ok:!st.err&&!st.capped}; });
+  if(r.cached&&statusKey&&LAYER_STAT[statusKey]) Object.assign(LAYER_STAT[statusKey],{fetched:r.rows.length,complete:true,err:false,capped:false,cached:r.cached});
+  return r.rows;
+}
+async function qAllFetch(schema,cap=400000,statusKey,fields){  // PAGINATE the full set — a temporal layer (air.quality) accumulates
   let out=[],cursor=null,pages=0,complete=false,err=false,capped=false;   // per hour, so a single fetch = a spatial fraction.
   while(pages<400){
-    const body={app_id:APPID,schema,limit:50000}; if(cursor) body.cursor=cursor;
+    const body={app_id:APPID,schema,limit:50000}; if(cursor) body.cursor=cursor; if(fields) body.fields=fields;
     let d; try{ d=await bridge("/bridge/query",body); }catch(e){ err=true; break; }
     const rows=(d.results||d.objects||d||[]).map(x=>x.object||x); out=out.concat(rows); pages++;
     if(statusKey&&LAYER_STAT[statusKey]){ LAYER_STAT[statusKey].fetched=out.length; ovProgress(statusKey); }
@@ -349,8 +355,11 @@ async function qLatest(schema,vf,statusKey){
   const top=String(vf||"").split(".")[0];
   const fields=["space","cell_ref","id","source","observed_at","confidence","method","prov"]; if(top) fields.push(top);
   const body={app_id:APPID,schema,reduce:"latest_per_cell",cell_field:"space.h3",time_field:"observed_at",fields};
-  let d; try{ d=await bridge("/bridge/query",body); }catch(e){ if(statusKey&&LAYER_STAT[statusKey])Object.assign(LAYER_STAT[statusKey],{err:true}); return []; }
-  const rows=(d.results||d.objects||d||[]).map(x=>x.object||x);
+  const got=await cachedFetch(schema,null,["latest_per_cell",...fields],async()=>{
+    try{ const d=await bridge("/bridge/query",body); return {rows:(d.results||d.objects||d||[]).map(x=>x.object||x), ok:true}; }
+    catch(e){ return {rows:null, ok:false}; } });
+  if(!got.rows){ if(statusKey&&LAYER_STAT[statusKey])Object.assign(LAYER_STAT[statusKey],{err:true}); return []; }
+  const rows=got.rows;
   // provenance summary for the legend: newest observed_at, mean confidence, and the method/model
   const ts=rows.map(r=>r.observed_at).filter(Boolean).sort();
   const cs=rows.map(r=>r.confidence).filter(v=>typeof v==="number");
@@ -369,19 +378,49 @@ async function qf(schema,filter){                              // server-side fi
 // keyset-paginates server-side (id > cursor + SQL LIMIT), so we pull bounded windows and call onPage() after each
 // so the map fills in progressively instead of one 50k fetch that 502s / hangs the tab. Stops at the cursor end
 // or a safety cap.
-async function qpage(schema, onPage, pageLimit, cap, filter){
-  pageLimit = pageLimit||8000; cap = cap||400000; let cursor=null, total=0, capped=false, err=false;
-  for(let i=0;i<200;i++){
-    let d; const body={app_id:APPID,schema,limit:pageLimit}; if(cursor) body.cursor=cursor; if(filter) body.filter=filter;
-    try{ d=await bridge("/bridge/query", body); }             // filter (e.g. {feature:"primary"}) pushes to SQL → cheap subset
-    catch(e){ err=true; break; }
-    const rows=(d.results||d.objects||d||[]).map(x=>x.object||x);
-    if(rows.length){ try{ onPage(rows,total+rows.length); }catch(e){} total+=rows.length; }
-    cursor=d&&d.next_cursor;
-    if(total>=cap){ capped=!!cursor; break; }               // hit the cap while more remained → capped
-    if(!cursor || !rows.length) break;
-  }
-  return {total, capped, err};
+// ── BROWSER CACHE (IndexedDB): a layer's rows are kept per tenant + query. On reload ONE count request decides:
+// same record count and < 12 h old → render from the cache instantly; otherwise re-fetch (and re-cache). Reload in
+// "About this layer" always fetches fresh. Every IndexedDB call is guarded — a private window just skips the cache.
+let TENANT_KEY="", FRESH=false;
+const RCACHE={db:null, ttl:12*3600e3};
+function idb(){ if(RCACHE.db) return RCACHE.db;
+  RCACHE.db=new Promise(res=>{ try{ const r=indexedDB.open("aos-visualize",1);
+    r.onupgradeneeded=()=>{ try{ r.result.createObjectStore("rows"); }catch(e){} };
+    r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); r.onblocked=()=>res(null); }catch(e){ res(null); } });
+  return RCACHE.db; }
+async function cacheGet(k){ const db=await idb(); if(!db) return null;
+  return new Promise(res=>{ try{ const q=db.transaction("rows").objectStore("rows").get(k); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }catch(e){ res(null); } }); }
+async function cachePut(k,v){ const db=await idb(); if(!db) return; try{ db.transaction("rows","readwrite").objectStore("rows").put(v,k); }catch(e){} }
+async function countOf(schema,filter){ try{ const d=await bridge("/bridge/query",{app_id:APPID,schema,count:true,filter:filter||undefined});
+  return (typeof d.count==="number")?d.count:null; }catch(e){ return null; } }
+async function cachedFetch(schema,filter,fields,fetcher){       // fetcher() → {rows, ok, ...stats}
+  const k=[TENANT_KEY,schema,JSON.stringify(filter||{}),JSON.stringify(fields||[])].join("|");
+  if(!FRESH){ const c=await cacheGet(k);
+    if(c && Date.now()-c.at<RCACHE.ttl){ const n=await countOf(schema,filter);
+      if(n!=null && n===c.count) return Object.assign({rows:c.rows,ok:true,cached:c.at}); } }
+  const r=await fetcher();
+  if(r.ok){ const n=await countOf(schema,filter); if(n!=null) cachePut(k,{at:Date.now(),count:n,rows:r.rows}); }
+  return r;
+}
+async function qpage(schema, onPage, pageLimit, cap, filter, fields){
+  pageLimit = pageLimit||8000; cap = cap||400000;
+  const res=await cachedFetch(schema,filter,fields,async()=>{
+    let cursor=null, total=0, capped=false, err=false; const all=[];
+    for(let i=0;i<200;i++){
+      let d; const body={app_id:APPID,schema,limit:pageLimit}; if(cursor) body.cursor=cursor; if(filter) body.filter=filter;
+      if(fields) body.fields=fields;                          // project server-side: only what the overlay draws
+      try{ d=await bridge("/bridge/query", body); }           // filter (e.g. {feature:"primary"}) pushes to SQL → cheap subset
+      catch(e){ err=true; break; }
+      const rows=(d.results||d.objects||d||[]).map(x=>x.object||x);
+      if(rows.length){ try{ onPage(rows,total+rows.length); }catch(e){} total+=rows.length; for(const r of rows) all.push(r); }
+      cursor=d&&d.next_cursor;
+      if(total>=cap){ capped=!!cursor; break; }             // hit the cap while more remained → capped
+      if(!cursor || !rows.length) break;
+    }
+    return {rows:all, ok:!err&&!capped, total, capped, err};
+  });
+  if(res.cached){ try{ onPage(res.rows,res.rows.length); }catch(e){} return {total:res.rows.length,capped:false,err:false,cached:res.cached}; }
+  return {total:res.total, capped:res.capped, err:res.err};
 }
 
 let DATA={}, LAYERS=[], active=null, deckgl=null, view=null, mode3d=false, showRoads=false, showRoadsLocal=false, showWater=false, drillCell=null;
@@ -528,14 +567,18 @@ function updateHeader(){                       // the header names the place + t
   bits.push(LAYERS.length+" indicator layers");
   $("sub").innerHTML=bits.join('<span class="dot">·</span>');
 }
+// the fields a cell layer actually draws (its cell, time frames and value) — provenance is sampled separately
+function cellFields(L){ const top=String(L.vf||"").split(".")[0];
+  return ["cell_ref","space","observed_at","series","h3_id"].concat(top?[top]:[]); }
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
   LAYER_STAT[L.key]={loading:true,loaded:0,fetched:0,complete:false,err:false,capped:false,unit:"cells"}; ovProgress(L.key);
   const rows = (L.key==="geo.osm_feature") ? await q(L.key)
              : SURFACE.has(L.key) ? (L.surface=true, await qLatest(L.key,L.vf,L.key))   // current surface = latest value per cell, reduced server-side (fast)
-             : await qAll(L.key,400000,L.key);  // other cell layers: paginate the full set
-  try{ L.prov=provOf(rows); }catch(e){ L.prov=null; }
+             : await qAll(L.key,400000,L.key,cellFields(L));  // other cell layers: paginate the full set (projected)
+  try{ L.prov=provOf(SURFACE.has(L.key)||L.key==="geo.osm_feature" ? rows
+        : ((await bridge("/bridge/query",{app_id:APPID,schema:L.key,limit:300})).results||[]).map(x=>x.object||x)); }catch(e){ L.prov=null; }
   DATA.data[L.key] = (L.key==="geo.osm_feature")
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
     : parseCells(rows,L);
@@ -570,27 +613,31 @@ async function ensureOverlay(kind){                            // lazy-load the 
   if(kind==="roads" && DATA.roads==null){                      // ARTERIAL overview: one small SERVER-FILTERED fetch per class
     DATA.roads=[]; OV_STAT.roads={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
     let anyErr=false;
-    for(const cls of ARTERIAL){
-      const r=await qpage("geo.osm_feature", (rows)=>{
+    setBusy("Loading arterial roads…");
+    const rs=await Promise.all(ARTERIAL.map(cls=>qpage("geo.osm_feature", (rows)=>{   // all classes IN PARALLEL
         for(const o of rows){ const path=((o.geometry||{}).coordinates)||[];
-          if(Array.isArray(path)&&path.length>1&&inB(path[0])) DATA.roads.push({path,feature:o.feature}); }
-        OV_STAT.roads.loaded=DATA.roads.length; ovProgress("roads"); try{ render(); }catch(e){}
-      }, 8000, 60000, {feature:cls});
-      anyErr=anyErr||r.err;
-    }
+          if(Array.isArray(path)&&path.length>1&&Array.isArray(path[0])&&inB(path[0])) DATA.roads.push({path,feature:o.feature}); }
+        OV_STAT.roads.loaded=DATA.roads.length; ovProgress("roads"); setBusy("Loading arterial roads… "+DATA.roads.length.toLocaleString());
+        try{ render(); }catch(e){}
+      }, 20000, 60000, {feature:cls}, ["geometry","feature"])));
+    anyErr=rs.some(r=>r.err);
+    setBusy(null);
     Object.assign(OV_STAT.roads,{loading:false,done:true,capped:false,err:anyErr}); ovProgress("roads");
   }
   else if(kind==="roads_local" && DATA.roads_local==null){     // LOCAL & residential: the heavy remainder, on demand
     DATA.roads_local=[]; OV_STAT.roads_local={loading:true,loaded:0,fetched:0,capped:false,err:false,done:false};
+    setBusy("Loading local roads…");
     const r=await qpage("geo.osm_feature", (rows,fetched)=>{   // full network minus the arterial classes (kept client-side)
       for(const o of rows){
         if(ARTSET.has(o.feature)) continue;                    // arterial lives in its own layer
-        const path=((o.geometry||{}).coordinates)||[];
-        if(Array.isArray(path)&&path.length>1&&inB(path[0])) DATA.roads_local.push({path,feature:o.feature});
+        const path=((o.geometry||{}).coordinates)||[];         // LINES only (osm-transit also writes stop POINTS here)
+        if(Array.isArray(path)&&path.length>1&&Array.isArray(path[0])&&inB(path[0])) DATA.roads_local.push({path,feature:o.feature});
       }
       OV_STAT.roads_local.loaded=DATA.roads_local.length; OV_STAT.roads_local.fetched=fetched; ovProgress("roads_local");
+      setBusy("Loading local roads… "+DATA.roads_local.length.toLocaleString());
       try{ render(); }catch(e){}
-    }, 8000, 300000);
+    }, 20000, 300000, null, ["geometry","feature"]);
+    setBusy(null);
     Object.assign(OV_STAT.roads_local,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("roads_local");
   }
   else if(kind==="water" && DATA.water==null){
@@ -599,7 +646,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
       for(const o of rows){ if(o.geometry&&inB(firstpt(o.geometry))) DATA.water.push(o); }  // thousands of line features.
       OV_STAT.water.loaded=DATA.water.length; OV_STAT.water.fetched=fetched; ovProgress("water");
       try{ render(); }catch(e){}
-    }, 8000, 300000);
+    }, 20000, 300000, null, ["geometry","feature","name","stream_order"]);
     Object.assign(OV_STAT.water,{loading:false,done:true,capped:r.capped,err:r.err}); ovProgress("water");
   }
   else if(kind==="facilities" && DATA.facilities==null){
@@ -646,7 +693,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
 
 async function load(){
   const cfg=await fetch("./config.json").then(r=>r.json()).catch(()=>({app_id:"city-scan"}));
-  APPID=cfg.app_id||"city-scan";
+  APPID=cfg.app_id||"city-scan"; TENANT_KEY=cfg.tenant||"";
   const aois=await q("space.aoi"); const aoi=aois[0]||{};
   let SB=null;
   for(const a of aois){ const bb=a.bbox; if(Array.isArray(bb)&&bb.length===4)
@@ -1157,6 +1204,9 @@ async function fetchTotal(key){                                // populate st.to
   if(explainKey===key) drawExplain();
 }
 async function reloadOverlay(kind){                            // clear the cache + re-fetch this layer/overlay from the registry
+  FRESH=true; try{ return await _reloadOverlay(kind); } finally { FRESH=false; }
+}
+async function _reloadOverlay(kind){
   if(["roads","roads_local","water","facilities","issues"].includes(kind)){
     DATA[kind]=null;                                           // drop cached features → ensureOverlay re-fetches
     if(kind==="roads") showRoads=true; else if(kind==="roads_local") showRoadsLocal=true;
