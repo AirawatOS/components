@@ -974,7 +974,8 @@ function render(){
   updateScrubber();
 }
 // ---- TIME SCRUBBER: animate a temporal layer (cells with a `series`) over its time axis ----
-function fmtT(t){ const d=new Date(t); return isNaN(d.getTime())?String(t):d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }
+function fmtT(t){ if(/^\d{4}$/.test(String(t))) return String(t);   // a YEAR frame (e.g. works by work-order year)
+  const d=new Date(t); return isNaN(d.getTime())?String(t):d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }
 function stopPlay(){ tPlaying=false; if(tTimer){clearInterval(tTimer);tTimer=null;} const b=$("tplay"); if(b) b.textContent="▶"; }
 function startPlay(){ const L=LAYERS.find(l=>l.key===active); if(!L||!L.temporal) return; tPlaying=true;
   const b=$("tplay"); if(b) b.textContent="⏸";
