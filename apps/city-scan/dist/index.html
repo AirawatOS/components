@@ -1058,7 +1058,7 @@ const OVL=[{id:"water",label:"Natural Drainage",grp:"Environment",sub:"Water",do
            {id:"issues",label:"Civic Issues",grp:"People",sub:"Civic",dot:"#a855f7",
             interp:"Geocoded civic issues — coloured by CATEGORY (law & order, water, roads, health…). Each point is a real, governed civic.issue placed on the map from the locality named in a news report or filed in a field report; issues that name no locality are not shown (never guessed). Hover a point for its category, severity and place. News is pulled and categorised per tenant, so the mix of categories reflects this city."}];
 const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities,issues:()=>showIssues};
-let treeOpen=null;                                    // "g:<group>" / "s:<group>/<sub>" → open? (null = default all-open)
+let treeOpen=null;                                    // "g:<group>" / "s:<group>/<sub>" → open? (null = default all-COLLAPSED)
 let explainKey=null;                                  // which leaf's explanation is pinned in the bottom panel
 function buildTree(){                                  // → {group:{sub:[leaf]}} merging choropleths + overlays
   const tree={};
@@ -1069,7 +1069,7 @@ function buildTree(){                                  // → {group:{sub:[leaf]
 }
 function grpKeys(tree){ return Object.keys(tree).sort((a,b)=>{
   let ia=GRP_ORDER.indexOf(a), ib=GRP_ORDER.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib || a.localeCompare(b); }); }
-function isOpen(k){ return !treeOpen || treeOpen[k]!==false; }   // default OPEN until the user collapses
+function isOpen(k){ return !!(treeOpen && treeOpen[k]===true); }   // default COLLAPSED until the user opens a group
 function setExplain(key){ explainKey=key; drawExplain(); }
 function drawExplain(){
   const box=$("explain"); if(!box) return;
