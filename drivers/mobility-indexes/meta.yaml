@@ -1,0 +1,26 @@
+# A DRIVER (kind=driver) — three per-cell MOBILITY layers from the tenant's OpenStreetMap extract + population:
+# walkability (street topology), transit access gap (distance to bus stops / metro × people) and arterial
+# chokepoints (sampled betweenness — a congestion PROXY, not observed traffic). Reads the same OSM PBF City Setup
+# fetched (OSM_PBF asset); osmium + h3 → the geospatial runtime.
+component_id: ds:airawat:driver/mobility-indexes
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Mobility Indexes (walkability · transit access · chokepoints)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: geospatial          # osmium (PBF parse/clip) + h3
+reads: [space.aoi, demographics.population]
+writes: [mobility.walkability, mobility.transit_access, mobility.chokepoint]
+config: [OSM_PBF_FILE_ID, AOI_ID, CHOKE_SAMPLES, BUS_WALK_M, METRO_WALK_M]
+assets:                        # the SAME regional OSM extract the other OSM drivers use (City Setup fans it out)
+  - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: true, hint: "Regional OpenStreetMap extract (.osm.pbf). Shared with the Roads / Facilities / Transit drivers." }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", host: openstreetmap.org, provides: [mobility.walkability, mobility.transit_access, mobility.chokepoint] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: demographics.population }
+  - { verb: write, scope: mobility.walkability }
+  - { verb: write, scope: mobility.transit_access }
+  - { verb: write, scope: mobility.chokepoint }
