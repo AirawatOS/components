@@ -73,6 +73,8 @@
     border-top:1px dashed var(--edge);font-size:11.5px;color:var(--muted)}
   .exstat b{color:var(--ink);font-variant-numeric:tabular-nums}
   .exwarn{color:#d29922}
+  .exprov{margin:9px 0 0;padding:8px 9px;border:1px solid var(--line,#22344a);border-radius:7px;font-size:11.5px;line-height:1.5}
+  .exprov div{display:flex;gap:8px}.exprov .k{color:var(--dim);min-width:74px;flex:none}.exprov .v{color:var(--ink);word-break:break-word}
   .exsub{font-size:10.5px;color:var(--dim);margin-top:4px;line-height:1.4}
   .exreload{flex:none;border:1px solid var(--edge2);background:#0e1c2a;color:var(--muted);border-radius:6px;
     padding:3px 9px;font-size:11px;cursor:pointer;transition:.13s}
@@ -468,6 +470,47 @@ function parseCells(rows,L){                                    // rows → H3 h
   return {type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
 }
 const MAX_FRAMES=48;                                            // cap animated frames held client-side (scale guard)
+// ── PROVENANCE: where a layer's data comes from + how fresh it is — read from the records themselves (source_ref,
+// derived_from, method, period, observed/issued time, confidence), never hard-coded per layer ────────────────────────
+const SRC_NAMES={"dynamic-world":"Google Dynamic World (Sentinel-2)","ghsl":"JRC GHSL population (R2023A)",
+  "open-meteo":"Open-Meteo (ERA5 reanalysis / forecast)","merit-hydro":"MERIT Hydro","google-open-buildings":"Google Open Buildings",
+  "osm":"OpenStreetMap","nominatim":"OpenStreetMap Nominatim","cpcb":"CPCB / KSPCB monitoring stations","gdelt":"GDELT",
+  "google-news":"Google News","modis":"NASA MODIS","viirs":"NASA VIIRS","cams":"Copernicus CAMS","firms":"NASA FIRMS"};
+const _pg=(o,p)=>p.split(".").reduce((a,k)=>(a&&typeof a==="object")?a[k]:undefined,o);
+function provOf(rows){
+  if(!rows||!rows.length) return null;
+  const tally=(f)=>{ const m={}; for(const o of rows.slice(0,500)){ const v=f(o); if(v) m[v]=(m[v]||0)+1; }
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(e=>e[0]); };
+  const refs=tally(o=>o.source_ref||_pg(o,"prov.source_ref"));
+  const ds=tally(o=>{ const d=_pg(o,"prov.derived_from"); const x=Array.isArray(d)?d[0]:(_pg(o,"prov.asset")||_pg(o,"source.asset")||(typeof o.source==="string"?o.source:null)||_pg(o,"source.via"));
+    return x?String(x).replace(/^gee:/,""):null; });
+  const meth=tally(o=>_pg(o,"prov.method")||o.method);
+  const per=tally(o=>_pg(o,"prov.period")||o.period||(_pg(o,"prov.epoch")?("epoch "+_pg(o,"prov.epoch")):null));
+  const comp=tally(o=>_pg(o,"prov.produced_by.component.id")||_pg(o,"prov.component")||_pg(o,"source.via"));
+  let t=""; for(const o of rows){ const v=o.observed_at||o.issued_at||_pg(o,"prov.observed_at")||_pg(o,"prov.issued_at")||""; if(v>t) t=v; }
+  let cs=0,cn=0; for(const o of rows.slice(0,2000)){ const c=(typeof o.confidence==="number")?o.confidence:_pg(o,"prov.confidence"); if(typeof c==="number"){cs+=c;cn++;} }
+  const slug=refs[0]?String(refs[0]).split("/").pop():"";
+  const name=slug?(SRC_NAMES[slug]||slug.replace(/[-_]/g," ").replace(/\b\w/g,c=>c.toUpperCase())):"";
+  return {source:name, dataset:ds[0]||"", method:meth[0]||"", period:per[0]||"", component:(comp[0]||"").split("/").pop(),
+          asof:t, conf:cn?cs/cn:null};
+}
+function ago(iso){
+  const t=Date.parse(iso||""); if(!t) return "";
+  const s=(Date.now()-t)/1000, a=Math.abs(s), f=s<0?" ahead":" ago";
+  const u=(n,w)=>n+" "+w+(n===1?"":"s")+f;
+  if(a<3600) return "just now"; if(a<86400) return u(Math.round(a/3600),"hour");
+  if(a<86400*45) return u(Math.round(a/86400),"day"); if(a<86400*540) return u(Math.round(a/86400/30.4),"month");
+  return u(Math.round(a/86400/365),"year");
+}
+function provShort(P){ if(!P) return ""; return P.source||(P.dataset?P.dataset.split("/").slice(0,2).join("/"):"")||(P.component?("via "+P.component):""); }
+function updateHeader(){                       // the header names the place + the layer ON SCREEN, its source and freshness
+  const L=LAYERS.find(l=>l.key===active), P=L&&L.prov, place=esc((DATA.aoi||{}).name||"AOI");
+  const bits=[place];
+  if(L){ bits.push("<b>"+esc(L.label)+"</b>"); const src=provShort(P); if(src) bits.push(esc(src));
+         if(P&&P.asof) bits.push((P.period?esc(P.period):"as of "+esc(P.asof.slice(0,10)))+" ("+esc(ago(P.asof))+")"); }
+  bits.push(LAYERS.length+" indicator layers");
+  $("sub").innerHTML=bits.join('<span class="dot">·</span>');
+}
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
@@ -475,18 +518,32 @@ async function ensureLayer(L){                                 // fetch a chorop
   const rows = (L.key==="geo.osm_feature") ? await q(L.key)
              : SURFACE.has(L.key) ? (L.surface=true, await qLatest(L.key,L.vf,L.key))   // current surface = latest value per cell, reduced server-side (fast)
              : await qAll(L.key,400000,L.key);  // other cell layers: paginate the full set
+  try{ L.prov=provOf(rows); }catch(e){ L.prov=null; }
   DATA.data[L.key] = (L.key==="geo.osm_feature")
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
     : parseCells(rows,L);
   const dd=DATA.data[L.key];
   Object.assign(LAYER_STAT[L.key],{loading:false, loaded:(dd&&dd.rows?dd.rows.length:0),
     complete:(L.key==="geo.osm_feature")?true:(LAYER_STAT[L.key].complete!==false&&!LAYER_STAT[L.key].err)});
-  L._loading=false; ovProgress(L.key);
+  L._loading=false; ovProgress(L.key); updateHeader();
   return DATA.data[L.key];
 }
 const OV_STAT={};                                              // per-overlay load status: {loading,loaded,fetched,capped,err,done,unit}
 const LAYER_STAT={};                                           // per-CHOROPLETH-layer load status (keyed by L.key): {loading,loaded,complete,err,capped,unit}
-function ovProgress(kind){ drawExplain(); }                    // refresh the status line while a layer/overlay streams in
+function ovProgress(kind){ drawExplain(); }
+function provHtml(leaf){                         // "where this data comes from" — from the records, not a hard-coded list
+  const P=leaf&&leaf.prov; if(!P) return leaf&&leaf.desc?`<div class="exprov"><div><span class="k">About data</span><span class="v">${esc(leaf.desc)}</span></div></div>`:"";
+  const row=(k,v)=>v?`<div><span class="k">${k}</span><span class="v">${v}</span></div>`:"";
+  return `<div class="exprov">`
+    +row("Source", esc(P.source||"—")+(P.dataset?` <span style="color:var(--dim)">(${esc(P.dataset)})</span>`:""))
+    +row("Method", esc(P.method))
+    +row("Period", esc(P.period))
+    +row("Data as of", P.asof?esc(P.asof.slice(0,16).replace("T"," "))+" UTC · "+esc(ago(P.asof)):"")
+    +row("Confidence", P.conf!=null?Math.round(P.conf*100)+"%":"")
+    +row("Produced by", esc(P.component))
+    +row("Notes", leaf.desc?esc(leaf.desc):"")
+    +`</div>`;
+}                    // refresh the status line while a layer/overlay streams in
 // ARTERIAL = the through-road hierarchy (the light ~12k overview set). Everything else (residential, service,
 // lanes, tracks, paths…) is the heavy ~178k "local" layer, loaded only on demand. Both come from geo.osm_feature,
 // filtered SERVER-SIDE by the `feature` (OSM highway) class so the arterial overview stays cheap.
@@ -885,6 +942,7 @@ function issuesLayer(){                                          // civic.issue 
 }
 function render(){
   if(!deckgl) return;
+  updateHeader();
   const layers = (showPlan && PLAN)
     ? [basemapLayer(), ...planLayers(), highlightLayer(), askLayer(), askHoverLayer()]      // greenfield plan view (footprints + zoning + massing)
     : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer(), askHoverLayer()];
@@ -1009,7 +1067,7 @@ function drawExplain(){
   const box=$("explain"); if(!box) return;
   let leaf=null;
   if(explainKey){ const L=LAYERS.find(l=>l.key===explainKey);
-    if(L) leaf={label:L.label,sol:L.sol,interp:L.interp,unit:L.unit};
+    if(L) leaf={label:L.label,sol:L.sol,interp:L.interp,unit:L.unit,desc:L.desc,prov:L.prov};
     else { const o=OVL.find(x=>x.id===explainKey); if(o) leaf={label:o.label,sol:"",interp:o.interp,unit:""}; } }
   if(!leaf){ box.innerHTML=`<p class="rail-h">About this layer</p><p class="exhint">Pick a layer to see what it shows and how to read it.</p>`; return; }
   const sol=leaf.sol?`<span class="solb" title="contributed by the ${esc(leaf.sol)} solution">${esc(leaf.sol)}</span>`:"";
@@ -1032,7 +1090,8 @@ function drawExplain(){
     else                        msg=`<b>${n}</b> ${unit} loaded <span class="exok">· complete ✓</span>`;
     // choropleth: cells are DISTINCT h3, but the registry stores one record per (cell,hour) — show both so the
     // count reconciles (e.g. 24,277 cells · 48,554 records = a 2-hour temporal layer).
-    if(isLayer && tot!=null) subHtml=`<div class="exsub">${tot.toLocaleString()} records in registry (this layer is temporal — many records per cell)</div>`;
+    if(isLayer && tot!=null) subHtml=`<div class="exsub">${tot.toLocaleString()} records in registry`
+      +(tot>(st.loaded||0)*1.05?` (this layer is temporal — many records per cell)`:``)+`</div>`;
     statusHtml=`<div class="exstat"><span>${msg}</span>`
       + (st.loading ? `` : `<button class="exreload" id="exreload">↻ Reload</button>`)   // wired below (CSP blocks inline onclick)
       + `</div>`+subHtml;
@@ -1050,7 +1109,7 @@ function drawExplain(){
   box.innerHTML=`<p class="rail-h">About this layer</p>`
     +`<div class="extitle">${esc(leaf.label)}${leaf.unit?` <span class="exunit">${esc(leaf.unit)}</span>`:""}${sol}</div>`
     +`<p class="exbody">${esc(leaf.interp||"No description provided for this layer.")}</p>`
-    +statusHtml+catLegend;
+    +provHtml(leaf)+statusHtml+catLegend;
   const rb=$("exreload"); if(rb) rb.onclick=()=>reloadOverlay(explainKey);
   if(st && !st.loading && st.total===undefined) fetchTotal(explainKey);   // lazily fetch the authoritative registry count
 }
@@ -1225,7 +1284,7 @@ function fitView(bbox){
   // The header names the place + how many layers are available. Data recency is NOT a single city-wide date
   // (each layer has its own freshness) — so we show it per-layer in the legend when a layer is active, instead
   // of a misleading one-size "as of" (which previously reflected only the stale baseline-coverage assessment).
-  $("sub").innerHTML=`${esc((DATA.aoi||{}).name||"AOI")}<span class="dot">·</span>${LAYERS.length} indicator layers`;
+  updateHeader();
   if(!LAYERS.length){ $("mapload").remove(); $("map").innerHTML='<div class="empty">No baseline data for this workspace yet.</div>'; drawTrust(); return; }
   view=fitView(DATA.aoi.bbox||DATA.scope||[72.8,18.9,72.99,19.28]);
   deckgl=new deck.Deck({
