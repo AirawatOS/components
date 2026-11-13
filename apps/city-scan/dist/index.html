@@ -579,7 +579,7 @@ function parseCells(rows,L){                                    // rows → H3 h
   const geom=o=>{ const g=o.cell_ref||o.space||{}; return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, name:g.name}; };
   // ---- (A) embedded per-cell series ------------------------------------------------------------
   if(rows.some(o=>Array.isArray(o.series)&&o.series.length)){
-    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name||o.lake,grp:o.lake_ref||null,v:dget(o,vf),series:o.series}; })
+    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name||o.lake||(o.ward_name?o.ward_name+" (ward "+o.ward_no+")":undefined),grp:o.lake_ref||null,v:dget(o,vf),series:o.series}; })
       .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
     const dd={type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
     const ws=cells.find(c=>Array.isArray(c.series)&&c.series.length);
@@ -611,7 +611,7 @@ function parseCells(rows,L){                                    // rows → H3 h
     return {type:"hex",rows:cells, lo:0, hi:hi||1, thi:hi||1};
   }
   // ---- single frame (non-temporal) -------------------------------------------------------------
-  const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name,v:dget(o,vf)}; })
+  const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name||(o.ward_name?o.ward_name+" (ward "+o.ward_no+")":undefined),v:dget(o,vf)}; })
     .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
   return {type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
 }
@@ -669,7 +669,7 @@ function robustScale(dd,L){
 }
 // the fields a cell layer actually draws (its cell, time frames and value) — provenance is sampled separately
 function cellFields(L){ const top=String(L.vf||"").split(".")[0];
-  return ["cell_ref","space","observed_at","series","h3_id","lake_ref","lake"].concat(top?[top]:[]); }   // lake_ref: the trend chart counts lakes
+  return ["cell_ref","space","observed_at","series","h3_id","lake_ref","lake","ward_name","ward_no"].concat(top?[top]:[]); }   // lake_ref: the trend chart counts lakes
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
@@ -1614,11 +1614,11 @@ const TOUR_STEPS=[
   {layer:"cell.hydrology", overlays:["water"], title:"Where water collects", cap:"Flood susceptibility from terrain, with the natural drainage network."},
   {layer:"water.lake_cell", fly:[77.665,12.935,12.4], title:"Lakes, 1995–2021", cap:"Satellite water extent year by year — watch Bellandur and its neighbours fill and shrink."},
   {layer:"cell.heat"}, {layer:"cell.rainfall"},
-  {layer:"mobility.transit_access", d3:true, overlays:["transit"], title:"Who is far from transit", cap:"Tall red = many people far from a bus stop or metro station, with the public transport network."},
+  {layer:"mobility.transit_access", d3:true, fitData:"cluster", overlays:["transit"], title:"Who is far from transit", cap:"Tall red = many people far from a bus stop or metro station, with the public transport network."},
   {layer:"mobility.walkability"},
   {layer:"mobility.chokepoint", overlays:["roads"], title:"Where the road network chokes", cap:"A proxy: the junctions most of the city's shortest routes pass through — not measured traffic."},
   {overlays:["fac:healthcare","fac:education","fac:emergency","fac:sanitation"], title:"Public services", cap:"Health (red), education (blue), safety (orange) and sanitation (teal) service points."},
-  {layer:"econ.nightlight_trend", d3:true, title:"How the city grew, 2014–2025", cap:"Night-time light by year — a satellite proxy for activity, not income."},
+  {layer:"econ.nightlight_trend", d3:true, fitData:"growth", title:"How the city grew, 2014–2025", cap:"Night-time light by year, zoomed to where it rose most — a satellite proxy for activity, not income."},
   {layer:"works.ward_cell", title:"Where the money went, 2012–2022", cap:"Public works paid per ward, year by year."},
   {layer:"procurement.ward_cell"},
   {overlays:["issues"], title:"City pulse", cap:"Civic issues from local news, placed where a report names a locality."},
@@ -1665,7 +1665,13 @@ async function tourStep(st,i,n,id,qi){
   if(st.ask){ await tourAsk(st,prog,id,qi||0,i); return; }
   tourCap(st.title||(L&&L.label)||"", st.cap||(L?firstSentence(L.interp||L.desc):""), prog);
   if(st.fitData&&L&&DATA.data[L.key]&&(DATA.data[L.key].rows||[]).length){   // zoom to where THIS layer's cells are now
-    const rows=DATA.data[L.key].rows.filter(r=>Array.isArray(r.c)).sort((a,b)=>(b.v||0)-(a.v||0)).slice(0,6);
+    const mode=st.fitData, sf=L.sfield;
+    const score=mode==="growth" ? (r=>{ const sv=(r.series||[]).map(x=>x&&x[sf]).filter(v=>typeof v==="number");
+        return sv.length>=6 ? (sv.slice(-3).reduce((a,b)=>a+b,0)-sv.slice(0,3).reduce((a,b)=>a+b,0))/3 : -1e9; }) : (r=>r.v||0);
+    let rows=DATA.data[L.key].rows.filter(r=>Array.isArray(r.c)).sort((a,b)=>score(b)-score(a));
+    if(mode==="cluster"||mode==="growth"){ const t=rows[0], kx=Math.cos(t.c[1]*Math.PI/180);   // the top cell and its neighbourhood
+      rows=rows.filter(r=>111.32*Math.hypot((r.c[0]-t.c[0])*kx,r.c[1]-t.c[1])<=3).slice(0,10); }
+    else rows=rows.slice(0,6);
     const xs=rows.map(r=>r.c[0]), ys=rows.map(r=>r.c[1]);
     const w=Math.min(...xs), e=Math.max(...xs), so=Math.min(...ys), no=Math.max(...ys);
     const span=Math.max(e-w,no-so,0.004)*1.6, zoom=Math.max(11,Math.min(13.5,Math.log2(360/span)-0.6));
@@ -1676,7 +1682,9 @@ async function tourStep(st,i,n,id,qi){
     if(names.length) tourCap(st.title||(L&&L.label)||"", (st.cap||"")+" Now: "+names.join(" · ")+".", prog);
   }
   else if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0];
-    if(hit) psGo(hit); else tourHome(); }
+    if(hit) psGo(hit);
+    else { const cr=((DATA.data["demographics.census_ward"]||{}).rows||[]).find(r=>String(r.name||"").toLowerCase().startsWith(st.place.toLowerCase()));
+      if(cr){ if(window.setAskPin) setAskPin([cr.h3]); drillInto(cr); } else tourHome(); } }
   else if(st.fly){ view={...view,longitude:st.fly[0],latitude:st.fly[1],zoom:st.fly[2],pitch:mode3d?45:0,transitionDuration:1600}; deckgl.setProps({initialViewState:view}); }
   else tourHome();
   if(L&&L.temporal&&(L.times||[]).length>1){
@@ -2086,13 +2094,18 @@ function fitView(bbox){
     addMsg('me',esc(q));
     const slot=addMsg('ai','<span style="opacity:.6">Analysing governed layers…</span>');
     try{
-      let d;
+      let d; const t0=Date.now(), slowOrLost=e=>/Unexpected token|Failed to fetch|NetworkError|Load failed|504|502/.test(String(e&&e.message||e));
       try{ d=await bridge('/bridge/city-ask',{question:q}); }
-      catch(e1){                                   // the public proxy cuts a request at ~60 s (HTML 504 / 'Failed to fetch');
-        if(!/Unexpected token|Failed to fetch|NetworkError|504|502/.test(String(e1&&e1.message||e1))) throw e1;   // the analyst
-        slot.innerHTML='<span style="opacity:.6">Taking longer than usual — trying again (its data is now loaded)…</span>';   // kept
-        try{ d=await bridge('/bridge/city-ask',{question:q}); }                                                            // working,
-        catch(e2){ throw new Error("the analyst took longer than the connection allows (about 60 s). Ask again — it is usually quick the second time."); } }
+      catch(e1){                                   // ≥ ~45 s → the public proxy's 60 s cut (the analyst kept working, data now
+        if(!slowOrLost(e1)) throw e1;              // cached); quicker → the connection itself failed. Either way, one retry.
+        const slow=Date.now()-t0>45000;
+        slot.innerHTML='<span style="opacity:.6">'+(slow?"Taking longer than usual — trying again (its data is now loaded)…":"Couldn't reach the server — trying again…")+'</span>';
+        if(!slow) await new Promise(r=>setTimeout(r,2500));
+        const t1=Date.now();
+        try{ d=await bridge('/bridge/city-ask',{question:q}); }
+        catch(e2){ if(!slowOrLost(e2)) throw e2;
+          throw new Error(Date.now()-t1>45000 ? "the analyst took longer than the connection allows (about 60 s). Ask again — it is usually quick the second time."
+                                              : (navigator.onLine===false ? "this computer is offline — reconnect and ask again." : "couldn't reach the server — check the connection and ask again.")); } }
       setAskPin([]);
       slot.classList.add('md'); slot.innerHTML=linkCells(md(d.answer||'No answer.'),cellRefs(d.facts))
         +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'')
