@@ -53,8 +53,16 @@ TOPICS = {   # topic → (question keywords, profile fields that answer it)
     "air":       (("air", "pollut", "pm2", "pm 2", "aqi", "smog", "dust", "breath", "hotspot", "emission"), ("pm25", "population")),
     "flood":     (("flood", "water", "drain", "rain", "monsoon", "inundat", "storm"),
                   ("flood_susceptibility", "rainfall_mm", "forecast_peak_precip_mm", "population")),
-    "services":  (("health", "hospital", "clinic", "school", "facility", "facilities", "service", "amenit", "centre", "center"),
+    "services":  (("health", "hospital", "clinic", "school", "facility", "facilities", "service", "amenit", "centre", "center",
+                   "toilet", "sanitation", "drinking water", "bank", "atm", "police", "fire station", "post office", "market",
+                   "pharmac", "college", "anganwadi", "kindergarten", "library", "community cent", "playground", "garbage",
+                   "recycl", "petrol", "fuel", "charging", "temple", "mosque", "church", "stadium", "sports"),
                   ("facility_count", "population")),
+    # 0.5.0 — lakes (driver/lake-watch), growth (night lights 2014–2025), civic issues from news
+    "lakes":     (("lake", "kere", "wetland", "water bod", "waterbod", "encroach", "reservoir"), ()),
+    "growth":    (("night light", "nightlight", "economic", "economy", "growth", "grown", "grew", "develop", "brighten",
+                   "prosper", "urbanis", "urbaniz", "boom", "lit up"), ()),
+    "civic":     (("news", "complain", "grievance", "issue", "civic", "happening", "protest", "incident", "report"), ()),
     "green":     (("green", "tree", "park", "open space", "vegetation", "canopy"), ("green_frac", "builtup_frac", "population")),
     "access":    (("road", "traffic", "congest", "transport", "mobility", "access", "connect", "bottleneck", "chokepoint"),
                   ("road_density_km_per_km2", "density_per_km2", "chokepoint_score")),
@@ -81,6 +89,26 @@ INVENTORY_RE = re.compile(r"\b(what|which|list|show|tell me)\b.{0,40}\b(data|dat
 FIELD_LAYER.update({"pm25": "air.quality", "census_density_per_km2": "demographics.census_ward", "paid_per_person": "works.ward_cell"})
 CATEGORY_WORDS = {"healthcare": ("health", "hospital", "clinic"), "education": ("school", "education", "college"),
                   "emergency": ("fire", "police", "emergency")}   # 0.4.8: keys = the facility CATEGORIES as written ('healthcare', not 'health')
+# 0.5.0 — every facility category (osm-facilities 0.2.0): display name, question words, and the straight-line distance
+# beyond which a populated cell counts as FAR from one (a walk for daily needs, further for less frequent ones)
+FAC = {
+    "healthcare": ("Health", ("health", "hospital", "clinic", "pharmac", "doctor", "medical"), 1.5),
+    "education":  ("Education", ("school", "education", "college", "anganwadi", "kindergarten", "library"), 1.0),
+    "emergency":  ("Safety & emergency", ("police", "fire station", "fire", "emergency", "ambulance", "safety"), 2.0),
+    "government": ("Civic offices", ("government office", "civic office", "post office", "ward office", "court"), 2.0),
+    "sanitation": ("Water, sanitation & waste", ("toilet", "sanitation", "drinking water", "garbage", "waste", "recycl"), 0.5),
+    "transport":  ("Transport hubs", ("bus station", "railway station", "fuel", "petrol", "charging"), 2.0),
+    "banking":    ("Banking access", ("bank", "atm", "cash"), 1.0),
+    "welfare":    ("Social welfare", ("community cent", "welfare", "social facilit", "old age"), 2.0),
+    "commerce":   ("Markets & shopping", ("market", "mall", "supermarket", "shopping"), 1.5),
+    "religious":  ("Religious & cultural", ("temple", "mosque", "church", "worship", "museum", "theatre"), 1.5),
+    "recreation": ("Parks & recreation", ("park", "playground", "sports", "stadium", "garden", "recreation"), 0.8),
+    "utility":    ("Utilities", ("substation", "power", "water tower", "telecom"), 3.0),
+}
+SERVICE_CATS = ("healthcare", "education", "emergency", "government", "sanitation", "transport", "banking", "welfare")
+CITY_ALIASES = {"bengaluru": ("bangalore", "bbmp", "bmtc", "bescom", "bwssb"), "bangalore": ("bengaluru",), "kolkata": ("calcutta",),
+                "mumbai": ("bombay",), "chennai": ("madras",), "nashik": ("nasik",)}
+PLACE_RE = re.compile(r"\b(tell me about|what about|how is|how's|how are things in|profile|describe|summari[sz]e|overview of|about)\b")
 
 
 def _h3(o):
@@ -279,6 +307,8 @@ def topics_of(question):
     if PRIORITY_RE.search(q):
         return ["priorities"]
     t = [k for k, (words, _) in TOPICS.items() if any(_says(q, w) for w in words)]
+    if "population" in t and len(t) > 1 and any(x in t for x in ("services", "civic", "lakes", "growth")):
+        t.remove("population")                           # 0.5.0: 'where are PEOPLE far from a toilet' is not a population question
     if "need" in t or ("works" in t and any(x in t for x in NEED_WITH)):
         return ["need"]
     return t or ["overview"]
@@ -302,6 +332,8 @@ def topic_facts(topic, cells, question):
         f["rainfall_mm (climate normal)"] = _stats(cells, "rainfall_mm")
         f["forecast_peak_precip_mm (next 48h)"] = _stats(cells, "forecast_peak_precip_mm")
         f["wettest_forecast_cells"], _ = _top(cells, num("forecast_peak_precip_mm"), ("forecast_peak_precip_mm", "population"))
+    elif topic == "services" and FAC_POINTS.get("_loaded"):
+        return services_facts(cells, question)
     elif topic == "services":
         q = question.lower()
         cats = [c for c, words in CATEGORY_WORDS.items() if any(w in q for w in words)] or None
@@ -644,12 +676,13 @@ def priorities_facts(kfind, cells, places, air_meta, need):
                      "where": _where(sorted(tr, key=lambda c: -(c["dist_bus_stop_m"] * c["population"])), places),
                      "measure": "people more than %d m from a bus stop AND %.0f km from a metro station (straight line)" % (BUS_FAR_M, METRO_FAR_M / 1000),
                      "caveat": "OSM stops; straight-line distance, not walking routes or frequency", "evidence": "mobility.transit_access"})
-    hp = collections.defaultdict(list)
-    for c in cells.values():
-        f = c.get("facilities") or {}
-        cen = (c.get("cell_ref") or {}).get("centroid") or []
-        if (f.get("healthcare") or f.get("health")) and len(cen) >= 2:
-            hp[(int(cen[0] / 0.01), int(cen[1] / 0.01))].append((cen[0], cen[1]))
+    hp = FAC_POINTS.get("healthcare") or collections.defaultdict(list)   # 0.5.0: the live facility points when loaded
+    if not FAC_POINTS.get("healthcare"):
+        for c in cells.values():
+            f = c.get("facilities") or {}
+            cen = (c.get("cell_ref") or {}).get("centroid") or []
+            if (f.get("healthcare") or f.get("health")) and len(cen) >= 2:
+                hp[(int(cen[0] / 0.01), int(cen[1] / 0.01))].append((cen[0], cen[1]))
     if hp:
         far = [c for c in live if c["population"] > 0 and len((c.get("cell_ref") or {}).get("centroid") or []) >= 2
                and _nearest_km(hp, *c["cell_ref"]["centroid"][:2]) > HEALTH_FAR_KM]
@@ -689,6 +722,294 @@ def priorities_facts(kfind, cells, places, air_meta, need):
     return out
 
 
+# ---------------------------------------------------------------------------------------------------------- 0.5.0
+FAC_POINTS = {}        # category → gridded points {(ix, iy): [(lon, lat)]}, plus counts; filled per ask by load_facilities
+
+
+def _centroid_of(o):
+    for k in ("centroid",):
+        c = o.get(k)
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            return [float(c[0]), float(c[1])]
+    for k in ("space", "cell_ref", "location", "geo"):
+        c = (o.get(k) or {}).get("centroid") if isinstance(o.get(k), dict) else None
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            return [float(c[0]), float(c[1])]
+    g = o.get("geometry") or {}
+    if g.get("type") == "Point" and len(g.get("coordinates") or []) >= 2:
+        return [float(g["coordinates"][0]), float(g["coordinates"][1])]
+    return None
+
+
+def load_facilities(kfind):
+    """geo.facility points by category (osm-facilities), gridded for nearest-distance lookups. → {category: n}."""
+    FAC_POINTS.clear()
+    counts = {}
+    for o in _try(kfind, "geo.facility"):
+        cat = o.get("category"); c = _centroid_of(o)
+        if not cat or not c or cat == "ai-city-site":
+            continue
+        FAC_POINTS.setdefault(cat, collections.defaultdict(list))[(int(c[0] / 0.01), int(c[1] / 0.01))].append((c[0], c[1]))
+        counts[cat] = counts.get(cat, 0) + 1
+    FAC_POINTS["_loaded"] = bool(counts); FAC_POINTS["_counts"] = counts
+    return counts
+
+
+def services_facts(cells, question):
+    """0.5.0: for each facility category asked about, the PEOPLE farther than its threshold from the nearest one
+    (straight line) and the most populous such cells — not 'no facility inside the 0.1 km² cell'."""
+    q = question.lower()
+    cats = [k for k, (_, words, _) in FAC.items() if any(_says(q, w) for w in words)]
+    counts = FAC_POINTS.get("_counts") or {}
+    f = {"facility_counts": {FAC[k][0]: counts.get(k, 0) for k in FAC if counts.get(k)},
+         "how_measured": "straight-line distance from each populated cell's centre to the nearest mapped facility "
+                         "(OpenStreetMap — coverage varies by category; size and capacity unknown)"}
+    if not cats:
+        f["category_asked"] = "any (name one — e.g. toilets, schools, police, banks, parks — for a distance ranking)"
+        return f
+    live = [c for c in cells.values() if plausible(c) and (c.get("population") or 0) > 0
+            and len((c.get("cell_ref") or {}).get("centroid") or []) >= 2]
+    f["category_asked"] = [FAC[k][0] for k in cats[:3]]
+    for k in cats[:3]:
+        label, _, thr = FAC[k]; pts = FAC_POINTS.get(k)
+        if not pts:
+            f["%s: none mapped" % label] = "no %s facilities in the data — this is missing data, not an all-clear" % label.lower()
+            continue
+        far = []
+        for c in live:
+            d = _nearest_km(pts, *c["cell_ref"]["centroid"][:2])
+            if d > thr:
+                far.append((c, d))
+        f["people_beyond_%s_km_of_%s" % (thr, label.lower().replace(" ", "_").replace(",", ""))] = int(round(sum(c["population"] for c, _ in far)))
+        rows = []
+        for c, d in sorted(far, key=lambda x: -x[0]["population"])[:TOP]:
+            r = _row(c, ("population",)); r["nearest_km"] = round(d, 2); rows.append(r)
+        f["populous_cells_far_from_%s (> %s km, straight line)" % (label.lower(), thr)] = rows
+    return f
+
+
+def lake_facts(kfind, question):
+    """0.5.0 — lakes (driver/lake-watch, JRC 1995–2021): which shrank most, where the shore was built up most, and the
+    year-by-year detail for a lake named in the question. → (facts, named lake ids)."""
+    lakes = [o for o in _try(kfind, "water.lake") if o.get("name")]
+    if not lakes:
+        return None, []
+    q = question.lower()
+    core = lambda n: re.sub(r"\b(lake|kere|tank|wetland)\b", "", n.lower()).strip()
+    named = [o for o in lakes if len(core(o["name"])) >= 4 and core(o["name"]) in q]
+    ha = lambda v: round(v / 1e4, 1) if isinstance(v, (int, float)) else None
+    def row(o):
+        return {"h3": (o.get("cell_ref") or {}).get("h3_id"), "place": o["name"], "baseline_ha": ha(o.get("baseline_water_m2")),
+                "recent_ha": ha(o.get("recent_water_m2")), "water_change_pct": o.get("water_change_pct"),
+                "shore_built_1975": o.get("shore_built_1975"), "shore_built_2020": o.get("shore_built_2020")}
+    chg = [o for o in lakes if isinstance(o.get("water_change_pct"), (int, float)) and (o.get("baseline_water_m2") or 0) >= 50000]
+    ch = sorted(o["water_change_pct"] for o in chg)
+    f = {"lakes_measured": len(lakes), "lakes_with_a_change_figure (baseline ≥ 5 ha)": len(chg),
+         "median_change_pct": ch[len(ch) // 2] if ch else None,
+         "shrank_more_than_25pct": sum(1 for v in ch if v < -25), "grew_more_than_25pct": sum(1 for v in ch if v > 25),
+         "how_measured": "water area from JRC Global Surface Water (Landsat, 30 m): mean of 1995–99 vs 2017–21; shore = a 200 m ring, GHSL built-up 1975 vs 2020",
+         "caveats": ["weeds, hyacinth or algae on the water read as land, and desilting or a dry year as loss",
+                     "OSM outlines; a lake's official boundary may differ"],
+         "lakes_that_shrank_most": [row(o) for o in sorted(chg, key=lambda o: o["water_change_pct"])[:TOP]],
+         "most_built_up_shores (2020)": [row(o) for o in sorted((o for o in chg if isinstance(o.get("shore_built_2020"), (int, float))),
+                                                               key=lambda o: -o["shore_built_2020"])[:5]]}
+    if named:
+        o = max(named, key=lambda o: len(o["name"]))
+        f["lake_asked"] = dict(row(o), osm_area_ha=ha(o.get("osm_area_m2")),
+                               by_year=[{"year": s.get("t"), "water_ha": ha(s.get("water_area_m2")), "source": s.get("source")}
+                                        for s in (o.get("series") or []) if int(s.get("t") or 0) % 5 == 0 or int(s.get("t") or 0) >= 2017])
+    return f, [o["id"] for o in (named or [])] or [o["id"] for o in sorted(chg, key=lambda o: o["water_change_pct"])[:TOP]]
+
+
+def growth_facts(kfind):
+    """0.5.0 — night lights 2014–2025 (VIIRS yearly median): the city's brightening by year, where it grew most and
+    where it is newly lit. A satellite PROXY for economic / energy activity, not household income."""
+    rows = _try(kfind, "econ.nightlight_trend")
+    if not rows:
+        return None
+    years = {}
+    for o in rows:
+        for sp in (o.get("series") or []):
+            if isinstance(sp.get("avg_radiance"), (int, float)):
+                years.setdefault(sp["t"], []).append(sp["avg_radiance"])
+    by_year = [{"year": t, "city_mean_radiance": round(sum(v) / len(v), 2)} for t, v in sorted(years.items())]
+    def cellrow(o):
+        r = {"h3": (o.get("cell_ref") or {}).get("h3_id"), "centroid": (o.get("cell_ref") or {}).get("centroid"),
+             "change_pct": o.get("change_pct"), "avg_radiance": o.get("avg_radiance")}
+        s0 = [sp.get("avg_radiance") for sp in (o.get("series") or [])[:3] if isinstance(sp.get("avg_radiance"), (int, float))]
+        r["radiance_first_years"] = round(sum(s0) / len(s0), 2) if s0 else None
+        return r
+    bright = [o for o in rows if isinstance(o.get("change_pct"), (int, float)) and (cellrow(o)["radiance_first_years"] or 0) >= 5]
+    ch = sorted(o["change_pct"] for o in rows if isinstance(o.get("change_pct"), (int, float)))
+    newly = [o for o in rows if (cellrow(o)["radiance_first_years"] or 99) < 3 and (o.get("avg_radiance") or 0) >= 10]
+    first, last = (by_year[0], by_year[-1]) if by_year else ({}, {})
+    return {"years": "%s–%s" % (first.get("year"), last.get("year")), "cells": len(rows), "city_mean_by_year": by_year,
+            "city_change_pct": round(100 * (last["city_mean_radiance"] - first["city_mean_radiance"]) / first["city_mean_radiance"], 1)
+                               if first.get("city_mean_radiance") else None,
+            "median_cell_change_pct": ch[len(ch) // 2] if ch else None, "newly_lit_cells": len(newly),
+            "how_measured": "VIIRS DNB monthly composites, yearly median, per 250 m cell; change = mean of the last 3 years vs the first 3",
+            "PROXY": "night light tracks economic / energy activity (commercial areas, roads and industry glow most) — not household income",
+            "brightened_most (already lit in 2014–16)": [cellrow(o) for o in sorted(bright, key=lambda o: -o["change_pct"])[:TOP]],
+            "newly_lit (dark in the first years, lit now)": [cellrow(o) for o in sorted(newly, key=lambda o: -(o.get("avg_radiance") or 0))[:TOP]]}
+
+
+def civic_facts(kfind, places):
+    """0.5.0 — civic issues classified from local news: what they are about, how severe, the latest serious ones. Only
+    LOCAL issues count: placed on the map, or naming the city (its AOI name / alias) or one of its localities — the news
+    feeds also carry national stories (a derailment in Assam is not a Bengaluru civic issue)."""
+    allissues = _try(kfind, "civic.issue")
+    if not allissues:
+        return None
+    city = set()
+    for a in _try(kfind, "space.aoi"):
+        for w in re.findall(r"[a-z]{4,}", str(a.get("name") or a.get("label") or "").lower()):
+            city.add(w)
+    city |= {al for w in list(city) for al in CITY_ALIASES.get(w, ())}
+    names = {n.lower() for (_, _, n) in (places or []) if len(n) >= 6}
+    def local(o):
+        if _centroid_of(o):
+            return True
+        t = str(o.get("title") or "").lower()
+        return any(w in t for w in city) or any(n in t for n in names)
+    issues = [o for o in allissues if local(o)]
+    if not issues:
+        return {"issues": 0, "not_local": len(allissues), "note": "no issue in the news feed is placed in or names this city"}
+    cats = collections.Counter(o.get("category") or "other" for o in issues)
+    sev = collections.Counter(o.get("severity") or "unknown" for o in issues)
+    rank = {"high": 0, "medium": 1, "low": 2}
+    serious = sorted((o for o in issues if o.get("severity") in ("high", "medium") and (o.get("category") or "other") != "other"),
+                     key=lambda o: (rank.get(o.get("severity"), 3), "" if not o.get("observed_at") else "~" + o["observed_at"][::-1]))
+    serious = sorted(serious, key=lambda o: (rank.get(o.get("severity"), 3), [-ord(ch) for ch in (o.get("observed_at") or "")]))
+    def row(o):
+        r = {"title": re.sub(r"\s+-\s+[^-]{2,40}$", "", str(o.get("title") or ""))[:110], "category": (o.get("category") or "").replace("_", " "),
+             "severity": o.get("severity"), "date": (o.get("observed_at") or o.get("published_at") or "")[:10]}
+        c = _centroid_of(o)
+        if c:
+            nm = nearest_place(places, c[0], c[1]) if places else None
+            if nm: r["where"] = nm
+        return r
+    located = sum(1 for o in issues if _centroid_of(o))
+    return {"issues": len(issues), "not_local (national / other cities, left out)": len(allissues) - len(issues), "placed_on_the_map": located,
+            "by_category (excluding 'other')": dict((k.replace("_", " "), v) for k, v in cats.most_common() if k != "other"),
+            "other_or_not_civic": cats.get("other", 0), "by_severity": dict(sev),
+            "how_classified": "local news (RSS / GDELT) classified by a model into civic categories; many articles are not civic ('other')",
+            "latest_serious": [row(o) for o in serious[:TOP]]}
+
+
+def works_trend(kfind):
+    """0.5.0 — works paid per YEAR across the city (works.ward_cell series, one per ward) and the wards with most tenders."""
+    seen, by = set(), {}
+    for o in _try(kfind, "works.ward_cell"):
+        w = str(o.get("ward_no") or "")
+        if not w or w in seen:
+            continue
+        seen.add(w)
+        for sp in (o.get("series") or []):
+            t = str(sp.get("t") or "")
+            if t:
+                d = by.setdefault(t, {"year": t, "works_count": 0, "paid_net_total": 0.0})
+                d["works_count"] += sp.get("works_count") or 0; d["paid_net_total"] += sp.get("paid_net_total") or 0
+    tw, tseen = [], set()
+    for o in _try(kfind, "procurement.ward_cell"):
+        w = str(o.get("ward_no") or "")
+        if w and w not in tseen:
+            tseen.add(w); tw.append({"ward": "%s (ward %s)" % (o.get("ward_name") or "Ward", w), "tenders_count": o.get("tenders_count") or 0})
+    return {"works_by_year": [by[t] for t in sorted(by)],
+            "wards_by_tenders": sorted(tw, key=lambda r: -r["tenders_count"])[:TOP]} if (by or tw) else None
+
+
+def detect_place(kfind, question):
+    """A named ward / locality / lake in the question ('tell me about Nilasandra'). Longest name wins; names under 4
+    letters are ignored. → {name, kind, centroid, ward_no?, cells?} or None."""
+    q = " " + re.sub(r"[^a-z0-9 ]", " ", question.lower()) + " "
+    cands = []
+    wards = {}
+    for o in _try(kfind, "demographics.census_ward"):
+        w = str(o.get("ward_no") or ""); h = _h3(o); c = (o.get("cell_ref") or {}).get("centroid")
+        if w and o.get("ward_name"):
+            d = wards.setdefault(w, {"name": o["ward_name"], "kind": "ward", "ward_no": w, "cells": [], "pts": []})
+            if h: d["cells"].append(h)
+            if c: d["pts"].append(c)
+    wc = {str(o.get("ward_no")): o.get("centroid") for o in _try(kfind, "space.ward") if o.get("ward_no") and o.get("centroid")}
+    for d in wards.values():
+        if d["pts"]:
+            d["centroid"] = [sum(p[0] for p in d["pts"]) / len(d["pts"]), sum(p[1] for p in d["pts"]) / len(d["pts"])]
+        elif wc.get(d["ward_no"]):                                  # cells without centroids → the ward boundary's centre
+            d["centroid"] = list(wc[d["ward_no"]])[:2]
+        if d.get("centroid"):
+            cands.append(d)                                         # wards first: on an equal-length match a ward wins
+    for p in _try(kfind, "space.place"):
+        if p.get("name") and len(p.get("centroid") or []) >= 2 and p.get("kind") in ("locality", "ward"):
+            cands.append({"name": p["name"], "kind": "locality", "centroid": p["centroid"]})
+    for o in _try(kfind, "water.lake"):
+        c = (o.get("cell_ref") or {}).get("centroid")
+        if o.get("name") and c:
+            cands.append({"name": o["name"], "kind": "lake", "centroid": c, "lake": o})
+    hit = None
+    for d in cands:
+        n = re.sub(r"[^a-z0-9 ]", " ", d["name"].lower()).strip()
+        n2 = re.sub(r"\s+(ward|lake|kere|layout|nagar|nagara)$", "", n)
+        for k in {n, n2}:
+            if len(k) >= 4 and (" " + k + " ") in q and (hit is None or len(k) > hit[0]):
+                hit = (len(k), d)
+    return hit[1] if hit else None
+
+
+def place_facts(place, cells, places, need=None):
+    """0.5.0 — a profile of one named place: the city layers around it (its ward's cells, or the cells within 1 km)
+    against the city median, facilities nearby by category, the nearest lake. → (facts, map_cells)."""
+    lon, lat = place["centroid"][:2]; k = math.cos(math.radians(lat))
+    near = lambda c, km: (lambda cc: bool(cc) and 111.32 * math.hypot((cc[0] - lon) * k, cc[1] - lat) <= km)((c.get("cell_ref") or {}).get("centroid"))
+    pick = [cells[h] for h in place.get("cells") or [] if h in cells] or [c for c in cells.values() if near(c, 1.0)]
+    if not pick:
+        return None, []
+    def mean(f, cs=pick, cond=lambda c: True):
+        v = [c[f] for c in cs if isinstance(c.get(f), (int, float)) and cond(c)]
+        return (sum(v) / len(v)) if v else None
+    def cmed(f):                                   # the median over POPULATED cells (≥ 100 people) — not empty farmland
+        v = sorted(c[f] for c in cells.values() if isinstance(c.get(f), (int, float)) and plausible(c) and (c.get("population") or 0) >= 100)
+        return v[len(v) // 2] if v else None
+    metrics = []
+    for f, label, fmt in (("density_per_km2", "Population density (/km², 2020 model)", 0), ("pm25", "PM2.5 now (µg/m³, estimated)", 1),
+                          ("flood_susceptibility", "Flood susceptibility (0–1)", 2), ("heat_c", "Heat (°C)", 1),
+                          ("dist_bus_stop_m", "Nearest bus stop (m)", 0), ("dist_metro_m", "Nearest metro (m)", 0),
+                          ("walkability_score", "Walkability (/100)", 0), ("road_density_km_per_km2", "Road density (km/km²)", 1),
+                          ("building_coverage", "Building coverage (share)", 2)):
+        here = mean(f, cond=plausible) if f == "density_per_km2" else mean(f)
+        if here is not None:
+            med = cmed(f)
+            metrics.append({"metric": label, "here": round(here, fmt) if fmt else round(here), "city_median": (round(med, fmt) if fmt else round(med)) if med is not None else None})
+    fac = {}
+    for cat, (label, _, _) in FAC.items():
+        pts = FAC_POINTS.get(cat)
+        if not pts:
+            continue
+        n = sum(1 for cell in pts.values() for (x, y) in cell if 111.32 * math.hypot((x - lon) * k, y - lat) <= 1.0)
+        if n:
+            fac[label] = n
+    nearest = {}
+    for cat in ("healthcare", "education", "emergency", "sanitation", "banking", "recreation"):
+        pts = FAC_POINTS.get(cat)
+        if pts:
+            d = _nearest_km(pts, lon, lat)
+            if d < 50:
+                nearest[FAC[cat][0]] = "%.1f km" % d
+    f = {"name": place["name"], "kind": place["kind"],
+         "area": ("its %d ward cells" % len(pick)) if place.get("cells") else "the %d cells within 1 km" % len(pick),
+         "profile": metrics, "facilities_within_1_km": fac, "nearest_facility (straight line)": nearest}
+    if place.get("lake"):
+        o = place["lake"]
+        f["lake"] = {"baseline_ha": round((o.get("baseline_water_m2") or 0) / 1e4, 1), "recent_ha": round((o.get("recent_water_m2") or 0) / 1e4, 1),
+                     "water_change_pct": o.get("water_change_pct"), "shore_built_1975": o.get("shore_built_1975"), "shore_built_2020": o.get("shore_built_2020")}
+    if need and place.get("ward_no"):
+        f["ward_vs_city"] = {"city_median_ward": need.get("city_median_ward"),
+                             "this_ward_in_the_need_vs_spend_top": any(r.get("place", "").endswith("(ward %s)" % place["ward_no"])
+                                                                       for r in need.get("wards_with_most_need_for_least_spend") or [])}
+    label = place["name"] + (" (ward %s)" % place["ward_no"] if place.get("ward_no") else "")
+    f["label"] = label
+    return f, [{"h3": _h3(c), "place": label} for c in pick if _h3(c)]
+
+
 INVENTORY = [   # (schema, friendly name, unit, what it is) — the order the inventory table lists them
     ("demographics.population", "Population (GHSL 2020 model)", "cells", "people per 250 m grid cell, modelled"),
     ("demographics.census_ward", "Census 2011 by ward", "cells", "ward population and density"),
@@ -703,7 +1024,13 @@ INVENTORY = [   # (schema, friendly name, unit, what it is) — the order the in
     ("cell.builtup", "Built-up area", "cells", "built-up share"),
     ("cell.buildings", "Buildings", "cells", "coverage, height, volume"),
     ("cell.roads", "Road density", "cells", "OSM road length per km²"),
-    ("geo.facility", "Facilities (cells with one)", "cells", "health, schools, police, government…"),
+    ("geo.facility", "Facility points (all categories)", "points", "health, education, safety, civic offices, sanitation, banking, parks…"),
+    ("water.lake", "Lakes (Lake Watch)", "lakes", "water extent 1995–2021, shore built-up 1975–2020"),
+    ("econ.nightlight_trend", "Night lights 2014–2025", "cells", "yearly satellite radiance — a proxy for activity"),
+    ("geo.building", "Building outlines", "buildings", "two areas so far (south strip, MG Road–Jayanagar)"),
+    ("cell.aod", "Satellite haze (AOD)", "cells", "MODIS MAIAC, partial (cloud)"),
+    ("cell.cams", "Regional PM2.5 background", "cells", "Copernicus CAMS"),
+    ("space.ward", "Wards", "wards", "BBMP 198-ward boundaries"),
     ("mobility.transit_access", "Transit access", "cells", "distance to bus stop / metro"),
     ("mobility.walkability", "Walkability", "cells", "street-grid score"),
     ("mobility.chokepoint", "Road-network chokepoints", "cells", "route concentration — a proxy, not traffic"),
@@ -716,7 +1043,7 @@ INVENTORY = [   # (schema, friendly name, unit, what it is) — the order the in
 ]
 
 
-NO_AS_OF = {"works.ward_cell", "procurement.ward_cell", "space.place"}   # their observed_at is the build time, not the data's
+NO_AS_OF = {"works.ward_cell", "procurement.ward_cell", "space.place", "water.lake", "geo.facility", "space.ward"}   # their observed_at is the build time, not the data's
 
 
 def inventory_facts(kfind, layer_counts, air_meta):
@@ -724,7 +1051,7 @@ def inventory_facts(kfind, layer_counts, air_meta):
     for schema, name, unit, what in INVENTORY:
         if schema == "air.quality" and air_meta:
             n, as_of = air_meta["cells"], air_meta["observed_at"][:16].replace("T", " ") + " UTC"
-        elif schema in layer_counts:
+        elif schema in layer_counts and schema != "geo.facility":     # (layer_counts has cells-with-a-facility, not points)
             n, as_of = layer_counts[schema], None
         else:
             rs = _try(kfind, schema)
@@ -733,8 +1060,7 @@ def inventory_facts(kfind, layer_counts, air_meta):
             as_of = (max(ts)[:10] if ts and schema not in NO_AS_OF else None)
         if n:
             rows.append({"layer": name, "records": n, "unit": unit, "what": what, **({"as_of": as_of} if as_of else {})})
-    missing = ["observed traffic / congestion counts", "satellite aerosol (AOD) and night lights (not yet run)",
-               "property tax / survey records"]
+    missing = ["observed traffic / congestion counts", "bus frequency (GTFS)", "property tax / survey records"]
     return {"layers": rows, "not_available": missing}
 
 
@@ -767,10 +1093,14 @@ COLS = {   # field → (header, scale) — percentages from fractions; everythin
     "severity": ("Severity", 1), "hotspot_cells": ("Cells in hotspot", 1),
     "underserved_share": ("Far from transit (%)", 100), "paid_per_person": ("Works paid per person (₹)", 1),
     "need_vs_spend": ("Need vs spend (/100)", 1),
+    "nearest_km": ("Nearest (km)", 1), "baseline_ha": ("Water 1995–99 (ha)", 1), "recent_ha": ("Water 2017–21 (ha)", 1),
+    "water_change_pct": ("Change (%)", 1), "shore_built_1975": ("Shore built-up 1975 (%)", 100), "shore_built_2020": ("Shore built-up 2020 (%)", 100),
+    "change_pct": ("Change (%)", 1), "avg_radiance": ("Radiance now", 1), "radiance_first_years": ("Radiance 2014–16", 1),
+    "tenders_count": ("Tenders", 1),
     "people_affected": ("People affected", 1), "where": ("Where (top places)", 1), "measure": ("Measure", 1),
     "records": ("Records", 1), "unit": ("Unit", 1), "as_of": ("As of", 1), "what": ("What it is", 1),
 }
-_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities", "layer", "priority", "caveat", "evidence"}
+_SKIP = {"h3", "centroid", "lat_lon", "place", "facilities", "layer", "priority", "caveat", "evidence", "by_year", "title", "metric", "year", "ward"}
 
 
 def _num(v):
@@ -809,6 +1139,34 @@ def fact_tables(facts):
         for k, v in block.items():
             if isinstance(v, list) and v and isinstance(v[0], dict) and ("h3" in v[0] or "centroid" in v[0]):
                 out.append("**%s**\n\n%s" % (_title(k), _table(v[:TOP], None, "Location")))
+    pl = facts.get("place") or {}
+    if pl.get("profile"):
+        rows = [dict(r, _m=r["metric"]) for r in pl["profile"]]
+        out.append("**%s — compared with the city median (%s)**\n\n" % (pl.get("label") or pl.get("name"), pl.get("area"))
+                   + "\n".join(["| Measure | Here | City median |", "|---|---|---|"]
+                                + ["| %s | %s | %s |" % (r["metric"], _num(r["here"]), _num(r["city_median"])) for r in pl["profile"]]))
+        if pl.get("facilities_within_1_km"):
+            out.append("**Facilities within 1 km**\n\n| Category | Count |\n|---|---|\n" + "\n".join(
+                "| %s | %s |" % (k, _num(v)) for k, v in sorted(pl["facilities_within_1_km"].items(), key=lambda x: -x[1])))
+    lk = facts.get("lakes") or {}
+    if (lk.get("lake_asked") or {}).get("by_year"):
+        out.append("**%s — water area by year**\n\n| Year | Water (ha) | Source |\n|---|---|---|\n" % lk["lake_asked"]["place"] + "\n".join(
+            "| %s | %s | %s |" % (r["year"], _num(r["water_ha"]), r["source"]) for r in lk["lake_asked"]["by_year"]))
+    gr = facts.get("growth") or {}
+    if gr.get("city_mean_by_year"):
+        out.append("**Night lights — city average by year**\n\n| Year | Mean radiance |\n|---|---|\n" + "\n".join(
+            "| %s | %s |" % (r["year"], _num(r["city_mean_radiance"])) for r in gr["city_mean_by_year"]))
+    cv = facts.get("civic") or {}
+    if cv.get("latest_serious"):
+        out.append("**Latest serious civic issues (from news)**\n\n| # | Issue | Category | Severity | Date | Where |\n|---|---|---|---|---|---|\n" + "\n".join(
+            "| %d | %s | %s | %s | %s | %s |" % (i, r["title"].replace("|", "/"), r["category"], r["severity"], r["date"], r.get("where") or "—")
+            for i, r in enumerate(cv["latest_serious"], 1)))
+    pw0 = facts.get("works_trend") or {}
+    if pw0.get("works_by_year"):
+        out.append("**Works paid by year (city)**\n\n| Year | Works | Paid (₹ crore) |\n|---|---|---|\n" + "\n".join(
+            "| %s | %s | %s |" % (r["year"], _num(r["works_count"]), _num(round(r["paid_net_total"] / 1e7, 1))) for r in pw0["works_by_year"]))
+    if pw0.get("wards_by_tenders"):
+        out.append("**Wards with the most tenders**\n\n" + _table(pw0["wards_by_tenders"], "ward", "Ward"))
     pr = (facts.get("priorities") or {}).get("candidates")
     if pr:
         out.append("**Candidate priorities (ranked by people affected)**\n\n" + _table(pr, "priority", "Priority"))
@@ -913,11 +1271,21 @@ def h_ask(ctx):
     effect = sorted(kfind("intelligence.effectiveness"), key=lambda o: o.get("observed_at") or "", reverse=True)
 
     topics = topics_of(question)
+    place = None
+    if topics not in (["inventory"], ["priorities"]) and (PLACE_RE.search(question.lower()) or len(question.split()) <= 4):
+        place = detect_place(kfind, question)          # 'tell me about Nilasandra' → a profile of that place
+        if place:
+            topics = ["place"]
     cells, layer_counts, cell_source = city_cells(kfind)
-    if any(t in topics for t in ("access", "transit", "walk", "need", "inventory", "priorities")):
+    used_extra = []
+    if any(t in topics for t in ("services", "priorities", "place")):
+        fc = load_facilities(kfind)
+        if fc:
+            layer_counts["geo.facility"] = sum(fc.values()); used_extra.append("geo.facility")
+    if any(t in topics for t in ("access", "transit", "walk", "need", "inventory", "priorities", "place")):
         layer_counts.update(join_mobility(kfind, cells))
     air_meta = None
-    if any(t in topics for t in ("air", "need", "inventory", "priorities")):
+    if any(t in topics for t in ("air", "need", "inventory", "priorities", "place")):
         air_meta = join_air(kfind, cells)
         if air_meta:
             layer_counts["air.quality"] = air_meta["cells"]
@@ -926,19 +1294,19 @@ def h_ask(ctx):
     if cells:
         facts["city_cells"] = {"source": cell_source, "cells": len(cells)}
         for t in topics:
-            if t in ("works", "need", "inventory", "priorities"):
+            if t in ("works", "need", "inventory", "priorities", "lakes", "growth", "civic", "place"):
                 continue
             tf = air_facts(cells, air_meta) if t == "air" and air_meta else (topic_facts(t, cells, question) if t != "air" else None)
             if tf:
                 facts[t] = tf
         sources.append(cell_source.split(" ")[0] if cell_source.startswith("city.") else "raw cell layers")
-    if "need" in topics or "priorities" in topics:
+    if "need" in topics or "priorities" in topics or (place and place.get("ward_no")):
         nf, map_cells, nc = need_facts(kfind, cells)
         if nf:
             facts["need"] = nf
             layer_counts.update(nc)
             sources.append("ward need-vs-spend (census 2011 + works + transit + air)")
-            if "priorities" in topics:                 # the ward list feeds a candidate; its full table is not shown
+            if "priorities" in topics or "place" in topics:   # feeds a candidate / the ward comparison; no full table
                 facts.pop("need", None); facts["_need"] = nf; map_cells = []
     if "priorities" in topics:
         try:
@@ -949,6 +1317,38 @@ def h_ask(ctx):
         layer_counts.update({"cell.hydrology": layer_counts.get("cell.hydrology", 0)})
     if "inventory" in topics:
         facts["inventory"] = inventory_facts(kfind, layer_counts, air_meta)
+    if any(t in topics for t in ("lakes", "civic", "place")):
+        try:
+            _places = load_places(kfind)
+        except Exception:
+            _places = []
+    if place:
+        pf, pcells = place_facts(place, cells, _places, facts.pop("_need", None))
+        if pf:
+            facts["place"] = pf; map_cells = pcells; sources.append("place profile")
+            used_extra += (["water.lake"] if place.get("lake") else [])
+    if "lakes" in topics:
+        lf, lake_ids = lake_facts(kfind, question)
+        if lf:
+            facts["lakes"] = lf; layer_counts["water.lake"] = lf["lakes_measured"]; used_extra.append("water.lake")
+            names = {o["id"]: o["name"] for o in _try(kfind, "water.lake") if o.get("id") in lake_ids}
+            map_cells = [{"h3": _h3(o), "place": names[o["lake_ref"]]} for o in _try(kfind, "water.lake_cell")
+                         if o.get("lake_ref") in names and _h3(o)]
+            sources.append("water.lake (Lake Watch)")
+    if "growth" in topics:
+        gf = growth_facts(kfind)
+        if gf:
+            facts["growth"] = gf; layer_counts["econ.nightlight_trend"] = gf["cells"]; used_extra.append("econ.nightlight_trend")
+            sources.append("econ.nightlight_trend (VIIRS)")
+    if "civic" in topics:
+        cf = civic_facts(kfind, _places)
+        if cf:
+            facts["civic"] = cf; layer_counts["civic.issue"] = cf["issues"]; used_extra.append("civic.issue")
+            sources.append("civic.issue (news)")
+    if "works" in topics:
+        wt = works_trend(kfind)
+        if wt:
+            facts["works_trend"] = wt; used_extra.append("works.ward_cell")
     if "works" in topics or "overview" in topics:      # (not for "need" — its ward table already carries the spend)
         wf = works_facts(kfind)
         if wf:
@@ -978,7 +1378,7 @@ def h_ask(ctx):
     wanted = sorted({FIELD_LAYER[f] for t in topics for f in TOPICS.get(t, ((), ()))[1] if f in FIELD_LAYER})
     facts["layers_present"] = {s: layer_counts[s] for s in present}
     facts["layers_missing_for_this_question"] = [s for s in wanted if s not in layer_counts]
-    facts["layers_used_for_this_question"] = [s for s in wanted if s in layer_counts]
+    facts["layers_used_for_this_question"] = [s for s in wanted if s in layer_counts] + [s for s in dict.fromkeys(used_extra) if s not in wanted]
     if "access" in topics:
         facts["layers_missing_for_this_question"].append("traffic / congestion (no such layer exists for this tenant)")
     facts["evidence_quality"] = {s: {"cells": layer_counts[s], "coverage_pct": (cov.get(s) or {}).get("coverage_pct")} for s in present}
@@ -1006,7 +1406,12 @@ def h_ask(ctx):
               "grounded in the facts and any open recommendations. If facts.need is present: name the top 2–3 wards, compare the "
               "first with facts.need.city_median_ward (e.g. '3.8× the median density, a third of the median spend per "
               "person'), and say need_vs_spend is an equal-weight ranking aid, not a verdict. If facts.inventory is "
-              "present: summarise the data in 3–4 grouped bullets and name what is not available. If facts.priorities is "
+              "present: summarise the data in 3–4 grouped bullets and name what is not available. If facts.place is present: describe "
+              "that place in 3–4 bullets against the city median (name what stands out — better or worse), mention facilities "
+              "nearby and any lake. If facts.lakes is present: name the lakes that shrank most and say the satellite caveat once. "
+              "If facts.growth is present: say how much the city brightened and where, and call night light a PROXY. If "
+              "facts.civic is present: say what the serious issues are about and that they come from news. If facts.services "
+              "names a category: say how many people are beyond the distance and where (straight line). If facts.priorities is "
               "present: give EXACTLY 5 numbered priorities chosen from facts.priorities.candidates (you may merge or reorder "
               "them, say why in a few words), each ONE line: what, where (from its 'where'), how many people, a first step; "
               "then one line naming facts.priorities.not_ranked; this overrides the 4-bullet limit. Decide quickly — the "

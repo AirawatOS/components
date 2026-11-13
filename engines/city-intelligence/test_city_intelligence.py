@@ -340,6 +340,84 @@ check("…the news signal counts civic issues by category (not 'other')", pf.get
 check("…a larger answer budget for this open question", seen_n["n"] == ci.PRIORITY_TOKENS > ci.ANSWER_TOKENS, seen_n["n"])
 check("…an empty reply still shows the candidate table", "Candidate priorities (ranked by people affected)" in (out or {}).get("answer", ""), (out or {}).get("answer", "")[:200])
 
+# 0.5.0 — facilities by category (distance), lakes, night lights, civic issues, works by year, a named place
+FAC_DATA = dict(PRI, **{
+    "geo.facility": [{"category": "sanitation", "centroid": [77.70, 13.00], "name": "Toilet C"},
+                     {"category": "healthcare", "centroid": [77.60, 12.95], "name": "Hosp B"},
+                     {"category": "banking", "centroid": [77.5001, 12.9001], "name": "ATM A"}],
+    "water.lake": [{"id": "ds:t:water/lake/way-1", "name": "Bellandur Lake", "cell_ref": {"h3_id": "a", "centroid": [77.50, 12.90]},
+                    "baseline_water_m2": 1670000, "recent_water_m2": 997000, "water_change_pct": -40.3, "shore_built_1975": 0.007,
+                    "shore_built_2020": 0.099, "osm_area_m2": 3147000,
+                    "series": [{"t": "1995", "water_area_m2": 1700000, "source": "jrc-gsw"}, {"t": "2020", "water_area_m2": 530000, "source": "jrc-gsw"}]},
+                   {"id": "ds:t:water/lake/way-2", "name": "Ulsoor Lake", "cell_ref": {"h3_id": "b", "centroid": [77.60, 12.95]},
+                    "baseline_water_m2": 400000, "recent_water_m2": 420000, "water_change_pct": 5.0, "shore_built_2020": 0.6}],
+    "water.lake_cell": [{"cell_ref": {"h3_id": "a"}, "lake_ref": "ds:t:water/lake/way-1"}, {"cell_ref": {"h3_id": "z"}, "lake_ref": "ds:t:water/lake/way-1"}],
+    "econ.nightlight_trend": [{"cell_ref": {"h3_id": "a", "centroid": [77.5, 12.9]}, "avg_radiance": 30, "change_pct": 80.0,
+                               "series": [{"t": "2014", "avg_radiance": 1.0}, {"t": "2015", "avg_radiance": 1.5}, {"t": "2016", "avg_radiance": 1.2}, {"t": "2025", "avg_radiance": 30}]},
+                              {"cell_ref": {"h3_id": "b", "centroid": [77.6, 12.95]}, "avg_radiance": 20, "change_pct": 10.0,
+                               "series": [{"t": "2014", "avg_radiance": 18}, {"t": "2025", "avg_radiance": 20}]}],
+    "civic.issue": [{"title": "Potholes on Outer Ring Road - The Hindu", "category": "roads_transport", "severity": "high", "observed_at": "2026-11-12T10:00:00Z",
+                     "space": {"centroid": [77.5001, 12.9001]}},
+                    {"title": "Brunch review", "category": "other", "severity": "low"}],
+    "works.ward_cell": [{"ward_no": "116", "cell_ref": {"h3_id": "a"}, "series": [{"t": "2012", "works_count": 3, "paid_net_total": 2e7}, {"t": "2013", "works_count": 2, "paid_net_total": 1e7}]},
+                        {"ward_no": "116", "cell_ref": {"h3_id": "q"}, "series": [{"t": "2012", "works_count": 3, "paid_net_total": 2e7}]},
+                        {"ward_no": "7", "cell_ref": {"h3_id": "b"}, "series": [{"t": "2012", "works_count": 1, "paid_net_total": 5e6}]}],
+    "procurement.ward_cell": [{"ward_no": "116", "ward_name": "Nilasandra", "tenders_count": 58}, {"ward_no": "7", "ward_name": "Leafy", "tenders_count": 9}]})
+FAC_DATA["demographics.census_ward"] = [dict(o, cell_ref=dict(o["cell_ref"], centroid={"a": [77.50, 12.90], "b": [77.60, 12.95], "c": [77.70, 13.00]}[o["cell_ref"]["h3_id"]]))
+                                       for o in AIR["demographics.census_ward"]]
+def ask5(q, data=FAC_DATA, reply="**x**\nEvidence quality: ok"):
+    seen = {}
+    def m(msgs, n):
+        seen["facts"] = json.loads(msgs[1]["content"].split("FACTS:\n", 1)[1].split("\n\nQUESTION:", 1)[0]); return reply
+    out, err = ci.h_ask({"body": {"question": q}, "kfind": lambda s, where=None: list(data.get(s, [])), "ai_complete": m})
+    return out or {}, seen.get("facts") or {}
+out, f = ask5("Where are people far from a public toilet?")
+sv = f.get("services") or {}
+k = next((k for k in sv if k.startswith("populous_cells_far_from_water")), "")
+check("0.5.0 toilets → the sanitation category, people beyond 0.5 km of the nearest one, most populous first",
+      sv.get("category_asked") == ["Water, sanitation & waste"] and [r["h3"] for r in sv.get(k, [])][:1] == ["a"] and sv[k][0]["nearest_km"] > 0.5, (sv.get("category_asked"), list(sv)))
+check("…'Nearest (km)' column in the answer", "Nearest (km)" in out.get("answer", ""), out.get("answer", "")[:300])
+out, f = ask5("Where are people far from a bank or ATM?")
+check("…banks → banking; the ATM next to cell a puts a within reach", "a" not in [r["h3"] for r in (f.get("services") or {}).get(next((k for k in f.get("services", {}) if k.startswith("populous_cells_far_from_banking")), ""), [])])
+out, f = ask5("Which lakes have shrunk the most?")
+lk = f.get("lakes") or {}
+check("…lakes: the most shrunk first, with baseline / recent ha and shore built-up",
+      [r["place"] for r in lk.get("lakes_that_shrank_most", [])][:1] == ["Bellandur Lake"] and lk["lakes_that_shrank_most"][0]["baseline_ha"] == 167.0, lk.get("lakes_that_shrank_most"))
+check("…the lake's cells are returned for the map, labelled with its name",
+      {"h3": "a", "place": "Bellandur Lake"} in out.get("facts", {}).get("map_cells", []) and "map_cells" not in f)
+out, f = ask5("How has Bellandur Lake changed?")
+check("…a lake named in the question gets its year-by-year table",
+      (f.get("lakes") or {}).get("lake_asked", {}).get("place") == "Bellandur Lake" and "water area by year" in out.get("answer", ""), list(f))
+out, f = ask5("Where has the city grown economically?")
+gr = f.get("growth") or {}
+check("…growth: city mean by year, the newly-lit cell, labelled a proxy",
+      [r["year"] for r in gr.get("city_mean_by_year", [])] == ["2014", "2015", "2016", "2025"] and gr.get("newly_lit_cells") == 1 and "PROXY" in gr, gr.get("newly_lit_cells"))
+out, f = ask5("What are people complaining about in the news?")
+cv = f.get("civic") or {}
+check("…civic: categories without 'other', the serious one first with its place, the news source trimmed",
+      cv.get("by_category (excluding 'other')") == {"roads transport": 1} and cv["latest_serious"][0]["title"] == "Potholes on Outer Ring Road"
+      and cv["latest_serious"][0].get("where", "").startswith("Nilasandra"), cv.get("latest_serious"))
+D2 = dict(FAC_DATA, **{"space.aoi": [{"id": "ds:t:space/aoi/bengaluru", "name": "Bengaluru"}],
+                       "civic.issue": FAC_DATA["civic.issue"] + [{"title": "Six coaches derail in Assam", "category": "disaster", "severity": "high"},
+                                                                {"title": "Garbage piles up in Bangalore", "category": "sanitation", "severity": "high"}]})
+cv2 = ask5("What are the civic issues in the news?", D2)[1].get("civic") or {}
+check("…national news is left out; an unplaced issue naming the city (alias Bangalore) stays",
+      [r["title"] for r in cv2.get("latest_serious", [])] == ["Potholes on Outer Ring Road", "Garbage piles up in Bangalore"] or
+      sorted(r["title"] for r in cv2.get("latest_serious", [])) == ["Garbage piles up in Bangalore", "Potholes on Outer Ring Road"], cv2.get("latest_serious"))
+check("…'where are PEOPLE far from a toilet' is not also a population question", "population" not in ask5("Where are people far from a public toilet?")[1].get("question_topics", []))
+out, f = ask5("Show works spend by year")
+wt = f.get("works_trend") or {}
+check("…works by year counts each ward ONCE (ward 116 has two cells)", wt.get("works_by_year", [{}])[0] == {"year": "2012", "works_count": 4, "paid_net_total": 2.5e7}, wt.get("works_by_year"))
+out, f = ask5("Tell me about Nilasandra")
+pl = f.get("place") or {}
+check("…'tell me about Nilasandra' → a place profile of its ward cells against the city median, facilities within 1 km",
+      f.get("question_topics") == ["place"] and pl.get("label") == "Nilasandra (ward 116)" and any(r["metric"].startswith("Population density") for r in pl.get("profile", []))
+      and pl.get("facilities_within_1_km", {}).get("Banking access") == 1, (f.get("question_topics"), pl.get("label"), pl.get("facilities_within_1_km")))
+check("…its cells light up on the map under the ward label", {"h3": "a", "place": "Nilasandra (ward 116)"} in out.get("facts", {}).get("map_cells", []))
+check("…'Tell me about Bellandur Lake' → the lake as a place, with its lake figures",
+      (ask5("Tell me about Bellandur Lake")[1].get("place") or {}).get("lake", {}).get("water_change_pct") == -40.3)
+check("…a question naming no place is not a place profile", ask5("tell me about flooding")[1].get("question_topics") != ["place"])
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 
