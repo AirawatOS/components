@@ -506,8 +506,27 @@ const ELEV_MAX=5200;   // metres a max-value hex rises to in 2.5D (extruded towe
 const NOMINAL_H=9;     // Open Buildings carries no height → extrude footprints to a nominal ~3-storey height
 // geo.facility category → marker colour (schools/hospitals/police-fire/govt/utilities/…)
 const FCOL={healthcare:[239,68,68],education:[59,130,246],emergency:[249,115,22],government:[168,85,247],
-            utility:[234,179,8],transport:[6,182,212],religious:[236,72,153],commerce:[34,197,94],other:[148,163,184]};
+            sanitation:[20,184,166],transport:[6,182,212],banking:[180,83,9],welfare:[132,204,22],
+            commerce:[34,197,94],religious:[236,72,153],recreation:[21,128,61],utility:[234,179,8],other:[148,163,184]};
+// FACILITIES as SERVICE DELIVERY POINTS vs other POINTS OF INTEREST — one toggle per category (record keys stay stable;
+// the names live here). One fetch (geo.facility) serves them all; drilling into a cell shows every category there.
+const FAC_CATS=[
+  {k:"healthcare",label:"Health",g:"Public Services",i:"Hospitals, clinics / health centres, pharmacies, labs, nursing homes."},
+  {k:"education",label:"Education",g:"Public Services",i:"Schools, colleges, universities, kindergartens / anganwadis, libraries."},
+  {k:"emergency",label:"Safety & emergency",g:"Public Services",i:"Police and fire stations, ambulance stations."},
+  {k:"government",label:"Civic offices",g:"Public Services",i:"Ward / city offices, government offices, courts, post offices."},
+  {k:"sanitation",label:"Water, sanitation & waste",g:"Public Services",i:"Public toilets, drinking water, waste disposal / transfer and recycling points."},
+  {k:"transport",label:"Transport hubs",g:"Public Services",i:"Bus stations, railway / metro stations, fuel and EV charging."},
+  {k:"banking",label:"Banking access",g:"Public Services",i:"Banks and ATMs — access to cash and accounts."},
+  {k:"welfare",label:"Social welfare",g:"Public Services",i:"Community centres and social facilities (OpenStreetMap coverage is thin here)."},
+  {k:"commerce",label:"Markets & shopping",g:"Points of Interest",i:"Markets, malls, supermarkets, department stores."},
+  {k:"religious",label:"Religious & cultural",g:"Points of Interest",i:"Places of worship, museums, theatres, arts centres."},
+  {k:"recreation",label:"Parks & recreation",g:"Points of Interest",i:"Parks, gardens, playgrounds, sports centres, stadiums."},
+  {k:"utility",label:"Utilities",g:"Points of Interest",i:"Power substations and plants, water towers and works, telecom towers."}];
+const FAC_LABEL=Object.fromEntries(FAC_CATS.map(c=>[c.k,c.label]));
+const FAC_ON=new Set();          // categories shown; showFacilities follows (FAC_ON.size>0)
 const fcol=c=>FCOL[c]||FCOL.other;
+const rgbCss=c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 // civic.issue category → marker colour (the governed 12-category vocab; a tenant may categorise differently, so
 // any unknown category falls back to grey — the legend below lists whatever categories are actually present).
 const ICOL={law_and_order:[239,68,68],water:[56,189,248],sanitation:[132,204,22],health:[236,72,153],
@@ -944,6 +963,7 @@ function drillInto(cell){                                          // zoom into 
 }
 function exitDrill(){
   if(!drillCell) return; drillCell=null; drillBuildings=[]; footLoading=false; $("cellpanel").hidden=true;
+  showFacilities=FAC_ON.size>0;                                    // a drill shows every category; back out → only the chosen ones
   view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?50:0, transitionDuration:500};
   deckgl.setProps({initialViewState:view}); render();
 }
@@ -1120,7 +1140,8 @@ function sensorsLayer(){                                        // raw air.senso
 function facilitiesLayer(){                                     // critical facilities (geo.facility) → coloured markers
   if(!showFacilities || !(DATA.facilities||[]).length) return null;
   const drill=!!drillCell;
-  const data=drill ? DATA.facilities.filter(f=>f.h3===drillCell.h3) : DATA.facilities;
+  const pick=f=>!FAC_ON.size||FAC_ON.has(f.cat);
+  const data=drill ? DATA.facilities.filter(f=>f.h3===drillCell.h3&&pick(f)) : DATA.facilities.filter(pick);
   if(!data.length) return null;
   return new deck.ScatterplotLayer({id:"facilities",data,pickable:true,
     getPosition:f=>f.c, getFillColor:f=>fcol(f.cat),
@@ -1376,7 +1397,7 @@ function tip(info){
   const label = (o.prov&&o.status) ? ('<b style=\'color:'+(o.status==="tax-unregistered"?"#ff6b6b":"#6ab0e0")+'\'>'+(o.status==="tax-unregistered"?"UNREGISTERED property":"Registered property")+'</b>'+'<br>Owner: '+(o.prov.owner||'\u2014')+'<br>Survey UID: '+(o.prov.uid||'\u2014')+'<br>Tax record: '+(o.status==="tax-registered"?("Property #"+(o.prov.property_id||o.prov.uid)):"NOT ON TAX REGISTER")+'<br>Ward: '+(o.prov.ward||'\u2014')+'<br>Mobile: '+(o.prov.mobile||'\u2014')+'<br>Use: '+(o.prov.land_use||'\u2014')+'<br>Confidence: '+(o.prov.confidence==null?'\u2014':o.prov.confidence)) : o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
               : o._tr ? `<b>${esc(o.name||o.kind)}</b> · <span style="color:var(--muted)">${esc(o.kind)}</span>`
               : o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
-              : o.cat!==undefined ? `<b>${esc(o.name||o.sub||o.cat)}</b> · <span style="color:var(--muted)">${esc(o.sub||o.cat)}</span>`
+              : o.cat!==undefined ? `<b>${esc(o.name||String(o.sub||o.cat).replace(/_/g," "))}</b> · <span style="color:${rgbCss(fcol(o.cat))}">${esc(FAC_LABEL[o.cat]||o.cat)}</span> · <span style="color:var(--muted)">${esc(String(o.sub||"").replace(/_/g," "))}</span>`
               : o.feature!==undefined ? esc(o.feature||"road")
               : (()=>{ // TEMPORAL: show the value of the FRAME currently on screen (tIdx), not the base value —
                        // else the tooltip reports the latest hour while the cells are painted for a scrubbed-to hour.
@@ -1391,7 +1412,7 @@ function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true
 // Any solution that publishes a viz.layer carrying a group/subgroup slots into this tree automatically:
 // installing Air Intelligence makes "Environment › Air Pollution" appear; City Setup contributes the base
 // layers; crowd-safety adds "People › Crowds". Nothing about air/flood/waste is baked into City Scan.
-const GRP_ORDER=["Environment","Built Environment","Mobility","People & Economy","Public Finance","City Pulse","Utilities","Other"];  // display order; unknown groups append
+const GRP_ORDER=["Environment","Built Environment","Public Services","Points of Interest","Mobility","People & Economy","Public Finance","City Pulse","Utilities","Other"];  // display order; unknown groups append
 // subgroups in reading order (else alphabetical); a group whose layers carry no subgroup is listed flat
 const SUB_ORDER=["Air quality","Water & flooding","Rain & heat","Land","Roads","Transit & walking"];
 // LEGACY fallback — only for a layer whose descriptor predates the group tag.
@@ -1407,11 +1428,13 @@ const OVL=[{id:"water",label:"Natural drainage",grp:"Environment",sub:"Water & f
             interp:"Every other street — residential, service, living-street, lanes, tracks and paths (~178k segments). Heavy, so it loads only on demand; use it when you need the full street-level detail rather than the arterial overview."},
            {id:"transit",label:"Public transport",grp:"Mobility",sub:"Transit & walking",dot:"#7e22ce",
             interp:"Metro lines (purple), suburban rail (grey), metro stations (large purple dots), rail stations (grey) and bus stops (small orange dots) from OpenStreetMap. Hover a stop or station for its name. OSM coverage of bus stops may be incomplete."},
-           {id:"facilities",label:"Facilities (points)",grp:"Built Environment",sub:"",dot:"#ef4444",
+           ...FAC_CATS.map(c=>({id:"fac:"+c.k,label:c.label,grp:c.g,sub:"",dot:rgbCss(FCOL[c.k]),interp:c.i+" Points from OpenStreetMap; hover one for its name and type."})),
+           {id:"facilities",hidden:true,label:"Facilities (points)",grp:"Built Environment",sub:"",dot:"#ef4444",
             interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."},
            {id:"issues",label:"Civic issues (from news)",grp:"City Pulse",sub:"",dot:"#a855f7",
             interp:"Geocoded civic issues — coloured by CATEGORY (law & order, water, roads, health…). Each point is a real, governed civic.issue placed on the map from the locality named in a news report or filed in a field report; issues that name no locality are not shown (never guessed). Hover a point for its category, severity and place. News is pulled and categorised per tenant, so the mix of categories reflects this city."}];
 const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities,issues:()=>showIssues,transit:()=>showTransit};
+FAC_CATS.forEach(c=>{ OVLON["fac:"+c.k]=()=>FAC_ON.has(c.k); });
 // OSM transit features (driver/osm-transit writes them into geo.osm_feature alongside the roads)
 const TRANSIT_LINES=["subway","light_rail","monorail","rail","tram"], TRANSIT_PTS=["station","halt","bus_stop","platform","stop","tram_stop"];
 const TRANSIT_SET=new Set([...TRANSIT_LINES,...TRANSIT_PTS]);
@@ -1422,7 +1445,7 @@ function buildTree(){                                  // → {group:{sub:[leaf]
   const tree={};
   const add=(g,s,leaf)=>{ g=g||"Other"; s=s||""; (tree[g]=tree[g]||{}); (tree[g][s]=tree[g][s]||[]).push(leaf); };
   LAYERS.forEach(L=> add(L.grp||LEGACY_G[L.key]||"Other", L.sub||"", {t:"layer",L}));
-  OVL.forEach(o=> add(o.grp,o.sub,{t:"ovl",o}));
+  OVL.forEach(o=> o.hidden||add(o.grp,o.sub,{t:"ovl",o}));
   return tree;
 }
 function grpKeys(tree){ return Object.keys(tree).sort((a,b)=>{
@@ -1594,7 +1617,10 @@ function drawLayers(){
     drawLayers(); render();
   });
   document.querySelectorAll('.layer-btn[data-ov]').forEach(b=>b.onclick=async()=>{            // vector OVERLAY (additive on/off) + pin explanation
-    const id=b.dataset.ov, lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities",issues:"civic issues",transit:"public transport"}[id];
+    let id=b.dataset.ov; const lbl={water:"drainage",roads:"arterial roads",roads_local:"local roads",facilities:"facilities",issues:"civic issues",transit:"public transport"}[id]||"facilities";
+    if(id.startsWith("fac:")){ const k=id.slice(4); FAC_ON.has(k)?FAC_ON.delete(k):FAC_ON.add(k); showFacilities=FAC_ON.size>0;
+      setExplain(id); if(showFacilities){ setBusy("Loading facilities…"); await ensureOverlay("facilities"); setBusy(null); }
+      drawLayers(); render(); return; }
     if(id==="water") showWater=!showWater; else if(id==="roads") showRoads=!showRoads;
     else if(id==="roads_local") showRoadsLocal=!showRoadsLocal; else if(id==="facilities") showFacilities=!showFacilities;
     else if(id==="issues") showIssues=!showIssues; else if(id==="transit") showTransit=!showTransit;
