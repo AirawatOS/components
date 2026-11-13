@@ -52,7 +52,42 @@ POI_FILTERS = {
     ("man_made", "water_tower"): ("utility", "water_tower"),
     ("man_made", "water_works"): ("utility", "water_works"),
     ("man_made", "wastewater_plant"): ("utility", "wastewater_plant"),
+    # 0.2.0 — the Public Services / Points of Interest split (category keys kept stable for the analyst + city profile;
+    # display names live in Visualize). Service delivery points:
+    ("healthcare", "laboratory"): ("healthcare", "laboratory"),
+    ("amenity", "nursing_home"): ("healthcare", "nursing_home"),
+    ("emergency", "ambulance_station"): ("emergency", "ambulance_station"),
+    ("amenity", "post_office"): ("government", "post_office"),
+    ("amenity", "toilets"): ("sanitation", "toilets"),
+    ("amenity", "drinking_water"): ("sanitation", "drinking_water"),
+    ("amenity", "waste_disposal"): ("sanitation", "waste_disposal"),
+    ("amenity", "waste_transfer_station"): ("sanitation", "waste_transfer_station"),
+    ("amenity", "recycling"): ("sanitation", "recycling"),
+    ("amenity", "fuel"): ("transport", "fuel"),
+    ("amenity", "charging_station"): ("transport", "ev_charging"),
+    ("amenity", "bank"): ("banking", "bank"),
+    ("amenity", "atm"): ("banking", "atm"),
+    ("amenity", "community_centre"): ("welfare", "community_centre"),
+    ("amenity", "social_facility"): ("welfare", "social_facility"),
+    ("amenity", "social_centre"): ("welfare", "social_centre"),
+    # other points of interest:
+    ("shop", "mall"): ("commerce", "mall"),
+    ("shop", "supermarket"): ("commerce", "supermarket"),
+    ("shop", "department_store"): ("commerce", "department_store"),
+    ("tourism", "museum"): ("religious", "museum"),
+    ("amenity", "theatre"): ("religious", "theatre"),
+    ("amenity", "arts_centre"): ("religious", "arts_centre"),
+    ("leisure", "park"): ("recreation", "park"),
+    ("leisure", "playground"): ("recreation", "playground"),
+    ("leisure", "sports_centre"): ("recreation", "sports_centre"),
+    ("leisure", "stadium"): ("recreation", "stadium"),
+    ("leisure", "garden"): ("recreation", "garden"),
+    ("man_made", "mast"): ("utility", "telecom_mast"),
+    ("tower:type", "communication"): ("utility", "telecom_tower"),
 }
+# 0.2.0 — which categories are SERVICE DELIVERY POINTS (the city is accountable; access gaps matter) vs other points of
+# interest. Consumers (Visualize, the analyst) group by this; the record keeps the stable category key.
+SERVICE_CATEGORIES = {"healthcare", "education", "emergency", "government", "sanitation", "transport", "banking", "welfare"}
 
 
 def call(path, body):

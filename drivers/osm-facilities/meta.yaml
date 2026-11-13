@@ -4,7 +4,7 @@
 # PBF-only (no Overpass fallback). Runs as a host subprocess (osmium), same as osm-roads.
 component_id: ds:airawat:driver/osm-facilities
 kind: driver
-version: 0.1.1   # 0.1.1: declares the geospatial runtime — the driver imports osmium, which only that runtime provides (staging: 'No module named osmium')
+version: 0.2.0   # 0.2.0: Public Services / Points of Interest split — adds sanitation (toilets, drinking water, waste / recycling), banking (banks, ATMs), welfare (community / social centres), recreation (parks, playgrounds, sports, stadiums) and more types in the existing categories (labs, nursing homes, ambulance, post offices, fuel / EV charging, malls, museums, theatres, telecom towers); category keys unchanged. Was 0.1.1.   # 0.1.1: declares the geospatial runtime — the driver imports osmium, which only that runtime provides (staging: 'No module named osmium')
 provider: ds:airawat:developer
 display_name: Critical Facilities (OpenStreetMap)
 entrypoint: run.py
