@@ -184,6 +184,9 @@
     background:#0a1320d9;border:1px solid var(--edge2);border-radius:999px;padding:4px 13px;color:var(--muted);
     font-size:11.5px;opacity:0;transition:opacity .3s}
   .drillhint.show{opacity:1}
+  .rampsel{margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .rampsel select{flex:1;background:#0e1c2a;color:inherit;border:1px solid var(--edge2);border-radius:6px;font-size:11.5px;padding:2px 4px}
+  .rampsel button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:11px;text-decoration:underline;padding:0}
   /* place search — find a named place, fly there and open its cell (as a click would) */
   .psearch{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:9;width:min(320px,60%)}
   .psearch input{width:100%;box-sizing:border-box;background:#0e1c2ae6;border:1px solid var(--edge2);border-radius:9px;
@@ -243,6 +246,7 @@
         <p class="rail-h" style="margin-bottom:4px">Legend</p>
         <div class="bar" id="legbar"></div>
         <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
+        <div class="rampsel" id="rampsel"></div>
         <div id="legmeta" style="margin-top:7px;color:var(--muted);font-size:11px;line-height:1.5"></div>
       </div>
       <div class="explain" id="explain"></div>
@@ -302,7 +306,23 @@ const RAMPS={
   // SEMANTIC ramps — ONE meaning per colour across every layer (light → dark = less → more on the Standard map):
   sem_worse:  [[255,255,204],[254,217,118],[253,141,60],[227,26,28],[128,0,38]],     // hazard / risk / gap: yellow → deep red
   sem_better: [[247,252,245],[199,233,192],[116,196,118],[35,139,69],[0,68,27]],     // good things: pale → deep green
-  sem_neutral:[[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]]};  // amounts, no judgement: pale → deep blue
+  sem_neutral:[[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]],  // amounts, no judgement: pale → deep blue
+  // PRESETS a user may pick per layer (light → dark; reversed on satellite like the semantic ramps). Each belongs to ONE
+  // meaning, so a pick never turns a hazard green: neutral layers choose among neutral scales, "worse" among warm ones…
+  water:   [[178,235,242],[77,208,225],[0,151,167],[0,96,136],[1,47,90]],             // cyan → navy (lakes: visible at low %)
+  teal:    [[204,236,230],[128,205,193],[53,151,143],[1,102,94],[0,60,48]],
+  purples: [[239,237,245],[203,201,226],[158,154,200],[106,81,163],[63,0,125]],
+  slate:   [[226,232,240],[148,163,184],[100,116,139],[51,65,85],[15,23,42]],
+  magma:   [[252,253,191],[254,176,120],[241,96,93],[183,55,121],[59,15,112]],        // worse, high contrast
+  oranges: [[254,237,222],[253,190,133],[253,141,60],[217,71,1],[127,39,4]],
+  viridis_l:[[253,231,37],[94,201,98],[33,145,140],[59,82,139],[68,1,84]],             // better, yellow → purple
+  greenteal:[[237,248,233],[161,217,155],[65,171,93],[0,109,44],[0,68,27]]};
+const PRESETS={neutral:[["sem_neutral","Blues"],["water","Cyan → navy"],["teal","Teal"],["purples","Purples"],["slate","Slate"]],
+  worse:[["sem_worse","Yellow → red"],["magma","Magma"],["oranges","Oranges"]],
+  better:[["sem_better","Greens"],["viridis_l","Viridis"],["greenteal","Green-teal"]]};
+// a layer's DEFAULT ramp when its data says so (no registry field needed): lake water → cyan → navy (pale blue vanished)
+const DEFAULT_RAMP={"water.lake_cell":"water"};
+function userRamp(L){ try{ const k=localStorage.getItem("aosRamp:"+L.key); return (k&&(PRESETS[L.pol]||[]).some(x=>x[0]===k))?k:null; }catch(e){ return null; } }
 // A layer's colour comes from its POLARITY (viz.layer `polarity`: worse | better | neutral | scale), not a per-layer
 // pick. `scale` keeps the layer's own published scale (e.g. CPCB AQI colours). Without `polarity`, higher_is_worse:true
 // → worse, else neutral. Darker = more on the light Standard map; on dark satellite imagery the ramp is reversed so
@@ -315,7 +335,9 @@ function polarityOf(d){ const p=String(d.polarity||"").toLowerCase();
   return SCALE_POLARITY[String(d.color_scale||"").toLowerCase()]||(d.higher_is_worse===true?"worse":"neutral"); }
 function layerRamp(L){ if(!L) return RAMPS.sem_neutral;
   if(L.pol==="scale") return L.ramp||RAMPS.viridis;
-  const r=RAMPS["sem_"+L.pol]||RAMPS.sem_neutral; return basemap==="satellite"?[...r].reverse():r; }
+  const k=userRamp(L)||DEFAULT_RAMP[L.key];
+  const r=(k&&RAMPS[k])||RAMPS["sem_"+L.pol]||RAMPS.sem_neutral; return basemap==="satellite"?[...r].reverse():r; }
+let RAMP_VER=0;
 const EMPTY_RGBA=[28,34,44,110];   // a TRUE-zero cell (absence) → muted slate, recedes as background vs low-but-present
 const GAMMA=0.55;                  // perceptual curve: spread skewed distributions (few dense cells) across the range
 const clamp01=t=>Math.max(0,Math.min(1,t));
@@ -849,9 +871,33 @@ function dataLayer(){
     extruded:mode3d&&!drillCell, elevationScale:1, material:{ambient:0.55,diffuse:0.7,shininess:24,specularColor:[40,55,70]},
     getElevation:c=> (mode3d&&!drillCell) ? pnorm(c)*ELEV_MAX : 0,   // gamma height → short towers rise, tall ease off
     getHexagon:c=>c.h3, opacity:drillCell?0.22:(mode3d?Math.min(0.95,layerAlpha+0.28):layerAlpha),   // user-set alpha; a touch more solid in 3D so towers read
-    getFillColor:c=> askRed(c.h3) ? [239,68,68,255] : zero(c) ? EMPTY_RGBA : [...rampColor(layerRamp(L),pnorm(c)),255],
+    getFillColor:c=> askRed(c.h3) ? [239,68,68,255] : zero(c) ? (c.grp?[0,0,0,0]:EMPTY_RGBA) : [...rampColor(layerRamp(L),pnorm(c)),255],
     onClick:info=>info&&info.object&&drillInto(info.object),        // click a cell → zoom in + show its buildings/roads/drainage
-    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx,ASK_HOVER_KEY,basemap], opacity:[!!drillCell,mode3d,layerAlpha]}});
+    updateTriggers:{getElevation:[mode3d,active,!!drillCell,tIdx], getFillColor:[active,!!drillCell,tIdx,ASK_HOVER_KEY,basemap,RAMP_VER], opacity:[!!drillCell,mode3d,layerAlpha]}});
+}
+// ── LAKE SHORELINES: each lake's OSM polygon as a thin outline (+ its name from zoom 13) whenever the lake layer is on,
+// so lakes read on any basemap and colour, and a dry year shows as an empty outline. Polygons fetched once.
+let LAKE_POLYS=null, LAKE_POLY_LOADING=false;
+function loadLakePolys(){
+  if(LAKE_POLYS||LAKE_POLY_LOADING) return; LAKE_POLY_LOADING=true;
+  bridge("/bridge/query",{app_id:APPID,schema:"water.lake",limit:5000,fields:["name","geometry","cell_ref"]}).then(d=>{
+    const out=[], labels=[];
+    for(const x of (d.results||d.objects||d||[])){ const o=x.object||x, g=o.geometry||{};
+      const polys=g.type==="Polygon"?[g.coordinates]:g.type==="MultiPolygon"?g.coordinates:[];
+      for(const pg of polys) if(Array.isArray(pg)&&pg.length) out.push({polygon:pg,name:o.name});
+      const c=(o.cell_ref||{}).centroid; if(o.name&&Array.isArray(c)) labels.push({c,name:o.name}); }
+    LAKE_POLYS={out,labels}; render(); }).catch(()=>{ LAKE_POLYS={out:[],labels:[]}; });
+}
+function lakeLayers(){
+  if(active!=="water.lake_cell") return [];
+  if(!LAKE_POLYS){ loadLakePolys(); return []; }
+  const sat=basemap==="satellite", line=sat?[255,255,255,230]:[8,47,73,235];
+  const ls=[new deck.PolygonLayer({id:"lake-shores",data:LAKE_POLYS.out,getPolygon:d=>d.polygon,filled:false,stroked:true,
+    getLineColor:line,lineWidthUnits:"pixels",getLineWidth:1.6,lineWidthMinPixels:1,pickable:false,updateTriggers:{getLineColor:[basemap]}})];
+  if((view.zoom||0)>=13) ls.push(new deck.TextLayer({id:"lake-names",data:LAKE_POLYS.labels,getPosition:d=>d.c,getText:d=>d.name,
+    getSize:12,getColor:sat?[255,255,255,240]:[8,47,73,255],fontWeight:600,outlineWidth:2,outlineColor:sat?[0,0,0,200]:[255,255,255,220],
+    fontSettings:{sdf:true},characterSet:"auto",getTextAnchor:"middle",getAlignmentBaseline:"center",pickable:false}));
+  return ls;
 }
 function bboxOf(b){ let w=1e9,s=1e9,e=-1e9,n=-1e9; for(const p of b){w=Math.min(w,p[0]);e=Math.max(e,p[0]);s=Math.min(s,p[1]);n=Math.max(n,p[1]);} return [w,s,e,n]; }
 const inBox=(pt,bb)=> pt && pt[0]>=bb[0] && pt[0]<=bb[2] && pt[1]>=bb[1] && pt[1]<=bb[3];
@@ -1087,13 +1133,14 @@ function render(){
   updateHeader();
   const layers = (showPlan && PLAN)
     ? [basemapLayer(), ...planLayers(), highlightLayer(), askLayer(), askHoverLayer()]      // greenfield plan view (footprints + zoning + massing)
-    : [basemapLayer(), dataLayer(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer(), askHoverLayer()];
+    : [basemapLayer(), dataLayer(), ...lakeLayers(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer(), askHoverLayer()];
   deckgl.setProps({layers:layers.filter(Boolean)});
   drawPlanCard();
   // legend
   const L=LAYERS.find(l=>l.key===active), d=L&&DATA.data[L.key];
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
     $("legbar").style.background=rampCSS(layerRamp(L));
+    drawRampSel(L);
     if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=L.fmt(d.thi); }
     else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=(d.hiClip?"≥ ":"")+L.fmt(d.hi); }
     // per-layer provenance: freshness (newest observation in THIS layer), mean confidence, method/model.
@@ -1107,6 +1154,17 @@ function render(){
   } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
   updateScrubber();
+}
+// colour choice per layer — only the presets that keep the layer's meaning (neutral / worse / better); per browser
+function drawRampSel(L){
+  const el=$("rampsel"); if(!el) return;
+  const opts=PRESETS[L.pol]; if(!opts){ el.innerHTML=""; el.dataset.k=""; return; }   // a published scale (AQI) stays as published
+  const cur=userRamp(L)||DEFAULT_RAMP[L.key]||("sem_"+L.pol);
+  if(el.dataset.k===L.key+"|"+cur) return; el.dataset.k=L.key+"|"+cur;
+  el.innerHTML=`<span>Colours</span><select id="rampselv">${opts.map(([k,lab])=>`<option value="${k}"${k===cur?" selected":""}>${esc(lab)}${k===(DEFAULT_RAMP[L.key]||"sem_"+L.pol)?" (default)":""}</option>`).join("")}</select>`
+    +(userRamp(L)?`<button id="rampreset" title="Back to the default colours">reset</button>`:"");
+  $("rampselv").onchange=e=>{ try{ localStorage.setItem("aosRamp:"+L.key,e.target.value); }catch(x){} RAMP_VER++; render(); if(typeof drawLayers==="function") drawLayers(); };
+  const rb=$("rampreset"); if(rb) rb.onclick=()=>{ try{ localStorage.removeItem("aosRamp:"+L.key); }catch(x){} RAMP_VER++; render(); if(typeof drawLayers==="function") drawLayers(); };
 }
 // ---- TIME SCRUBBER: animate a temporal layer (cells with a `series`) over its time axis ----
 function fmtT(t){ if(/^\d{4}$/.test(String(t))) return String(t);   // a YEAR frame (e.g. works by work-order year)
@@ -1593,7 +1651,8 @@ function fitView(bbox){
   deckgl=new deck.Deck({
     parent:$("map"), initialViewState:view, controller:true, useDevicePixels:false,
     views:[new deck.MapView({repeat:false})],
-    onViewStateChange:({viewState})=>{ view=viewState; },
+    onViewStateChange:({viewState})=>{ const z0=view&&view.zoom; view=viewState;   // lake names appear from zoom 13
+      if(active==="water.lake_cell"&&((z0>=13)!==(viewState.zoom>=13))) render(); },
     onHover:info=>tip(info),
     getCursor:({isDragging})=>isDragging?"grabbing":"grab",
     layers:[]
