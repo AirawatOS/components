@@ -502,10 +502,10 @@ function parseCells(rows,L){                                    // rows → H3 h
   //   (A) EMBEDDED SERIES  — one row per cell carrying o.series=[{t,<field>}] (e.g. hourly forecast).
   //   (B) DATED SNAPSHOTS  — many rows per cell, one per observed_at (e.g. air.quality per-hour). Grouped here.
   const vf=L.vf;
-  const geom=o=>{ const g=o.cell_ref||o.space||{}; return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary}; };
+  const geom=o=>{ const g=o.cell_ref||o.space||{}; return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, name:g.name}; };
   // ---- (A) embedded per-cell series ------------------------------------------------------------
   if(rows.some(o=>Array.isArray(o.series)&&o.series.length)){
-    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,v:dget(o,vf),series:o.series}; })
+    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name,v:dget(o,vf),series:o.series}; })
       .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
     const dd={type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
     const ws=cells.find(c=>Array.isArray(c.series)&&c.series.length);
@@ -533,7 +533,7 @@ function parseCells(rows,L){                                    // rows → H3 h
     return {type:"hex",rows:cells, lo:0, hi:hi||1, thi:hi||1};
   }
   // ---- single frame (non-temporal) -------------------------------------------------------------
-  const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,v:dget(o,vf)}; })
+  const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name,v:dget(o,vf)}; })
     .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
   return {type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
 }
@@ -1204,7 +1204,7 @@ function tip(info){
               : (()=>{ // TEMPORAL: show the value of the FRAME currently on screen (tIdx), not the base value —
                        // else the tooltip reports the latest hour while the cells are painted for a scrubbed-to hour.
                   const fv=(L&&L.temporal&&Array.isArray(o.series)&&o.series[tIdx]&&typeof o.series[tIdx][L.sfield]==="number")?o.series[tIdx][L.sfield]:o.v;
-                  return `<b>${esc(L?L.fmt(fv):fv)}</b> · <span style="color:var(--muted)">${esc(cellWhere(o))}</span>`; })();
+                  return `<b>${esc(L?L.fmt(fv):fv)}</b>${o.name?` · <span style="color:var(--muted)">${esc(o.name)}</span>`:""} · <span style="color:var(--muted)">${esc(cellWhere(o))}</span>`; })();
   t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
 function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true; return; } b.textContent=msg; b.hidden=false; }
