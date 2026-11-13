@@ -240,7 +240,7 @@
 
 <div class="grid rc0" id="app">
   <aside>
-    <div class="railhead"><p class="rail-h" style="margin:0">Layers</p><span style="display:flex;gap:6px"><button class="reloadall icon" id="preloadall" title="Preload all — fetch every layer and overlay in the background and keep them in this browser (12 h), so each opens instantly">⇣</button><button class="reloadall icon" id="reloadall" title="Reload all — re-fetch the active layer + all shown overlays from the registry (bypasses the browser cache)">↻</button></span></div>
+    <div class="railhead"><p class="rail-h" style="margin:0">Layers</p><span style="display:flex;gap:6px"><button class="reloadall icon" id="preloadall" title="Preload all — fetch every layer and overlay in the background and keep them in this browser (12 h), so each opens instantly">⇣</button><button class="reloadall icon" id="reloadall" title="Reload all — re-fetch the active layer + all shown overlays from the registry (bypasses the browser cache)">↻</button><button class="reloadall icon" id="clearcache" title="Clear the data cached in this browser">🗑</button></span></div>
     <div class="layerscroll" id="layerscroll">
       <div class="layers" id="layers"></div>
     </div>
@@ -432,7 +432,10 @@ async function qf(schema,filter){                              // server-side fi
 // same record count and < 12 h old → render from the cache instantly; otherwise re-fetch (and re-cache). Reload in
 // "About this layer" always fetches fresh. Every IndexedDB call is guarded — a private window just skips the cache.
 let TENANT_KEY="", FRESH=false;
-const RCACHE={db:null, ttl:12*3600e3};
+// Layer data is kept in THIS browser for 7 days (it survives sign-out and restarts — nothing clears it but the user):
+// every open still checks the record count with the server and re-fetches a changed layer; ↻ forces a refresh; 🗑 clears.
+const RCACHE={db:null, ttl:7*24*3600e3};
+try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}   // ask the browser not to evict it
 function idb(){ if(RCACHE.db) return RCACHE.db;
   RCACHE.db=new Promise(res=>{ try{ const r=indexedDB.open("aos-visualize",1);
     r.onupgradeneeded=()=>{ try{ r.result.createObjectStore("rows"); }catch(e){} };
@@ -818,17 +821,32 @@ async function load(){
   const rank=d=>((d.group?0:2)+(String(d.id||"").startsWith("ds:airawat:")?0:1));   // lower = preferred
   const cand=(await q("viz.layer")).filter(d=>d&&d.render==="map"&&d.enabled!==false&&d.source_schema&&d.value_field
                                      &&!GEOM_LAYERS.includes(d.source_schema)&&!NEVER.includes(d.source_schema));
-  const present={};
-  await Promise.all([...new Set(cand.map(d=>d.source_schema))].map(async s=>{ present[s]=await has(s); }));
-  const descs=cand.filter(d=>present[d.source_schema])
-                                     .sort((a,b)=>rank(a)-rank(b)||(a.order??99)-(b.order??99));
-  const seen={}, specs=[];
-  for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
-    specs.push({key:d.source_schema,label:d.label||d.source_schema,desc:d.description||"",vf:d.value_field,
-                unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,pol:polarityOf(d),fmt:fmtFor(d.unit),
-                grp:d.group||"",sub:d.subgroup||"",sol:d.solution||"",
-                interp:d.interpretation||d.description||""}); }   // tree taxonomy + "how to read it" — REGISTRY-driven
-  LAYERS=specs;
+  // FAST START: "which layers does this tenant have data for" is one probe per source schema, and a few are slow on a
+  // big registry (staging: cell.cams 12.5 s, cell.roads 3.7 s) — the map waited for the slowest. The last answer is kept
+  // per tenant in the browser: the map opens on it at once, the probes re-run in the background, and the layer tree
+  // updates only if the set changed. (The catalogue itself — labels, groups, colours — is always fetched live: 27 rows.)
+  const schemas=[...new Set(cand.map(d=>d.source_schema))];
+  const specsFrom=present=>{
+    const descs=cand.filter(d=>present[d.source_schema]).sort((a,b)=>rank(a)-rank(b)||(a.order??99)-(b.order??99));
+    const seen={}, specs=[];
+    for(const d of descs){ if(seen[d.source_schema])continue; seen[d.source_schema]=1;
+      specs.push({key:d.source_schema,label:d.label||d.source_schema,desc:d.description||"",vf:d.value_field,
+                  unit:d.unit||"",ramp:RAMPS[d.color_scale]||RAMPS.viridis,pol:polarityOf(d),fmt:fmtFor(d.unit),
+                  grp:d.group||"",sub:d.subgroup||"",sol:d.solution||"",
+                  interp:d.interpretation||d.description||""}); }   // tree taxonomy + "how to read it" — REGISTRY-driven
+    return specs; };
+  const probe=async()=>{ const pr={}; await Promise.all(schemas.map(async s=>{ pr[s]=await has(s); })); return pr; };
+  const bootKey="boot|"+TENANT_KEY+"|"+(aoi.id||"");
+  const boot=await cacheGet(bootKey);
+  if(boot && boot.present && Date.now()-boot.at<7*24*3600e3){
+    LAYERS=specsFrom(boot.present);
+    probe().then(pr=>{ cachePut(bootKey,{at:Date.now(),present:pr});
+      const same=JSON.stringify(Object.keys(pr).filter(k=>pr[k]).sort())===JSON.stringify(Object.keys(boot.present).filter(k=>boot.present[k]).sort());
+      if(!same){ const keep=active; LAYERS=specsFrom(pr); if(keep&&!LAYERS.some(l=>l.key===keep)) active=null;
+        if(typeof drawLayers==="function"){ drawLayers(); updateHeader(); render(); } } }).catch(()=>{});
+  } else {
+    const pr=await probe(); cachePut(bootKey,{at:Date.now(),present:pr}); LAYERS=specsFrom(pr);
+  }
   loadPlaces();                                                 // gazetteer names for hover / drill (background, best-effort)                                                 // metadata only — per-layer data loads on demand
   DATA={aoi,scope:SB,data:{},coverage:[],roads:null,roads_local:null,water:null,facilities:null,sensors:null};   // null overlay = not loaded yet
   // FIRST PAINT: no choropleth auto-loaded — the map opens on the AOI + coverage report, and a layer's cells
@@ -857,9 +875,14 @@ function roadCol(kind,drill){
   if(kind==="arterial") return light?(drill?[67,56,202,250]:[79,70,229,235]):(drill?[241,245,249,245]:[240,244,248,235]);
   return light?(drill?[51,65,85,220]:[71,85,105,175]):(drill?[148,163,184,200]:[138,160,180,150]);
 }
+const TILE_TTL=30*24*3600e3;      // basemap tiles change rarely — keep them in this browser for 30 days
 async function tileImage(x,y,z){
-  const bm=BASEMAPS[basemap]||BASEMAPS.standard;
-  const d=await bridge("/bridge/fetch",{app_id:APPID,url:bm.url(z,x,y)});
+  const bm=BASEMAPS[basemap]||BASEMAPS.standard, url=bm.url(z,x,y), tk="tile|"+url;
+  let d=null;
+  const c=await cacheGet(tk);
+  if(c && Date.now()-c.at<TILE_TTL) d=c;
+  else { d=await bridge("/bridge/fetch",{app_id:APPID,url}).catch(()=>null);
+         if(d&&d.body_b64) cachePut(tk,{at:Date.now(),body_b64:d.body_b64,content_type:d.content_type}); }
   if(!d||!d.body_b64) return null;
   const img=new Image(); img.src=`data:${d.content_type||"image/png"};base64,${d.body_b64}`;
   try{ await img.decode(); }catch(e){}
@@ -1545,6 +1568,20 @@ async function _reloadOverlay(kind){
   await ensureLayer(L);
   setBusy(null); drawLayers(); render();
 }
+// 🗑 — the user decides when the browser cache goes (a shared machine, or to start clean). Click twice (no pop-up).
+async function cacheUsage(){ try{ const e=await navigator.storage.estimate(); return e&&e.usage?Math.round(e.usage/1048576):null; }catch(e){ return null; } }
+function initClearCache(){
+  const b=$("clearcache"); if(!b) return; let armed=false, t=null;
+  const tip=async()=>{ const mb=await cacheUsage(); b.title="Clear the data cached in this browser"+(mb!=null?` (about ${mb} MB)`:"")+" — layers, map tiles, the layer list"; };
+  b.onmouseenter=tip;
+  b.onclick=async()=>{
+    if(!armed){ armed=true; b.textContent="Clear?"; t=setTimeout(()=>{ armed=false; b.textContent="🗑"; },3500); return; }
+    clearTimeout(t); b.textContent="…";
+    try{ const db=await idb(); if(db) await new Promise(res=>{ const tx=db.transaction("rows","readwrite"); tx.objectStore("rows").clear(); tx.oncomplete=res; tx.onerror=res; }); }catch(e){}
+    setBusy("Browser cache cleared — layers will download fresh"); setTimeout(()=>setBusy(null),3500);
+    armed=false; b.textContent="🗑"; tip();
+  };
+}
 async function reloadAll(){                                    // re-fetch the active choropleth + every SHOWN overlay — FRESH:
   const btn=$("reloadall"); if(btn){ btn.disabled=true; btn.textContent="…"; }   // bypass the browser cache
   FRESH=true;
@@ -1739,6 +1776,7 @@ function fitView(bbox){
   if($("opac")) $("opac").oninput=e=>{ layerAlpha=Math.max(0.05,(+e.target.value)/100); if($("opacval"))$("opacval").textContent=e.target.value+"%"; render(); };   // live choropleth transparency
   if($("reloadall")) $("reloadall").onclick=()=>reloadAll();   // re-fetch active layer + shown overlays
   if($("preloadall")) $("preloadall").onclick=()=>preloadAll(); // warm the browser cache with every layer (demo prep)
+  initClearCache();
   document.querySelectorAll('.bmbtn').forEach(b=>b.onclick=()=>setBasemap(b.dataset.bm));   // basemap style switcher
   document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===basemap));
   { const a=$("attrib"); if(a) a.textContent="Basemap "+(BASEMAPS[basemap]||BASEMAPS.standard).attr; }
