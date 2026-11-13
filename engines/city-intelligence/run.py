@@ -18,7 +18,7 @@ confined model (ctx["ai_complete"]) on ONLY those facts, and returns {answer, so
     layers exist.
 AI informs; a human decides (ADR-0029).
 """
-import collections, json, math, os, re
+import collections, json, math, os, re, time
 
 HOT_FLOOD = ("high", "severe")
 TOP = 8
@@ -1254,12 +1254,55 @@ def facts_summary(facts, why="returned no text"):
     return "\n".join(lines)
 
 
+# 0.5.1 — a READ CACHE across questions. The engine module stays loaded in the host, and each question re-read up to ten
+# whole datasets (11k profile cells, census, transit, air, facilities…) before the model even started: on staging a
+# question took ~60 s, past the public proxy's 60 s timeout (answers came back as an HTML 504 / 'Failed to fetch').
+# Reads are kept per (tenant, schema, filter) for KCACHE_TTL; a refused read is never cached. Only with a real tenant.
+KCACHE_TTL = float(os.environ.get("ANALYST_CACHE_SECONDS", "900"))
+_KCACHE = {}
+WARM_SCHEMAS = ("city.cell_profile", "mobility.walkability", "mobility.transit_access", "mobility.chokepoint", "air.hotspot",
+                "air.sensor_reading", "demographics.census_ward", "works.ward_cell", "procurement.ward_cell", "geo.facility",
+                "water.lake", "water.lake_cell", "econ.nightlight_trend", "civic.issue", "space.place", "space.ward", "space.aoi",
+                "governance.recommendation", "city.coverage", "works.city_summary", "works.ward_rollup", "works.contractor_rollup")
+
+
+def cached_kfind(kfind, tenant):
+    if not tenant:
+        return kfind
+    def f(schema, where=None):
+        k = (tenant, schema, json.dumps(where or {}, sort_keys=True))
+        hit = _KCACHE.get(k)
+        if hit and time.time() - hit[0] < KCACHE_TTL:
+            return list(hit[1])
+        rows = kfind(schema, where) if where else kfind(schema)
+        _KCACHE[k] = (time.time(), rows)
+        return list(rows)
+    return f
+
+
+def warm(kfind):
+    """Load what the topics read, without the model — so the next real question only waits for the model."""
+    t0, n = time.time(), 0
+    for sch in WARM_SCHEMAS:
+        try:
+            n += len(kfind(sch))
+        except Exception:
+            pass
+    try:
+        join_air(kfind, {})
+    except Exception:
+        pass
+    return {"answer": "Analyst warmed: %d records in %.1f s" % (n, time.time() - t0), "facts": {"warm": True}, "sources": []}, None
+
+
 def h_ask(ctx):
     body = ctx.get("body") or {}
     question = (body.get("question") or body.get("q") or "").strip()[:500]
     if not question:
         return None, "question required"
-    kfind = ctx["kfind"]
+    kfind = cached_kfind(ctx["kfind"], ctx.get("tenant"))
+    if question == "__warm__":
+        return warm(kfind)
 
     cov = {}
     for o in kfind("city.coverage"):

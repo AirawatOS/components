@@ -418,6 +418,21 @@ check("…'Tell me about Bellandur Lake' → the lake as a place, with its lake 
       (ask5("Tell me about Bellandur Lake")[1].get("place") or {}).get("lake", {}).get("water_change_pct") == -40.3)
 check("…a question naming no place is not a place profile", ask5("tell me about flooding")[1].get("question_topics") != ["place"])
 
+# 0.5.1 — the read cache (only with a real tenant) and warm-up
+calls = []
+def counting(s, where=None):
+    calls.append(s); return list(FAC_DATA.get(s, []))
+ci._KCACHE.clear()
+for _ in range(2):
+    ci.h_ask({"tenant": "t1", "body": {"question": "Which lakes have shrunk the most?"}, "kfind": counting, "ai_complete": lambda m, n: "x\nEvidence quality: ok"})
+check("0.5.1 a second question re-reads nothing (cached per tenant / schema / filter)", calls.count("water.lake") == 1, calls.count("water.lake"))
+calls.clear(); ci.h_ask({"body": {"question": "Which lakes have shrunk the most?"}, "kfind": counting, "ai_complete": lambda m, n: "x\nEvidence quality: ok"})
+check("…no tenant in the context (tests, tools) → no cache", calls.count("water.lake") >= 1)
+ci._KCACHE.clear(); calls.clear()
+o, e = ci.h_ask({"tenant": "t2", "body": {"question": "__warm__"}, "kfind": counting, "ai_complete": lambda m, n: 1 / 0})
+check("…'__warm__' loads the datasets without calling the model", not e and "warmed" in o["answer"] and "city.cell_profile" in calls and "water.lake" in calls, o)
+ci._KCACHE.clear()
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 
