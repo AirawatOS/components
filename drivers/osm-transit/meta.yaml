@@ -3,11 +3,13 @@
 # distinguished by the `feature` class (as roads use the highway class). Real OSM only; no tenant/AOI default.
 component_id: ds:airawat:driver/osm-transit
 kind: driver
-version: 0.1.0
+version: 0.1.2   # 0.1.2: bundles ids.py (as osm-roads does) — inside the geospatial container the shared _common/ids.py is not on the path ('No module named ids'). 0.1.1: declares the geospatial runtime — the driver imports osmium, which only that runtime provides (staging: 'No module named osmium')
 provider: ds:airawat:developer
 display_name: Transit (OpenStreetMap)
 entrypoint: run.py
 confinement_min: L1
+runtime:
+  profile: geospatial          # osmium (PBF parse/clip) + h3 — as osm-roads / gazetteer-builder
 reads:
   - space.aoi
 writes:
