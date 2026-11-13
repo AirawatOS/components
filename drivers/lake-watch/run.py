@@ -35,11 +35,16 @@ DW_WATER_SHARE = float(os.environ.get("DW_WATER_SHARE", "0.25"))
 BATCH = int(os.environ.get("BATCH", "20"))
 VIA_WATER = "ds:airawat:driver/osm-water"
 JRC = "JRC/GSW1_4/YearlyHistory"; DW = "GOOGLE/DYNAMICWORLD/V1"; GHSL = "JRC/GHSL/P2023A/GHS_BUILT_S"
-JRC_YEARS = list(range(1985, 2022)); DW_YEARS = list(range(2022, 2026)); GHSL_EPOCHS = [1975, 1980, 1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020]
+FIRST_YEAR = int(os.environ.get("FIRST_YEAR", "1995"))   # 0.1.1: before ~1995 Landsat passes over India are sparse —
+# one cloudy year reads as an empty lake (staging: Bellandur 1989 = 4 ha, 1991 = 31 ha between ~200 ha years)
+BASE_YEARS, RECENT_YEARS = (1995, 1999), (2017, 2021)    # the change compares ONE method (JRC) at both ends
+MIN_BASE_M2 = 20000                                       # a baseline under 2 ha gives meaningless % changes
+JRC_YEARS = list(range(FIRST_YEAR, 2022)); DW_YEARS = list(range(2022, 2026)); GHSL_EPOCHS = [1975, 1980, 1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020]
 SRC = "ds:airawat:ref/source/jrc-gsw"
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-CAVEAT = ("satellite water extent (JRC GSW 1985–2021, Dynamic World 2022+; the method changes in 2022); vegetation or "
-          "algae on the water can read as land and a dry year as loss; shore built-up from GHSL (100 m)")
+CAVEAT = ("satellite water extent: the trend and the animation are JRC Global Surface Water 1995–2021 (one method); "
+          "Dynamic World 2022+ is kept per lake for reference but reads systematically lower, so it is not compared; "
+          "weeds, hyacinth or algae on the water read as land, and desilting / a dry year as loss; shore built-up from GHSL (100 m)")
 
 
 def call(path, body):
@@ -136,17 +141,19 @@ def lake_series(props, area_m2):
 
 
 def summarise(series, ring, area_m2):
-    """Baseline (1985–89 mean of observed years) vs recent (mean of the last 3 observed years), and the ring's
-    built-up 1975 → 2020. Change in % of the baseline. None where the inputs are missing."""
-    obs = [s for s in series if isinstance(s.get("water_area_m2"), (int, float))]
-    base = [s["water_area_m2"] for s in obs if 1985 <= int(s["t"]) <= 1989]
-    recent = [s["water_area_m2"] for s in obs[-3:]]
+    """0.1.1: baseline = mean of the observed BASE_YEARS, recent = mean of the observed RECENT_YEARS — both JRC, so the
+    change never mixes methods (Dynamic World 2022+ reads systematically lower). Change in % of the baseline, only
+    when the baseline is at least MIN_BASE_M2. The ring's built-up 1975 → 2020 in points. None where inputs are missing."""
+    obs = [s for s in series if isinstance(s.get("water_area_m2"), (int, float)) and s.get("source") == "jrc-gsw"]
+    base = [s["water_area_m2"] for s in obs if BASE_YEARS[0] <= int(s["t"]) <= BASE_YEARS[1]]
+    rec = [s for s in obs if RECENT_YEARS[0] <= int(s["t"]) <= RECENT_YEARS[1]]
+    recent = [s["water_area_m2"] for s in rec]
     b = (sum(base) / len(base)) if base else None
     r = (sum(recent) / len(recent)) if recent else None
-    chg = round(100.0 * (r - b) / b, 1) if (b and r is not None and b > 0) else None
+    chg = round(100.0 * (r - b) / b, 1) if (b is not None and r is not None and b >= MIN_BASE_M2) else None
     rb = {x["t"]: x["built_share"] for x in ring if isinstance(x.get("built_share"), (int, float))}
     return {"baseline_water_m2": round(b) if b is not None else None, "recent_water_m2": round(r) if r is not None else None,
-            "water_change_pct": chg, "recent_years": [s["t"] for s in obs[-3:]],
+            "water_change_pct": chg, "recent_years": [s["t"] for s in rec],
             "shore_built_1975": rb.get("1975"), "shore_built_2020": rb.get("2020"),
             "shore_built_change_pts": (round(100 * (rb["2020"] - rb["1975"]), 1) if "1975" in rb and "2020" in rb else None),
             "osm_area_m2": round(area_m2)}
@@ -261,7 +268,7 @@ def main():
 
     # per-cell water share by year (the animated layer)
     cells = sorted(cell_water); cw = 0; items = []
-    wonly = wimg.select([f"w{y}" for y in JRC_YEARS + DW_YEARS] + [f"n{y}" for y in JRC_YEARS + DW_YEARS])
+    wonly = wimg.select([f"w{y}" for y in JRC_YEARS] + [f"n{y}" for y in JRC_YEARS])
     for i in range(0, len(cells), 200):
         chunk = cells[i:i + 200]
         fc = ee.FeatureCollection([ee.Feature(ee.Geometry.Polygon([[[lo, la] for la, lo in h3.cell_to_boundary(h)]]), {"h3": h})
@@ -271,7 +278,7 @@ def main():
             if not h or ca <= 0:
                 continue
             series = []
-            for y in JRC_YEARS + DW_YEARS:
+            for y in JRC_YEARS:                    # 0.1.1: one method in the animation (DW 2022+ reads ~half — a fake drop)
                 w, n = p.get(f"w{y}"), p.get(f"n{y}")
                 if isinstance(w, (int, float)) and not (isinstance(n, (int, float)) and n / ca > MAX_NODATA):
                     series.append({"t": str(y), "water_pct": round(100.0 * w / ca, 1)})

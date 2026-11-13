@@ -21,19 +21,23 @@ check("lakes, reservoirs and NAMED water ≥ 1 ha are measured, largest first; u
       [f["tags"].get("name") for f in picked] == ["Bellandur Lake", "Ulsoor Lake", "Some Marsh"], [f["tags"].get("name") for f in picked])
 check("…at most MAX_LAKES", len(lw.pick_lakes([F("lake", 10 + i) for i in range(30)], max_lakes=5)) == 5)
 
-props = {"w1985": 900000, "n1985": 0, "w1986": 880000, "n1986": 600000, "w1987": 860000, "n1987": 0,
-         "w2023": 500000, "n2023": 0, "w2024": 480000, "n2024": 0, "w2025": 470000, "n2025": 0}
+props = {"w1995": 900000, "n1995": 0, "w1996": 880000, "n1996": 600000, "w1997": 860000, "n1997": 0,
+         "w2018": 500000, "n2018": 0, "w2020": 480000, "n2020": 0, "w2021": 470000, "n2021": 0,
+         "w2023": 100000, "n2023": 0, "w1990": 40000, "n1990": 0}
 s = lw.lake_series(props, 1000000)
 by = {x["t"]: x for x in s}
+check("0.1.1 the series starts in 1995 (sparse 1980s/early-90s Landsat years are not used)", "1990" not in by and min(by) == "1995", sorted(by))
 check("a year with > MAX_NODATA of the lake unobserved is EMPTY (a gap), with its no-data share kept",
-      by["1986"]["water_area_m2"] is None and by["1986"]["nodata_share"] == 0.6, by["1986"])
+      by["1996"]["water_area_m2"] is None and by["1996"]["nodata_share"] == 0.6, by["1996"])
 check("…observed years carry the area and their source (JRC to 2021, Dynamic World after)",
-      by["1985"]["water_area_m2"] == 900000 and by["1985"]["source"] == "jrc-gsw" and by["2024"]["source"] == "dynamic-world")
+      by["1995"]["water_area_m2"] == 900000 and by["1995"]["source"] == "jrc-gsw" and by["2023"]["source"] == "dynamic-world")
 sm = lw.summarise(s, [{"t": "1975", "built_share": 0.1}, {"t": "2020", "built_share": 0.55}], 1000000)
-check("baseline = mean of observed 1985–89 years (the gap year excluded); recent = the last 3 observed years",
-      sm["baseline_water_m2"] == 880000 and sm["recent_water_m2"] == 483333 and sm["recent_years"] == ["2023", "2024", "2025"], sm)
+check("baseline = observed 1995–99 (the gap year excluded); recent = observed 2017–21 — Dynamic World 2023 NOT mixed in",
+      sm["baseline_water_m2"] == 880000 and sm["recent_water_m2"] == 483333 and sm["recent_years"] == ["2018", "2020", "2021"], sm)
 check("…change in % of the baseline; shore built-up 1975 → 2020 in points", sm["water_change_pct"] == -45.1 and sm["shore_built_change_pts"] == 45.0, sm)
-check("…no baseline → no change claimed", lw.summarise(lw.lake_series({"w2024": 1, "n2024": 0}, 10), [], 10)["water_change_pct"] is None)
+check("…no baseline → no change claimed", lw.summarise(lw.lake_series({"w2021": 1, "n2021": 0}, 10), [], 10)["water_change_pct"] is None)
+check("…a baseline under 2 ha → no % (Kalkere 1.3 ha → +3,102% on staging)",
+      lw.summarise(lw.lake_series({"w1995": 13000, "n1995": 0, "w2021": 400000, "n2021": 0}, 500000), [], 500000)["water_change_pct"] is None)
 check("lake id is per tenant + OSM element", lw.lake_id(F("lake", 300, "Bellandur Lake")) == "ds:t:water/lake/way-3000")
 print("ALL PASS" if not fails else "FAILED: %d" % len(fails))
 sys.exit(1 if fails else 0)

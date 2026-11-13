@@ -5,7 +5,7 @@
 # shared earth-observation runtime (GEE); no synthetic fallback.
 component_id: ds:airawat:driver/lake-watch
 kind: driver
-version: 0.1.0
+version: 0.1.1   # 0.1.1: the trend and the animation use ONE method — JRC 1995–2021 (pre-1995 Landsat years are sparse noise: Bellandur 1989 = 4 ha); change = 1995–99 vs 2017–21, no % from a baseline under 2 ha; Dynamic World 2022+ kept per lake for reference, not compared (it reads ~half of JRC)
 provider: ds:airawat:developer
 display_name: Lake Watch (satellite water extent)
 entrypoint: run.py
