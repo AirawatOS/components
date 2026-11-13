@@ -1,0 +1,26 @@
+# A DRIVER (kind=driver) — the city's LAKES, reservoirs, ponds / tanks and wetlands from the tenant's OpenStreetMap PBF
+# (closed ways + multipolygon relations, via pyosmium area assembly), written into the existing governed
+# geo.osm_feature schema as Polygon / MultiPolygon, distinguished by `feature` (lake | reservoir | pond | wetland |
+# water). Feeds driver/lake-watch. Real OSM only; no tenant/AOI default; no Overpass fallback (water areas need the
+# full multipolygon assembly a PBF gives).
+component_id: ds:airawat:driver/osm-water
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Lakes & Water Bodies (OpenStreetMap)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: geospatial          # osmium (PBF area assembly) — as osm-transit / osm-roads
+reads:
+  - space.aoi
+writes:
+  - geo.osm_feature
+config: [OSM_PBF_FILE_ID, MIN_NAMED_HA, MIN_UNNAMED_HA]
+assets:                               # reuse the SAME PBF the tenant uploaded in City Setup
+  - { name: OSM_PBF, kind: osm-pbf, populates: OSM_PBF_FILE_ID, optional: false, hint: "Regional OpenStreetMap extract (.osm.pbf), reused from City Setup." }
+sources:
+  - { ref: "ds:airawat:ref/source/osm", provides: [geo.osm_feature] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: write, scope: geo.osm_feature }

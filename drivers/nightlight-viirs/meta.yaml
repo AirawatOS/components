@@ -5,24 +5,26 @@
 # ~500m and dominated by non-residential light, so it is a MODELLED proxy, superseded by real income/consumption.
 component_id: ds:airawat:driver/nightlight-viirs
 kind: driver
-version: 0.1.1
+version: 0.2.0   # 0.2.0: TREND mode (default) — a yearly series 2014–2025 per cell (yearly median of the monthly composites) → econ.nightlight_trend, animated in Visualize; change_pct = last 3 years vs first 3. TREND_YEARS="" keeps the single-PERIOD econ.nightlight mode
 provider: ds:airawat:developer
 display_name: Nightlight (VIIRS DNB / GEE)
 entrypoint: run.py
 confinement_min: L2
 runtime:
   profile: earth-observation
-reads:  [space.aoi, econ.nightlight]
-writes: [econ.nightlight]
+reads:  [space.aoi, econ.nightlight, econ.nightlight_trend]
+writes: [econ.nightlight, econ.nightlight_trend]
 egress:
   - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/nightlight-viirs" }
   - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/nightlight-viirs" }
   - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/nightlight-viirs" }
 secrets: [GEE_SERVICE_ACCOUNT_KEY]
-config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, PERIOD]
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, PERIOD, TREND_YEARS]
 sources:
-  - { ref: "ds:airawat:ref/source/viirs-dnb", host: earthengine.googleapis.com, provides: [econ.nightlight] }
+  - { ref: "ds:airawat:ref/source/viirs-dnb", host: earthengine.googleapis.com, provides: [econ.nightlight, econ.nightlight_trend] }
 scopes:
   - { verb: read,  scope: space.aoi }
   - { verb: read,  scope: econ.nightlight }
+  - { verb: read,  scope: econ.nightlight_trend }
   - { verb: write, scope: econ.nightlight }
+  - { verb: write, scope: econ.nightlight_trend }

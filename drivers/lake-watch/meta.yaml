@@ -1,0 +1,31 @@
+# A DRIVER (kind=driver) — LAKE WATCH: each lake's water extent per year (JRC Global Surface Water 1985–2021, then
+# Dynamic World 2022–2025) and the built-up share of a ring around its shore (GHSL 1975–2020), from the water bodies
+# driver/osm-water wrote. Writes water.lake (one per lake: series + summary) and water.lake_cell (per H3 cell: water
+# share per year — the layer Visualize animates). Remote sensing, not survey; caveats travel in prov. Runs in the
+# shared earth-observation runtime (GEE); no synthetic fallback.
+component_id: ds:airawat:driver/lake-watch
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Lake Watch (satellite water extent)
+entrypoint: run.py
+confinement_min: L2
+runtime:
+  profile: earth-observation
+reads:  [space.aoi, geo.osm_feature, water.lake, water.lake_cell]
+writes: [water.lake, water.lake_cell]
+egress:
+  - { host: oauth2.googleapis.com,                 rate_per_min: 30,  user_agent: "AirawatOS/lake-watch" }
+  - { host: earthengine.googleapis.com,            rate_per_min: 120, user_agent: "AirawatOS/lake-watch" }
+  - { host: earthengine-highvolume.googleapis.com, rate_per_min: 300, user_agent: "AirawatOS/lake-watch" }
+secrets: [GEE_SERVICE_ACCOUNT_KEY]     # the same Google service-account key as terrain / nightlight (Connections → Vault)
+config:  [GEE_PROJECT, GEE_SERVICE_ACCOUNT, MAX_LAKES, MIN_LAKE_HA, SHORE_RING_M, MAX_NODATA, DW_WATER_SHARE, BATCH]
+sources:
+  - { ref: "ds:airawat:ref/source/jrc-gsw", host: earthengine.googleapis.com, provides: [water.lake, water.lake_cell] }
+scopes:
+  - { verb: read,  scope: space.aoi }
+  - { verb: read,  scope: geo.osm_feature }
+  - { verb: read,  scope: water.lake }
+  - { verb: read,  scope: water.lake_cell }
+  - { verb: write, scope: water.lake }
+  - { verb: write, scope: water.lake_cell }
