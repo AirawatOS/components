@@ -237,7 +237,7 @@
 
 <div class="grid rc0" id="app">
   <aside>
-    <div class="railhead"><p class="rail-h" style="margin:0">Layers</p><button class="reloadall" id="reloadall" title="Re-fetch the active layer + all shown overlays from the registry">↻ Reload all</button></div>
+    <div class="railhead"><p class="rail-h" style="margin:0">Layers</p><span style="display:flex;gap:6px"><button class="reloadall" id="preloadall" title="Fetch every layer and overlay in the background and keep them in this browser (12 h) — then each opens instantly">⇣ Preload all</button><button class="reloadall" id="reloadall" title="Re-fetch the active layer + all shown overlays from the registry (bypasses the browser cache)">↻ Reload all</button></span></div>
     <div class="layerscroll" id="layerscroll">
       <div class="layers" id="layers"></div>
     </div>
@@ -1511,13 +1511,39 @@ async function _reloadOverlay(kind){
   await ensureLayer(L);
   setBusy(null); drawLayers(); render();
 }
-async function reloadAll(){                                    // re-fetch the active choropleth + every SHOWN overlay
-  const btn=$("reloadall"); if(btn){ btn.disabled=true; btn.textContent="↻ Reloading…"; }
-  const L=LAYERS.find(l=>l.key===active);
-  if(L){ DATA.data[active]=null; await ensureLayer(L); }
-  for(const k of ["roads","roads_local","water","facilities","issues"]) if(OVLON[k]&&OVLON[k]()){ DATA[k]=null; await ensureOverlay(k); }
+async function reloadAll(){                                    // re-fetch the active choropleth + every SHOWN overlay — FRESH:
+  const btn=$("reloadall"); if(btn){ btn.disabled=true; btn.textContent="↻ Reloading…"; }   // bypass the browser cache
+  FRESH=true;
+  try{
+    const L=LAYERS.find(l=>l.key===active);
+    if(L){ DATA.data[active]=null; await ensureLayer(L); }
+    for(const k of ["roads","roads_local","water","facilities","issues","transit"]) if(OVLON[k]&&OVLON[k]()){ DATA[k]=null; await ensureOverlay(k); }
+    if(active==="water.lake_cell"){ LAKE_POLYS=null; LAKE_POLY_LOADING=false; LAKE_INFO=null; LAKE_LOADING=false; }
+  } finally { FRESH=false; }
   drawLayers(); drawExplain(); render();
   if(btn){ btn.disabled=false; btn.textContent="↻ Reload all"; }
+}
+// PRELOAD ALL — warm the browser cache for a demo: every choropleth layer (2 at a time) then every overlay (one at a time —
+// the road loaders already run 3 queries each; staging Postgres has 64 MB shared memory), plus the lake shorelines,
+// lake summaries and the place-search lists. Uses the cache where it is still valid, so a second run is quick.
+let PRELOADING=false;
+async function preloadAll(){
+  if(PRELOADING) return; PRELOADING=true;
+  const btn=$("preloadall"), t0=Date.now(); const ovs=["roads","water","facilities","issues","transit","roads_local"];
+  const total=LAYERS.length+ovs.length+1; let done=0, failed=0;
+  const tick=()=>{ done++; if(btn) btn.textContent=`⇣ ${done}/${total}`; };
+  if(btn){ btn.disabled=true; btn.textContent=`⇣ 0/${total}`; }
+  const queue=LAYERS.slice();
+  const worker=async()=>{ while(queue.length){ const L=queue.shift(); try{ await ensureLayer(L); }catch(e){ failed++; } tick(); } };
+  await Promise.all([worker(),worker()]);
+  for(const k of ovs){ try{ await ensureOverlay(k); }catch(e){ failed++; } tick(); }
+  try{ await Promise.all([loadPlaces(), psExtra()]); loadLakePolys(); loadLakeInfo(); }catch(e){}
+  tick(); setBusy(null);
+  const secs=Math.round((Date.now()-t0)/1000);
+  if(btn){ btn.disabled=false; btn.textContent="⇣ Preload all"; btn.title=`Last preload: ${total-failed}/${total} cached in ${secs}s`+(failed?` (${failed} failed — run again)`:""); }
+  setBusy(failed?`Preloaded ${total-failed}/${total} — ${failed} failed, run again`:`All ${total} layers cached in this browser (${secs}s)`);
+  setTimeout(()=>setBusy(null),4000);
+  drawLayers(); drawExplain(); render(); PRELOADING=false;
 }
 function drawLayers(){
   const tree=buildTree(); let html="";
@@ -1675,6 +1701,7 @@ function fitView(bbox){
   $("zreset").onclick=()=>setV({...fitView(DATA.aoi.bbox||DATA.scope),pitch:mode3d?50:0,transitionDuration:250});
   if($("opac")) $("opac").oninput=e=>{ layerAlpha=Math.max(0.05,(+e.target.value)/100); if($("opacval"))$("opacval").textContent=e.target.value+"%"; render(); };   // live choropleth transparency
   if($("reloadall")) $("reloadall").onclick=()=>reloadAll();   // re-fetch active layer + shown overlays
+  if($("preloadall")) $("preloadall").onclick=()=>preloadAll(); // warm the browser cache with every layer (demo prep)
   document.querySelectorAll('.bmbtn').forEach(b=>b.onclick=()=>setBasemap(b.dataset.bm));   // basemap style switcher
   document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===basemap));
   { const a=$("attrib"); if(a) a.textContent="Basemap "+(BASEMAPS[basemap]||BASEMAPS.standard).attr; }
