@@ -1388,23 +1388,25 @@ function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true
 // Any solution that publishes a viz.layer carrying a group/subgroup slots into this tree automatically:
 // installing Air Intelligence makes "Environment › Air Pollution" appear; City Setup contributes the base
 // layers; crowd-safety adds "People › Crowds". Nothing about air/flood/waste is baked into City Scan.
-const GRP_ORDER=["Environment","Built Environment","Mobility","People","Utilities","Land","Other"];  // display order; unknown groups append
+const GRP_ORDER=["Environment","Built Environment","Mobility","People & Economy","Public Finance","City Pulse","Utilities","Other"];  // display order; unknown groups append
+// subgroups in reading order (else alphabetical); a group whose layers carry no subgroup is listed flat
+const SUB_ORDER=["Air quality","Water & flooding","Rain & heat","Land","Roads","Transit & walking"];
 // LEGACY fallback — only for a layer whose descriptor predates the group tag.
 const LEGACY_G={"cell.builtup":"Built Environment","cell.greencover":"Environment","geo.terrain":"Environment",
   "cell.heat":"Environment","cell.rainfall":"Environment","cell.weather_forecast":"Environment","cell.hydrology":"Environment",
-  "cell.buildings":"Built Environment","demographics.population":"People"};
+  "cell.buildings":"Built Environment","demographics.population":"People & Economy"};
 // Vector OVERLAYS (lines/points) are geometry, not choropleths — slot them into the same tree.
-const OVL=[{id:"water",label:"Natural Drainage",grp:"Environment",sub:"Water",dot:"#2dd4bf",
+const OVL=[{id:"water",label:"Natural drainage",grp:"Environment",sub:"Water & flooding",dot:"#2dd4bf",
             interp:"The natural river / stream / drain network (MERIT Hydro). Overlay it on flood susceptibility to see where water pools."},
-           {id:"roads",label:"Arterial Roads",grp:"Mobility",sub:"Roads",dot:"#4f46e5",
+           {id:"roads",label:"Arterial roads",grp:"Mobility",sub:"Roads",dot:"#4f46e5",
             interp:"The through-road hierarchy — motorway, trunk, primary, secondary, tertiary and their link ramps (OpenStreetMap). The light ~12k-segment overview of how the city connects; a traffic-emission proxy to correlate with the PM2.5 surface. Add 'Local & Residential Roads' for the full street mesh."},
-           {id:"roads_local",label:"Local & Residential Roads",grp:"Mobility",sub:"Roads",dot:"#64748b",
+           {id:"roads_local",label:"Local & residential roads",grp:"Mobility",sub:"Roads",dot:"#64748b",
             interp:"Every other street — residential, service, living-street, lanes, tracks and paths (~178k segments). Heavy, so it loads only on demand; use it when you need the full street-level detail rather than the arterial overview."},
-           {id:"transit",label:"Public transport",grp:"Mobility",sub:"Public transport",dot:"#7e22ce",
+           {id:"transit",label:"Public transport",grp:"Mobility",sub:"Transit & walking",dot:"#7e22ce",
             interp:"Metro lines (purple), suburban rail (grey), metro stations (large purple dots), rail stations (grey) and bus stops (small orange dots) from OpenStreetMap. Hover a stop or station for its name. OSM coverage of bus stops may be incomplete."},
-           {id:"facilities",label:"Facilities",grp:"Built Environment",sub:"Facilities",dot:"#ef4444",
+           {id:"facilities",label:"Facilities (points)",grp:"Built Environment",sub:"",dot:"#ef4444",
             interp:"Critical facilities (hospitals, schools…) as points — reveals who is exposed where."},
-           {id:"issues",label:"Civic Issues",grp:"People",sub:"Civic",dot:"#a855f7",
+           {id:"issues",label:"Civic issues (from news)",grp:"City Pulse",sub:"",dot:"#a855f7",
             interp:"Geocoded civic issues — coloured by CATEGORY (law & order, water, roads, health…). Each point is a real, governed civic.issue placed on the map from the locality named in a news report or filed in a field report; issues that name no locality are not shown (never guessed). Hover a point for its category, severity and place. News is pulled and categorised per tenant, so the mix of categories reflects this city."}];
 const OVLON={water:()=>showWater,roads:()=>showRoads,roads_local:()=>showRoadsLocal,facilities:()=>showFacilities,issues:()=>showIssues,transit:()=>showTransit};
 // OSM transit features (driver/osm-transit writes them into geo.osm_feature alongside the roads)
@@ -1551,7 +1553,7 @@ function drawLayers(){
     const gk="g:"+g, gopen=isOpen(gk);
     html+=`<div class="tgrp ${gopen?"open":""}" data-tg="${esc(g)}"><span class="tw">${gopen?"▾":"▸"}</span>${esc(g)}</div>`;
     if(!gopen) continue;
-    const subs=Object.keys(tree[g]).sort((a,b)=>a.localeCompare(b));
+    const subs=Object.keys(tree[g]).sort((a,b)=>{ let ia=SUB_ORDER.indexOf(a), ib=SUB_ORDER.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib||a.localeCompare(b); });
     const multiSub = subs.some(s=>s!=="");                                     // show sub-headers only when subgroups exist
     for(const s of subs){
       const items=tree[g][s], sk="s:"+g+"/"+s;
