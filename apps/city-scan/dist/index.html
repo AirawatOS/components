@@ -206,7 +206,18 @@
   .scrubber{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:7;width:min(560px,80%);
     display:flex;align-items:center;gap:12px;background:#0c1622f2;border:1px solid var(--edge2);border-radius:12px;
     padding:9px 14px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(4px)}
-  .scrubber[hidden]{display:none}                 /* the [hidden] attr must beat display:flex above (else it always shows) */
+  .scrubber[hidden]{display:none}
+  /* TREND CHART — the animated layer's city-wide curve, the current frame marked; drag by its header */
+  .trend{position:absolute;top:56px;right:44px;z-index:8;width:310px;background:#0c1622f2;border:1px solid var(--edge2);
+    border-radius:11px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(4px);user-select:none}
+  .trend[hidden]{display:none}
+  .trend .th{display:flex;align-items:center;gap:8px;padding:7px 10px 5px;cursor:move;font-size:12px;color:var(--ink)}
+  .trend .th b{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .trend .th button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
+  .trend .tv{padding:0 10px 2px;font-size:11.5px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+  .trend .tv i{font-style:normal;font-weight:600}
+  .trend svg{display:block;cursor:pointer}
+  .scrubber .tchart{flex:none;width:30px;height:30px;border-radius:50%;background:transparent;border:1px solid var(--edge2);font-size:14px}                 /* the [hidden] attr must beat display:flex above (else it always shows) */
   .scrubber button{flex:none;width:30px;height:30px;border-radius:50%;border:none;background:var(--accent);
     color:#04121e;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
   .scrubber button:hover{filter:brightness(1.1)}
@@ -245,6 +256,7 @@
     <div class="drillhint" id="drillhint">click a cell to drill in · Esc to exit</div>
     <div class="psearch"><span class="pico">🔍</span><input id="psq" type="search" autocomplete="off" placeholder="Find a place — e.g. Nilasandra, Jayanagar…" aria-label="Find a place"><div class="psres" id="psres"></div></div>
     <div class="scrubber" id="scrubber" hidden></div>
+    <div class="trend" id="trend" hidden></div>
     <div class="busy" id="busy" hidden></div>
     <div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
@@ -505,13 +517,17 @@ function parseCells(rows,L){                                    // rows → H3 h
   const geom=o=>{ const g=o.cell_ref||o.space||{}; return {h3:g.h3_id||g.h3, c:g.centroid, b:g.boundary, name:g.name}; };
   // ---- (A) embedded per-cell series ------------------------------------------------------------
   if(rows.some(o=>Array.isArray(o.series)&&o.series.length)){
-    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name,v:dget(o,vf),series:o.series}; })
+    const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name||o.lake,grp:o.lake_ref||null,v:dget(o,vf),series:o.series}; })
       .filter(c=>c.h3&&typeof c.v==="number"&&inB(c.c));
     const dd={type:"hex",rows:cells, lo:cells.length?Math.min(...cells.map(c=>c.v)):0, hi:cells.length?Math.max(...cells.map(c=>c.v)):1};
     const ws=cells.find(c=>Array.isArray(c.series)&&c.series.length);
     if(ws){ const sk=(vf in ws.series[0]) ? vf : Object.keys(ws.series[0]).find(k=>k!=="t"&&typeof ws.series[0][k]==="number");
-      L.temporal=true; L.times=ws.series.map(s=>s.t); L.sfield=sk;
-      let hi=0; for(const c of cells){ if(Array.isArray(c.series)) for(const s of c.series){ const v=s[sk]; if(typeof v==="number"&&v>hi) hi=v; } }
+      // the timeline = EVERY year any cell has, and each cell's series is placed on it by year (a cell may skip a
+      // year — e.g. a lake cell with too much missing satellite data — and index i must mean the same year everywhere)
+      const tl=[...new Set(cells.flatMap(c=>Array.isArray(c.series)?c.series.map(s=>String(s.t)):[]))].sort();
+      for(const c of cells){ const by={}; for(const s of (c.series||[])) by[String(s.t)]=s; c.series=tl.map(t=>by[t]||null); }
+      L.temporal=true; L.times=tl; L.sfield=sk;
+      let hi=0; for(const c of cells){ if(Array.isArray(c.series)) for(const s of c.series){ const v=s&&s[sk]; if(typeof v==="number"&&v>hi) hi=v; } }
       dd.thi=hi||1; }
     return dd;
   }
@@ -591,7 +607,7 @@ function robustScale(dd,L){
 }
 // the fields a cell layer actually draws (its cell, time frames and value) — provenance is sampled separately
 function cellFields(L){ const top=String(L.vf||"").split(".")[0];
-  return ["cell_ref","space","observed_at","series","h3_id"].concat(top?[top]:[]); }
+  return ["cell_ref","space","observed_at","series","h3_id","lake_ref","lake"].concat(top?[top]:[]); }   // lake_ref: the trend chart counts lakes
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
@@ -1108,14 +1124,89 @@ function updateScrubber(){
     el.hidden=false; el.dataset.k=active;
     el.innerHTML=`<button id="tplay" title="Play / pause">${tPlaying?"⏸":"▶"}</button>`
       +`<input id="trange" type="range" min="0" max="${times.length-1}" step="1" value="${tIdx}">`
-      +`<div class="tlab"><b id="tnow"></b><span id="tsub"></span></div>`;
+      +`<div class="tlab"><b id="tnow"></b><span id="tsub"></span></div>`
+      +`<button class="tchart" id="tchart" title="Show the trend chart">📈</button>`;
     $("tplay").onclick=()=>{ tPlaying?stopPlay():startPlay(); };
+    $("tchart").onclick=()=>{ TREND_HIDE[active]=false; updateTrend(); };
     $("trange").oninput=e=>scrubTo(+e.target.value);
   }
   $("trange").value=tIdx;
   $("tnow").textContent=fmtT(times[tIdx]);
   $("tsub").textContent=`${tIdx+1}/${times.length} frames`;
   const pb=$("tplay"); if(pb) pb.textContent=tPlaying?"⏸":"▶";
+  updateTrend();
+}
+// ── TREND CHART: the animated layer as one city-wide curve per frame, with the current frame marked ─────────────
+// Lakes (cells carry lake_ref): water area in ha (water % × cell area) and the number of lakes holding ≥ 1 ha.
+// Other layers: a city TOTAL for amounts / counts (spend, works, tenders), else the city MEAN of the cells.
+const TREND_HIDE={}; let TREND_CACHE={key:null};
+function trendData(L, dd){
+  const key=L.key+"|"+(dd.rows||[]).length+"|"+(L.times||[]).length;
+  if(TREND_CACHE.key===key) return TREND_CACHE.v;
+  const sk=L.sfield, n=(L.times||[]).length, rows=dd.rows||[];
+  const lakes=rows.some(c=>c.grp);
+  let lines;
+  if(lakes){
+    const ha=rows.map(c=>{ try{ return h3.cellArea(c.h3,"km2")*100; }catch(e){ return 10.5; } });
+    const area=new Array(n).fill(0), cnt=new Array(n).fill(0), seen=new Array(n).fill(0);
+    for(let i=0;i<n;i++){ const per={};
+      rows.forEach((c,j)=>{ const s=c.series&&c.series[i], v=s&&s[sk];
+        if(typeof v==="number"){ seen[i]++; const a=v/100*ha[j]; area[i]+=a; if(c.grp) per[c.grp]=(per[c.grp]||0)+a; } });
+      cnt[i]=Object.values(per).filter(a=>a>=1).length; }
+    lines=[{label:"Water area",unit:"ha",vals:area.map((v,i)=>seen[i]?v:null),col:"#4fa3e0"},
+           {label:"Lakes holding water",unit:"",vals:cnt.map((v,i)=>seen[i]?v:null),col:"#f0a24a"}];
+  } else {
+    const total=/paid|spend|count|works|tenders|total/i.test(sk||"");
+    const vals=[]; for(let i=0;i<n;i++){ let sum=0,k=0;
+      for(const c of rows){ const s=c.series&&c.series[i], v=s&&s[sk]; if(typeof v==="number"){ sum+=v; k++; } }
+      vals.push(k?(total?sum:sum/k):null); }
+    lines=[{label:(total?"City total":"City average"),unit:L.unit||"",vals,col:"#4fa3e0"}];
+  }
+  TREND_CACHE={key, v:lines}; return lines;
+}
+function fmtN(v){ return v==null?"—":(Math.abs(v)>=1000?Math.round(v).toLocaleString():(Math.abs(v)>=10?v.toFixed(0):v.toFixed(1))); }
+function updateTrend(){
+  const el=$("trend"); if(!el) return;
+  const L=LAYERS.find(l=>l.key===active), dd=L&&DATA.data&&DATA.data[L.key];
+  if(!L||!L.temporal||!dd||dd.type!=="hex"||(L.times||[]).length<2||TREND_HIDE[active]){ el.hidden=true; return; }
+  const lines=trendData(L,dd), times=L.times, n=times.length, W=310, H=128, pl=8, pr=8, pt=8, pb=18;
+  if(el.hidden||el.dataset.k!==active){
+    el.hidden=false; el.dataset.k=active;
+    el.innerHTML=`<div class="th" id="trendh"><b>📈 ${esc(L.short||L.label)}</b><button id="trendx" title="Hide (📈 on the timeline brings it back)">×</button></div>`
+      +`<div class="tv" id="trendv"></div><div id="trends"></div>`;
+    $("trendx").onclick=()=>{ TREND_HIDE[active]=true; el.hidden=true; };
+    try{ const pos=JSON.parse(localStorage.getItem("aosTrendPos")||"null");
+      if(pos){ el.style.left=pos.l+"px"; el.style.top=pos.t+"px"; el.style.right="auto"; } }catch(e){}
+    const hd=$("trendh");
+    hd.onmousedown=e=>{ if(e.target.id==="trendx") return; e.preventDefault();
+      const box=el.parentElement.getBoundingClientRect(), r=el.getBoundingClientRect(), dx=e.clientX-r.left, dy=e.clientY-r.top;
+      const mv=ev=>{ const l=Math.max(0,Math.min(box.width-r.width,ev.clientX-box.left-dx)), t=Math.max(0,Math.min(box.height-r.height,ev.clientY-box.top-dy));
+        el.style.left=l+"px"; el.style.top=t+"px"; el.style.right="auto"; };
+      const up=()=>{ document.removeEventListener("mousemove",mv); document.removeEventListener("mouseup",up);
+        try{ localStorage.setItem("aosTrendPos",JSON.stringify({l:parseFloat(el.style.left)||0,t:parseFloat(el.style.top)||0})); }catch(e){} };
+      document.addEventListener("mousemove",mv); document.addEventListener("mouseup",up); };
+  }
+  const x=i=>pl+(n<2?0:i*(W-pl-pr)/(n-1));
+  const path=(vals)=>{ const ok=vals.filter(v=>v!=null); if(!ok.length) return {d:"",lo:0,hi:1};
+    let lo=Math.min(...ok), hi=Math.max(...ok); if(lo>0&&lo<hi*0.6) lo=0; if(hi===lo) hi=lo+1;
+    const y=v=>pt+(H-pt-pb)*(1-(v-lo)/(hi-lo)); let d="", pen=false;
+    vals.forEach((v,i)=>{ if(v==null){ pen=false; return; } d+=(pen?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1); pen=true; });
+    return {d,lo,hi,y}; };
+  const P=lines.map(l=>Object.assign({l},path(l.vals)));
+  const yr=i=>esc(fmtT(times[i]));
+  let svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
+    +`<line x1="${pl}" x2="${W-pr}" y1="${H-pb}" y2="${H-pb}" stroke="#ffffff22"/>`
+    +`<line x1="${x(tIdx)}" x2="${x(tIdx)}" y1="${pt}" y2="${H-pb}" stroke="#ffffff55" stroke-dasharray="3,3"/>`;
+  for(const p of P){ svg+=`<path d="${p.d}" fill="none" stroke="${p.l.col}" stroke-width="2" stroke-linejoin="round"/>`;
+    const v=p.l.vals[tIdx]; if(v!=null&&p.y) svg+=`<circle cx="${x(tIdx)}" cy="${p.y(v).toFixed(1)}" r="4" fill="${p.l.col}" stroke="#0c1622" stroke-width="1.5"/>`; }
+  svg+=`<text x="${pl}" y="${H-4}" fill="#8aa0b4" font-size="10">${yr(0)}</text>`
+    +`<text x="${W-pr}" y="${H-4}" fill="#8aa0b4" font-size="10" text-anchor="end">${yr(n-1)}</text>`
+    +`<text x="${Math.min(Math.max(x(tIdx),30),W-30)}" y="${H-4}" fill="#e6eef6" font-size="10.5" font-weight="600" text-anchor="middle">${yr(tIdx)}</text>`
+    +`<rect x="0" y="0" width="${W}" height="${H}" fill="transparent" id="trendhit"/></svg>`;
+  $("trends").innerHTML=svg;
+  $("trendv").innerHTML=lines.map(l=>`<span><i style="color:${l.col}">●</i> ${esc(l.label)}: <i>${fmtN(l.vals[tIdx])}${l.unit?" "+esc(l.unit):""}</i></span>`).join("");
+  $("trendhit").onclick=e=>{ const r=e.target.getBoundingClientRect(), fx=(e.clientX-r.left)/r.width*W;
+    let best=0,bd=1e9; for(let i=0;i<n;i++){ const d=Math.abs(x(i)-fx); if(d<bd){bd=d;best=i;} } scrubTo(best); };
 }
 // ── place names: the tenant's gazetteer (space.place, OSM localities + wards) → nearest named place to a cell ──
 // Same rule as the City analyst: ≤1 km "Jayanagar (0.4 km)", ≤2.5 km "near Jayanagar (1.6 km)", else lat/lon.
