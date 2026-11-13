@@ -208,13 +208,13 @@
     padding:9px 14px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(4px)}
   .scrubber[hidden]{display:none}
   /* TREND CHART — the animated layer's city-wide curve, the current frame marked; drag by its header */
-  .trend{position:absolute;top:56px;right:44px;z-index:8;width:310px;background:#0c1622f2;border:1px solid var(--edge2);
+  .trend{position:absolute;top:56px;right:44px;z-index:8;width:370px;background:#0c1622f2;border:1px solid var(--edge2);
     border-radius:11px;box-shadow:0 10px 34px #0007;backdrop-filter:blur(4px);user-select:none}
   .trend[hidden]{display:none}
   .trend .th{display:flex;align-items:center;gap:8px;padding:7px 10px 5px;cursor:move;font-size:12px;color:var(--ink)}
   .trend .th b{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .trend .th button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
-  .trend .tv{padding:0 10px 2px;font-size:11.5px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+  .trend .tv{padding:0 10px 2px;font-size:11.5px;color:var(--muted);display:flex;gap:14px;flex-wrap:nowrap;white-space:nowrap;overflow:hidden;height:16px}
   .trend .tv i{font-style:normal;font-weight:600}
   .trend svg{display:block;cursor:pointer}
   .scrubber .tchart{flex:none;width:30px;height:30px;border-radius:50%;background:transparent;border:1px solid var(--edge2);font-size:14px}                 /* the [hidden] attr must beat display:flex above (else it always shows) */
@@ -1140,6 +1140,25 @@ function updateScrubber(){
 // Lakes (cells carry lake_ref): water area in ha (water % × cell area) and the number of lakes holding ≥ 1 ha.
 // Other layers: a city TOTAL for amounts / counts (spend, works, tenders), else the city MEAN of the cells.
 const TREND_HIDE={}; let TREND_CACHE={key:null};
+// ── LAKES: per-lake summaries (water.lake, driver/lake-watch) for the hover — fetched once, without the polygons ──
+let LAKE_INFO=null, LAKE_LOADING=false;
+function loadLakeInfo(){
+  if(LAKE_INFO||LAKE_LOADING) return; LAKE_LOADING=true;
+  bridge("/bridge/query",{app_id:APPID,schema:"water.lake",limit:5000,
+    fields:["id","name","kind","baseline_water_m2","recent_water_m2","water_change_pct","shore_built_1975","shore_built_2020","osm_area_m2"]})
+   .then(d=>{ LAKE_INFO={}; for(const x of (d.results||d.objects||d||[])){ const o=x.object||x; if(o.id) LAKE_INFO[o.id]=o; } })
+   .catch(()=>{ LAKE_INFO={}; });
+}
+function lakeLine(o){
+  if(!o||!o.grp) return "";
+  if(!LAKE_INFO){ loadLakeInfo(); return ""; }
+  const k=LAKE_INFO[o.grp]; if(!k) return "";
+  const ha=v=>typeof v==="number"?(v/1e4>=10?Math.round(v/1e4):(v/1e4).toFixed(1))+" ha":"—";
+  const pct=v=>typeof v==="number"?Math.round(100*v)+"%":"—";
+  const ch=typeof k.water_change_pct==="number"?` <b style="color:${k.water_change_pct<0?"#ff8a65":"#7fd1ff"}">${k.water_change_pct>0?"+":""}${Math.round(k.water_change_pct)}%</b>`:"";
+  return `<br><span style="color:var(--muted)">Water 1995–99 ${ha(k.baseline_water_m2)} → 2017–21 ${ha(k.recent_water_m2)}</span>${ch}`
+    +((typeof k.shore_built_1975==="number"&&typeof k.shore_built_2020==="number")?`<br><span style="color:var(--muted)">Built-up within 200 m of the shore: ${pct(k.shore_built_1975)} (1975) → ${pct(k.shore_built_2020)} (2020)</span>`:"");
+}
 function trendData(L, dd){
   const key=L.key+"|"+(dd.rows||[]).length+"|"+(L.times||[]).length;
   if(TREND_CACHE.key===key) return TREND_CACHE.v;
@@ -1154,7 +1173,7 @@ function trendData(L, dd){
         if(typeof v==="number"){ seen[i]++; const a=v/100*ha[j]; area[i]+=a; if(c.grp) per[c.grp]=(per[c.grp]||0)+a; } });
       cnt[i]=Object.values(per).filter(a=>a>=1).length; }
     lines=[{label:"Water area",unit:"ha",vals:area.map((v,i)=>seen[i]?v:null),col:"#4fa3e0"},
-           {label:"Lakes holding water",unit:"",vals:cnt.map((v,i)=>seen[i]?v:null),col:"#f0a24a"}];
+           {label:"Lakes with water",unit:"",vals:cnt.map((v,i)=>seen[i]?v:null),col:"#f0a24a"}];
   } else {
     const total=/paid|spend|count|works|tenders|total/i.test(sk||"");
     const vals=[]; for(let i=0;i<n;i++){ let sum=0,k=0;
@@ -1169,7 +1188,7 @@ function updateTrend(){
   const el=$("trend"); if(!el) return;
   const L=LAYERS.find(l=>l.key===active), dd=L&&DATA.data&&DATA.data[L.key];
   if(!L||!L.temporal||!dd||dd.type!=="hex"||(L.times||[]).length<2||TREND_HIDE[active]){ el.hidden=true; return; }
-  const lines=trendData(L,dd), times=L.times, n=times.length, W=310, H=128, pl=8, pr=8, pt=8, pb=18;
+  const lines=trendData(L,dd), times=L.times, n=times.length, W=370, H=128, pl=8, pr=8, pt=8, pb=18;
   if(el.hidden||el.dataset.k!==active){
     el.hidden=false; el.dataset.k=active;
     el.innerHTML=`<div class="th" id="trendh"><b>📈 ${esc(L.short||L.label)}</b><button id="trendx" title="Hide (📈 on the timeline brings it back)">×</button></div>`
@@ -1225,8 +1244,10 @@ async function psExtra(){
   if(PS_X) return; PS_X=[];
   const get=async(body)=>{ try{ const d=await bridge("/bridge/query",Object.assign({app_id:APPID,limit:5000},body));
     return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } };
-  const [wards,st]=await Promise.all([get({schema:"space.ward",fields:["name","ward_no","centroid"]}),
-                                      get({schema:"geo.osm_feature",filter:{feature:"station"},fields:["geometry","tags","feature"]})]);
+  const [wards,st,lk]=await Promise.all([get({schema:"space.ward",fields:["name","ward_no","centroid"]}),
+                                      get({schema:"geo.osm_feature",filter:{feature:"station"},fields:["geometry","tags","feature"]}),
+                                      get({schema:"water.lake",fields:["name","kind","cell_ref"]})]);
+  for(const o of lk){ const c=(o.cell_ref||{}).centroid; if(o.name&&Array.isArray(c)&&c.length>=2) PS_X.push([+c[0],+c[1],String(o.name),o.kind==="wetland"?"wetland":"lake"]); }
   for(const w of wards){ const c=w.centroid; if(w.name&&Array.isArray(c)&&c.length>=2)
     PS_X.push([+c[0],+c[1],String(w.name).replace(/\s+Ward$/i,""),"ward "+(w.ward_no||"")]); }
   for(const o of st){ const c=(o.geometry||{}).coordinates, t=o.tags||{}, n=t.name||t["name:en"];
@@ -1295,7 +1316,8 @@ function tip(info){
               : (()=>{ // TEMPORAL: show the value of the FRAME currently on screen (tIdx), not the base value —
                        // else the tooltip reports the latest hour while the cells are painted for a scrubbed-to hour.
                   const fv=(L&&L.temporal&&Array.isArray(o.series)&&o.series[tIdx]&&typeof o.series[tIdx][L.sfield]==="number")?o.series[tIdx][L.sfield]:o.v;
-                  return `<b>${esc(L?L.fmt(fv):fv)}</b>${o.name?` · <span style="color:var(--muted)">${esc(o.name)}</span>`:""} · <span style="color:var(--muted)">${esc(cellWhere(o))}</span>`; })();
+                  const nm=o.grp&&o.name?`<br><b>${esc(o.name)}</b>`:(o.name?` · <span style="color:var(--muted)">${esc(o.name)}</span>`:"");
+                  return `<b>${esc(L?L.fmt(fv):fv)}</b>${o.grp?` <span style="color:var(--muted)">water in ${esc(fmtT((L.times||[])[tIdx]))}</span>`:""}${nm} · <span style="color:var(--muted)">${esc(cellWhere(o))}</span>${lakeLine(o)}`; })();
   t.innerHTML=label; t.style.left=info.x+"px"; t.style.top=info.y+"px"; t.style.opacity=1;
 }
 function setBusy(msg){ const b=$("busy"); if(!b) return; if(!msg){ b.hidden=true; return; } b.textContent=msg; b.hidden=false; }
