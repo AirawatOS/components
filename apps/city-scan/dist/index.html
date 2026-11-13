@@ -191,6 +191,7 @@
   .tourbtn{margin-left:auto;border:1px solid var(--edge2);background:#0e1c2a;color:var(--ink);border-radius:8px;
     padding:5px 12px;font-size:12.5px;cursor:pointer}
   .tourbtn:hover,.tourbtn.on{border-color:var(--accent);color:var(--accent)}
+  .tourbtn[hidden]{display:none}
   .tourcap{position:absolute;left:14px;bottom:70px;z-index:9;width:min(420px,70%);background:#0c1622f2;border:1px solid var(--accent);
     border-radius:12px;padding:12px 14px;box-shadow:0 12px 36px #0008;backdrop-filter:blur(4px);pointer-events:none}
   .tourcap[hidden]{display:none}
@@ -246,7 +247,8 @@
 <header>
   <h1><b>Visualize</b></h1>
   <div class="sub" id="sub">loading…</div>
-  <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and the City Analyst. Any click, scroll or key stops it and gives you control.">▶ Tour</button>
+  <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and the City Analyst. Any click, scroll or key pauses it and gives you control.">▶ Tour</button>
+  <button class="tourbtn" id="tourrestart" title="Start the tour from the beginning" hidden style="margin-left:6px">↺</button>
 </header>
 
 <div class="grid rc0" id="app">
@@ -1351,7 +1353,9 @@ function updateTrend(){
 // ── place names: the tenant's gazetteer (space.place, OSM localities + wards) → nearest named place to a cell ──
 // Same rule as the City analyst: ≤1 km "Jayanagar (0.4 km)", ≤2.5 km "near Jayanagar (1.6 km)", else lat/lon.
 let PLACES=null; const PLACE_CACHE={};
-async function loadPlaces(){
+let PLACES_P=null;
+function loadPlaces(){ return PLACES_P||(PLACES_P=_loadPlaces()); }   // one shared load — every caller waits for it
+async function _loadPlaces(){
   if(PLACES) return;
   const rows=await q("space.place");
   PLACES=rows.filter(p=>(p.kind==="locality"||p.kind==="ward")&&p.name&&Array.isArray(p.centroid)&&p.centroid.length>=2)
@@ -1361,18 +1365,21 @@ async function loadPlaces(){
 let PS_HITS=[], PS_SEL=0, PS_X=null;
 // beyond the gazetteer's localities: the city's WARDS (space.ward — the gazetteer has none) and metro / rail STATIONS
 // (osm-transit), so "Nilasandra" or "MG Road" are findable. Loaded once, centroids only (field projection).
-async function psExtra(){
-  if(PS_X) return; PS_X=[];
+let PS_X_P=null;
+function psExtra(){ return PS_X_P||(PS_X_P=_psExtra()); }      // one shared load (wards, stations, lakes)
+async function _psExtra(){
+  if(PS_X) return; const X=[];
   const get=async(body)=>{ try{ const d=await bridge("/bridge/query",Object.assign({app_id:APPID,limit:5000},body));
     return (d.results||d.objects||d||[]).map(x=>x.object||x); }catch(e){ return []; } };
   const [wards,st,lk]=await Promise.all([get({schema:"space.ward",fields:["name","ward_no","centroid"]}),
                                       get({schema:"geo.osm_feature",filter:{feature:"station"},fields:["geometry","tags","feature"]}),
                                       get({schema:"water.lake",fields:["name","kind","cell_ref"]})]);
-  for(const o of lk){ const c=(o.cell_ref||{}).centroid; if(o.name&&Array.isArray(c)&&c.length>=2) PS_X.push([+c[0],+c[1],String(o.name),o.kind==="wetland"?"wetland":"lake"]); }
+  for(const o of lk){ const c=(o.cell_ref||{}).centroid; if(o.name&&Array.isArray(c)&&c.length>=2) X.push([+c[0],+c[1],String(o.name),o.kind==="wetland"?"wetland":"lake"]); }
   for(const w of wards){ const c=w.centroid; if(w.name&&Array.isArray(c)&&c.length>=2)
-    PS_X.push([+c[0],+c[1],String(w.name).replace(/\s+Ward$/i,""),"ward "+(w.ward_no||"")]); }
+    X.push([+c[0],+c[1],String(w.name).replace(/\s+Ward$/i,""),"ward "+(w.ward_no||"")]); }
   for(const o of st){ const c=(o.geometry||{}).coordinates, t=o.tags||{}, n=t.name||t["name:en"];
-    if(n&&Array.isArray(c)&&c.length===2&&typeof c[0]==="number") PS_X.push([c[0],c[1],String(n),(isMetro(t)?"metro":"rail")+" station"]); }
+    if(n&&Array.isArray(c)&&c.length===2&&typeof c[0]==="number") X.push([c[0],c[1],String(n),(isMetro(t)?"metro":"rail")+" station"]); }
+  PS_X=X;                                                     // published only when complete
 }
 function psFind(qs){
   const q=qs.trim().toLowerCase(); if(q.length<2) return [];
@@ -1616,15 +1623,20 @@ const TOUR_STEPS=[
   {layer:"demographics.census_ward", place:"Nilasandra", d3:true, title:"Down to one ward", cap:"Nilasandra — its buildings, roads and facilities in 3D.", dur:11000},
   {ask:["Which crowded wards have weak metro access and low works spending per person?", "Tell me about Nilasandra",
         "Which lakes have shrunk the most?", "If you were responsible for the city, what would be your top 5 priorities?"], title:"Ask the city"}];
-let TOUR=null;
+let TOUR=null, TOUR_AT=null;      // TOUR_AT = {i, qi}: where a stopped tour resumes
 const tourOn=id=>!!TOUR&&TOUR.id===id;
 function tourSleep(ms,id){ return new Promise(res=>{ const t0=Date.now(); const k=setInterval(()=>{ if(!tourOn(id)||Date.now()-t0>=ms){ clearInterval(k); res(); } },150); }); }
 function tourCap(title,body,prog){ const el=$("tourcap"); if(!el) return; el.hidden=false;
   el.innerHTML=`<div class="tk"><span>▶ Tour${prog?" · "+esc(prog):""}</span><span>click anywhere to take over</span></div><div class="tt">${esc(title||"")}</div><div class="tb">${esc(body||"")}</div>`; }
+function tourButtons(){
+  const b=$("tourbtn"), r=$("tourrestart"); if(!b) return;
+  if(TOUR){ b.textContent="■ Stop tour"; b.classList.add("on"); if(r) r.hidden=true; return; }
+  b.classList.remove("on"); b.textContent=TOUR_AT?"▶ Resume tour":"▶ Tour"; if(r) r.hidden=!TOUR_AT;
+}
 function stopTour(msg){
-  if(!TOUR) return; TOUR=null; stopPlay();
-  const c=$("tourcap"); if(c) c.hidden=true; const b=$("tourbtn"); if(b){ b.textContent="▶ Tour"; b.classList.remove("on"); }
-  setBusy(msg||"Tour stopped — you're in control. ▶ Tour starts it again."); setTimeout(()=>setBusy(null),3500);
+  if(!TOUR) return; TOUR_AT=TOUR.at||null; TOUR=null; stopPlay();
+  const c=$("tourcap"); if(c) c.hidden=true; tourButtons();
+  setBusy(msg||"Tour paused — you're in control. ▶ Resume tour continues from here, ↺ from the start."); setTimeout(()=>setBusy(null),4000);
 }
 function tourOverlaysOff(){ showRoads=showRoadsLocal=showWater=showIssues=showTransit=false; FAC_ON.clear(); showFacilities=false; }
 async function tourOverlay(id){
@@ -1636,7 +1648,8 @@ async function tourOverlay(id){
 function tourHome(){ view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?50:0, bearing:0, transitionDuration:1400}; deckgl.setProps({initialViewState:view}); }
 function tour3d(on){ if(mode3d!==!!on && $("tilt")) $("tilt").onclick(); }
 const firstSentence=t=>{ const m=String(t||"").match(/^.*?[.!?](\s|$)/); return (m?m[0]:String(t||"")).trim().slice(0,220); };
-async function tourStep(st,i,n,id){
+async function tourStep(st,i,n,id,qi){
+  if(TOUR) TOUR.at={i,qi:0};
   if(drillCell) exitDrill();
   tourOverlaysOff(); stopPlay(); tIdx=0;
   if(window.AOS_ASK) AOS_ASK.close();
@@ -1647,9 +1660,10 @@ async function tourStep(st,i,n,id){
   if(!tourOn(id)) return;
   drawLayers(); render();
   const prog=(i+1)+"/"+n;
-  if(st.ask){ await tourAsk(st,prog,id); return; }
+  if(st.ask){ await tourAsk(st,prog,id,qi||0,i); return; }
   tourCap(st.title||(L&&L.label)||"", st.cap||(L?firstSentence(L.interp||L.desc):""), prog);
-  if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0]; if(hit) psGo(hit); }
+  if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0];
+    if(hit) psGo(hit); else tourHome(); }
   else if(st.fly){ view={...view,longitude:st.fly[0],latitude:st.fly[1],zoom:st.fly[2],pitch:mode3d?45:0,transitionDuration:1600}; deckgl.setProps({initialViewState:view}); }
   else tourHome();
   if(L&&L.temporal&&(L.times||[]).length>1){
@@ -1658,11 +1672,12 @@ async function tourStep(st,i,n,id){
     await tourSleep(1800,id);
   } else await tourSleep(st.dur||9000,id);
 }
-async function tourAsk(st,prog,id){
+async function tourAsk(st,prog,id,q0,i){
   if(!window.AOS_ASK) return;
   tourHome(); AOS_ASK.open(true);
-  for(const q of st.ask){
+  for(let qi=q0;qi<st.ask.length;qi++){ const q=st.ask[qi];
     if(!tourOn(id)) return;
+    TOUR.at={i,qi};
     tourCap(st.title||"Ask the city", "“"+q+"”", prog);
     await AOS_ASK.type(q,id); if(!tourOn(id)) return;
     await AOS_ASK.run(); if(!tourOn(id)) return;
@@ -1673,22 +1688,26 @@ async function tourAsk(st,prog,id){
   }
   AOS_ASK.close();
 }
-async function startTour(){
-  if(TOUR){ stopTour("Tour stopped."); return; }
-  const id=Date.now(); TOUR={id};
-  const b=$("tourbtn"); if(b){ b.textContent="■ Stop tour"; b.classList.add("on"); }
+async function startTour(fromStart){
+  if(TOUR){ stopTour(); return; }
+  const at=fromStart?null:TOUR_AT; TOUR_AT=null;
+  const id=Date.now(); TOUR={id,at}; tourButtons();
   if(!PRELOADED){                                                 // every layer into this browser first (cached 7 days)
     const tick=()=>{ const pb=$("preloadall"); tourCap("Preparing the tour","Loading every layer into this browser so each step opens instantly"+(pb&&/\d/.test(pb.textContent)?" — "+pb.textContent:"")+"…",""); };
     tick(); const k=setInterval(()=>{ if(tourOn(id)) tick(); },500);
     await (PRELOADING ? new Promise(res=>{ const w=setInterval(()=>{ if(!PRELOADING){ clearInterval(w); res(); } },300); }) : preloadAll());
     clearInterval(k);
   }
+  if(!tourOn(id)) return;
+  if(window.AOS_ASK){ tourCap("Preparing the tour","Warming up the City Analyst…",""); await AOS_ASK.warm(); }   // its data, without the model
   const steps=TOUR_STEPS.filter(st=>!st.layer||LAYERS.some(l=>l.key===st.layer));
-  while(tourOn(id)){ for(let i=0;i<steps.length&&tourOn(id);i++) await tourStep(steps[i],i,steps.length,id); }
+  let i0=(at&&at.i<steps.length)?at.i:0, q0=at?at.qi:0;
+  while(tourOn(id)){ for(let i=i0;i<steps.length&&tourOn(id);i++){ await tourStep(steps[i],i,steps.length,id,i===i0?q0:0); } i0=0; q0=0; }
 }
 function initTour(){
   const b=$("tourbtn"); if(b) b.onclick=()=>startTour();
-  const stop=e=>{ if(!TOUR||!e.isTrusted) return; if(e.target&&e.target.closest&&e.target.closest("#tourbtn")) return; stopTour(); };
+  const r=$("tourrestart"); if(r) r.onclick=()=>{ TOUR_AT=null; startTour(true); };
+  const stop=e=>{ if(!TOUR||!e.isTrusted) return; if(e.target&&e.target.closest&&e.target.closest("#tourbtn,#tourrestart")) return; stopTour(); };
   ["pointerdown","wheel","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,stop,{capture:true,passive:true}));
   try{ if(new URLSearchParams(location.search).get("tour")==="1") setTimeout(()=>startTour(),1200); }catch(e){}
 }
@@ -2023,7 +2042,9 @@ function fitView(bbox){
     return rows?('<div class="eq"><div class="eq-h">Evidence quality</div>'+rows+'</div>'):'';
   }
   let ASKING=false;
-  G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden)G('askq').focus();};
+  let WARMED=null;
+  const warm=()=>WARMED||(WARMED=bridge('/bridge/city-ask',{question:'__warm__'}).catch(()=>null));   // its data, not the model
+  G('askbtn').onclick=()=>{const p=G('askpanel');p.hidden=!p.hidden;if(!p.hidden){G('askq').focus(); warm();}};
   G('askx').onclick=()=>{G('askpanel').hidden=true; setAskHover([]); setAskPin([]);};
   const refOf=t=>{ const r=t&&t.closest&&t.closest('.cellref'); if(r) return r;
     const tr=t&&t.closest&&t.closest('tr'); return tr?tr.querySelector('.cellref'):null; };
@@ -2052,7 +2073,13 @@ function fitView(bbox){
     addMsg('me',esc(q));
     const slot=addMsg('ai','<span style="opacity:.6">Analysing governed layers…</span>');
     try{
-      const d=await bridge('/bridge/city-ask',{question:q});
+      let d;
+      try{ d=await bridge('/bridge/city-ask',{question:q}); }
+      catch(e1){                                   // the public proxy cuts a request at ~60 s (HTML 504 / 'Failed to fetch');
+        if(!/Unexpected token|Failed to fetch|NetworkError|504|502/.test(String(e1&&e1.message||e1))) throw e1;   // the analyst
+        slot.innerHTML='<span style="opacity:.6">Taking longer than usual — trying again (its data is now loaded)…</span>';   // kept
+        try{ d=await bridge('/bridge/city-ask',{question:q}); }                                                            // working,
+        catch(e2){ throw new Error("the analyst took longer than the connection allows (about 60 s). Ask again — it is usually quick the second time."); } }
       setAskPin([]);
       slot.classList.add('md'); slot.innerHTML=linkCells(md(d.answer||'No answer.'),cellRefs(d.facts))
         +((d.sources&&d.sources.length)?('<div class="src">Sources: '+esc(d.sources.join(' · '))+'</div>'):'')
@@ -2073,6 +2100,7 @@ function fitView(bbox){
     close:()=>{ G('askpanel').hidden=true; setAskHover([]); setAskPin([]); },
     type:async(q,id)=>{ const el=G('askq'); el.value=''; for(const ch of q){ if(typeof TOUR!=="undefined"&&(!TOUR||TOUR.id!==id)) return; el.value+=ch; await new Promise(r=>setTimeout(r,24)); } },
     run:()=>ask(),
+    warm:()=>warm(),
     pin:(cells)=>setAskPin(cells),
     firstRef:()=>{ const ms=G('asklog').querySelectorAll('.am.ai'); const m=ms[ms.length-1]; return m?m.querySelector('.cellref'):null; }};
 })();
