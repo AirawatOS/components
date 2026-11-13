@@ -310,7 +310,7 @@
   "solution": "lake-watch",
   "source_schema": "water.lake_cell",
   "subgroup": "Water",
-  "unit": "%",
+  "unit": "% of cell",
   "value_field": "water_pct"
  },
  {
