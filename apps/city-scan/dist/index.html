@@ -797,7 +797,7 @@ async function ensureOverlay(kind){                            // lazy-load the 
       for(const o of rows){
         const g=o.geometry||{}; const c=g.coordinates;         // GeoJSON Point [lon,lat] written by news-geocode / a field report
         if(Array.isArray(c)&&c.length>=2&&typeof c[0]==="number"&&inB(c))
-          DATA.issues.push({_iss:1,c:[c[0],c[1]],cat:o.category||"other",title:o.title||"",sev:o.severity||"",place:o.place_label||"",status:o.status||""});
+          DATA.issues.push({_iss:1,c:[c[0],c[1]],cat:o.category||"other",title:o.title||"",sev:o.severity||"",place:o.place_label||"",status:o.status||"",at:o.observed_at||""});
       }
       DATA.issues=DATA.issues.slice(); OV_STAT.issues.loaded=DATA.issues.length; OV_STAT.issues.fetched=fetched; ovProgress("issues");
       try{ render(); }catch(e){}
@@ -1618,10 +1618,10 @@ const TOUR_STEPS=[
   {layer:"mobility.walkability"},
   {layer:"mobility.chokepoint", overlays:["roads"], title:"Where the road network chokes", cap:"A proxy: the junctions most of the city's shortest routes pass through — not measured traffic."},
   {overlays:["fac:healthcare","fac:education","fac:emergency","fac:sanitation"], title:"Public services", cap:"Health (red), education (blue), safety (orange) and sanitation (teal) service points."},
-  {layer:"econ.nightlight_trend", d3:true, fitData:"growth", title:"How the city grew, 2014–2025", cap:"Night-time light by year, zoomed to where it rose most — a satellite proxy for activity, not income."},
+  {layer:"econ.nightlight_trend", d3:true, nameData:"growth", title:"How the city grew, 2014–2025", cap:"Night-time light by year across the city — a satellite proxy for activity, not income."},
   {layer:"works.ward_cell", title:"Where the money went, 2012–2022", cap:"Public works paid per ward, year by year."},
   {layer:"procurement.ward_cell"},
-  {overlays:["issues"], title:"City pulse", cap:"Civic issues from local news, placed where a report names a locality."},
+  {overlays:["issues"], news:3, title:"City pulse", cap:"Civic issues from local news, placed where a report names a locality."},
   {layer:"demographics.census_ward", place:"Nilasandra", d3:true, title:"Down to one ward", cap:"Nilasandra — its buildings, roads and facilities in 3D.", dur:11000},
   {ask:["Which crowded wards have weak metro access and low works spending per person?", "Tell me about Nilasandra",
         "Which lakes have shrunk the most?", "If you were responsible for the city, what would be your top 5 priorities?"], title:"Ask the city"}];
@@ -1664,8 +1664,8 @@ async function tourStep(st,i,n,id,qi){
   const prog=(i+1)+"/"+n;
   if(st.ask){ await tourAsk(st,prog,id,qi||0,i); return; }
   tourCap(st.title||(L&&L.label)||"", st.cap||(L?firstSentence(L.interp||L.desc):""), prog);
-  if(st.fitData&&L&&DATA.data[L.key]&&(DATA.data[L.key].rows||[]).length){   // zoom to where THIS layer's cells are now
-    const mode=st.fitData, sf=L.sfield;
+  if((st.fitData||st.nameData)&&L&&DATA.data[L.key]&&(DATA.data[L.key].rows||[]).length){   // where THIS layer's cells are now
+    const mode=st.fitData||st.nameData, sf=L.sfield;
     const score=mode==="growth" ? (r=>{ const sv=(r.series||[]).map(x=>x&&x[sf]).filter(v=>typeof v==="number");
         return sv.length>=6 ? (sv.slice(-3).reduce((a,b)=>a+b,0)-sv.slice(0,3).reduce((a,b)=>a+b,0))/3 : -1e9; }) : (r=>r.v||0);
     let rows=DATA.data[L.key].rows.filter(r=>Array.isArray(r.c)).sort((a,b)=>score(b)-score(a));
@@ -1675,11 +1675,12 @@ async function tourStep(st,i,n,id,qi){
     const xs=rows.map(r=>r.c[0]), ys=rows.map(r=>r.c[1]);
     const w=Math.min(...xs), e=Math.max(...xs), so=Math.min(...ys), no=Math.max(...ys);
     const span=Math.max(e-w,no-so,0.004)*1.6, zoom=Math.max(11,Math.min(13.5,Math.log2(360/span)-0.6));
-    view={...view,longitude:(w+e)/2,latitude:(so+no)/2,zoom,pitch:mode3d?50:0,bearing:mode3d?-15:0,transitionDuration:1800};
-    deckgl.setProps({initialViewState:view});
+    if(st.fitData){ view={...view,longitude:(w+e)/2,latitude:(so+no)/2,zoom,pitch:mode3d?50:0,bearing:mode3d?-15:0,transitionDuration:1800};
+      deckgl.setProps({initialViewState:view}); }
+    else tourHome();                                           // nameData: name the places, keep the whole city in view
     await loadPlaces();
     const names=[...new Set(rows.map(r=>String(cellWhere(r)||"").replace(/^near /,"").replace(/ \([0-9.]+ km\)$/,"")).filter(n=>n&&!/^\d/.test(n)))].slice(0,3);
-    if(names.length) tourCap(st.title||(L&&L.label)||"", (st.cap||"")+" Now: "+names.join(" · ")+".", prog);
+    if(names.length) tourCap(st.title||(L&&L.label)||"", (st.cap||"")+(st.nameData==="growth"?" Grew most around: ":" Now: ")+names.join(" · ")+".", prog);
   }
   else if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0];
     if(hit) psGo(hit);
@@ -1687,6 +1688,20 @@ async function tourStep(st,i,n,id,qi){
       if(cr){ if(window.setAskPin) setAskPin([cr.h3]); drillInto(cr); } else tourHome(); } }
   else if(st.fly){ view={...view,longitude:st.fly[0],latitude:st.fly[1],zoom:st.fly[2],pitch:mode3d?45:0,transitionDuration:1600}; deckgl.setProps({initialViewState:view}); }
   else tourHome();
+  if(st.news){                                                 // fly to a few serious, placed news items, one at a time
+    await tourSleep(2500,id);
+    const rk={high:0,medium:1,low:2};
+    const items=(DATA.issues||[]).filter(x=>x.cat!=="other"&&x.title).sort((a,b)=>(rk[a.sev]??3)-(rk[b.sev]??3)||String(b.at).localeCompare(String(a.at))).slice(0,st.news);
+    for(let k=0;k<items.length&&tourOn(id);k++){ const it=items[k];
+      view={...view,longitude:it.c[0],latitude:it.c[1],zoom:13.5,pitch:0,bearing:0,transitionDuration:1500}; deckgl.setProps({initialViewState:view});
+      try{ if(window.setAskPin) setAskPin([h3.latLngToCell(it.c[1],it.c[0],9)]); }catch(e){}
+      const head=String(it.title).replace(/\s+-\s+[^-]{2,40}$/,"");
+      tourCap(head, [String(it.cat).replace(/_/g," "), it.sev&&(it.sev+" severity"), String(it.at||"").slice(0,10), it.place].filter(Boolean).join(" · "), prog+" · news "+(k+1)+"/"+items.length);
+      await tourSleep(6500,id); }
+    if(window.setAskPin) setAskPin([]);
+    if(!items.length) await tourSleep(st.dur||8000,id);
+    return;
+  }
   if(L&&L.temporal&&(L.times||[]).length>1){
     await tourSleep(1600,id); if(!tourOn(id)) return;
     startPlay(); await tourSleep(Math.min(L.times.length*650+900,30000),id); stopPlay();
