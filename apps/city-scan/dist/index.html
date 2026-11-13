@@ -187,6 +187,16 @@
     background:#0a1320d9;border:1px solid var(--edge2);border-radius:999px;padding:4px 13px;color:var(--muted);
     font-size:11.5px;opacity:0;transition:opacity .3s}
   .drillhint.show{opacity:1}
+  /* AUTO-RUN TOUR — caption card over the map; the header button starts / stops it */
+  .tourbtn{margin-left:auto;border:1px solid var(--edge2);background:#0e1c2a;color:var(--ink);border-radius:8px;
+    padding:5px 12px;font-size:12.5px;cursor:pointer}
+  .tourbtn:hover,.tourbtn.on{border-color:var(--accent);color:var(--accent)}
+  .tourcap{position:absolute;left:14px;bottom:70px;z-index:9;width:min(420px,70%);background:#0c1622f2;border:1px solid var(--accent);
+    border-radius:12px;padding:12px 14px;box-shadow:0 12px 36px #0008;backdrop-filter:blur(4px);pointer-events:none}
+  .tourcap[hidden]{display:none}
+  .tourcap .tk{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;display:flex;justify-content:space-between}
+  .tourcap .tt{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:4px}
+  .tourcap .tb{font-size:12.5px;color:var(--muted);line-height:1.5}
   .rampsel{margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
   .rampsel select{flex:1;background:#0e1c2a;color:inherit;border:1px solid var(--edge2);border-radius:6px;font-size:11.5px;padding:2px 4px}
   .rampsel button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:11px;text-decoration:underline;padding:0}
@@ -236,6 +246,7 @@
 <header>
   <h1><b>Visualize</b></h1>
   <div class="sub" id="sub">loading…</div>
+  <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and the City Analyst. Any click, scroll or key stops it and gives you control.">▶ Tour</button>
 </header>
 
 <div class="grid rc0" id="app">
@@ -263,6 +274,7 @@
     <div class="drillhint" id="drillhint">click a cell to drill in · Esc to exit</div>
     <div class="psearch"><span class="pico">🔍</span><input id="psq" type="search" autocomplete="off" placeholder="Find a place — e.g. Nilasandra, Jayanagar…" aria-label="Find a place"><div class="psres" id="psres"></div></div>
     <div class="scrubber" id="scrubber" hidden></div>
+    <div class="tourcap" id="tourcap" hidden></div>
     <div class="trend" id="trend" hidden></div>
     <div class="busy" id="busy" hidden></div>
     <div class="tip" id="tip"></div>
@@ -1582,6 +1594,104 @@ function initClearCache(){
     armed=false; b.textContent="🗑"; tip();
   };
 }
+// ── AUTO-RUN TOUR: every layer in story order (animated ones play through their years), a ward close-up, then the
+// City Analyst answering a few questions — on a loop. Data is PRELOADED first so no step waits on a download. Any real
+// click / scroll / key stops it (the tour itself never fires DOM events). ?tour=1 starts it on load (kiosk / demo).
+const TOUR_STEPS=[
+  {title:"Bangalore, seen through its data", cap:"Every layer is governed city data with its source and freshness. This tour plays each one — click anywhere to take over.", dur:6500},
+  {layer:"demographics.census_ward", d3:true, title:"Who lives where", cap:"Population density by ward, census 2011 — taller and darker means more people per km²."},
+  {layer:"demographics.population", d3:true},
+  {layer:"air.quality"}, {layer:"air.hotspot"}, {layer:"cell.aod"},
+  {layer:"cell.hydrology", overlays:["water"], title:"Where water collects", cap:"Flood susceptibility from terrain, with the natural drainage network."},
+  {layer:"water.lake_cell", fly:[77.665,12.935,12.4], title:"Lakes, 1995–2021", cap:"Satellite water extent year by year — watch Bellandur and its neighbours fill and shrink."},
+  {layer:"cell.heat"}, {layer:"cell.rainfall"},
+  {layer:"mobility.transit_access", d3:true, overlays:["transit"], title:"Who is far from transit", cap:"Tall red = many people far from a bus stop or metro station, with the public transport network."},
+  {layer:"mobility.walkability"},
+  {layer:"mobility.chokepoint", overlays:["roads"], title:"Where the road network chokes", cap:"A proxy: the junctions most of the city's shortest routes pass through — not measured traffic."},
+  {overlays:["fac:healthcare","fac:education","fac:emergency","fac:sanitation"], title:"Public services", cap:"Health (red), education (blue), safety (orange) and sanitation (teal) service points."},
+  {layer:"econ.nightlight_trend", d3:true, title:"How the city grew, 2014–2025", cap:"Night-time light by year — a satellite proxy for activity, not income."},
+  {layer:"works.ward_cell", title:"Where the money went, 2012–2022", cap:"Public works paid per ward, year by year."},
+  {layer:"procurement.ward_cell"},
+  {overlays:["issues"], title:"City pulse", cap:"Civic issues from local news, placed where a report names a locality."},
+  {layer:"demographics.census_ward", place:"Nilasandra", d3:true, title:"Down to one ward", cap:"Nilasandra — its buildings, roads and facilities in 3D.", dur:11000},
+  {ask:["Which crowded wards have weak metro access and low works spending per person?", "Tell me about Nilasandra",
+        "Which lakes have shrunk the most?", "If you were responsible for the city, what would be your top 5 priorities?"], title:"Ask the city"}];
+let TOUR=null;
+const tourOn=id=>!!TOUR&&TOUR.id===id;
+function tourSleep(ms,id){ return new Promise(res=>{ const t0=Date.now(); const k=setInterval(()=>{ if(!tourOn(id)||Date.now()-t0>=ms){ clearInterval(k); res(); } },150); }); }
+function tourCap(title,body,prog){ const el=$("tourcap"); if(!el) return; el.hidden=false;
+  el.innerHTML=`<div class="tk"><span>▶ Tour${prog?" · "+esc(prog):""}</span><span>click anywhere to take over</span></div><div class="tt">${esc(title||"")}</div><div class="tb">${esc(body||"")}</div>`; }
+function stopTour(msg){
+  if(!TOUR) return; TOUR=null; stopPlay();
+  const c=$("tourcap"); if(c) c.hidden=true; const b=$("tourbtn"); if(b){ b.textContent="▶ Tour"; b.classList.remove("on"); }
+  setBusy(msg||"Tour stopped — you're in control. ▶ Tour starts it again."); setTimeout(()=>setBusy(null),3500);
+}
+function tourOverlaysOff(){ showRoads=showRoadsLocal=showWater=showIssues=showTransit=false; FAC_ON.clear(); showFacilities=false; }
+async function tourOverlay(id){
+  if(id.startsWith("fac:")){ FAC_ON.add(id.slice(4)); showFacilities=true; await ensureOverlay("facilities"); return; }
+  if(id==="water") showWater=true; else if(id==="roads") showRoads=true; else if(id==="roads_local") showRoadsLocal=true;
+  else if(id==="issues") showIssues=true; else if(id==="transit") showTransit=true;
+  await ensureOverlay(id);
+}
+function tourHome(){ view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?50:0, bearing:0, transitionDuration:1400}; deckgl.setProps({initialViewState:view}); }
+function tour3d(on){ if(mode3d!==!!on && $("tilt")) $("tilt").onclick(); }
+const firstSentence=t=>{ const m=String(t||"").match(/^.*?[.!?](\s|$)/); return (m?m[0]:String(t||"")).trim().slice(0,220); };
+async function tourStep(st,i,n,id){
+  if(drillCell) exitDrill();
+  tourOverlaysOff(); stopPlay(); tIdx=0;
+  if(window.AOS_ASK) AOS_ASK.close();
+  setBasemap(st.basemap||"grey"); tour3d(!!st.d3);
+  const L=st.layer?LAYERS.find(l=>l.key===st.layer):null;
+  active=L?L.key:null; if(L){ setExplain(L.key); if(!DATA.data[L.key]) await ensureLayer(L); }
+  for(const o of (st.overlays||[])) await tourOverlay(o);
+  if(!tourOn(id)) return;
+  drawLayers(); render();
+  const prog=(i+1)+"/"+n;
+  if(st.ask){ await tourAsk(st,prog,id); return; }
+  tourCap(st.title||(L&&L.label)||"", st.cap||(L?firstSentence(L.interp||L.desc):""), prog);
+  if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0]; if(hit) psGo(hit); }
+  else if(st.fly){ view={...view,longitude:st.fly[0],latitude:st.fly[1],zoom:st.fly[2],pitch:mode3d?45:0,transitionDuration:1600}; deckgl.setProps({initialViewState:view}); }
+  else tourHome();
+  if(L&&L.temporal&&(L.times||[]).length>1){
+    await tourSleep(1600,id); if(!tourOn(id)) return;
+    startPlay(); await tourSleep(Math.min(L.times.length*650+900,30000),id); stopPlay();
+    await tourSleep(1800,id);
+  } else await tourSleep(st.dur||9000,id);
+}
+async function tourAsk(st,prog,id){
+  if(!window.AOS_ASK) return;
+  tourHome(); AOS_ASK.open(true);
+  for(const q of st.ask){
+    if(!tourOn(id)) return;
+    tourCap(st.title||"Ask the city", "“"+q+"”", prog);
+    await AOS_ASK.type(q,id); if(!tourOn(id)) return;
+    await AOS_ASK.run(); if(!tourOn(id)) return;
+    const r=AOS_ASK.firstRef();                                    // light up the answer's first place on the map
+    if(r){ const cells=r.dataset.h3.split(","); AOS_ASK.pin(cells); r.classList.add("pin");
+      try{ const c=h3.cellToLatLng(cells[0]); view={...view,longitude:c[1],latitude:c[0],zoom:Math.max(view.zoom||11,13),transitionDuration:1200}; deckgl.setProps({initialViewState:view}); }catch(e){} }
+    await tourSleep(11000,id);
+  }
+  AOS_ASK.close();
+}
+async function startTour(){
+  if(TOUR){ stopTour("Tour stopped."); return; }
+  const id=Date.now(); TOUR={id};
+  const b=$("tourbtn"); if(b){ b.textContent="■ Stop tour"; b.classList.add("on"); }
+  if(!PRELOADED){                                                 // every layer into this browser first (cached 7 days)
+    const tick=()=>{ const pb=$("preloadall"); tourCap("Preparing the tour","Loading every layer into this browser so each step opens instantly"+(pb&&/\d/.test(pb.textContent)?" — "+pb.textContent:"")+"…",""); };
+    tick(); const k=setInterval(()=>{ if(tourOn(id)) tick(); },500);
+    await (PRELOADING ? new Promise(res=>{ const w=setInterval(()=>{ if(!PRELOADING){ clearInterval(w); res(); } },300); }) : preloadAll());
+    clearInterval(k);
+  }
+  const steps=TOUR_STEPS.filter(st=>!st.layer||LAYERS.some(l=>l.key===st.layer));
+  while(tourOn(id)){ for(let i=0;i<steps.length&&tourOn(id);i++) await tourStep(steps[i],i,steps.length,id); }
+}
+function initTour(){
+  const b=$("tourbtn"); if(b) b.onclick=()=>startTour();
+  const stop=e=>{ if(!TOUR||!e.isTrusted) return; if(e.target&&e.target.closest&&e.target.closest("#tourbtn")) return; stopTour(); };
+  ["pointerdown","wheel","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,stop,{capture:true,passive:true}));
+  try{ if(new URLSearchParams(location.search).get("tour")==="1") setTimeout(()=>startTour(),1200); }catch(e){}
+}
 async function reloadAll(){                                    // re-fetch the active choropleth + every SHOWN overlay — FRESH:
   const btn=$("reloadall"); if(btn){ btn.disabled=true; btn.textContent="…"; }   // bypass the browser cache
   FRESH=true;
@@ -1597,7 +1707,7 @@ async function reloadAll(){                                    // re-fetch the a
 // PRELOAD ALL — warm the browser cache for a demo: every choropleth layer (2 at a time) then every overlay (one at a time —
 // the road loaders already run 3 queries each; staging Postgres has 64 MB shared memory), plus the lake shorelines,
 // lake summaries and the place-search lists. Uses the cache where it is still valid, so a second run is quick.
-let PRELOADING=false;
+let PRELOADING=false, PRELOADED=false;
 async function preloadAll(){
   if(PRELOADING) return; PRELOADING=true;
   const btn=$("preloadall"), t0=Date.now(); const ovs=["roads","water","facilities","issues","transit","roads_local"];
@@ -1614,7 +1724,7 @@ async function preloadAll(){
   if(btn){ btn.disabled=false; btn.textContent="⇣"; btn.title=`Preload all — last run: ${total-failed}/${total} cached in ${secs}s`+(failed?` (${failed} failed — run again)`:""); }
   setBusy(failed?`Preloaded ${total-failed}/${total} — ${failed} failed, run again`:`All ${total} layers cached in this browser (${secs}s)`);
   setTimeout(()=>setBusy(null),4000);
-  drawLayers(); drawExplain(); render(); PRELOADING=false;
+  drawLayers(); drawExplain(); render(); PRELOADING=false; PRELOADED=true;
 }
 function drawLayers(){
   const tree=buildTree(); let html="";
@@ -1777,6 +1887,7 @@ function fitView(bbox){
   if($("reloadall")) $("reloadall").onclick=()=>reloadAll();   // re-fetch active layer + shown overlays
   if($("preloadall")) $("preloadall").onclick=()=>preloadAll(); // warm the browser cache with every layer (demo prep)
   initClearCache();
+  initTour();
   document.querySelectorAll('.bmbtn').forEach(b=>b.onclick=()=>setBasemap(b.dataset.bm));   // basemap style switcher
   document.querySelectorAll('.bmbtn').forEach(b=>b.classList.toggle('on', b.dataset.bm===basemap));
   { const a=$("attrib"); if(a) a.textContent="Basemap "+(BASEMAPS[basemap]||BASEMAPS.standard).attr; }
@@ -1956,5 +2067,13 @@ function fitView(bbox){
   }
   G('asksend').onclick=ask;
   G('askq').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();ask();}});
+  window.setAskPin=setAskPin;                                      // the place search's pin (was unreachable from the main script)
+  window.AOS_ASK={                                                 // the auto-run tour drives the panel through this
+    open:(wide)=>{ G('askpanel').hidden=false; setWide(!!wide); },
+    close:()=>{ G('askpanel').hidden=true; setAskHover([]); setAskPin([]); },
+    type:async(q,id)=>{ const el=G('askq'); el.value=''; for(const ch of q){ if(typeof TOUR!=="undefined"&&(!TOUR||TOUR.id!==id)) return; el.value+=ch; await new Promise(r=>setTimeout(r,24)); } },
+    run:()=>ask(),
+    pin:(cells)=>setAskPin(cells),
+    firstRef:()=>{ const ms=G('asklog').querySelectorAll('.am.ai'); const m=ms[ms.length-1]; return m?m.querySelector('.cellref'):null; }};
 })();
 </script>
