@@ -1,0 +1,26 @@
+# A DRIVER (kind=driver) — NARRATION: text → speech audio, generated ONCE and kept. Reusable by any app or flow.
+# The registry is the cache: `media.narration_clip` maps a narration key (sha-256 of language | voice | model | pace |
+# text) to an audio file in the filestore; `media.narration_request` is how a player asks for a line that has no clip yet.
+# Each run synthesises the PENDING requests (or NARRATE_TEXT) that have no clip, through the broker's egress with the
+# provider key injected from Vault (the driver never sees the key), stores the audio in the filestore and writes the
+# clip record. Playing is the player's job (an app fetches the file by its id); this driver never plays anything.
+component_id: ds:airawat:driver/narration
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Narration (text to speech)
+entrypoint: run.py
+confinement_min: L1
+reads: [media.narration_request, media.narration_clip]
+writes: [media.narration_clip, media.narration_request]
+egress:
+  - { host: api.sarvam.ai, rate_per_min: 60, user_agent: "AirawatOS/narration (+https://airawat.org)" }
+secrets: [SARVAM_API_KEY]          # Component Settings → Vault; injected by the broker as the api-subscription-key header
+config:  [NARRATION_LANGUAGE, NARRATION_VOICE, NARRATION_MODEL, NARRATION_PACE, NARRATE_TEXT, MAX_LINES]
+sources:
+  - { ref: "ds:airawat:ref/source/sarvam", host: api.sarvam.ai, provides: [media.narration_clip] }
+scopes:
+  - { verb: read,  scope: media.narration_request }
+  - { verb: read,  scope: media.narration_clip }
+  - { verb: write, scope: media.narration_clip }
+  - { verb: write, scope: media.narration_request }
