@@ -1719,7 +1719,7 @@ function initClearCache(){
 // What AirawatOS is — shown while the city's data loads (and as the first step when it is already cached).
 const INTRO=[
   {t:"AirawatOS — shared data infrastructure", b:"One platform that any city or district can run as shared public infrastructure, instead of every department building its own."},
-  {t:"Open data, already plugged in", b:"It comes with open data connected: satellites, OpenStreetMap, air-quality stations, the census, weather and public finance — each record with its source and how fresh it is."},
+  {t:"Open data, already plugged in", b:"It comes with open data connected: satellites, OpenStreetMap, air-quality stations, the census and weather — each record with its source and how fresh it is."},
   {t:"Agencies bring their own", b:"Departments plug in their internal data, build analytics on top of it, and configure AI agents that answer questions and flag what needs attention."},
   {t:"Shared, reliably", b:"Agencies share data with each other under rules the data owner sets, and every number can be traced back to where it came from."}];
 // shown after the intro cards while the data is still loading: what is loading, in this city's numbers
@@ -1748,11 +1748,9 @@ const TOUR_STEPS=[
   {layer:"mobility.chokepoint", overlays:["roads"], title:"Where the road network chokes", cap:"A proxy: the junctions most of the city's shortest routes pass through — not measured traffic."},
   {overlays:["fac:healthcare","fac:education","fac:emergency","fac:sanitation"], title:"Public services", cap:"Health (red), education (blue), safety (orange) and sanitation (teal) service points."},
   {layer:"econ.nightlight_trend", d3:true, nameData:"growth", title:"How the city grew, 2014–2025", cap:"Night-time light by year across the city — a satellite proxy for activity, not income."},
-  {layer:"works.ward_cell", title:"Where the money went, 2012–2022", cap:"Public works paid per ward, year by year."},
-  {layer:"procurement.ward_cell"},
   {overlays:["issues"], news:3, title:"City pulse", cap:"Civic issues from local news, placed where a report names a locality."},
   {layer:"demographics.census_ward", place:"Nilasandra", d3:true, title:"Down to one ward", cap:"Nilasandra — its buildings, roads and facilities in 3D.", dur:11000},
-  {ask:["Which crowded wards have weak metro access and low works spending per person?", "Tell me about Nilasandra",
+  {ask:["Which crowded wards are furthest from a metro station or bus stop?", "Tell me about Nilasandra",
         "Which lakes have shrunk the most?", "If you were responsible for the city, what would be your top 5 priorities?"], title:"Ask the city"}];
 let TOUR=null, TOUR_AT=null;      // TOUR_AT = {i, qi}: where a stopped tour resumes
 const tourOn=id=>!!TOUR&&TOUR.id===id&&TOUR.jump==null;        // a pending back / next ends the current step
