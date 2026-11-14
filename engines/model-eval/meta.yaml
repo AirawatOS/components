@@ -1,0 +1,26 @@
+# An ENGINE (kind=engine) — MODEL EVALUATION on the platform's own tasks. Runs pending intelligence.eval_run records:
+# every model × active case of a suite, sent through the broker's /v1/complete NAMING the model (the gateway routes by
+# task + model — the production path), scored deterministically, written as intelligence.eval_result, summarised on the
+# run. With SEED_DOC it builds a norm-extraction suite from a knowledge.document, each case exactly the call
+# engine/rule-extract makes; expected answers come from APPROVED governance.rule records for that section.
+# Managed from the Model Lab app.
+component_id: ds:airawatdeveloper:engine/model-eval
+kind: engine
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Model Evaluation
+entrypoint: run.py
+confinement_min: L1
+reads: [intelligence.eval_case, intelligence.eval_run, knowledge.document, knowledge.version, knowledge.chunk, governance.rule]
+writes: [intelligence.eval_case, intelligence.eval_run, intelligence.eval_result]
+config: [SEED_DOC, SEED_SUITE, SEED_FOCUS, SEED_LIMIT, MAX_CASES]
+scopes:
+  - { verb: read,  scope: intelligence.eval_case }
+  - { verb: read,  scope: intelligence.eval_run }
+  - { verb: read,  scope: knowledge.document }
+  - { verb: read,  scope: knowledge.version }
+  - { verb: read,  scope: knowledge.chunk }
+  - { verb: read,  scope: governance.rule }
+  - { verb: write, scope: intelligence.eval_case }
+  - { verb: write, scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_result }

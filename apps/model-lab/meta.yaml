@@ -1,0 +1,16 @@
+# An APP (kind=app) — MODEL LAB: test language models on the platform's own tasks before routing them. Suites of
+# intelligence.eval_case (built from a knowledge document's sections, or added by hand), expected answers labelled in
+# place, runs against a list of models through the model gateway (engine/model-eval), a leaderboard and side-by-side
+# answers. The app writes cases and run requests; the engine does the calls and the scoring.
+component_id: ds:airawat:app/model-lab
+kind: app
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Model Lab
+description: Test language models on the platform's own tasks — suites built from real documents, expected answers labelled in place, runs through the model gateway, a leaderboard and side-by-side answers.
+entrypoint: index.html
+icon: 🧪
+required_schemas: [intelligence.eval_case, intelligence.eval_run, intelligence.eval_result, intelligence.provider, knowledge.document]
+writes: [intelligence.eval_case, intelligence.eval_run]
+roles: []
+sandboxed: true

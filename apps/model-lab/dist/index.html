@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Model Lab</title>
+<style>
+  :root{--bg:#0b1520;--panel:#0f1d2b;--edge:#1f3247;--edge2:#2a4560;--ink:#e6edf5;--muted:#9fb3c8;--dim:#7c8fa3;--accent:#38bdf8;--good:#34d399;--warn:#fbbf24;--bad:#f87171}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+  header{padding:16px 22px 0 84px;border-bottom:1px solid var(--edge)} h1{margin:0 0 4px;font-size:18px} .sub{color:var(--muted);margin:0 0 10px;font-size:13px}
+  .tabs{display:flex;gap:4px} .tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:8px 14px;font-size:14px;cursor:pointer}
+  .tab.on{color:var(--ink);border-color:var(--accent)} main{padding:18px 22px;max-width:1280px}
+  table{border-collapse:collapse;width:100%;font-size:13px} th,td{border-bottom:1px solid var(--edge);padding:7px 9px;text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px} td.n{text-align:right;font-variant-numeric:tabular-nums} tr.click{cursor:pointer} tr.click:hover td{background:#13263a}
+  .btn{background:var(--panel);border:1px solid var(--edge2);color:var(--ink);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+  .btn.p{background:var(--accent);color:#04121f;border-color:var(--accent);font-weight:600} .btn:disabled{opacity:.5;cursor:default}
+  .card{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0} label{color:var(--muted);font-size:12.5px}
+  input,select,textarea{background:#0a1622;border:1px solid var(--edge2);color:var(--ink);border-radius:7px;padding:6px 8px;font:13px system-ui}
+  textarea{width:100%;font-family:ui-monospace,Menlo,monospace;font-size:12px} pre{white-space:pre-wrap;word-break:break-word;background:#0a1622;border:1px solid var(--edge);border-radius:8px;padding:10px;font-size:12px;max-height:340px;overflow:auto;margin:6px 0}
+  .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;border:1px solid var(--edge2);color:var(--muted)}
+  .pill.good{color:var(--good);border-color:var(--good)} .pill.warn{color:var(--warn);border-color:var(--warn)} .pill.bad{color:var(--bad);border-color:var(--bad)}
+  .bar{height:8px;border-radius:4px;background:var(--edge);overflow:hidden;min-width:80px} .bar i{display:block;height:100%;background:var(--accent)}
+  .msg{color:var(--muted);font-size:13px;margin:8px 0} .err{color:var(--bad)} .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+  .muted{color:var(--muted)} .small{font-size:12px}
+</style></head>
+<body>
+<header>
+  <h1>🧪 Model Lab</h1>
+  <p class="sub" id="sub">Test language models on this platform's own tasks before routing them.</p>
+  <div class="tabs"><button class="tab on" data-t="suites">Suites</button><button class="tab" data-t="cases">Cases</button><button class="tab" data-t="runs">Runs</button><button class="tab" data-t="results">Results</button></div>
+</header>
+<main id="main"><p class="msg">Loading…</p></main>
+<script>
+const APPID="model-lab", ENGINE="ds:airawatdeveloper:engine/model-eval";
+let TENANT="", ME="", TAB="suites", CASES=[], RUNS=[], DOCS=[], MODELS=[], SUITE=null, RUN=null, CASE=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const iso=()=>new Date().toISOString().replace(/\.\d+Z$/,"Z");
+const slug=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"x";
+async function q(schema,extra){ let out=[], cursor=null;
+  for(let p=0;p<40;p++){ const body=Object.assign({app_id:APPID,schema,limit:2000},extra||{}); if(cursor) body.cursor=cursor;
+    const r=await fetch("/bridge/query",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(schema+" "+r.status); const d=await r.json(); const rows=(d.results||[]).map(x=>x.object||x);
+    out=out.concat(rows); cursor=d.next_cursor; if(!cursor||!rows.length) break; }
+  return out.filter(o=>String(o.id||"").startsWith("ds:"+TENANT+":")); }
+async function save(obj){ const r=await fetch("/bridge/save",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({app_id:APPID,object:obj})});
+  const t=await r.text(); if(!r.ok) throw new Error(t.slice(0,200)); return t; }
+async function runEngine(env){ const r=await fetch("/bridge/run",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(env?{component:ENGINE,env}:{component:ENGINE})});
+  const t=await r.text(); if(!r.ok) throw new Error(t.slice(0,200)); return t; }
+function suites(){ const m={}; for(const c of CASES){ const s=m[c.suite]=m[c.suite]||{name:c.suite,cases:0,active:0,labelled:0,task:c.task,vis:{}}; s.cases++; if(c.status==="active") s.active++; if(c.labelled) s.labelled++; s.vis[c.visibility]=1; }
+  for(const r of RUNS){ const s=m[r.suite]; if(s&&(!s.last||String(r.requested_at)>String(s.last.requested_at))) s.last=r; }
+  return Object.values(m).sort((a,b)=>a.name.localeCompare(b.name)); }
+function setTab(t){ TAB=t; document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.t===t)); render(); }
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+const pct=x=>x==null?"—":Math.round(x*100)+"%";
+const scorePill=x=>x==null?'<span class="pill">—</span>':`<span class="pill ${x>=0.8?"good":x>=0.5?"warn":"bad"}">${pct(x)}</span>`;
+
+function render(){ const el=$("main");
+  if(TAB==="suites") return renderSuites(el);
+  if(TAB==="cases") return renderCases(el);
+  if(TAB==="runs") return renderRuns(el);
+  return renderResults(el); }
+
+function renderSuites(el){ const ss=suites();
+  el.innerHTML=`<div class="card"><b>Build a suite from a document</b><p class="msg">One test case per section that mentions the focus words — each case is exactly the call the norm extractor makes. Expected answers come from norms already approved for that section; the rest are labelled in the Cases tab.</p>
+    <div class="row"><label>Document</label><select id="sdoc">${DOCS.map(d=>`<option value="${esc(d.doc_id)}">${esc(d.title)}</option>`).join("")||"<option value=''>No documents in this tenant's knowledge base</option>"}</select>
+    <label>Focus words</label><input id="sfocus" size="40" value="per capita, lpcd, water supply, sewage, solid waste">
+    <label>Cases</label><input id="slimit" type="number" value="30" style="width:70px"><button class="btn p" id="sgo">Build suite</button></div><div id="smsg" class="msg"></div></div>
+  <table><tr><th>Suite</th><th>Task</th><th class="n">Cases</th><th class="n">Labelled</th><th>Visibility</th><th>Last run</th><th>Best model</th></tr>
+  ${ss.map(s=>{ const best=s.last&&s.last.summary?Object.entries(s.last.summary).sort((a,b)=>b[1].score-a[1].score)[0]:null;
+    return `<tr class="click" data-s="${esc(s.name)}"><td><b>${esc(s.name)}</b></td><td>${esc(s.task)}</td><td class="n">${s.active}/${s.cases}</td><td class="n">${s.labelled}</td><td>${Object.keys(s.vis).map(v=>`<span class="pill">${esc(v)}</span>`).join(" ")}</td>
+    <td>${s.last?`${esc(String(s.last.requested_at||"").slice(0,16).replace("T"," "))} <span class="pill">${esc(s.last.status)}</span>`:'<span class="muted">none</span>'}</td><td>${best?`${esc(best[0])} ${scorePill(best[1].score)}`:"—"}</td></tr>`; }).join("")||'<tr><td colspan="7" class="muted">No suites yet — build one from a document above.</td></tr>'}</table>`;
+  el.querySelectorAll("tr[data-s]").forEach(tr=>tr.onclick=()=>{ SUITE=tr.dataset.s; setTab("cases"); });
+  $("sgo").onclick=async()=>{ const doc=$("sdoc").value; if(!doc) return; const name="norms-"+slug(doc).slice(0,40);
+    $("sgo").disabled=true; $("smsg").textContent="Building suite "+name+"…";
+    try{ await runEngine({SEED_DOC:doc,SEED_SUITE:name,SEED_FOCUS:$("sfocus").value,SEED_LIMIT:String($("slimit").value||30)});
+      $("smsg").textContent="Started — the cases appear here in a minute or two (refreshing)."; SUITE=name; setTimeout(()=>reload().then(render),60000); }
+    catch(e){ $("smsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } finally{ $("sgo").disabled=false; } }; }
+
+function renderCases(el){ const ss=suites(); SUITE=SUITE||(ss[0]||{}).name;
+  const cs=CASES.filter(c=>c.suite===SUITE).sort((a,b)=>a.id.localeCompare(b.id));
+  const c=CASE&&cs.find(x=>x.id===CASE.id);
+  el.innerHTML=`<div class="row"><label>Suite</label><select id="csuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select><span class="muted small">${cs.length} cases · ${cs.filter(x=>x.labelled).length} labelled</span></div>
+  <div class="grid2"><div><table><tr><th>Case</th><th>Labelled</th><th>Status</th></tr>${cs.map(x=>`<tr class="click" data-c="${esc(x.id)}"><td>${esc((x.source||{}).label||x.title)}</td><td>${x.labelled?`<span class="pill good">${((x.expected||{}).norms||[]).length} expected</span>`:'<span class="pill">not yet</span>'}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join("")||'<tr><td colspan="3" class="muted">No cases.</td></tr>'}</table></div>
+  <div>${c?caseEditor(c):'<p class="msg">Pick a case to see its prompt and label its expected answer.</p>'}</div></div>`;
+  $("csuite").onchange=e=>{ SUITE=e.target.value; CASE=null; render(); };
+  el.querySelectorAll("tr[data-c]").forEach(tr=>tr.onclick=()=>{ CASE=CASES.find(x=>x.id===tr.dataset.c); render(); });
+  if(c) bindEditor(c); }
+function caseEditor(c){ const exp=c.expected||{}; const prompt=((c.messages||[])[0]||{}).content||"";
+  const sect=(prompt.split("Text:\n")[1]||prompt).split("\n\nOutput ONLY")[0];
+  return `<div class="card"><b>${esc(c.title)}</b><div class="small muted">scorer ${esc(c.scorer)} · answer budget ${esc(c.max_tokens)} tokens · ${esc(c.visibility)}</div>
+    <p class="msg">Section text (the full prompt is what the model receives):</p><pre>${esc(sect.slice(0,4000))}</pre>
+    <p class="msg">Expected norms — a JSON list of {metric, operator, value, unit}; an empty list means "this section states no quantitative norm". Saving marks the case labelled.</p>
+    <textarea id="cexp" rows="8">${esc(JSON.stringify(exp.norms||[],null,1))}</textarea>
+    <div class="row"><button class="btn p" id="csave">Save expected answer</button><button class="btn" id="cret">${c.status==="active"?"Retire case":"Re-activate"}</button><span id="cmsg" class="msg"></span></div></div>`; }
+function bindEditor(c){ $("csave").onclick=async()=>{ let norms; try{ norms=JSON.parse($("cexp").value); if(!Array.isArray(norms)) throw new Error("must be a JSON list"); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; return; }
+    try{ await save(Object.assign({},c,{expected:{norms},labelled:true,updated_at:iso()})); $("cmsg").textContent="Saved."; await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } };
+  $("cret").onclick=async()=>{ try{ await save(Object.assign({},c,{status:c.status==="active"?"retired":"active",updated_at:iso()})); await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } }; }
+
+function renderRuns(el){ const ss=suites();
+  el.innerHTML=`<div class="card"><b>New run</b><p class="msg">Each model answers every active case of the suite through the model gateway — the same path production uses. One run at a time per Run; a model name the gateway does not know is recorded as served by whichever model it routed to.</p>
+    <div class="row"><label>Suite</label><select id="rsuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select></div>
+    <div class="row"><label>Models</label>${MODELS.map(m=>`<label><input type="checkbox" class="rm" value="${esc(m)}" checked> ${esc(m)}</label>`).join(" ")}<input id="rmore" placeholder="more model names, comma-separated" size="34"></div>
+    <div class="row"><input id="rnote" placeholder="note (optional)" size="50"><button class="btn p" id="rgo">Start run</button><span id="rmsg" class="msg"></span></div></div>
+  <table><tr><th>Requested</th><th>Suite</th><th>Models</th><th>Status</th><th>Note</th></tr>${RUNS.slice().sort((a,b)=>String(b.requested_at).localeCompare(String(a.requested_at))).map(r=>`<tr class="click" data-r="${esc(r.id)}"><td>${esc(String(r.requested_at||"").slice(0,16).replace("T"," "))}</td><td>${esc(r.suite)}</td><td>${(r.models||[]).map(esc).join(", ")}</td><td><span class="pill ${r.status==="done"?"good":r.status==="failed"?"bad":"warn"}">${esc(r.status)}</span>${r.error?` <span class="err small">${esc(r.error)}</span>`:""}</td><td class="small">${esc(r.note||"")}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">No runs yet.</td></tr>'}</table>`;
+  el.querySelectorAll("tr[data-r]").forEach(tr=>tr.onclick=()=>{ RUN=RUNS.find(x=>x.id===tr.dataset.r); setTab("results"); });
+  $("rgo").onclick=async()=>{ const suite=$("rsuite").value; const models=[...document.querySelectorAll(".rm:checked")].map(x=>x.value).concat($("rmore").value.split(",").map(s=>s.trim()).filter(Boolean));
+    if(!suite||!models.length){ $("rmsg").textContent="Pick a suite and at least one model."; return; }
+    const ts=iso(), obj={schema:"intelligence.eval_run",id:"ds:"+TENANT+":intelligence/eval_run/"+slug(suite)+"-"+ts.replace(/[^0-9]/g,""),tenant:TENANT,suite,models:[...new Set(models)],status:"pending",requested_by:ME,requested_at:ts,note:$("rnote").value||undefined};
+    $("rgo").disabled=true; try{ await save(obj); await runEngine(); $("rmsg").textContent="Started — results fill in as each model answers."; await reload(); render(); }
+    catch(e){ $("rmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } finally{ $("rgo").disabled=false; } }; }
+
+async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.requested_at).localeCompare(String(a.requested_at)));
+  RUN=RUN||runs[0]; if(!RUN){ el.innerHTML='<p class="msg">No runs yet.</p>'; return; }
+  el.innerHTML='<p class="msg">Loading results…</p>';
+  let res=[]; try{ res=(await q("intelligence.eval_result")).filter(r=>r.run_ref===RUN.id); }catch(e){ el.innerHTML='<p class="err">'+esc(e.message)+"</p>"; return; }
+  const models=RUN.models||[], byCase={}; for(const r of res){ (byCase[r.case_ref]=byCase[r.case_ref]||{})[r.model]=r; }
+  const agg=models.map(m=>{ const rs=res.filter(r=>r.model===m), n=rs.length||1;
+    const s=RUN.summary&&RUN.summary[m]; return {m, n:rs.length, score:rs.reduce((a,r)=>a+(r.score||0),0)/n, ans:rs.filter(r=>(r.metrics||{}).answered).length,
+      empty:rs.filter(r=>!r.error&&!(r.metrics||{}).answered).length, errs:rs.filter(r=>r.error).length, lat:rs.reduce((a,r)=>a+(r.latency_ms||0),0)/n,
+      tok:rs.reduce((a,r)=>a+(((r.usage||{}).completion_tokens)||0),0)/n, served:[...new Set(rs.map(r=>r.served_by).filter(Boolean))].join(", ")}; }).sort((a,b)=>b.score-a.score);
+  const caseTitle=id=>{ const c=CASES.find(x=>x.id===id); return c?((c.source||{}).label||c.title):id.split("/").pop(); };
+  el.innerHTML=`<div class="row"><label>Run</label><select id="rsel">${runs.map(r=>`<option value="${esc(r.id)}" ${r.id===RUN.id?"selected":""}>${esc(String(r.requested_at||"").slice(0,16).replace("T"," "))} · ${esc(r.suite)} · ${esc(r.status)}</option>`).join("")}</select><button class="btn" id="rref">Refresh</button></div>
+  <div class="card"><b>Leaderboard</b> <span class="muted small">${esc(RUN.suite)} · ${res.length} answers so far</span>
+  <table><tr><th>Model</th><th>Score</th><th></th><th class="n">Answered</th><th class="n">Empty</th><th class="n">Errors</th><th class="n">Avg time</th><th class="n">Avg tokens</th><th>Served by</th></tr>
+  ${agg.map(a=>`<tr><td><b>${esc(a.m)}</b></td><td>${scorePill(a.n?a.score:null)}</td><td><div class="bar"><i style="width:${Math.round(a.score*100)}%"></i></div></td><td class="n">${a.ans}/${a.n}</td><td class="n">${a.empty}</td><td class="n">${a.errs}</td><td class="n">${(a.lat/1000).toFixed(1)} s</td><td class="n">${Math.round(a.tok)}</td><td class="small">${esc(a.served)}</td></tr>`).join("")}</table>
+  <p class="small muted">Unlabelled cases score whether the model answered with valid norms whose numbers all appear in the section; labelled cases score F1 against the expected norms.</p></div>
+  <div class="card"><b>Answers side by side</b><table><tr><th>Case</th>${models.map(m=>`<th>${esc(m)}</th>`).join("")}</tr>
+  ${Object.keys(byCase).sort().map(cid=>`<tr class="click" data-cc="${esc(cid)}"><td>${esc(caseTitle(cid))}</td>${models.map(m=>{ const r=byCase[cid][m]; if(!r) return "<td class='muted'>…</td>";
+    const mt=r.metrics||{}; return `<td>${scorePill(r.score)} <span class="small muted">${r.error?"error":mt.answered?(mt.valid??"")+" valid, "+(mt.grounded??"")+" grounded":"empty"} · ${((r.latency_ms||0)/1000).toFixed(1)} s</span></td>`; }).join("")}</tr>
+    <tr id="x-${esc(slug(cid))}" hidden><td colspan="${models.length+1}"><div class="grid2">${models.map(m=>{ const r=byCase[cid][m]||{}; return `<div><b class="small">${esc(m)}</b>${r.error?`<p class="err small">${esc(r.error)}</p>`:""}<pre>${esc(r.output||"(no answer)")}</pre></div>`; }).join("")}</div></td></tr>`).join("")}</table></div>`;
+  $("rsel").onchange=e=>{ RUN=RUNS.find(x=>x.id===e.target.value); render(); };
+  $("rref").onclick=async()=>{ await reload(); RUN=RUNS.find(x=>x.id===RUN.id)||RUN; render(); };
+  el.querySelectorAll("tr[data-cc]").forEach(tr=>tr.onclick=()=>{ const x=document.getElementById("x-"+slug(tr.dataset.cc)); if(x) x.hidden=!x.hidden; }); }
+
+async function reload(){ [CASES,RUNS]=await Promise.all([q("intelligence.eval_case"),q("intelligence.eval_run")]); }
+(async()=>{ try{ const s=await (await fetch("/session",{credentials:"same-origin"})).json(); TENANT=s.tenant||""; ME=s.sub||"";
+    $("sub").textContent="Test language models on "+(s.tenant_name||TENANT)+"'s own tasks before routing them — through the same model gateway production uses.";
+    await reload();
+    try{ DOCS=(await q("knowledge.document")).filter(d=>d.status==="acquired"||d.current_version||d.status==="ready"); }catch(e){ DOCS=[]; }
+    try{ const prov=await fetch("/bridge/query",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({app_id:APPID,schema:"intelligence.provider",limit:200})}).then(r=>r.json());
+      MODELS=[...new Set((prov.results||[]).map(x=>x.object||x).filter(p=>p.enabled!==false).flatMap(p=>(p.models||[]).filter(m=>!m.task||m.task==="chat").map(m=>m.name)).filter(Boolean))]; }catch(e){ MODELS=[]; }
+    if(!MODELS.length) MODELS=["kimi-k3"];
+    render(); }
+  catch(e){ $("main").innerHTML='<p class="err">Could not load ('+esc(e.message)+").</p>"; } })();
+</script>
+</body></html>
