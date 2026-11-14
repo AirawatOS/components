@@ -26,7 +26,7 @@ BATCH = int(os.environ.get("BATCH", "10"))
 SLEEP = float(os.environ.get("GEOCODE_SLEEP", "1.1"))          # >=1s for Nominatim usage policy
 RECODE = os.environ.get("RECODE", "") not in ("", "0", "false")  # re-geocode issues that already have geometry
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-METHOD = "news-geocode@0.2.1"
+METHOD = "news-geocode@0.2.2"
 _GENERIC = {"the", "area", "locality", "layout", "extension", "road", "main", "cross", "circle", "junction"}
 
 
@@ -37,7 +37,26 @@ def _call(path, body, timeout=120):
 
 
 def query(scope):
-    return [r.get("object", r) for r in _call("/v1/query", {"scope": scope}).get("results", [])]
+    out, after = [], None
+    for _ in range(100):                                   # page through the whole set (issues accumulate every 3 h)
+        body = {"scope": scope, "limit": 1000}
+        if after:
+            body["after"] = after
+        res = _call("/v1/query", body)
+        rows = [r.get("object", r) for r in res.get("results", [])]
+        out += rows
+        after = res.get("next_cursor") or res.get("cursor")
+        if not after or not rows:
+            break
+    return out
+
+
+def pending(issues, recode=False):
+    """Issues to try this run, NEWEST first. An issue already tried (geocoded_at set) is not retried unless RECODE —
+    without that mark, an issue naming no locality stayed 'to geocode' for ever, and the per-run cap was spent on the
+    same oldest issues every run while new ones were never reached."""
+    todo = [i for i in issues if recode or not (i.get("geometry") or i.get("geocoded_at"))]
+    return sorted(todo, key=lambda i: str(i.get("observed_at") or ""), reverse=True)
 
 
 def write(scope, oid, obj):
@@ -163,6 +182,15 @@ def geocode(place):
         return None, None, 0.0
 
 
+def mark_tried(it, why):
+    """Record the attempt with the governed fields only (civic.issue is additionalProperties:false): geocoded_at +
+    the reason in geocode_method; no geometry, no place_label — the issue stays unplaced, never guessed."""
+    try:
+        write("civic.issue", it["id"], {**it, "geocoded_at": NOW, "geocode_method": "%s (%s)" % (METHOD, why)})
+    except Exception as e:
+        print(f"  ⚠ could not mark {it.get('id')} as tried: {str(e)[:120]}", flush=True)
+
+
 def main():
     if not TOKEN or not TENANT:
         print("news-geocode — handlers: extract_places, geocode (dev self-test, no tenant/token).")
@@ -181,7 +209,7 @@ def main():
         gaz = {}
     print(f"[news-geocode] city {CITY_HINT or '?'} · gazetteer {len(gaz)} names", flush=True)
     issues = [i for i in query("civic.issue") if (i.get("tenant") == TENANT or not i.get("tenant"))]
-    todo = [i for i in issues if RECODE or not i.get("geometry")][:MAX]
+    todo = pending(issues, RECODE)[:MAX]
     print(f"[news-geocode] {len(issues)} civic.issue · {len(todo)} to geocode (cap {MAX}) · viewbox={'yes' if VIEWBOX else 'no'}", flush=True)
     geocoded = no_place = unresolved = from_gaz = write_failed = 0
     for b in range(0, len(todo), BATCH):
@@ -190,7 +218,7 @@ def main():
         for i, it in enumerate(batch):
             place = places.get(i)
             if not place:
-                no_place += 1; continue
+                no_place += 1; mark_tried(it, "no locality named"); continue
             hit = gazetteer_lookup(gaz, place)
             if hit:
                 lon, lat, conf, how = hit[0], hit[1], hit[2], "gazetteer:" + hit[3]
@@ -200,7 +228,7 @@ def main():
                 how = "nominatim"
                 time.sleep(SLEEP)
             if lon is None:
-                unresolved += 1; continue
+                unresolved += 1; mark_tried(it, "unresolved: " + str(place)[:80]); continue
             # civic.issue is additionalProperties:false — the source rides in geocode_method, never a new field
             upd = {**it, "geometry": {"type": "Point", "coordinates": [lon, lat]},
                    "place_label": place, "geocode_confidence": conf, "geocoded_at": NOW,
