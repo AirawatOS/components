@@ -1,0 +1,605 @@
+{
+ "chp-1-sec-1-7-para-1-7-4": [],
+ "chp-2-sec-2-2-para-2-2-2": [],
+ "chp-3-sec-3-3-para-3-3-1-3-pt-3-3-1-3": [],
+ "chp-4-sec-4-3": [],
+ "chp-5-sec-5-4-para-5-4-3-3-pt-5-4-3-3": [],
+ "chp-5-sec-5-5-para-5-5-2-1-pt-5-5-2-1": [],
+ "chp-5-sec-5-5-para-5-5-4-1-pt-5-5-4-1": [],
+ "chp-5-sec-5-5-para-5-5-5-4-pt-5-5-5-4": [],
+ "chp-5-sec-5-6-para-5-6-1-2-pt-5-6-1-2": [],
+ "chp-5-sec-5-6-para-5-6-1-5-pt-5-6-1-5": [],
+ "chp-6-sec-6-2": [],
+ "chp-6-sec-6-2-para-6-2-1": [],
+ "chp-7-sec-7-4-para-7-4-1": [],
+ "chp-7-sec-7-5-para-7-5-2-1-pt-7-5-2-1": [],
+ "chp-8-sec-8-3-para-8-3-2-3-pt-8-3-2-3": [],
+ "chp-8-sec-8-3-para-8-3-6-1-pt-8-3-6-1": [],
+ "chp-8-sec-8-3-para-8-3-6-4-pt-8-3-6-4": [],
+ "chp-8-sec-8-5-para-8-5-4-3-pt-8-5-4-3": [],
+ "chp-3-sec-3-2": [
+  {
+   "metric": "peri_urban_area_extent",
+   "operator": "between",
+   "value": [
+    5,
+    8
+   ],
+   "unit": "km",
+   "condition": "around existing cities with more than 3 lakh population (metropolitan development plans)"
+  }
+ ],
+ "chp-5-sec-5-3-para-5-3-1": [
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    75,
+    125
+   ],
+   "unit": "pph",
+   "condition": "small towns, plain areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    45,
+    75
+   ],
+   "unit": "pph",
+   "condition": "small towns, hill areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    100,
+    150
+   ],
+   "unit": "pph",
+   "condition": "medium towns, plain areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    60,
+    90
+   ],
+   "unit": "pph",
+   "condition": "medium towns, hill areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    125,
+    175
+   ],
+   "unit": "pph",
+   "condition": "large cities, plain areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    60,
+    90
+   ],
+   "unit": "pph",
+   "condition": "large cities, hill areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    125,
+    175
+   ],
+   "unit": "pph",
+   "condition": "metropolitan cities, plain areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": "between",
+   "value": [
+    100,
+    150
+   ],
+   "unit": "pph",
+   "condition": "metropolitan cities, hill areas"
+  },
+  {
+   "metric": "developed_area_density",
+   "operator": ">",
+   "value": 200,
+   "unit": "pph",
+   "condition": "megapolis, plain areas"
+  }
+ ],
+ "chp-5-sec-5-5-para-5-5-6": [
+  {
+   "metric": "integrated_township_min_area",
+   "operator": ">=",
+   "value": 100,
+   "unit": "acres",
+   "condition": "Maharashtra township policy"
+  },
+  {
+   "metric": "integrated_township_min_area",
+   "operator": ">=",
+   "value": 10,
+   "unit": "ha",
+   "condition": "Rajasthan township policy"
+  },
+  {
+   "metric": "fdi_share_integrated_township",
+   "operator": "<=",
+   "value": 100,
+   "unit": "%",
+   "condition": "permitted by Government of India"
+  }
+ ],
+ "chp-8-sec-8-3-para-8-3-1-11-pt-8-3-1-11": [
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 50,
+   "unit": "years",
+   "condition": "storage by dams"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 30,
+   "unit": "years",
+   "condition": "infiltration works"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 30,
+   "unit": "years",
+   "condition": "pump house (civil works)"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 15,
+   "unit": "years",
+   "condition": "electric motors and pumps"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 15,
+   "unit": "years",
+   "condition": "water treatment units"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 30,
+   "unit": "years",
+   "condition": "pipe connections to treatment units and small appurtenances"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 30,
+   "unit": "years",
+   "condition": "raw and clear water conveying mains"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 15,
+   "unit": "years",
+   "condition": "clear water / balancing / service reservoirs"
+  },
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 30,
+   "unit": "years",
+   "condition": "distribution system"
+  }
+ ],
+ "chp-8-sec-8-3-para-8-3-2-2-pt-8-3-2-2": [
+  {
+   "metric": "design_period",
+   "operator": "==",
+   "value": 15,
+   "unit": "years",
+   "condition": "decentralised wastewater management (DWWM)"
+  },
+  {
+   "metric": "additional_capacity",
+   "operator": ">=",
+   "value": 20,
+   "unit": "%",
+   "condition": "DWWM designed on present-day capacity plus margin"
+  }
+ ],
+ "chp-8-sec-8-4-para-8-4-5-1-pt-8-4-5-1": [
+  {
+   "metric": "park_area",
+   "operator": ">=",
+   "value": 0.5,
+   "unit": "ha",
+   "condition": "housing area park, 1 per 5,000 population"
+  },
+  {
+   "metric": "park_area",
+   "operator": ">=",
+   "value": 1,
+   "unit": "ha",
+   "condition": "neighbourhood park, 1 per 15,000 population"
+  },
+  {
+   "metric": "park_area",
+   "operator": ">=",
+   "value": 5,
+   "unit": "ha",
+   "condition": "community park, 1 per 1 lakh population"
+  },
+  {
+   "metric": "park_area",
+   "operator": ">=",
+   "value": 25,
+   "unit": "ha",
+   "condition": "district park, 1 per 5 lakh population"
+  },
+  {
+   "metric": "park_area",
+   "operator": ">=",
+   "value": 100,
+   "unit": "ha",
+   "condition": "sub-city park, 1 per 10 lakh population"
+  }
+ ],
+ "chp-8-sec-8-4-para-8-4-5-3-pt-8-4-5-3": [
+  {
+   "metric": "park_area",
+   "operator": "between",
+   "value": [
+    0.5,
+    1.0
+   ],
+   "unit": "ha",
+   "condition": "hilly areas: housing area park, 1 per 5,000 population"
+  },
+  {
+   "metric": "park_area",
+   "operator": "between",
+   "value": [
+    1.2,
+    2.0
+   ],
+   "unit": "ha",
+   "condition": "hilly areas: neighbourhood park, 1 per 10,000 population"
+  },
+  {
+   "metric": "park_area",
+   "operator": "between",
+   "value": [
+    10,
+    20
+   ],
+   "unit": "ha",
+   "condition": "hilly areas: botanical garden, 1 per town"
+  },
+  {
+   "metric": "park_area",
+   "operator": "between",
+   "value": [
+    10,
+    12
+   ],
+   "unit": "ha",
+   "condition": "hilly areas: recreational complex incl. zoo, 1 per settlement with tourist potential"
+  }
+ ],
+ "chp-8-sec-8-4-para-8-4-5-4-pt-8-4-5-4": [
+  {
+   "metric": "multipurpose_ground_area",
+   "operator": ">=",
+   "value": 8,
+   "unit": "ha",
+   "condition": "sub-city level, 1 per 10 lakh population"
+  },
+  {
+   "metric": "multipurpose_ground_area",
+   "operator": ">=",
+   "value": 4,
+   "unit": "ha",
+   "condition": "district level, 1 per 5 lakh population"
+  },
+  {
+   "metric": "multipurpose_ground_area",
+   "operator": ">=",
+   "value": 2,
+   "unit": "ha",
+   "condition": "community level, 1 per 1 lakh population"
+  },
+  {
+   "metric": "town_open_space",
+   "operator": "between",
+   "value": [
+    1.0,
+    1.2
+   ],
+   "unit": "ha per 1000 persons",
+   "condition": "small towns"
+  },
+  {
+   "metric": "open_space_per_person",
+   "operator": "between",
+   "value": [
+    10,
+    12
+   ],
+   "unit": "sqm per person",
+   "condition": "small towns, entire planned area (basis of the 1.0-1.2 ha norm)",
+   "note": "borderline: stated as the calculation basis"
+  },
+  {
+   "metric": "town_open_space",
+   "operator": "between",
+   "value": [
+    1.4,
+    1.6
+   ],
+   "unit": "ha per 1000 persons",
+   "condition": "medium towns"
+  },
+  {
+   "metric": "town_open_space",
+   "operator": "between",
+   "value": [
+    1.2,
+    1.4
+   ],
+   "unit": "ha per 1000 persons",
+   "condition": "large cities, metropolitan cities and megapolis"
+  }
+ ],
+ "chp-8-sec-8-4-para-8-4-8": [
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 0.16,
+   "unit": "ha",
+   "condition": "police post, 1 per 40,000-50,000 population"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 1.5,
+   "unit": "ha",
+   "condition": "police station, 1 per 90,000 population"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 0.05,
+   "unit": "ha",
+   "condition": "additional at police station for civil defence and home guards"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 4.8,
+   "unit": "ha",
+   "condition": "district office and battalion (total), 1 per 10 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 0.8,
+   "unit": "ha",
+   "condition": "district office"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 4.0,
+   "unit": "ha",
+   "condition": "battalion"
+  },
+  {
+   "metric": "facility_area",
+   "operator": "between",
+   "value": [
+    4,
+    6
+   ],
+   "unit": "ha",
+   "condition": "police line, 1 per 20 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 10,
+   "unit": "ha",
+   "condition": "district jail, 1 per 10 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 2,
+   "unit": "ha",
+   "condition": "civil defence and home guards, 1 per 10 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 5,
+   "unit": "ha",
+   "condition": "police training institute / college, city level"
+  },
+  {
+   "metric": "facility_area",
+   "operator": "<=",
+   "value": 10,
+   "unit": "ha",
+   "condition": "police firing range, city level"
+  },
+  {
+   "metric": "facility_area",
+   "operator": "<=",
+   "value": 10,
+   "unit": "ha",
+   "condition": "police camp incl. central police organisations"
+  },
+  {
+   "metric": "facility_area",
+   "operator": "between",
+   "value": [
+    10,
+    12
+   ],
+   "unit": "sqm",
+   "condition": "police booth at major road intersections"
+  }
+ ],
+ "chp-8-sec-8-6-para-8-6-2": [
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 5000,
+   "unit": "sqm",
+   "condition": "dhobi ghat, 1 per 1 lakh population"
+  }
+ ],
+ "chp-8-sec-8-6-para-8-6-5": [
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 4,
+   "unit": "ha",
+   "condition": "telephone exchange of 40,000 lines, 1 per 4 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 1700,
+   "unit": "sqm",
+   "condition": "radio / TV station, 1 per 5-8 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 300,
+   "unit": "sqm",
+   "condition": "remote subscriber unit, 1 per 3 km radius"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 85,
+   "unit": "sqm",
+   "condition": "post office counter without delivery, 1 per 15,000"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 750,
+   "unit": "sqm",
+   "condition": "head post office with delivery office, 1 per 2.5 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 2500,
+   "unit": "sqm",
+   "condition": "head post office and administrative office, 1 per 5 lakh"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 75,
+   "unit": "sqm",
+   "condition": "bank with extension counters: counter floor area, 1 per 15,000"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 6,
+   "unit": "sqm",
+   "condition": "bank with extension counters: ATM floor area"
+  },
+  {
+   "metric": "facility_area",
+   "operator": ">=",
+   "value": 2500,
+   "unit": "sqm",
+   "condition": "bank with locker, ATM and other facilities, 1 per 1 lakh"
+  }
+ ],
+ "chp-9-sec-9-2": [
+  {
+   "metric": "health_centre_beds",
+   "operator": "<=",
+   "value": 20,
+   "unit": "beds",
+   "condition": "nursing homes / health centres permitted in residential zone"
+  },
+  {
+   "metric": "non_industrial_use_share",
+   "operator": "between",
+   "value": [
+    20,
+    30
+   ],
+   "unit": "%",
+   "condition": "M1 mixed industrial zone: maximum commercial, institutional, recreational and residential use"
+  },
+  {
+   "metric": "residential_use_share",
+   "operator": ">=",
+   "value": 60,
+   "unit": "%",
+   "condition": "M2 mixed residential zone"
+  },
+  {
+   "metric": "commercial_institutional_use_share",
+   "operator": ">=",
+   "value": 60,
+   "unit": "%",
+   "condition": "M3 mixed commercial zone"
+  },
+  {
+   "metric": "secondary_use_share",
+   "operator": "between",
+   "value": [
+    20,
+    50
+   ],
+   "unit": "%",
+   "condition": "restricted: M1 non-industrial / M2 non-polluting industrial use may be increased to"
+  },
+  {
+   "metric": "distance_from_aerodrome_reference_point",
+   "operator": ">=",
+   "value": 10,
+   "unit": "km",
+   "condition": "butcheries, tanneries and solid waste disposal sites prohibited within"
+  },
+  {
+   "metric": "slope",
+   "operator": ">",
+   "value": 45,
+   "unit": "degrees",
+   "condition": "undevelopable use zone (NBC)"
+  },
+  {
+   "metric": "eco_sensitive_zone_width",
+   "operator": "<=",
+   "value": 10,
+   "unit": "km",
+   "condition": "around a protected area (Wildlife Conservation Strategy 2002)"
+  }
+ ]
+}
