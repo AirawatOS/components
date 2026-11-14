@@ -312,21 +312,24 @@ def rescore(run_id, rerun_cut):
         raise SystemExit("no eval run %r" % run_id)
     cases = {c["id"]: c for c in mine("intelligence.eval_case")}
     results = [r for r in mine("intelligence.eval_result") if r.get("run_ref") == run_id]
-    rslug = slug(run_id.rsplit("/", 1)[-1], 40); redone = rerun = 0; new = []
+    rslug = slug(run_id.rsplit("/", 1)[-1], 40); redone = rerun = kept = 0; new = []
     for r in results:
         c = cases.get(r.get("case_ref"))
         if not c:
             new.append(r); continue
         out, served, usage, err, ms = r.get("output") or "", r.get("served_by"), r.get("usage"), r.get("error"), r.get("latency_ms")
         how = "rescored"
-        if rerun_cut and not err and len(out) >= OLD_CAP:
+        was_cut = len(out) == OLD_CAP and not str(((r.get("metrics") or {}).get("rescored") or {}).get("how", "")).startswith("re-asked")
+        if not err and was_cut:
+            if not rerun_cut:                      # a cut answer would score lower than the full one did — keep the original
+                new.append(r); kept += 1; continue
             out, served, usage, err, ms = ask(r["model"], c); how = "re-asked (answer had been cut at 6,000 characters)"; rerun += 1
         sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
         rec = result_record(run, rslug, r["model"], c, out, served, usage, err, ms, sc, met, rescored={"at": now(), "how": how, "was": r.get("score")})
         write("intelligence.eval_result", rec); new.append(rec); redone += 1
     summary = summarise(run, new)
     write("intelligence.eval_run", dict(run, summary=summary, note=((run.get("note") or "") + " · rescored " + now())[:500]))
-    print("rescored %s: %d results (%d re-asked)" % (run_id, redone, rerun), flush=True)
+    print("rescored %s: %d results (%d re-asked, %d cut answers kept as scored)" % (run_id, redone, rerun, kept), flush=True)
     print("RESULT: " + json.dumps({"run": run_id, "summary": summary}))
     return 0
 
