@@ -1,0 +1,34 @@
+# A DRIVER (kind=driver) — KNOWLEDGE INGEST, as a scheduled job. A person (or an app) adds a document by writing a
+# knowledge.ingest_request — the original already in the filestore (chunked upload → file_id) or an official URL — and
+# this driver does the rest on its schedule:
+#   pending  → extract the text in the DOCUMENTS runtime (pypdf), store the original + the text, write the
+#              knowledge.document (status acquired)                                                   → acquired
+#   then follows the downstream engines (their own schedules) and records where the document is:
+#              doc-chunk-version → sectioned · embed-chunks → indexed · rule-extract → rules_proposed → done
+# Every stage is idempotent and the request carries its stage, counts and any error (retried up to 3 attempts), so a
+# restart resumes instead of losing work. The app host does no extraction and holds no threads.
+component_id: ds:airawatdeveloper:driver/doc-ingest
+kind: driver
+version: 0.1.0
+provider: ds:airawat:developer
+display_name: Document Ingest (scheduled)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: documents                 # pypdf lives in the certified documents runtime, not the host
+reads: [knowledge.ingest_request, knowledge.document, knowledge.version, knowledge.chunk, knowledge.embedding, governance.rule]
+writes: [knowledge.ingest_request, knowledge.document]
+files: [get, put]
+egress:                              # official sources a request may name by URL (large PDFs: fetched directly, declared here)
+  - { host: www.mohua.gov.in, rate_per_min: 10, user_agent: "AirawatOS/doc-ingest (+https://airawat.org)" }
+  - { host: mohua.gov.in,     rate_per_min: 10, user_agent: "AirawatOS/doc-ingest (+https://airawat.org)" }
+config: [MAX_NEW_PER_RUN]
+scopes:
+  - { verb: read,  scope: knowledge.ingest_request }
+  - { verb: read,  scope: knowledge.document }
+  - { verb: read,  scope: knowledge.version }
+  - { verb: read,  scope: knowledge.chunk }
+  - { verb: read,  scope: knowledge.embedding }
+  - { verb: read,  scope: governance.rule }
+  - { verb: write, scope: knowledge.ingest_request }
+  - { verb: write, scope: knowledge.document }

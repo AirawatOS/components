@@ -1,0 +1,2 @@
+# The documents profile's shared library set: text extraction from PDF (pure Python, no system packages).
+pypdf==5.1.0

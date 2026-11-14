@@ -1,0 +1,18 @@
+# The DOCUMENTS runtime: where knowledge-ingest work that needs document libraries runs (text extraction from
+# official PDFs). A component declares `runtime: { profile: documents }`; the launcher places it in this certified
+# image. Keeps document parsing out of the app host and the runtime manager.
+component_id:   ds:airawatdeveloper:runtime/documents          # a CERTIFIABLE component (kind=runtime, ADR-0022/0030)
+kind:           runtime
+version:        0.1.0
+provider:       ds:airawatdeveloper:developer
+implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058) it satisfies
+runtime_id:     documents
+profile:        documents
+analytics_tier: descriptive                 # turns documents into text for indexing and norm extraction
+display_name:   Documents (PDF text extraction)
+image:          manishsv/airawatos-runtime-documents:0.1.0
+image_digest:   sha256:446c722d35477e289cf85c6536f91253051db78e8ca9e25d024bcbde422171e8                # the CERTIFIED image content id (launcher runs only this)
+provides:       [pypdf]
+isolation:      shared
+confidential:   false
+level:          L2
