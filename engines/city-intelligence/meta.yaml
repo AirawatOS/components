@@ -8,7 +8,7 @@
 # resolves here with NO host code and NO baking — swap or upgrade by publishing a new version.
 component_id: ds:airawatdeveloper:engine/city-intelligence
 kind: engine
-version: 0.3.0
+version: 0.5.2   # 0.5.2: an answer cache — same tenant + question + the facts it was computed from + the prompt → the stored answer, no model call (24 h, in memory; changed data or prompt = a new key, so never stale; fallbacks never cached; fresh:true bypasses). 0.5.1: reads cached across questions for 15 min per (tenant, schema, filter) — a question re-read up to ten whole datasets and took ~60 s, past the public proxy's 60 s timeout; '__warm__' loads them without the model (the tour and the Ask panel call it). 0.5.0: knows the rest of the city's data — facilities by category with straight-line distance to the nearest (toilets, schools, police, banks, parks… — osm-facilities 0.2.0), lakes (which shrank most, shore built-up, a named lake by year), night-lights growth 2014–2025 (brightened vs newly lit, a proxy), local civic issues from news (national stories left out), works paid by year and wards by tenders, and a PROFILE of a named ward / locality / lake ('tell me about Nilasandra') against the city median; inventory lists facility points, lakes, night lights, building outlines, AOD, CAMS, wards. 0.4.8: 'top 5 priorities / if you were responsible' → engine-computed CANDIDATE priorities (flood-prone low-lying areas, health access > 1.5 km, under-funded dense wards, transit gaps > 800 m bus AND > 2 km metro, PM2.5 above the 24-hour standard), each with people affected, top places, measure and caveat; layers that cannot support a priority (a flat heat layer, an implausible green layer) are said, not ranked; bigger answer budget (the open question used all 3,000 tokens reasoning → empty); an empty model reply shows the engine's tables with a note, not a raw stats dump; the facility category 'healthcare' is matched (health questions treated every cell as uncovered). 0.4.7: 'what data do you have' answers with ONE inventory table of every layer (was routed to the congestion topic by the word 'access'); an AIR topic (PM2.5 of the latest interpolated hour only, worst cells, PM2.5 × people, hotspots, measured stations); a ward NEED-vs-SPEND ranking (census 2011 density, PM2.5, metro distance, works paid per person — equal-weight percentile ranks, a ranking aid) with every cell of each listed ward returned for the map; keywords match at word starts ('hotspot' is not heat, 'airport' is not air). 0.4.6: mobility — joins walkability, transit access and chokepoints (driver/mobility-indexes); transit and walkability topics; congestion questions also get the chokepoint PROXY. 0.4.5: cells denser than the densest 2011 census ward (113,590 /km²; DENSITY_PLAUSIBLE_MAX) are not ranked on density — shown under 'not ranked — modelled density looks implausible' (GHSL over-allocates commercial cores). 0.4.4: the engine writes the ranked tables (never truncated; exact place labels for the map link) and the evidence line; the model writes only a short headline + bullets; a cut-off reply drops its dangling fragment and is marked shortened. 0.4.3: cells named by their nearest gazetteer place ('near Jayanagar (1.6 km)'), from space.place; lat/lon only when no named place is within 2.5 km. 0.4.2: Markdown answers (tables for ranked cells, lat/lon not h3 ids, one short evidence line); the congestion proxy ranks only the denser half of the city (outskirts with almost no roads no longer top it). 0.4.1: answer budget 900 → 1800 (the reasoning model used it all thinking → empty answer); an empty model reply shows the computed facts instead of 'No answer'. 0.4.0: a general city analyst — reads the city.cell_profile rollup (raw cell layers as fallback), the works rollups and ALL open recommendations; topic-chosen facts; missing layers stated; proxies labelled
 provider: ds:airawat:developer
 display_name: City Intelligence
 entrypoint: run.py
@@ -16,8 +16,8 @@ confinement_min: L1
 implements: [city.analyst@0.1.0]
 verbs:
   city-ask: city.analyst@0.1.0
-required_schemas: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness]
-reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness]
+required_schemas: [governance.recommendation, city.coverage]   # 0.4.0: every other layer is OPTIONAL — absent layers are reported, not required
+reads: [risk.flood, cell.crowd_density, vision.detection, governance.recommendation, city.coverage, intelligence.effectiveness, city.cell_profile, cell.heat, cell.rainfall, cell.weather_forecast, cell.builtup, cell.greencover, cell.hydrology, demographics.population, cell.buildings, cell.roads, geo.facility, works.city_summary, works.ward_rollup, works.contractor_rollup, space.place, mobility.walkability, mobility.transit_access, mobility.chokepoint, air.quality, air.hotspot, air.sensor_reading, demographics.census_ward, works.ward_cell, procurement.ward_cell, news.item, civic.issue, water.lake, water.lake_cell, econ.nightlight_trend, space.ward, space.aoi, geo.building, cell.aod, cell.cams]
 writes: []
 scopes:
   - { verb: read, scope: risk.flood }
@@ -26,3 +26,37 @@ scopes:
   - { verb: read, scope: governance.recommendation }
   - { verb: read, scope: city.coverage }
   - { verb: read, scope: intelligence.effectiveness }
+  - { verb: read, scope: city.cell_profile }
+  - { verb: read, scope: cell.heat }
+  - { verb: read, scope: cell.rainfall }
+  - { verb: read, scope: cell.weather_forecast }
+  - { verb: read, scope: cell.builtup }
+  - { verb: read, scope: cell.greencover }
+  - { verb: read, scope: cell.hydrology }
+  - { verb: read, scope: demographics.population }
+  - { verb: read, scope: cell.buildings }
+  - { verb: read, scope: cell.roads }
+  - { verb: read, scope: geo.facility }
+  - { verb: read, scope: works.city_summary }
+  - { verb: read, scope: works.ward_rollup }
+  - { verb: read, scope: works.contractor_rollup }
+  - { verb: read, scope: space.place }
+  - { verb: read, scope: mobility.walkability }
+  - { verb: read, scope: mobility.transit_access }
+  - { verb: read, scope: mobility.chokepoint }
+  - { verb: read, scope: air.quality }
+  - { verb: read, scope: air.hotspot }
+  - { verb: read, scope: air.sensor_reading }
+  - { verb: read, scope: demographics.census_ward }
+  - { verb: read, scope: works.ward_cell }
+  - { verb: read, scope: procurement.ward_cell }
+  - { verb: read, scope: news.item }
+  - { verb: read, scope: civic.issue }
+  - { verb: read, scope: water.lake }
+  - { verb: read, scope: water.lake_cell }
+  - { verb: read, scope: econ.nightlight_trend }
+  - { verb: read, scope: space.ward }
+  - { verb: read, scope: space.aoi }
+  - { verb: read, scope: geo.building }
+  - { verb: read, scope: cell.aod }
+  - { verb: read, scope: cell.cams }
