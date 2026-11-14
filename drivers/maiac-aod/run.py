@@ -28,6 +28,10 @@ PROJECT = os.environ.get("GEE_PROJECT", "")
 SA_EMAIL = os.environ.get("GEE_SERVICE_ACCOUNT", "")
 SA_KEY = os.environ.get("GEE_SERVICE_ACCOUNT_KEY", "")
 WINDOW_DAYS = int(os.environ.get("WINDOW_DAYS", "10"))
+# Reduce at a scale FINER than the cell: an H3 res-9 cell (~0.1 km²) is smaller than a 1 km MAIAC pixel, and a polygon
+# reduce counts only pixels whose CENTRE falls inside it — at scale=1000 ~9 cells in 10 got no value (staging: 1,039 of
+# 11,118). At 100 m each cell samples the (nearest-neighbour) 1 km pixel it sits in; the data's resolution is unchanged.
+REDUCE_SCALE_M = int(os.environ.get("AOD_REDUCE_SCALE_M", "100"))
 BATCH = int(os.environ.get("BATCH", "500"))
 NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 SRC = "ds:airawat:ref/source/maiac"
@@ -156,7 +160,7 @@ def main():
     for i in range(0, len(cells), BATCH):
         chunk = cells[i:i + BATCH]
         fc = ee.FeatureCollection([ee.Feature(ee.Geometry.Polygon([cell_boundary_lonlat(h)]), {"h3": h}) for h in chunk])
-        red = img.reduceRegions(collection=fc, reducer=reducer, scale=1000)
+        red = img.reduceRegions(collection=fc, reducer=reducer, scale=REDUCE_SCALE_M)
         rows = None
         for attempt in range(5):
             try:
