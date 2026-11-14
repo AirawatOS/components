@@ -433,6 +433,31 @@ o, e = ci.h_ask({"tenant": "t2", "body": {"question": "__warm__"}, "kfind": coun
 check("…'__warm__' loads the datasets without calling the model", not e and "warmed" in o["answer"] and "city.cell_profile" in calls and "water.lake" in calls, o)
 ci._KCACHE.clear()
 
+# 0.5.2 — the answer cache: same tenant + question + facts → no second model call; changed data → asked again
+ci._ACACHE.clear(); ci._KCACHE.clear()
+mcalls = []
+def m52(msgs, n):
+    mcalls.append(1); return "**Lakes shrank.**\nEvidence quality: ok"
+a1, _ = ci.h_ask({"tenant": "t1", "body": {"question": "Which lakes have shrunk the most?"}, "kfind": counting, "ai_complete": m52})
+a2, _ = ci.h_ask({"tenant": "t1", "body": {"question": "which lakes  have shrunk the MOST?"}, "kfind": counting, "ai_complete": m52})
+check("0.5.2 the same question over the same data is answered from the cache (one model call)",
+      len(mcalls) == 1 and a2.get("cached_at") and a2["answer"] == a1["answer"] and not a1.get("cached_at"), (len(mcalls), a2.get("cached_at")))
+ci.h_ask({"tenant": "t2", "body": {"question": "Which lakes have shrunk the most?"}, "kfind": counting, "ai_complete": m52})
+check("…another tenant never gets that answer", len(mcalls) == 2)
+ci.h_ask({"tenant": "t1", "body": {"question": "Which lakes have shrunk the most?", "fresh": True}, "kfind": counting, "ai_complete": m52})
+check("…fresh: true asks the model again", len(mcalls) == 3)
+ci._KCACHE.clear()
+_saved = FAC_DATA.get("water.lake")
+FAC_DATA["water.lake"] = [dict(o, water_change_pct=(o.get("water_change_pct") or 0) - 5) for o in (_saved or [])]
+ci.h_ask({"tenant": "t1", "body": {"question": "Which lakes have shrunk the most?"}, "kfind": counting, "ai_complete": m52})
+check("…changed data is a different key — asked again, never a stale answer", len(mcalls) == 4 or not _saved, len(mcalls))
+FAC_DATA["water.lake"] = _saved
+mcalls.clear(); ci._ACACHE.clear(); ci._KCACHE.clear()
+ci.h_ask({"tenant": "t1", "body": {"question": "hottest areas?"}, "kfind": lambda s, where=None: list(BASE.get(s, [])), "ai_complete": boom})
+ci.h_ask({"tenant": "t1", "body": {"question": "hottest areas?"}, "kfind": lambda s, where=None: list(BASE.get(s, [])), "ai_complete": m52})
+check("…a fallback (model unavailable) is never cached", len(mcalls) == 1)
+ci._ACACHE.clear(); ci._KCACHE.clear()
+
 out, err, f, _ = ask("", BASE)
 check("an empty question is refused", err == "question required")
 

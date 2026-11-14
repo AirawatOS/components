@@ -18,7 +18,7 @@ confined model (ctx["ai_complete"]) on ONLY those facts, and returns {answer, so
     layers exist.
 AI informs; a human decides (ADR-0029).
 """
-import collections, json, math, os, re, time
+import collections, hashlib, json, math, os, re, time
 
 HOT_FLOOD = ("high", "severe")
 TOP = 8
@@ -1280,6 +1280,38 @@ def cached_kfind(kfind, tenant):
     return f
 
 
+# 0.5.2 — an ANSWER cache. The model is the slow and paid part; a demo loop (or a dashboard) asks the same questions
+# over and over. An answer is kept under sha-256(tenant | question | the FACTS it was computed from | the prompt): the
+# same question over the same data returns the stored answer with no model call, and any change in the data (news
+# every 3 h, profiles daily) or in the prompt is a different key — so a cached answer is never stale. Only real model
+# answers are kept (never a fallback); in memory (lost on a host restart), ANSWER_CACHE_SECONDS (24 h), at most
+# ANSWER_CACHE_MAX entries; body {"fresh": true} bypasses it. Only with a real tenant.
+ACACHE_TTL = float(os.environ.get("ANSWER_CACHE_SECONDS", "86400"))
+ACACHE_MAX = int(os.environ.get("ANSWER_CACHE_MAX", "500"))
+_ACACHE = {}
+
+
+def answer_key(tenant, question, facts, sysmsg):
+    blob = json.dumps([tenant, " ".join(question.lower().split()), facts, sysmsg], sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def acache_get(key):
+    hit = _ACACHE.get(key) if key else None
+    if hit and time.time() - hit[0] < ACACHE_TTL:
+        return dict(hit[1], cached_at=hit[2])
+    return None
+
+
+def acache_put(key, result):
+    if not key:
+        return
+    if len(_ACACHE) >= ACACHE_MAX:                                  # drop the oldest
+        for k in sorted(_ACACHE, key=lambda k: _ACACHE[k][0])[:max(1, ACACHE_MAX // 10)]:
+            _ACACHE.pop(k, None)
+    _ACACHE[key] = (time.time(), result, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+
 def warm(kfind):
     """Load what the topics read, without the model — so the next real question only waits for the model."""
     t0, n = time.time(), 0
@@ -1461,6 +1493,11 @@ def h_ask(ctx):
               "candidates are already computed. "
               "Do NOT show reasoning or restate the question. End with "
               "the single line 'Evidence quality: ok' (the full evidence line is appended for you). You inform; officials decide.")
+    akey = answer_key(ctx.get("tenant"), question, _with_map(facts, map_cells), sysmsg) if ctx.get("tenant") else None
+    if not body.get("fresh"):
+        cached = acache_get(akey)
+        if cached:
+            return cached, None
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": "FACTS:\n" + json.dumps(facts, default=str)[:12000] + "\n\nQUESTION: " + question}]
     try:
@@ -1479,7 +1516,9 @@ def h_ask(ctx):
                     "computed figures below are complete._\nEvidence quality: ok")
             return {"answer": compose_answer(note, facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
         return {"answer": facts_summary(facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
-    return {"answer": compose_answer(ans, facts), "sources": sources, "facts": _with_map(facts, map_cells)}, None
+    result = {"answer": compose_answer(ans, facts), "sources": sources, "facts": _with_map(facts, map_cells)}
+    acache_put(akey, result)
+    return result, None
 
 
 def _with_map(facts, map_cells):
