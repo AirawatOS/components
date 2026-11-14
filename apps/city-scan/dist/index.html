@@ -259,7 +259,7 @@
 <header>
   <h1><b id="hname">Visualize</b></h1>
   <div class="sub" id="sub">loading…</div>
-  <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and the City Analyst. Any click, scroll or key pauses it and gives you control.">▶ Tour</button>
+  <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and Ask Airawat. Any click, scroll or key pauses it and gives you control.">▶ Tour</button>
   <button class="tourbtn" id="tourrestart" title="Start the tour from the beginning" hidden style="margin-left:6px">↺</button>
 </header>
 
@@ -1915,7 +1915,7 @@ async function startTour(fromStart,dry){
   const tick=()=>{ if(!tourOn(id)) return; const now=Date.now();
     if(ci<INTRO.length&&now-cardAt>8000&&!voiceBusy()){ ci++; cardAt=now; }
     const pb=$("preloadall"), m=pb&&pb.textContent.match(/(\d+)\/(\d+)/);
-    const prog=PRELOADED?"warming up the City Analyst…":"loading the city's data"+(m?" "+m[1]+"/"+m[2]:"")+"…";
+    const prog=PRELOADED?"warming up Ask Airawat…":"loading the city's data"+(m?" "+m[1]+"/"+m[2]:"")+"…";
     const c=ci<INTRO.length?INTRO[ci]:loadingCard();
     tourCap(c.t,c.b,prog,{intro:true,prep:true,bar:PRELOADED?1:(m?m[1]/m[2]:0)}); };
   tick(); const k=setInterval(tick,500);
@@ -2184,17 +2184,17 @@ function fitView(bbox){
 <script>
 (function(){
   const wrap=document.createElement('div'); wrap.id='askwrap';
-  wrap.innerHTML='<button id="askbtn" title="Ask the city analyst">🔍 Ask</button>'
-   +'<div id="askpanel" hidden><div class="askhd"><span>City analyst</span><span class="askact"><span id="askwide" title="Expand">⤢</span><span id="askx" title="Close">×</span></span></div>'
+  wrap.innerHTML='<button id="askbtn" title="Ask Airawat">🔍 Ask</button>'
+   +'<div id="askpanel" hidden><div class="askhd"><span>Ask Airawat</span><span class="askact"><span id="askwide" title="Expand">⤢</span><span id="askx" title="Close">×</span></span></div>'
    +'<div id="asklog"><div class="am ai">Ask about the city, grounded in governed data — e.g. “which areas are most congested?”, “where should we add healthcare centres?”.</div></div>'
    +'<div class="askin"><input id="askq" data-voice placeholder="Ask a question…" autocomplete="off"><button id="asksend">→</button></div></div>';
   document.body.appendChild(wrap);
   const css=document.createElement('style'); css.textContent=
    '#askwrap{position:fixed;right:16px;bottom:16px;z-index:30;font:14px system-ui,sans-serif}'
    +'#askbtn{background:#38bdf8;color:#04121f;border:none;border-radius:999px;padding:10px 16px;font-weight:600;cursor:pointer;box-shadow:0 2px 12px #0007}'
-   +'#askpanel{position:absolute;right:0;bottom:48px;width:370px;max-height:64vh;display:flex;flex-direction:column;background:#0e1c2a;border:1px solid #22344a;border-radius:12px;box-shadow:0 6px 24px #0009;overflow:hidden}'
+   +'#askpanel{position:absolute;right:0;bottom:48px;width:370px;max-height:64vh;display:flex;flex-direction:column;background:rgba(14,28,42,.72);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);border:1px solid #22344acc;border-radius:12px;box-shadow:0 6px 24px #0009;overflow:hidden}'
    +'#askpanel[hidden]{display:none}'
-   +'.askhd{padding:9px 12px;background:#13273b;color:#e6edf5;font-weight:600;display:flex;justify-content:space-between}'
+   +'.askhd{padding:9px 12px;background:rgba(19,39,59,.88);color:#e6edf5;font-weight:600;display:flex;justify-content:space-between}'
    +'#askx,#askwide{cursor:pointer;color:#8aa0b6;padding:0 4px}.askact{display:flex;gap:6px}#askwide:hover,#askx:hover{color:#e6edf5}'
    +'#askpanel.wide{width:min(880px,calc(100vw - 32px));max-height:86vh}#askpanel.wide .am{max-width:96%}'
    +'.am.md{white-space:normal}.am.md:has(.md-tbl){max-width:100%;align-self:stretch}.am.md p{margin:0 0 6px}.am.md p:last-child{margin-bottom:0}.am.md h4{margin:6px 0 4px;font-size:13.5px}'
@@ -2208,7 +2208,7 @@ function fitView(bbox){
    +'#asklog{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:90px}'
    +'.am{padding:8px 11px;border-radius:10px;max-width:88%;white-space:pre-wrap;line-height:1.45;font-size:13.5px}'
    +'.am.me{align-self:flex-end;background:#38bdf8;color:#04121f}'
-   +'.am.ai{align-self:flex-start;background:#13273b;color:#e6edf5}'
+   +'.am.ai{align-self:flex-start;background:rgba(19,39,59,.9);color:#e6edf5}'
    +'.am .src{margin-top:6px;font-size:11.5px;color:#7dd3fc}'
    +'.eq{margin-top:8px;border-top:1px solid #22344a;padding-top:7px}'
    +'.eq-h{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#8aa0b6;font-weight:700;margin-bottom:5px}'
