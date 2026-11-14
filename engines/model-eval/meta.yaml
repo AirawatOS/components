@@ -6,14 +6,14 @@
 # Managed from the Model Lab app.
 component_id: ds:airawatdeveloper:engine/model-eval
 kind: engine
-version: 0.1.1   # 0.1.1: a model the gateway does not serve for 'chat' is tried under 'eval' — models registered for evaluation only, never on a production route
+version: 0.1.2   # 0.1.2: lakh / crore figures count as the numbers they are (10 lakh = 1,000,000); full answers kept (was cut at 6,000 characters) with the parsed norms; RESCORE_RUN re-scores a stored run (RERUN_TRUNCATED=1 re-asks only the cut answers). 0.1.1: 0.1.1: a model the gateway does not serve for 'chat' is tried under 'eval' — models registered for evaluation only, never on a production route
 provider: ds:airawat:developer
 display_name: Model Evaluation
 entrypoint: run.py
 confinement_min: L1
 reads: [intelligence.eval_case, intelligence.eval_run, knowledge.document, knowledge.version, knowledge.chunk, governance.rule]
 writes: [intelligence.eval_case, intelligence.eval_run, intelligence.eval_result]
-config: [SEED_DOC, SEED_SUITE, SEED_FOCUS, SEED_LIMIT, MAX_CASES]
+config: [SEED_DOC, SEED_SUITE, SEED_FOCUS, SEED_LIMIT, MAX_CASES, RESCORE_RUN, RERUN_TRUNCATED]
 scopes:
   - { verb: read,  scope: intelligence.eval_case }
   - { verb: read,  scope: intelligence.eval_run }

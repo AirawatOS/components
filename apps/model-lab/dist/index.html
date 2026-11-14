@@ -118,7 +118,7 @@ async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.r
       empty:rs.filter(r=>!r.error&&!(r.metrics||{}).answered).length, errs:rs.filter(r=>r.error).length, lat:rs.reduce((a,r)=>a+(r.latency_ms||0),0)/n,
       tok:rs.reduce((a,r)=>a+(((r.usage||{}).completion_tokens)||0),0)/n, served:[...new Set(rs.map(r=>r.served_by).filter(Boolean))].join(", ")}; }).sort((a,b)=>b.score-a.score);
   const caseTitle=id=>{ const c=CASES.find(x=>x.id===id); return c?((c.source||{}).label||c.title):id.split("/").pop(); };
-  el.innerHTML=`<div class="row"><label>Run</label><select id="rsel">${runs.map(r=>`<option value="${esc(r.id)}" ${r.id===RUN.id?"selected":""}>${esc(String(r.requested_at||"").slice(0,16).replace("T"," "))} · ${esc(r.suite)} · ${esc(r.status)}</option>`).join("")}</select><button class="btn" id="rref">Refresh</button></div>
+  el.innerHTML=`<div class="row"><label>Run</label><select id="rsel">${runs.map(r=>`<option value="${esc(r.id)}" ${r.id===RUN.id?"selected":""}>${esc(String(r.requested_at||"").slice(0,16).replace("T"," "))} · ${esc(r.suite)} · ${esc(r.status)}</option>`).join("")}</select><button class="btn" id="rref">Refresh</button><button class="btn" id="rresc" title="Score this run again with the current scorers and labels — no new model calls, except answers that had been cut off">Rescore</button><span id="rrmsg" class="msg"></span></div>
   <div class="card"><b>Leaderboard</b> <span class="muted small">${esc(RUN.suite)} · ${res.length} answers so far</span>
   <table><tr><th>Model</th><th>Score</th><th></th><th class="n">Answered</th><th class="n">Empty</th><th class="n">Errors</th><th class="n">Avg time</th><th class="n">Avg tokens</th><th>Served by</th></tr>
   ${agg.map(a=>`<tr><td><b>${esc(a.m)}</b></td><td>${scorePill(a.n?a.score:null)}</td><td><div class="bar"><i style="width:${Math.round(a.score*100)}%"></i></div></td><td class="n">${a.ans}/${a.n}</td><td class="n">${a.empty}</td><td class="n">${a.errs}</td><td class="n">${(a.lat/1000).toFixed(1)} s</td><td class="n">${Math.round(a.tok)}</td><td class="small">${esc(a.served)}</td></tr>`).join("")}</table>
@@ -129,6 +129,7 @@ async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.r
     <tr id="x-${esc(slug(cid))}" hidden><td colspan="${models.length+1}"><div class="grid2">${models.map(m=>{ const r=byCase[cid][m]||{}; return `<div><b class="small">${esc(m)}</b>${r.error?`<p class="err small">${esc(r.error)}</p>`:""}<pre>${esc(r.output||"(no answer)")}</pre></div>`; }).join("")}</div></td></tr>`).join("")}</table></div>`;
   $("rsel").onchange=e=>{ RUN=RUNS.find(x=>x.id===e.target.value); render(); };
   $("rref").onclick=async()=>{ await reload(); RUN=RUNS.find(x=>x.id===RUN.id)||RUN; render(); };
+  $("rresc").onclick=async()=>{ $("rresc").disabled=true; try{ await runEngine({RESCORE_RUN:RUN.id,RERUN_TRUNCATED:"1"}); $("rrmsg").textContent="Rescoring — press Refresh in a minute."; }catch(e){ $("rrmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } finally{ $("rresc").disabled=false; } };
   el.querySelectorAll("tr[data-cc]").forEach(tr=>tr.onclick=()=>{ const x=document.getElementById("x-"+slug(tr.dataset.cc)); if(x) x.hidden=!x.hidden; }); }
 
 async function reload(){ [CASES,RUNS]=await Promise.all([q("intelligence.eval_case"),q("intelligence.eval_run")]); }

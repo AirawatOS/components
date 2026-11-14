@@ -20,7 +20,7 @@ import json, os, re, sys, time, urllib.error, urllib.request
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ.get("RUN_TOKEN", "")
 T = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""
-CID, VER = "ds:airawatdeveloper:engine/model-eval", "0.1.1"
+CID, VER = "ds:airawatdeveloper:engine/model-eval", "0.1.2"
 MAX_CASES = int(os.environ.get("MAX_CASES") or 60)
 OPS = (">", ">=", "<", "<=", "==", "!=", "between")
 APPROVED = ("approved", "live", "active")
@@ -99,13 +99,32 @@ def json_array(s):
         return None
 
 
+SCALE = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7}
+_NUM = r"(\d{1,3}(?:,\d{2,3})+|\d+)(?:\.(\d+))?"
+
+
+def _f(whole, frac):
+    return float(whole.replace(",", "") + ("." + frac if frac else ""))
+
+
 def numbers_in(text):
-    """Every number written in a text, as floats (1,500 and 1.5 lakh-free; 15,000 → 15000)."""
+    """Every number written in a text, as floats (15,000 → 15000) — and, for the Indian number words, its plain value
+    too: '10 lakh' → 1,000,000, '2.5 crore' → 25,000,000, '5-8 lakh' / '5 to 8 lakh' → 500,000 and 800,000. A model
+    that writes a lakh figure as a plain number has not invented it."""
+    t = text or ""
     out = set()
-    for m in re.finditer(r"(?<![\w.])(\d{1,3}(?:,\d{2,3})+|\d+)(?:\.(\d+))?", text or ""):
-        whole = m.group(1).replace(",", "")
+    for m in re.finditer(r"(?<![\w.])" + _NUM, t):
         try:
-            out.add(float(whole + ("." + m.group(2) if m.group(2) else "")))
+            out.add(_f(m.group(1), m.group(2)))
+        except ValueError:
+            pass
+    rng = r"(?<![\w.])" + _NUM + r"(?:\s*(?:-|–|to)\s*" + _NUM + r")?\s*(lakhs?|lacs?|crores?|cr)\b"
+    for m in re.finditer(rng, t, re.I):
+        k = SCALE[m.group(5).lower()]
+        try:
+            out.add(_f(m.group(1), m.group(2)) * k)
+            if m.group(3):
+                out.add(_f(m.group(3), m.group(4)) * k)
         except ValueError:
             pass
     return out
@@ -128,7 +147,9 @@ def score_norms(case, content):
     valid = [r for r in (items or []) if isinstance(r, dict) and r.get("metric") and r.get("operator") in OPS and vals(r.get("value"))]
     nums = numbers_in(src)
     grounded = [r for r in valid if all(any(close(x, n) for n in nums) for x in vals(r.get("value")))]
-    m.update(valid=len(valid), grounded=len(grounded))
+    m.update(valid=len(valid), grounded=len(grounded),
+             norms=[{k: r.get(k) for k in ("metric", "operator", "value", "unit")} for r in valid][:60],
+             not_grounded=[{k: r.get(k) for k in ("metric", "value", "unit")} for r in valid if r not in grounded][:20])
     exp = case.get("expected") or {}
     if case.get("labelled") and isinstance(exp.get("norms"), list):
         gold = exp["norms"]
@@ -226,6 +247,90 @@ def seed():
 
 
 # ---- run -------------------------------------------------------------------------------------------------------
+OUT_MAX = 40000           # a full answer (was 6,000: long answers were cut and their later norms lost)
+OLD_CAP = 6000
+
+
+def ask(model, c):
+    """One case to one model through the broker → (output, served_by, usage, error, ms)."""
+    t0 = time.time(); out = ""; served = None; usage = None; err = None
+    try:
+        res = None
+        for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
+            try:                                          # never on a production route (a call naming no model)
+                res = call("/v1/complete", {"messages": c["messages"], "max_tokens": int(c.get("max_tokens") or 1024),
+                                            "model": model, "task": task, "receipt": False}, timeout=240)
+                TASKS[model] = (task,)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 501 and task != "eval":      # not served for this task — try the next
+                    continue
+                raise
+        out, served, usage = res.get("content") or "", res.get("model"), res.get("usage")
+    except urllib.error.HTTPError as e:
+        err = "HTTP %s: %s" % (e.code, (e.read() or b"")[:200].decode(errors="replace"))
+    except Exception as e:
+        err = "%s: %s" % (type(e).__name__, str(e)[:200])
+    return out, served, usage, err, int((time.time() - t0) * 1000)
+
+
+def result_record(run, rslug, model, c, out, served, usage, err, ms, sc, met, rescored=None):
+    rec = {"schema": "intelligence.eval_result",
+           "id": "ds:%s:intelligence/eval_result/%s--%s--%s" % (T, rslug, slug(model, 30), slug(c["id"].rsplit("/", 1)[-1], 70)),
+           "tenant": T, "run_ref": run["id"], "case_ref": c["id"], "suite": run["suite"], "model": model, "served_by": served,
+           "output": (out or "")[:OUT_MAX], "score": sc, "metrics": met, "latency_ms": ms, "usage": usage, "error": err, "at": now()}
+    if rescored:
+        rec["metrics"] = dict(met, rescored=rescored)
+    return rec
+
+
+def summarise(run, results):
+    summary = {}
+    for model in run.get("models") or []:
+        rs = [r for r in results if r.get("model") == model]
+        n = max(1, len(rs)); sb = {}
+        for r in rs:
+            if r.get("served_by"):
+                sb[r["served_by"]] = sb.get(r["served_by"], 0) + 1
+        mets = [r.get("metrics") or {} for r in rs]
+        summary[model] = {"cases": len(rs), "answered": sum(1 for m in mets if m.get("answered")),
+                          "empty": sum(1 for r, m in zip(rs, mets) if not r.get("error") and not m.get("answered")),
+                          "errors": sum(1 for r in rs if r.get("error")),
+                          "score": round(sum(float(r.get("score") or 0) for r in rs) / n, 3),
+                          "valid": sum(int(m.get("valid") or 0) for m in mets), "grounded": sum(int(m.get("grounded") or 0) for m in mets),
+                          "avg_latency_ms": int(sum(int(r.get("latency_ms") or 0) for r in rs) / n),
+                          "avg_completion_tokens": int(sum(int((r.get("usage") or {}).get("completion_tokens") or 0) for r in rs) / n),
+                          "served_by": sb}
+    return summary
+
+
+def rescore(run_id, rerun_cut):
+    """Score a stored run again with the current scorers and labels — no model calls, except (RERUN_TRUNCATED=1) the
+    answers stored cut at the old 6,000-character limit, which are asked again in full."""
+    run = next((r for r in mine("intelligence.eval_run") if r["id"] == run_id), None)
+    if not run:
+        raise SystemExit("no eval run %r" % run_id)
+    cases = {c["id"]: c for c in mine("intelligence.eval_case")}
+    results = [r for r in mine("intelligence.eval_result") if r.get("run_ref") == run_id]
+    rslug = slug(run_id.rsplit("/", 1)[-1], 40); redone = rerun = 0; new = []
+    for r in results:
+        c = cases.get(r.get("case_ref"))
+        if not c:
+            new.append(r); continue
+        out, served, usage, err, ms = r.get("output") or "", r.get("served_by"), r.get("usage"), r.get("error"), r.get("latency_ms")
+        how = "rescored"
+        if rerun_cut and not err and len(out) >= OLD_CAP:
+            out, served, usage, err, ms = ask(r["model"], c); how = "re-asked (answer had been cut at 6,000 characters)"; rerun += 1
+        sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
+        rec = result_record(run, rslug, r["model"], c, out, served, usage, err, ms, sc, met, rescored={"at": now(), "how": how, "was": r.get("score")})
+        write("intelligence.eval_result", rec); new.append(rec); redone += 1
+    summary = summarise(run, new)
+    write("intelligence.eval_run", dict(run, summary=summary, note=((run.get("note") or "") + " · rescored " + now())[:500]))
+    print("rescored %s: %d results (%d re-asked)" % (run_id, redone, rerun), flush=True)
+    print("RESULT: " + json.dumps({"run": run_id, "summary": summary}))
+    return 0
+
+
 def run_one(run):
     cases = [c for c in mine("intelligence.eval_case") if c.get("suite") == run["suite"] and c.get("status") == "active"]
     cases = sorted(cases, key=lambda c: c["id"])[:MAX_CASES]
@@ -233,46 +338,16 @@ def run_one(run):
     if not cases:
         write("intelligence.eval_run", dict(run, status="failed", finished_at=now(), error="the suite has no active cases"))
         return
-    summary = {}
     rslug = slug(run["id"].rsplit("/", 1)[-1], 40)
+    recs = []
     for model in run.get("models") or []:
-        agg = {"cases": 0, "answered": 0, "empty": 0, "errors": 0, "score_sum": 0.0, "latency_sum": 0, "tokens_sum": 0, "served_by": {}}
         for c in cases:
-            t0 = time.time(); out = ""; served = None; usage = None; err = None
-            try:
-                res = None
-                for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
-                    try:                                          # never on a production route (a call naming no model)
-                        res = call("/v1/complete", {"messages": c["messages"], "max_tokens": int(c.get("max_tokens") or 1024),
-                                                    "model": model, "task": task, "receipt": False}, timeout=240)
-                        TASKS[model] = (task,)
-                        break
-                    except urllib.error.HTTPError as e:
-                        if e.code == 501 and task != "eval":      # not served for this task — try the next
-                            continue
-                        raise
-                out, served, usage = res.get("content") or "", res.get("model"), res.get("usage")
-            except urllib.error.HTTPError as e:
-                err = "HTTP %s: %s" % (e.code, (e.read() or b"")[:200].decode(errors="replace"))
-            except Exception as e:
-                err = "%s: %s" % (type(e).__name__, str(e)[:200])
-            ms = int((time.time() - t0) * 1000)
+            out, served, usage, err, ms = ask(model, c)
             sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
-            write("intelligence.eval_result", {"schema": "intelligence.eval_result",
-                  "id": "ds:%s:intelligence/eval_result/%s--%s--%s" % (T, rslug, slug(model, 30), slug(c["id"].rsplit("/", 1)[-1], 70)),
-                  "tenant": T, "run_ref": run["id"], "case_ref": c["id"], "suite": run["suite"], "model": model, "served_by": served,
-                  "output": (out or "")[:6000], "score": sc, "metrics": met, "latency_ms": ms, "usage": usage, "error": err, "at": now()})
-            agg["cases"] += 1; agg["errors"] += bool(err)
-            agg["answered"] += bool(met.get("answered")); agg["empty"] += (not err and not met.get("answered"))
-            agg["score_sum"] += sc; agg["latency_sum"] += ms
-            agg["tokens_sum"] += int((usage or {}).get("completion_tokens") or 0)
-            if served:
-                agg["served_by"][served] = agg["served_by"].get(served, 0) + 1
+            rec = result_record(run, rslug, model, c, out, served, usage, err, ms, sc, met)
+            write("intelligence.eval_result", rec); recs.append(rec)
             print("  %s · %s: score %.2f · %d ms%s" % (model, c.get("title", "")[-60:], sc, ms, " · " + err[:80] if err else ""), flush=True)
-        n = max(1, agg["cases"])
-        summary[model] = {"cases": agg["cases"], "answered": agg["answered"], "empty": agg["empty"], "errors": agg["errors"],
-                          "score": round(agg["score_sum"] / n, 3), "avg_latency_ms": int(agg["latency_sum"] / n),
-                          "avg_completion_tokens": int(agg["tokens_sum"] / n), "served_by": agg["served_by"]}
+    summary = summarise(run, recs)                 # from what was written, not a re-query (read-after-write lag)
     write("intelligence.eval_run", dict(run, status="done", started_at=run.get("started_at") or now(), finished_at=now(), summary=summary, error=None))
     print("RESULT: " + json.dumps({"run": run["id"], "summary": summary}))
 
@@ -282,6 +357,8 @@ def main():
         raise SystemExit("FATAL: no tenant for this run (WRITE_TENANT / TENANT)")
     if os.environ.get("SEED_DOC"):
         return seed()
+    if os.environ.get("RESCORE_RUN"):
+        return rescore(os.environ["RESCORE_RUN"], os.environ.get("RERUN_TRUNCATED") == "1")
     pending = sorted([r for r in mine("intelligence.eval_run") if r.get("status") == "pending"], key=lambda r: str(r.get("requested_at") or ""))
     print("tenant=%s · %d pending run(s)" % (T, len(pending)), flush=True)
     if pending:

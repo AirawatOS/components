@@ -51,3 +51,22 @@ def test_contains_exact_json_fields_grounded():
     g = {"scorer": "grounded", "messages": [{"role": "user", "content": "density 67,183 per km2"}]}
     assert me.score_case(g, "about 67,183 people per km2")[0] == 1.0
     assert me.score_case(g, "about 70,000 people per km2")[0] == 0.0
+
+
+def test_lakh_and_crore_are_their_plain_numbers():
+    ns = me.numbers_in("District jail per 10 lakh; radio station per 5-8 lakh; head post office 2.5 lakh; budget 3 crore; 4 lakhs")
+    for v in (1_000_000, 500_000, 800_000, 250_000, 30_000_000, 400_000):
+        assert float(v) in ns, v
+    assert 10.0 in ns                                         # the written number itself still counts
+
+
+def test_a_norm_written_in_plain_numbers_from_a_lakh_figure_is_grounded():
+    case = {"scorer": "norms", "messages": [{"role": "user", "content": "Police line: 20 lakh population; radio/TV 5 to 8 lakh."}]}
+    out = '[{"metric":"pop_per_police_line","operator":"==","value":2000000},{"metric":"pop_per_radio","operator":"between","value":[500000,800000]}]'
+    sc, m = me.score_case(case, out)
+    assert sc == 1.0 and m["grounded"] == 2 and m["not_grounded"] == []
+
+
+def test_metrics_keep_the_parsed_norms():
+    sc, m = me.score_case(SECTION, '[{"metric":"water_supply","operator":"==","value":135,"unit":"lpcd"}]')
+    assert m["norms"] == [{"metric": "water_supply", "operator": "==", "value": 135, "unit": "lpcd"}]
