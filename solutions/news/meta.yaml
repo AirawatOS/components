@@ -4,7 +4,7 @@
 # each city's search terms differ. Reads/writes are the members' own; the solution grants nothing extra.
 component_id: ds:airawat:solution/news
 kind: solution
-version: 0.3.0
+version: 0.3.1
 provider: ds:airawat:developer
 display_name: News
 entrypoint: run.py
@@ -14,5 +14,5 @@ members:
   - ds:airawat:driver/news-rss
   - ds:airawat:driver/news-gdelt
   - ds:airawatdeveloper:engine/news-classify
-reads: []
+reads: [space.aoi]    # 0.3.1: the city to search news for comes from the tenant AOI name, not the tenant id
 writes: [platform.schedule]    # setup run.py creates the tenant's news-ingest schedules on install
