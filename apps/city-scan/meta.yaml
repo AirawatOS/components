@@ -5,14 +5,15 @@
 # reading only through the host bridge (/bridge/query) over its declared schemas.
 component_id: ds:airawat:app/city-scan
 kind: app
-version: 0.4.8   # 0.4.8: renamed display_name City Scan → Visualize (ADR-0075 — shared surface named for the capability); component_id unchanged
+version: 0.4.9   # 0.4.9: analyst answers rendered as Markdown (tables, bullets, bold — escaped first), an expand/shrink control, the evidence block only when it adds tags/coverage, Bodhan voice dictation on the question box (a spoken question sends itself; hidden when the tenant has no Bodhan key); EVERY layer is listed only if this tenant has its data. 0.4.8: renamed display_name City Scan → Visualize (ADR-0075 — shared surface named for the capability); component_id unchanged
 provider: ds:airawat:developer
 display_name: Visualize   # ADR-0075: the shared map surface, named for the capability (was "City Scan"); component_id stays city-scan
 entrypoint: index.html
 # Declares the governed viz.layer CATALOG — which, per the host bridge, also authorises reading any map layer
 # the catalog exposes. So new indicator layers (hydrology, population, buildings…) appear with just a descriptor
 # + data — no edit here. space.aoi/geo.landcover/city.coverage are the fixed frame/basemap/trust reads.
-required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature, air.sensor_reading, geo.building]
+required_schemas: [viz.layer, space.aoi, geo.landcover, city.coverage, geo.osm_feature, geo.hydro_feature, air.sensor_reading, geo.building, space.place, media.narration_clip, media.narration_request]   # space.place: gazetteer names on hover / drill (0.4.9); media.narration_*: recorded tour narration (driver/narration)
+writes: [media.narration_request]   # the tour asks driver/narration for a line that has no clip yet
 sandboxed: true
 # DECLARED APP EGRESS (broker-for-apps): the viewer may reach ONLY these external hosts, and only through the
 # host's /bridge/fetch (the CSP still blocks direct calls). Basemap tiles (all keyless, cached on disk by the
