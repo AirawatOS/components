@@ -27,6 +27,18 @@
   header{padding:18px 22px 18px 84px;border-bottom:1px solid var(--edge);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
   /* ^ left pad clears the app-host shell's floating "✕ Exit" pill (top-left chrome) */
   header h1{margin:0;font-size:18px;font-weight:650;letter-spacing:-.01em}
+  header .brand{display:flex;flex-direction:column;line-height:1.15;align-self:center;padding-right:16px;margin-right:2px;border-right:1px solid var(--edge2)}
+  header .brand b{font-size:17px;font-weight:700;color:var(--ink);letter-spacing:.01em}
+  header .brand span{font-size:10.5px;color:var(--muted);letter-spacing:.05em}
+  .top5{position:absolute;right:14px;bottom:64px;z-index:8;width:300px;background:#0c1622e8;border:1px solid var(--edge2);border-radius:12px;
+    padding:10px 12px;box-shadow:0 10px 30px #0008;font-size:12.5px}
+  .top5[hidden]{display:none}
+  .top5 .h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;color:var(--ink);font-weight:650}
+  .top5 .h button{background:none;border:0;color:var(--dim);cursor:pointer;font-size:15px}
+  .top5 ol{margin:0;padding-left:20px} .top5 li{margin:3px 0;color:var(--ink)} .top5 li span{float:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .top5 .s{color:var(--dim);font-size:10.5px;margin-top:6px}
+  .t5btn{margin-left:8px;border:1px solid var(--edge2);background:#0e1c2a;color:var(--muted);border-radius:6px;font-size:10.5px;padding:1px 7px;cursor:pointer}
+  .t5btn.on,.t5btn:hover{color:var(--accent);border-color:var(--accent)}
   header h1 b{color:var(--accent);font-weight:650}
   .sub{color:var(--muted);font-size:12.5px}
   .sub .dot{color:var(--dim);margin:0 7px}
@@ -257,6 +269,7 @@
 </style>
 
 <header>
+  <div class="brand"><b>AirawatOS</b><span>AI CoE for Sustainable Cities</span></div>
   <h1><b id="hname">Visualize</b></h1>
   <div class="sub" id="sub">loading…</div>
   <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and Ask Airawat. Any click, scroll or key pauses it and gives you control.">▶ Tour</button>
@@ -271,7 +284,7 @@
     </div>
     <div class="railbottom">
       <div class="legend" id="legend" hidden>
-        <p class="rail-h" style="margin-bottom:4px">Legend</p>
+        <p class="rail-h" style="margin-bottom:4px">Legend<button class="t5btn" id="t5btn" title="The five highest-ranked areas of this layer, pinned on the map">Top 5</button></p>
         <div class="bar" id="legbar"></div>
         <div class="ends"><span id="legmin"></span><span id="legmax"></span></div>
         <div class="rampsel" id="rampsel"></div>
@@ -290,6 +303,7 @@
     <div class="scrubber" id="scrubber" hidden></div>
     <div class="tourcap" id="tourcap" hidden></div>
     <div class="trend" id="trend" hidden></div>
+    <div class="top5" id="top5" hidden></div>
     <div class="busy" id="busy" hidden></div>
     <div class="tip" id="tip"></div>
     <button class="railtog l" id="togL" title="Show/hide layers">‹</button>
@@ -1044,14 +1058,18 @@ function footprintsLayer(){                                       // the drilled
   if(!drillCell || !drillBuildings.length || !showBuildings) return null;   // toggle off → reveal roads/drains beneath
   return new deck.PolygonLayer({id:"footprints",data:drillBuildings,pickable:true,extruded:true,wireframe:true,
     getPolygon:b=>ringOf(b.geometry), getElevation:b=> (typeof b.height_m==="number"&&b.height_m>0)?b.height_m:NOMINAL_H,
-    getFillColor:b=>b.status==="tax-unregistered"?[220,53,53,238]:b.status==="tax-registered"?[70,130,180,225]:[203,213,225,230], getLineColor:[100,116,139,255], lineWidthUnits:"pixels", getLineWidth:0.5,
+    getFillColor:b=>b._fac?[...fcol(b._fac.cat),245]:b.status==="tax-unregistered"?[220,53,53,238]:b.status==="tax-registered"?[70,130,180,225]:[203,213,225,230], getLineColor:[100,116,139,255], lineWidthUnits:"pixels", getLineWidth:0.5,
     material:{ambient:0.6,diffuse:0.65,shininess:32,specularColor:[60,70,85]},
-    updateTriggers:{getPolygon:[drillCell&&drillCell.h3]}});
+    updateTriggers:{getPolygon:[drillCell&&drillCell.h3,BLD_VER], getFillColor:[BLD_VER]}});
 }
+let BLD_VER=0;
+function flyFocusLayer(){ if(!FLY_FOCUS) return null;                 // the fly-over's current facility: a ring around it
+  return new deck.ScatterplotLayer({id:"flyfocus",data:[FLY_FOCUS],getPosition:d=>d.c,radiusUnits:"meters",getRadius:28,
+    filled:false,stroked:true,getLineColor:d=>[...fcol(d.cat),255],lineWidthMinPixels:3}); }
 async function loadFootprints(cell){                              // pull ONLY this cell's footprints (server-side h3 filter)
   footLoading=true; cellPanel();
   const rows=await qf("geo.building",{h3_id:cell.h3});
-  if(!drillCell || drillCell.h3!==cell.h3) return;                // user already drilled elsewhere / exited
+  if(!drillCell || drillCell.h3!==cell.h3 || drillCell.cells) return;   // drilled elsewhere / exited / a ward close-up loads its own
   drillBuildings=rows.map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2,status:o.method,prov:o.prov})).filter(b=>ringOf(b.geometry));
   footLoading=false; cellPanel(); render();
 }
@@ -1247,7 +1265,7 @@ function facilitiesLayer(){                                     // critical faci
   if(!showFacilities || !(DATA.facilities||[]).length) return null;
   const drill=!!drillCell;
   const pick=f=>!FAC_ON.size||FAC_ON.has(f.cat);
-  const data=drill ? DATA.facilities.filter(f=>f.h3===drillCell.h3&&pick(f)) : DATA.facilities.filter(pick);
+  const data=drill ? DATA.facilities.filter(f=>(drillCell.cells?drillCell.cells.has(f.h3):f.h3===drillCell.h3)&&pick(f)) : DATA.facilities.filter(pick);
   if(!data.length) return null;
   return new deck.ScatterplotLayer({id:"facilities",data,pickable:true,
     getPosition:f=>f.c, getFillColor:f=>fcol(f.cat),
@@ -1271,7 +1289,7 @@ function render(){
   updateHeader();
   const layers = (showPlan && PLAN)
     ? [basemapLayer(), ...planLayers(), highlightLayer(), askLayer(), askHoverLayer()]      // greenfield plan view (footprints + zoning + massing)
-    : [basemapLayer(), dataLayer(), ...lakeLayers(), ...overlayLayers(), footprintsLayer(), highlightLayer(), askLayer(), askHoverLayer()];
+    : [basemapLayer(), dataLayer(), ...lakeLayers(), ...overlayLayers(), footprintsLayer(), flyFocusLayer(), highlightLayer(), askLayer(), askHoverLayer()];
   deckgl.setProps({layers:layers.filter(Boolean)});
   drawPlanCard();
   // legend
@@ -1292,6 +1310,7 @@ function render(){
   } else $("legend").hidden=true;
   document.querySelectorAll(".layer-btn").forEach(b=>b.classList.toggle("on",b.dataset.k===active));
   updateScrubber();
+  if(TOP5_KEY&&TOP5_KEY!==active) hideTop5();                    // the card belongs to the layer it was made for
 }
 // colour choice per layer — only the presets that keep the layer's meaning (neutral / worse / better); per browser
 function drawRampSel(L){
@@ -1304,6 +1323,25 @@ function drawRampSel(L){
   $("rampselv").onchange=e=>{ try{ localStorage.setItem("aosRamp:"+L.key,e.target.value); }catch(x){} RAMP_VER++; render(); if(typeof drawLayers==="function") drawLayers(); };
   const rb=$("rampreset"); if(rb) rb.onclick=()=>{ try{ localStorage.removeItem("aosRamp:"+L.key); }catch(x){} RAMP_VER++; render(); if(typeof drawLayers==="function") drawLayers(); };
 }
+// ── TOP 5: the layer's five highest-ranked DISTINCT named areas (by its polarity: worst / best / highest), pinned ──
+let TOP5_KEY=null;
+function top5Rows(L){ const d=L&&DATA.data[L.key]; if(!d||d.type!=="hex") return [];
+  const val=r=>(L.temporal&&Array.isArray(r.series))?((r.series[tIdx]||{})[L.sfield]):r.v;
+  const rows=d.rows.filter(r=>typeof val(r)==="number"&&val(r)>0).sort((a,b)=>val(b)-val(a));
+  const out=[], seen=new Set();
+  for(const r of rows){ const w=String(cellWhere(r)||"").replace(/^near /,"").replace(/ \([0-9.]+ km\)$/,"");
+    if(!w||/^\d/.test(w)||seen.has(w)) continue; seen.add(w); out.push({r,w,v:val(r)}); if(out.length>=5) break; }
+  return out; }
+function showTop5(L){ const el=$("top5"); if(!el) return; const top=top5Rows(L);
+  if(!L||!top.length){ hideTop5(); return; }
+  TOP5_KEY=L.key; const head=L.pol==="worse"?"Worst 5 areas":L.pol==="better"?"Best 5 areas":"Highest 5 areas";
+  const when=L.temporal&&(L.times||[])[tIdx]?" · "+fmtT(L.times[tIdx]):"";
+  el.innerHTML=`<div class="h"><span>${head}</span><button id="t5x" title="Close">×</button></div><ol>`
+    +top.map(t=>`<li>${esc(t.w)}<span>${esc(L.fmt(t.v))}</span></li>`).join("")+`</ol><div class="s">${esc(L.short||L.label)}${esc(when)} · distinct named areas, pinned on the map</div>`;
+  el.hidden=false; $("t5x").onclick=()=>hideTop5();
+  if(window.setAskPin) setAskPin(top.map(t=>t.r.h3)); const b=$("t5btn"); if(b) b.classList.add("on"); }
+function hideTop5(){ const el=$("top5"); if(el) el.hidden=true; if(TOP5_KEY&&window.setAskPin) setAskPin([]); TOP5_KEY=null;
+  const b=$("t5btn"); if(b) b.classList.remove("on"); }
 // ---- TIME SCRUBBER: animate a temporal layer (cells with a `series`) over its time axis ----
 function fmtT(t){ if(/^\d{4}$/.test(String(t))) return String(t);   // a YEAR frame (e.g. works by work-order year)
   const d=new Date(t); return isNaN(d.getTime())?String(t):d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }
@@ -1509,7 +1547,8 @@ function tip(info){
   if(!info||!info.object){ t.style.opacity=0; return; }
   const L=LAYERS.find(l=>l.key===active);
   const o=info.object;
-  const label = (o.prov&&o.status) ? ('<b style=\'color:'+(o.status==="tax-unregistered"?"#ff6b6b":"#6ab0e0")+'\'>'+(o.status==="tax-unregistered"?"UNREGISTERED property":"Registered property")+'</b>'+'<br>Owner: '+(o.prov.owner||'\u2014')+'<br>Survey UID: '+(o.prov.uid||'\u2014')+'<br>Tax record: '+(o.status==="tax-registered"?("Property #"+(o.prov.property_id||o.prov.uid)):"NOT ON TAX REGISTER")+'<br>Ward: '+(o.prov.ward||'\u2014')+'<br>Mobile: '+(o.prov.mobile||'\u2014')+'<br>Use: '+(o.prov.land_use||'\u2014')+'<br>Confidence: '+(o.prov.confidence==null?'\u2014':o.prov.confidence)) : o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
+  const label = o._fac ? `<b>${esc(o._fac.name||"")}</b> · <span style="color:${rgbCss(fcol(o._fac.cat))}">${esc(FAC_LABEL[o._fac.cat]||o._fac.cat)}</span> · <span style="color:var(--muted)">building${o.area_m2?" "+Math.round(o.area_m2).toLocaleString("en-IN")+" m²":""}</span>`
+              : (o.prov&&o.status) ? ('<b style=\'color:'+(o.status==="tax-unregistered"?"#ff6b6b":"#6ab0e0")+'\'>'+(o.status==="tax-unregistered"?"UNREGISTERED property":"Registered property")+'</b>'+'<br>Owner: '+(o.prov.owner||'\u2014')+'<br>Survey UID: '+(o.prov.uid||'\u2014')+'<br>Tax record: '+(o.status==="tax-registered"?("Property #"+(o.prov.property_id||o.prov.uid)):"NOT ON TAX REGISTER")+'<br>Ward: '+(o.prov.ward||'\u2014')+'<br>Mobile: '+(o.prov.mobile||'\u2014')+'<br>Use: '+(o.prov.land_use||'\u2014')+'<br>Confidence: '+(o.prov.confidence==null?'\u2014':o.prov.confidence)) : o._iss ? `<b style="color:${rgbcss(icol(o.cat))}">${esc(icatLabel(o.cat))}</b>${o.sev?` · <span style="color:var(--muted)">${esc(o.sev)}</span>`:""}<br><span style="color:var(--muted)">${esc((o.title||"").slice(0,80))}</span>${o.place?`<br><span style="color:var(--muted)">📍 ${esc(o.place)}</span>`:""}`
               : o._tr ? `<b>${esc(o.name||o.kind)}</b> · <span style="color:var(--muted)">${esc(o.kind)}</span>`
               : o.pm!==undefined ? `<b>PM2.5 ${Math.round(o.pm)} µg/m³</b> · <span style="color:var(--muted)">${esc((o.name||"sensor")).slice(0,44)}</span>`
               : o.cat!==undefined ? `<b>${esc(o.name||String(o.sub||o.cat).replace(/_/g," "))}</b> · <span style="color:${rgbCss(fcol(o.cat))}">${esc(FAC_LABEL[o.cat]||o.cat)}</span> · <span style="color:var(--muted)">${esc(String(o.sub||"").replace(/_/g," "))}</span>`
@@ -1805,11 +1844,21 @@ function tourButtons(){
   b.classList.remove("on"); b.textContent=TOUR_AT?"▶ Resume tour":"▶ Tour"; if(r) r.hidden=!TOUR_AT;
 }
 function stopTour(msg){
-  if(!TOUR) return; TOUR_AT=TOUR.at||null; TOUR=null; stopPlay();
+  if(!TOUR) return; TOUR_AT=TOUR.at||null; const _ts=TOUR.treeSaved; TOUR=null; stopPlay();
+  treeOpen=_ts; FLY_FOCUS=null; hideTop5(); try{ drawLayers(); }catch(e){}
   narrCancel(); TOUR_SAID=""; document.body.classList.remove("touring");
   const c=$("tourcap"); if(c){ c.hidden=true; c.classList.remove("intro"); } tourButtons();
   setBusy(msg||"Tour paused — you're in control. ▶ Resume tour continues from here, ↺ from the start."); setTimeout(()=>setBusy(null),4000);
 }
+function treeReveal(keys){                                        // open only the groups holding these layers / overlays
+  const tree=buildTree(), open={};
+  for(const g of Object.keys(tree)) for(const sb of Object.keys(tree[g])) for(const it of tree[g][sb]){
+    const k=it.t==="layer"?it.L.key:it.o.id;
+    if(keys.includes(k)){ open["g:"+g]=true; if(sb) open["s:"+g+"/"+sb]=true; } }
+  treeOpen=open; drawLayers();
+  const k0=keys[0]; if(!k0) return;
+  const btn=document.querySelector(`.layer-btn[data-k="${k0}"],.layer-btn[data-ov="${k0}"]`), sc=$("layerscroll");
+  if(btn&&sc) sc.scrollTo({top:Math.max(0,btn.offsetTop-sc.offsetTop-60),behavior:"smooth"}); }
 function tourOverlaysOff(){ showRoads=showRoadsLocal=showWater=showIssues=showTransit=false; FAC_ON.clear(); showFacilities=false; }
 async function tourOverlay(id){
   if(id.startsWith("fac:")){ FAC_ON.add(id.slice(4)); showFacilities=true; await ensureOverlay("facilities"); return; }
@@ -1822,6 +1871,7 @@ function tour3d(on){ if(mode3d!==!!on && $("tilt")) $("tilt").onclick(); }
 const firstSentence=t=>{ const m=String(t||"").match(/^.*?[.!?](\s|$)/); return (m?m[0]:String(t||"")).trim().slice(0,220); };
 async function tourStep(st,i,n,id,qi){
   if(TOUR){ TOUR.at={i,qi:0}; TOUR.playing=false; }
+  hideTop5(); FLY_FOCUS=null;
   if(drillCell) exitDrill();
   tourOverlaysOff(); stopPlay(); tIdx=0;
   if(window.AOS_ASK) AOS_ASK.close();
@@ -1831,6 +1881,7 @@ async function tourStep(st,i,n,id,qi){
   for(const o of (st.overlays||[])) await tourOverlay(o);
   if(!tourOn(id)) return;
   drawLayers(); render();
+  if(!st.intro&&!st.ask) treeReveal([L&&L.key, ...(st.overlays||[]), ...(st.news?["issues"]:[])].filter(Boolean));
   const prog=(i+1)+"/"+n;
   if(st.intro){ tourHome();                                        // what AirawatOS is — the cards not already shown while loading
     for(let k=(TOUR&&TOUR.introFrom)||0;k<INTRO.length&&tourOn(id);k++){ tourCap(INTRO[k].t,INTRO[k].b,prog,{intro:true}); await tourSleep(8000,id,true); }
@@ -1856,6 +1907,7 @@ async function tourStep(st,i,n,id,qi){
     if(names.length) tourCap(st.title||(L&&L.label)||"", (st.cap||"")+(st.nameLabel||(st.nameData==="growth"?" Grew most around: ":" Now: "))+names.join(" · ")+".", prog,
       {speak:(st.title||(L&&L.label)||"")+". "+(st.cap||"")});           // the names are data: shown, not spoken
   }
+  else if(st.place&&await tourWard(st,id,prog)) return;            // the ward close-up + fly-over (below)
   else if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0];
     if(hit) psGo(hit);
     else { const cr=((DATA.data["demographics.census_ward"]||{}).rows||[]).find(r=>String(r.name||"").toLowerCase().startsWith(st.place.toLowerCase()));
@@ -1881,10 +1933,55 @@ async function tourStep(st,i,n,id,qi){
     await tourSleep(1600,id); if(!tourOn(id)) return;
     const nf=L.times.length, loops=nf<=12?2:1;                    // short series play twice; end on the latest frame
     if(TOUR) TOUR.playing=true; startPlay(); await tourSleep(Math.min((nf*loops-1)*650+300,32000),id); if(TOUR) TOUR.playing=false; stopPlay();
-    if(tourOn(id)){ tIdx=nf-1; render(); }
+    if(tourOn(id)){ tIdx=nf-1; render(); showTop5(L); }
     await tourSleep(1800,id,true);
-  } else await tourSleep(st.dur||9000,id,true);
+  } else { if(L&&!st.place&&!st.news) showTop5(L); await tourSleep(st.dur||9000,id,true); }
 }
+// WARD CLOSE-UP: every cell of the ward, its building outlines, and its public facilities matched to the building
+// each sits in — then a fly-over of up to five of them (essential services first), each named in the caption.
+let FLY_FOCUS=null;
+const FAC_PRIO=["healthcare","education","emergency","government","sanitation","welfare","transport","banking","recreation"];
+function inRing(pt,ring){ let ins=false; for(let i=0,j=ring.length-1;i<ring.length;j=i++){ const a=ring[i], b=ring[j];
+  if(((a[1]>pt[1])!==(b[1]>pt[1]))&&(pt[0]<(b[0]-a[0])*(pt[1]-a[1])/((b[1]-a[1])||1e-12)+a[0])) ins=!ins; } return ins; }
+const mDist=(a,b)=>{ const k=Math.cos(a[1]*Math.PI/180); return 111320*Math.hypot((a[0]-b[0])*k,a[1]-b[1]); };
+function matchFacilities(facs,blds){                                  // facility point → the building it sits in (else nearest ≤35 m)
+  for(const b of blds){ b._fac=null; const r=ringOf(b.geometry); b._c=r?[r.reduce((s,p)=>s+p[0],0)/r.length, r.reduce((s,p)=>s+p[1],0)/r.length]:null; }
+  const out=[];
+  for(const f of facs){ let hit=blds.find(b=>{ const r=ringOf(b.geometry); return r&&inRing(f.c,r); });
+    if(!hit){ let best=null, bd=35; for(const b of blds){ if(!b._c) continue; const d=mDist(f.c,b._c); if(d<bd){ bd=d; best=b; } } hit=best; }
+    if(hit&&!hit._fac) hit._fac={name:f.name,cat:f.cat};
+    out.push({f,b:hit}); }
+  return out; }
+async function tourWard(st,id,prog){
+  const cw=((DATA.data["demographics.census_ward"]||{}).rows||[]).filter(r=>String(r.name||"").toLowerCase().startsWith(st.place.toLowerCase()));
+  if(!cw.length) return false;
+  const cells=new Set(cw.map(r=>r.h3)), mid=[cw.reduce((s,r)=>s+r.c[0],0)/cw.length, cw.reduce((s,r)=>s+r.c[1],0)/cw.length];
+  const core=cw.slice().sort((a,b)=>mDist(a.c,mid)-mDist(b.c,mid))[0];
+  drillInto(Object.assign({},core)); drillCell.cells=cells;                              // drill on the central cell; the ward's cells ride along
+  if(window.setAskPin) setAskPin([...cells]);
+  await ensureOverlay("facilities");
+  const per=await Promise.all([...cells].map(h=>qf("geo.building",{h3_id:h})));
+  if(!tourOn(id)||!drillCell) return true;
+  drillBuildings=per.flat().map(o=>({geometry:o.geometry,height_m:o.height_m,area_m2:o.area_m2,status:o.method,prov:o.prov})).filter(b=>ringOf(b.geometry));
+  footLoading=false;
+  const facs=(DATA.facilities||[]).filter(f=>cells.has(f.h3)&&f.name);
+  const matched=matchFacilities(facs,drillBuildings);
+  BLD_VER++; cellPanel(); render();
+  const name=String(cw[0].name||st.place);
+  const essentials=matched.filter(m=>FAC_PRIO.includes(m.f.cat)).sort((a,b)=>FAC_PRIO.indexOf(a.f.cat)-FAC_PRIO.indexOf(b.f.cat)).slice(0,5);
+  tourCap(st.title||name, (st.cap||"")+` ${drillBuildings.length.toLocaleString("en-IN")} building outlines, ${facs.length} named facilities`
+    +(drillBuildings.length?"":" (building outlines for this ward are not loaded yet)")+".", prog, {speak:(st.title||name)+". "+(st.cap||"")});
+  view={...view,longitude:mid[0],latitude:mid[1],zoom:15.6,pitch:58,bearing:-20,transitionDuration:2200}; deckgl.setProps({initialViewState:view});
+  await tourSleep(5500,id,true);
+  for(let k=0;k<essentials.length&&tourOn(id);k++){ const m=essentials[k], c=m.b&&m.b._c?m.b._c:m.f.c;
+    FLY_FOCUS={c,cat:m.f.cat}; render();
+    view={...view,longitude:c[0],latitude:c[1],zoom:17.4,pitch:62,bearing:-20+k*55,transitionDuration:2400}; deckgl.setProps({initialViewState:view});
+    tourCap(m.f.name, `${FAC_LABEL[m.f.cat]||m.f.cat} · public facility`+(m.b?` · in a ${Math.round(m.b.area_m2||0).toLocaleString("en-IN")} m² building`:" · no building outline here yet"),
+      prog+" · "+(k+1)+"/"+essentials.length, {speak:null});
+    await tourSleep(5200,id); }
+  FLY_FOCUS=null; render();
+  if(!essentials.length) await tourSleep(st.dur||8000,id,true);
+  return true; }
 async function tourAsk(st,prog,id,q0,i){
   if(!window.AOS_ASK) return;
   tourHome(); AOS_ASK.open(true);
@@ -1906,7 +2003,7 @@ async function startTour(fromStart,dry){
   if(TOUR){ stopTour(); return; }
   if(!dry){ const c=narrCtx(); if(c&&c.state==="suspended") c.resume().catch(()=>{}); }   // unlock audio inside the click
   const at=(fromStart||dry)?null:TOUR_AT; TOUR_AT=null;
-  const id=Date.now(); TOUR={id,at,prep:true,introFrom:0,dry:!!dry}; tourButtons(); document.body.classList.add("touring");
+  const id=Date.now(); TOUR={id,at,prep:true,introFrom:0,dry:!!dry,treeSaved:treeOpen}; tourButtons(); document.body.classList.add("touring");
   if((await narrLoad(true)).size){ if(VOICE.pref==null) VOICE.on=true; if(!dry) narrPrefetch(); }
   if(drillCell) exitDrill(); tourOverlaysOff(); active=null; drawLayers(); render(); tourHome();
   // while every layer loads into this browser (cached 7 days) and the analyst warms up: what AirawatOS is
@@ -1955,7 +2052,10 @@ async function tourPrepare(log){ log=log||(m=>setBusy(m));
   log(left?`Narration: ${left} line(s) still missing — check the Narration driver's run log`:`Narration ready: ${lines.length} lines`);
   return {lines:lines.length,missing:left,filed,run}; }
 window.AOS_TOUR={ script:tourScript, prepare:tourPrepare };
+function initTop5(){ const b=$("t5btn"); if(!b) return;
+  b.onclick=()=>{ const L=LAYERS.find(l=>l.key===active); if(TOP5_KEY&&TOP5_KEY===active) hideTop5(); else showTop5(L); }; }
 function initTour(){
+  initTop5();
   const b=$("tourbtn"); if(b) b.onclick=()=>startTour();
   const r=$("tourrestart"); if(r) r.onclick=()=>{ TOUR_AT=null; startTour(true); };
   const stop=e=>{ if(!TOUR||!e.isTrusted) return; if(e.target&&e.target.closest&&e.target.closest("#tourbtn,#tourrestart,#tourcap")) return;
