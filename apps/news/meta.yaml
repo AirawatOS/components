@@ -4,7 +4,7 @@
 # role + jurisdiction (ADR-0081).
 component_id: ds:airawat:app/news
 kind: app
-version: 0.2.1
+version: 0.2.2   # 0.2.2: newest first across ALL items (paged with projected fields; the registry returns storage order), Load more reveals 30 at a time without re-fetching; the tenant's display name (/session tenant_name) is shown instead of its id
 provider: ds:airawat:developer
 display_name: News
 description: Jurisdiction- & agency-aware civic news reader over LLM-classified news.item — filter by topic/agency/place, with an analytics tab (backend rollup).

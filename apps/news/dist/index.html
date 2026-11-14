@@ -41,7 +41,7 @@
   .brow .ct{color:var(--dim);text-align:right}
 </style></head>
 <body><div class="wrap">
-  <h1><span>📰</span> News</h1>
+  <h1><span>📰</span> News<span id="place"></span></h1>
   <p class="sub" id="sub">Loading…</p>
   <div class="tabs">
     <button class="tab on" id="tab-feed" onclick="setTab('feed')">Feed</button>
@@ -57,8 +57,12 @@
   <div id="analytics" style="display:none"></div>
 </div>
 <script>
-const APPID="news", PAGE=30;
-let ITEMS=[], limit=PAGE, total=null, tsel="", asel="", tab="feed", loading=false;
+const APPID="news", PAGE=30, FETCH=500;
+let ITEMS=[], limit=PAGE, total=null, tsel="", asel="", tab="feed", loading=false, done=false;
+// The tenant's DISPLAY NAME (e.g. "Bengaluru") — shown wherever a record names this tenant; the id stays internal.
+let TENANT="", TENANT_NAME="";
+const placeName=j=>(j&&j===TENANT&&TENANT_NAME)?TENANT_NAME:(j||"");
+const FIELDS=["title","url","source","published_at","topics","agency","agency_key","summary","place_relevant","jurisdiction"];
 const AGLABEL={};
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 async function q(body){
@@ -67,14 +71,25 @@ async function q(body){
   if(!r.ok) throw new Error("query "+r.status);
   return r.json();
 }
-async function fetchPage(){                                   // INCREMENTAL: only ever fetch `limit` rows, grown on demand
-  loading=true;
-  const d=await q({schema:"news.item",filter:{},limit:limit});
-  ITEMS=(d.results||d.rows||d.items||[]).map(x=>x.object||x);
-  ITEMS.sort((a,b)=>String(b.published_at||"").localeCompare(String(a.published_at||"")));
-  loading=false;
+// The registry returns records in storage order, not by date — so "the first N" were not the newest N. Page through
+// every item with only the fields the list shows (cursor pages of FETCH), keep them newest first, and show PAGE at a
+// time; "Load more" reveals the next PAGE without re-fetching. The list renders after the first page and refines as
+// the rest arrive.
+async function fetchAll(){
+  loading=true; let cursor=null, all=[];
+  try{
+    for(let p=0;p<200;p++){
+      const body={schema:"news.item",filter:{},limit:FETCH,fields:FIELDS}; if(cursor) body.cursor=cursor;
+      const d=await q(body);
+      const rows=(d.results||d.rows||d.items||[]).map(x=>x.object||x); all=all.concat(rows);
+      ITEMS=all.slice().sort((a,b)=>String(b.published_at||"").localeCompare(String(a.published_at||"")));
+      render();
+      cursor=d.next_cursor||d.cursor;
+      if(!cursor||rows.length<FETCH) break;
+    }
+  } finally { loading=false; done=true; render(); }
 }
-async function loadMore(){ if(loading) return; limit+=PAGE; await fetchPage(); render(); }
+function loadMore(){ limit+=PAGE; render(); }
 function setTab(t){tab=t;
   document.getElementById("feed").style.display=t==="feed"?"":"none";
   document.getElementById("analytics").style.display=t==="analytics"?"":"none";
@@ -121,30 +136,34 @@ async function renderAnalytics(){                             // ANALYTICS = bac
 function render(){
   ITEMS.forEach(o=>{if(o.agency_key&&o.agency)AGLABEL[o.agency_key]=o.agency;});
   document.getElementById("sub").textContent=(total!=null?total+" updates total · ":"")+
-    "showing "+Math.min(ITEMS.length,limit)+" · AI-classified into topics + responsible agency";
+    "newest first · AI-classified into topics + responsible agency"+(loading?" · loading…":"");
   const tl=[...new Set(ITEMS.flatMap(o=>o.topics||[]))].sort().map(v=>[v,v]);
   const aks=[...new Set(ITEMS.map(o=>o.agency_key).filter(k=>k&&k!=="none"))].sort();
   chipbar("tbar",tl,tsel,v=>{tsel=v;render();});
   chipbar("abar",aks.map(k=>[k,AGLABEL[k]||k]),asel,v=>{asel=v;render();},"ag");
   const placeonly=document.getElementById("placeonly").checked;
-  let rows=ITEMS.filter(o=>(!tsel||(o.topics||[]).includes(tsel))&&(!asel||o.agency_key===asel)&&(!placeonly||o.place_relevant!==false));
+  const match=ITEMS.filter(o=>(!tsel||(o.topics||[]).includes(tsel))&&(!asel||o.agency_key===asel)&&(!placeonly||o.place_relevant!==false));
+  const rows=match.slice(0,limit);
   const list=document.getElementById("list");
   list.innerHTML=rows.length?rows.map(o=>
     '<div class="item">'+
       '<div class="hd"><a href="'+esc(o.url)+'" target="_blank" rel="noopener">'+esc(o.title)+'</a></div>'+
-      '<div class="row"><span class="j">'+esc(o.jurisdiction||"")+'</span>'+
+      '<div class="row"><span class="j">'+esc(placeName(o.jurisdiction))+'</span>'+
         '<span>'+esc(o.source||"")+'</span><span>'+esc((o.published_at||"").slice(0,10))+'</span>'+
         (o.agency_key&&o.agency_key!=="none"?'<span class="agtag">'+esc(o.agency||o.agency_key)+'</span>':'')+
         (o.topics||[]).map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div>'+
       (o.summary?'<div class="sum">'+esc(o.summary.slice(0,220))+'</div>':'')+
-    '</div>').join(""):'<p class="empty">No items match this filter.</p>';
+    '</div>').join("")+'<p class="sub">Showing '+rows.length+' of '+match.length+(match.length!==ITEMS.length?' matching':'')+'</p>'
+    :(loading?'<p class="empty">Loading…</p>':'<p class="empty">No items match this filter.</p>');
   const more=document.getElementById("more");
-  const canMore = total==null ? (ITEMS.length>=limit) : (ITEMS.length<total);
-  more.style.display=canMore?"":"none"; more.disabled=loading;
+  more.style.display=match.length>rows.length?"":"none"; more.disabled=false;
+  more.textContent="Load "+Math.min(PAGE,match.length-rows.length)+" more";
 }
 (async ()=>{
+  try{ const s=await (await fetch("/session",{credentials:"same-origin"})).json(); TENANT=s.tenant||""; TENANT_NAME=s.tenant_name||"";
+    if(TENANT_NAME) document.getElementById("place").textContent=" · "+TENANT_NAME; }catch(e){}
   try{ const c=await q({schema:"news.item",filter:{},count:true}); total=c.count; }catch(e){}
-  try{ await fetchPage(); render(); }
+  try{ await fetchAll(); }
   catch(e){ document.getElementById("sub").textContent="";
     document.getElementById("list").innerHTML='<p class="empty">Could not load news ('+esc(e.message||e)+').</p>'; }
 })();
