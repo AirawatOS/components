@@ -1683,6 +1683,17 @@ const INTRO=[
   {t:"Open data, already plugged in", b:"It comes with open data connected: satellites, OpenStreetMap, air-quality stations, the census, weather and public finance — each record with its source and how fresh it is."},
   {t:"Agencies bring their own", b:"Departments plug in their internal data, build analytics on top of it, and configure AI agents that answer questions and flag what needs attention."},
   {t:"Shared, reliably", b:"Agencies share data with each other under rules the data owner sets, and every number can be traced back to where it came from."}];
+// shown after the intro cards while the data is still loading: what is loading, in this city's numbers
+let AOI_CELLS=null;
+function loadingCard(){
+  const city=(DATA&&DATA.aoi&&DATA.aoi.name)||"the city";
+  const pb=$("preloadall"), m=pb&&pb.textContent.match(/(\d+)\/(\d+)/);
+  const n=m?+m[2]:(LAYERS.length+7);
+  if(AOI_CELLS==null){ try{ const b=(DATA.aoi&&DATA.aoi.bbox)||DATA.scope;
+    AOI_CELLS=h3.polygonToCells([[b[1],b[0]],[b[1],b[2]],[b[3],b[2]],[b[3],b[0]],[b[1],b[0]]],(DATA.aoi&&DATA.aoi.h3_res)||9).length; }catch(e){ AOI_CELLS=0; } }
+  const cells=AOI_CELLS>=1000?(Math.floor(AOI_CELLS/1000)*1000).toLocaleString("en-IN")+"+":(AOI_CELLS?String(AOI_CELLS):"thousands of");
+  return {t:"Loading "+city+"'s data", b:"To show what is possible, we are loading "+n+" datasets about "+city+", mapped to "+cells+
+    " hexagonal cells. The tour starts when all the data has loaded."}; }
 const TOUR_STEPS=[
   {intro:true},
   {title:"Bangalore, seen through its data", cap:"Every layer is governed city data with its source and freshness. This tour plays each one — click anywhere to take over.", dur:6500},
@@ -1713,7 +1724,7 @@ const VOICE={on:false,pref:null}; try{ VOICE.pref=localStorage.getItem("aosTourV
 const NARR_VOICE={language:"en-IN",voice:"shubh",model:"bulbul:v3",pace:1.0};
 const NARR_DRIVER="ds:airawatdeveloper:driver/narration";
 let TOUR_SAID="", TOUR_LAST="", TOUR_LINES=null;
-const speechText=t=>String(t||"").replace(/·/g,",").replace(/km²/g," square kilometre").replace(/PM2\.5/g,"P M 2.5").replace(/–/g," to ").replace(/\s+/g," ").trim();
+const speechText=t=>String(t||"").replace(/(\d[\d,]*)\+/g,"over $1").replace(/·/g,",").replace(/km²/g," square kilometre").replace(/PM2\.5/g,"P M 2.5").replace(/–/g," to ").replace(/\s+/g," ").trim();
 async function narrKey(text,v){ v=v||NARR_VOICE;
   const str=[v.language,v.voice,v.model,Number(v.pace).toFixed(2),String(text).replace(/\s+/g," ").trim()].join("|");
   const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(str));
@@ -1899,18 +1910,21 @@ async function startTour(fromStart,dry){
   if((await narrLoad(true)).size){ if(VOICE.pref==null) VOICE.on=true; if(!dry) narrPrefetch(); }
   if(drillCell) exitDrill(); tourOverlaysOff(); active=null; drawLayers(); render(); tourHome();
   // while every layer loads into this browser (cached 7 days) and the analyst warms up: what AirawatOS is
-  let ci=0, cardAt=Date.now(), cycled=false;
+  // the intro cards ONCE (ci = INTRO.length → the loading card, held until the data is in)
+  let ci=0, cardAt=Date.now();
   const tick=()=>{ if(!tourOn(id)) return; const now=Date.now();
-    if(now-cardAt>8000&&!voiceBusy()){ ci=(ci+1)%INTRO.length; if(!ci) cycled=true; cardAt=now; }
+    if(ci<INTRO.length&&now-cardAt>8000&&!voiceBusy()){ ci++; cardAt=now; }
     const pb=$("preloadall"), m=pb&&pb.textContent.match(/(\d+)\/(\d+)/);
-    tourCap(INTRO[ci].t,INTRO[ci].b,PRELOADED?"warming up the City Analyst…":"loading the city's data"+(m?" "+m[1]+"/"+m[2]:"")+"…",
-      {intro:true,prep:true,bar:PRELOADED?1:(m?m[1]/m[2]:0)}); };
+    const prog=PRELOADED?"warming up the City Analyst…":"loading the city's data"+(m?" "+m[1]+"/"+m[2]:"")+"…";
+    const c=ci<INTRO.length?INTRO[ci]:loadingCard();
+    tourCap(c.t,c.b,prog,{intro:true,prep:true,bar:PRELOADED?1:(m?m[1]/m[2]:0)}); };
   tick(); const k=setInterval(tick,500);
   if(!PRELOADED) await (PRELOADING ? new Promise(res=>{ const w=setInterval(()=>{ if(!PRELOADING){ clearInterval(w); res(); } },300); }) : preloadAll());
   if(tourOn(id)&&window.AOS_ASK&&!dry) await AOS_ASK.warm();      // its data, without the model
   clearInterval(k);
   if(!TOUR||TOUR.id!==id) return;
-  TOUR.prep=false; TOUR.introFrom=dry?0:cycled?INTRO.length:ci+(Date.now()-cardAt>5000?1:0);  // the intro step shows only the cards not yet read
+  if(dry){ const c=loadingCard(); say(c.t+". "+c.b); }            // the dry run lists the loading card's line too
+  TOUR.prep=false; TOUR.introFrom=dry?0:Math.min(INTRO.length,ci+(ci<INTRO.length&&Date.now()-cardAt>5000?1:0));  // the intro step shows only the cards not yet read
   const steps=TOUR_STEPS.filter(st=>!st.layer||LAYERS.some(l=>l.key===st.layer));
   let i=(at&&at.i<steps.length)?at.i:0, q0=at?at.qi:0;
   if(!at&&steps[i]&&steps[i].intro&&TOUR.introFrom>=INTRO.length) i++;
