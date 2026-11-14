@@ -198,6 +198,18 @@
   .tourcap .tk{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;display:flex;justify-content:space-between}
   .tourcap .tt{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:4px}
   .tourcap .tb{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .tourcap .tctl{display:flex;gap:6px;margin-top:10px;pointer-events:auto}
+  .tourcap .tctl button{border:1px solid var(--edge2);background:#0e1c2a;color:var(--ink);border-radius:7px;padding:3px 10px;font-size:12.5px;cursor:pointer}
+  .tourcap .tctl button:hover,.tourcap .tctl button.on{border-color:var(--accent);color:var(--accent)}
+  .tourcap .tctl .sp{flex:1}
+  .tourcap.intro{width:min(580px,86%);left:50%;top:50%;bottom:auto;transform:translate(-50%,-50%);padding:20px 24px}
+  .tourcap.intro .tt{font-size:21px;margin-bottom:8px}
+  .tourcap.intro .tb{font-size:14.5px;line-height:1.6}
+  .tourcap .tprog{height:3px;background:var(--edge2);border-radius:2px;margin-top:12px;overflow:hidden}
+  .tourcap .tprog i{display:block;height:100%;background:var(--accent)}
+  /* while the tour runs, the map is a screen: no search, zoom, basemap, opacity or rail toggles over it */
+  body.touring .psearch,body.touring .zoomctl,body.touring .bmctl,body.touring #opacctl,body.touring .railtog,
+  body.touring .drillhint,body.touring #askbtn{display:none!important}
   .rampsel{margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
   .rampsel select{flex:1;background:#0e1c2a;color:inherit;border:1px solid var(--edge2);border-radius:6px;font-size:11.5px;padding:2px 4px}
   .rampsel button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:11px;text-decoration:underline;padding:0}
@@ -245,7 +257,7 @@
 </style>
 
 <header>
-  <h1><b>Visualize</b></h1>
+  <h1><b id="hname">Visualize</b></h1>
   <div class="sub" id="sub">loading…</div>
   <button class="tourbtn" id="tourbtn" title="Auto-run: a guided tour of every layer and the City Analyst. Any click, scroll or key pauses it and gives you control.">▶ Tour</button>
   <button class="tourbtn" id="tourrestart" title="Start the tour from the beginning" hidden style="margin-left:6px">↺</button>
@@ -570,6 +582,11 @@ function hydroPaths(g){ if(!g||!g.coordinates) return []; const t=g.type, c=g.co
   if(t==="MultiPolygon") return c.flat().filter(r=>r&&r.length>1);
   return []; }
 
+// A TEMPORAL layer's colour scale is fixed across frames (0..max) — one outlier (the airport's night light, one huge
+// ward payment) made the max 4x the typical value and every frame looked the same. Stop the scale at the 99th
+// percentile of all frame values when the max is > 1.5x it (values above take the top colour; legend reads "≥").
+function tclip(dd,vals){ const v=vals.filter(x=>typeof x==="number").sort((a,b)=>a-b); if(v.length<200) return;
+  const p99=v[Math.floor(v.length*0.99)]; if(p99>0&&dd.thi>1.5*p99){ dd.tmax=dd.thi; dd.thi=p99; dd.thiClip=true; } }
 function parseCells(rows,L){                                    // rows → H3 hexagons, with GENERIC temporal detection
   // A layer animates when its DATA carries multiple time frames — detected generically, no per-layer code.
   // Two shapes are supported, both driven by the layer's declared value_field (L.vf):
@@ -590,7 +607,7 @@ function parseCells(rows,L){                                    // rows → H3 h
       for(const c of cells){ const by={}; for(const s of (c.series||[])) by[String(s.t)]=s; c.series=tl.map(t=>by[t]||null); }
       L.temporal=true; L.times=tl; L.sfield=sk;
       let hi=0; for(const c of cells){ if(Array.isArray(c.series)) for(const s of c.series){ const v=s&&s[sk]; if(typeof v==="number"&&v>hi) hi=v; } }
-      dd.thi=hi||1; }
+      dd.thi=hi||1; tclip(dd,cells.flatMap(c=>(c.series||[]).map(x=>x&&x[sk]))); }
     return dd;
   }
   // ---- (B) dated snapshots → group records by observed_at into frames ---------------------------
@@ -608,7 +625,7 @@ function parseCells(rows,L){                                    // rows → H3 h
     for(const c of cells){ c.v=0; for(let i=c.series.length-1;i>=0;i--){ if(typeof c.series[i][vf]==="number"){ c.v=c.series[i][vf]; break; } } }
     let hi=0; for(const c of cells) for(const s of c.series){ const v=s[vf]; if(typeof v==="number"&&v>hi) hi=v; }
     L.temporal=true; L.times=times; L.sfield=vf;
-    return {type:"hex",rows:cells, lo:0, hi:hi||1, thi:hi||1};
+    const db={type:"hex",rows:cells, lo:0, hi:hi||1, thi:hi||1}; tclip(db,cells.flatMap(c=>c.series.map(x=>x[vf]))); return db;
   }
   // ---- single frame (non-temporal) -------------------------------------------------------------
   const cells=rows.map(o=>{ const g=geom(o); return {h3:g.h3,c:g.c,b:g.b,name:g.name||(o.ward_name?o.ward_name+" (ward "+o.ward_no+")":undefined),v:dget(o,vf)}; })
@@ -652,7 +669,8 @@ function provShort(P){ if(!P) return ""; return P.source||(P.dataset?P.dataset.s
 function updateHeader(){                       // the header names the place + the layer ON SCREEN, its source and freshness
   const L=LAYERS.find(l=>l.key===active), P=L&&L.prov, place=esc((DATA.aoi||{}).name||"AOI");
   const bits=[place];
-  if(L){ bits.push("<b>"+esc(L.label)+"</b>"); const src=provShort(P); if(src) bits.push(esc(src));
+  const hn=$("hname"); if(hn) hn.textContent=(L&&DATA.data&&DATA.data[L.key])?L.label:"Visualize";   // the host bar already names the app
+  if(L){ const src=provShort(P); if(src) bits.push(esc(src));
          if(P&&P.asof) bits.push((P.period?esc(P.period):"as of "+esc(P.asof.slice(0,10)))+" ("+esc(ago(P.asof))+")"); }
   bits.push(LAYERS.length+" indicator layers");
   $("sub").innerHTML=bits.join('<span class="dot">·</span>');
@@ -670,19 +688,70 @@ function robustScale(dd,L){
 // the fields a cell layer actually draws (its cell, time frames and value) — provenance is sampled separately
 function cellFields(L){ const top=String(L.vf||"").split(".")[0];
   return ["cell_ref","space","observed_at","series","h3_id","lake_ref","lake","ward_name","ward_no"].concat(top?[top]:[]); }   // lake_ref: the trend chart counts lakes
+// HOURLY FRAMES (air.quality): the schema keeps every hour since the pipeline started (staging: 290k records), and the
+// latest-per-cell reduce pages ALL of them — past the front proxy's 60 s. Instead find the most recent hours that have
+// data (one count per hour, ~2 s, 6 at a time), fetch the newest hour (an equality filter, ~5 s for 11k cells) and
+// draw it; the previous hours load in the background (cached per hour, boundary dropped) so the layer animates.
+const FRAMED=new Set(["air.quality"]), HIST_FRAMES=12, HOURN={};
+async function recentHours(schema,want,maxBack){
+  const s=await bridge("/bridge/query",{app_id:APPID,schema,limit:1,fields:["observed_at"]});
+  const o=((s.results||s.objects||[])[0])||{}, ref=new Date((o.object||o).observed_at||"2000-01-01T00:30:00Z");
+  const t=new Date(); t.setUTCMinutes(ref.getUTCMinutes(),ref.getUTCSeconds(),0); if(t>new Date()) t.setUTCHours(t.getUTCHours()-1);
+  const found=[];
+  for(let k=0;k<maxBack&&found.length<want;k+=6){
+    const ts=[0,1,2,3,4,5].map(j=>new Date(t-(k+j)*3600e3).toISOString().replace(".000Z","Z"));
+    const ns=await Promise.all(ts.map(async x=>{ const ck=schema+"|"+x;
+      if(HOURN[ck]==null||Date.now()-HOURN[ck].at>600e3) HOURN[ck]={n:await countOf(schema,{observed_at:x}),at:Date.now()};
+      return HOURN[ck].n; }));
+    ts.forEach((x,j)=>{ if(ns[j]>0&&found.length<want) found.push(x); });
+  }
+  return found;                                                   // newest first
+}
+async function qFrame(schema,t,fields,slim){
+  const filter={observed_at:t};
+  const r=await cachedFetch(schema,filter,slim?["slim",...fields]:fields,async()=>{ let out=[],cursor=null,ok=true;
+    for(let pg=0;pg<20;pg++){ const body={app_id:APPID,schema,filter,limit:50000,fields}; if(cursor) body.cursor=cursor;
+      let d; try{ d=await bridge("/bridge/query",body); }catch(e){ ok=false; break; }
+      const rows=(d.results||d.objects||d||[]).map(x=>x.object||x); out=out.concat(rows); cursor=d.next_cursor||d.cursor;
+      if(!cursor||rows.length<50000) break; }
+    if(slim) out=out.map(o=>{ const g=o.space||o.cell_ref||{}, x={observed_at:o.observed_at,space:{h3:g.h3||g.h3_id,centroid:g.centroid}};
+      for(const k of fields) if(!(k in x)&&o[k]!=null&&k!=="cell_ref") x[k]=o[k]; return x; });
+    return {rows:out,ok}; });
+  return r.rows||[];
+}
+async function qFramed(L){
+  const st=LAYER_STAT[L.key], fields=cellFields(L);
+  let hrs=[]; try{ hrs=await recentHours(L.key,1,168); }catch(e){}
+  if(!hrs.length){ if(st) st.err=true; return []; }
+  const rows=await qFrame(L.key,hrs[0],fields,false);
+  SURFMETA[L.key]={freshness:hrs[0],confidence:null,method:null,n:rows.length};
+  if(st) Object.assign(st,{fetched:rows.length,complete:true});
+  L._hist=(async()=>{ try{                                         // the hours before it, in the background → animates
+    const hs=(await recentHours(L.key,HIST_FRAMES,168)).filter(t=>t!==hrs[0]); if(!hs.length) return;
+    const parts=[rows], qq=hs.slice();
+    const w=async()=>{ while(qq.length){ const t=qq.shift(); const r=await qFrame(L.key,t,fields,true); parts.push(r); } };
+    await Promise.all([w(),w()]);
+    DATA.data[L.key]=parseCells(parts.flat(),L);
+    DATA.data[L.key].lmeta={temporal:L.temporal,times:L.times,sfield:L.sfield,prov:L.prov};
+    if(active===L.key){ drawLayers(); render(); }
+  }catch(e){} })();
+  return rows;
+}
 async function ensureLayer(L){                                 // fetch a choropleth layer's data ON DEMAND (cached)
   if(!L || DATA.data[L.key]) return DATA.data[L.key];
   L._loading=true;
   LAYER_STAT[L.key]={loading:true,loaded:0,fetched:0,complete:false,err:false,capped:false,unit:"cells"}; ovProgress(L.key);
   const rows = (L.key==="geo.osm_feature") ? await q(L.key)
+             : FRAMED.has(L.key) ? await qFramed(L)
              : SURFACE.has(L.key) ? (L.surface=true, await qLatest(L.key,L.vf,L.key))   // current surface = latest value per cell, reduced server-side (fast)
              : await qAll(L.key,400000,L.key,cellFields(L));  // other cell layers: paginate the full set (projected)
-  try{ L.prov=provOf(SURFACE.has(L.key)||L.key==="geo.osm_feature" ? rows
+  try{ L.prov=provOf((SURFACE.has(L.key)&&!FRAMED.has(L.key))||L.key==="geo.osm_feature" ? rows
         : ((await bridge("/bridge/query",{app_id:APPID,schema:L.key,limit:300})).results||[]).map(x=>x.object||x)); }catch(e){ L.prov=null; }
   DATA.data[L.key] = (L.key==="geo.osm_feature")
     ? {type:"path",rows:rows.map(o=>({path:((o.geometry||{}).coordinates)||[],feature:o.feature})).filter(p=>Array.isArray(p.path)&&p.path.length>1&&inB(p.path[0]))}
     : parseCells(rows,L);
   const dd=DATA.data[L.key];
+  if(dd) dd.lmeta={temporal:L.temporal,times:L.times,sfield:L.sfield,surface:L.surface,prov:L.prov};
   robustScale(dd,L);
   Object.assign(LAYER_STAT[L.key],{loading:false, loaded:(dd&&dd.rows?dd.rows.length:0),
     complete:(L.key==="geo.osm_feature")?true:(LAYER_STAT[L.key].complete!==false&&!LAYER_STAT[L.key].err)});
@@ -1193,7 +1262,11 @@ function issuesLayer(){                                          // civic.issue 
     radiusUnits:"meters", getRadius:34, radiusMinPixels:4, radiusMaxPixels:16,
     stroked:true, getLineColor:[8,16,26,235], lineWidthMinPixels:0.8});
 }
+// a rebuilt LAYERS entry (boot re-probe) takes back what its loaded data knows about it
+function lsync(L){ const dd=L&&DATA.data&&DATA.data[L.key]; if(!dd||!dd.lmeta) return;
+  for(const [k,v] of Object.entries(dd.lmeta)) if(v!==undefined&&(L[k]===undefined||(k==="temporal"&&!L[k]))) L[k]=v; }
 function render(){
+  if(typeof active!=="undefined"&&active) lsync(LAYERS.find(l=>l.key===active));
   if(!deckgl) return;
   updateHeader();
   const layers = (showPlan && PLAN)
@@ -1206,7 +1279,7 @@ function render(){
   if(L&&d&&d.type==="hex"){ $("legend").hidden=false;
     $("legbar").style.background=rampCSS(layerRamp(L));
     drawRampSel(L);
-    if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=L.fmt(d.thi); }
+    if(L.temporal){ $("legmin").textContent="0"; $("legmax").textContent=(d.thiClip?"≥ ":"")+L.fmt(d.thi); }
     else { $("legmin").textContent=L.fmt(d.lo); $("legmax").textContent=(d.hiClip?"≥ ":"")+L.fmt(d.hi); }
     // per-layer provenance: freshness (newest observation in THIS layer), mean confidence, method/model.
     const m=SURFMETA[L.key]; const lm=$("legmeta");
@@ -1604,17 +1677,23 @@ function initClearCache(){
 // ── AUTO-RUN TOUR: every layer in story order (animated ones play through their years), a ward close-up, then the
 // City Analyst answering a few questions — on a loop. Data is PRELOADED first so no step waits on a download. Any real
 // click / scroll / key stops it (the tour itself never fires DOM events). ?tour=1 starts it on load (kiosk / demo).
+// What AirawatOS is — shown while the city's data loads (and as the first step when it is already cached).
+const INTRO=[
+  {t:"AirawatOS — shared data infrastructure", b:"One platform that any city or district can run as shared public infrastructure, instead of every department building its own."},
+  {t:"Open data, already plugged in", b:"It comes with open data connected: satellites, OpenStreetMap, air-quality stations, the census, weather and public finance — each record with its source and how fresh it is."},
+  {t:"Agencies bring their own", b:"Departments plug in their internal data, build analytics on top of it, and configure AI agents that answer questions and flag what needs attention."},
+  {t:"Shared, reliably", b:"Agencies share data with each other under rules the data owner sets, and every number can be traced back to where it came from."}];
 const TOUR_STEPS=[
+  {intro:true},
   {title:"Bangalore, seen through its data", cap:"Every layer is governed city data with its source and freshness. This tour plays each one — click anywhere to take over.", dur:6500},
   {layer:"demographics.census_ward", d3:true, title:"Who lives where", cap:"Population density by ward, census 2011 — taller and darker means more people per km²."},
-  {layer:"demographics.population", d3:true},
-  {layer:"air.quality"},
+  {layer:"air.quality", title:"Air through the day", cap:"PM2.5 estimated from the CPCB stations, hour by hour over the hours they last reported."},
   {layer:"air.hotspot", d3:true, fitData:true, title:"Pollution hotspots", cap:"The top 5% of the city's PM2.5 surface right now — tall towers are the worst cells."},
   {layer:"cell.aod"},
   {layer:"cell.hydrology", overlays:["water"], title:"Where water collects", cap:"Flood susceptibility from terrain, with the natural drainage network."},
   {layer:"water.lake_cell", fly:[77.665,12.935,12.4], title:"Lakes, 1995–2021", cap:"Satellite water extent year by year — watch Bellandur and its neighbours fill and shrink."},
   {layer:"cell.heat"}, {layer:"cell.rainfall"},
-  {layer:"mobility.transit_access", d3:true, fitData:"cluster", overlays:["transit"], title:"Who is far from transit", cap:"Tall red = many people far from a bus stop or metro station, with the public transport network."},
+  {layer:"mobility.transit_access", d3:true, nameData:"top", nameLabel:" Biggest gaps around: ", overlays:["transit"], title:"Who is far from transit", cap:"Tall red = many people far from a bus stop or metro station, with the public transport network."},
   {layer:"mobility.walkability"},
   {layer:"mobility.chokepoint", overlays:["roads"], title:"Where the road network chokes", cap:"A proxy: the junctions most of the city's shortest routes pass through — not measured traffic."},
   {overlays:["fac:healthcare","fac:education","fac:emergency","fac:sanitation"], title:"Public services", cap:"Health (red), education (blue), safety (orange) and sanitation (teal) service points."},
@@ -1626,10 +1705,41 @@ const TOUR_STEPS=[
   {ask:["Which crowded wards have weak metro access and low works spending per person?", "Tell me about Nilasandra",
         "Which lakes have shrunk the most?", "If you were responsible for the city, what would be your top 5 priorities?"], title:"Ask the city"}];
 let TOUR=null, TOUR_AT=null;      // TOUR_AT = {i, qi}: where a stopped tour resumes
-const tourOn=id=>!!TOUR&&TOUR.id===id;
-function tourSleep(ms,id){ return new Promise(res=>{ const t0=Date.now(); const k=setInterval(()=>{ if(!tourOn(id)||Date.now()-t0>=ms){ clearInterval(k); res(); } },150); }); }
-function tourCap(title,body,prog){ const el=$("tourcap"); if(!el) return; el.hidden=false;
-  el.innerHTML=`<div class="tk"><span>▶ Tour${prog?" · "+esc(prog):""}</span><span>click anywhere to take over</span></div><div class="tt">${esc(title||"")}</div><div class="tb">${esc(body||"")}</div>`; }
+const tourOn=id=>!!TOUR&&TOUR.id===id&&TOUR.jump==null;        // a pending back / next ends the current step
+// NARRATION (optional, off by default): the browser's own speech voice reads each caption — no recording, no service.
+const VOICE={on:false}; try{ VOICE.on=localStorage.getItem("aosTourVoice")==="1"; }catch(e){}
+let TOUR_SAID="", TOUR_LAST="";
+function pickVoice(){ try{ const vs=speechSynthesis.getVoices();
+  return vs.find(v=>/en[-_]IN/i.test(v.lang))||vs.find(v=>/^en[-_]GB/i.test(v.lang))||vs.find(v=>/^en/i.test(v.lang))||null; }catch(e){ return null; } }
+function say(text,force){ TOUR_LAST=text; if(!force&&text===TOUR_SAID) return; TOUR_SAID=text; if(!VOICE.on||!window.speechSynthesis) return;
+  try{ speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(String(text).replace(/·/g,",").replace(/km²/g," square kilometre").replace(/PM2\.5/g,"P M 2.5").replace(/–/g," to "));
+    const v=pickVoice(); if(v){ u.voice=v; u.lang=v.lang; } u.rate=1; speechSynthesis.speak(u); }catch(e){} }
+const voiceBusy=()=>VOICE.on&&!!window.speechSynthesis&&(speechSynthesis.speaking||speechSynthesis.pending);
+// waits ms of UNPAUSED time; waitVoice: also lets the narration finish (bounded)
+function tourSleep(ms,id,waitVoice){ return new Promise(res=>{ let left=ms, last=Date.now(); const t0=last;
+  const k=setInterval(()=>{ const now=Date.now(); if(TOUR&&!TOUR.paused) left-=now-last; last=now;
+    if(!tourOn(id)||(left<=0&&!(waitVoice&&voiceBusy()&&now-t0<ms+30000))){ clearInterval(k); res(); } },150); }); }
+function tourCap(title,body,prog,opt){ const el=$("tourcap"); if(!el) return; el.hidden=false; opt=opt||{};
+  el.classList.toggle("intro",!!opt.intro);
+  const ctl=!TOUR?"":`<div class="tctl">`+(opt.prep?"":`<button data-t="back" title="Previous step (←)">⏮</button><button data-t="pause" title="Pause / resume (space)">${TOUR.paused?"▶":"⏸"}</button><button data-t="next" title="Next step (→)">⏭</button>`)
+    +`<span class="sp"></span><button data-t="voice" class="${VOICE.on?"on":""}" title="Narration — the browser reads each caption">${VOICE.on?"🔊":"🔈"}</button><button data-t="stop" title="Stop the tour">■</button></div>`;
+  el.innerHTML=`<div class="tk"><span>▶ Tour${prog?" · "+esc(prog):""}</span><span>${opt.intro?"":"click the map to take over"}</span></div><div class="tt">${esc(title||"")}</div><div class="tb">${esc(body||"")}</div>`
+    +(opt.bar!=null?`<div class="tprog"><i style="width:${Math.round(Math.max(0,Math.min(1,opt.bar))*100)}%"></i></div>`:"")+ctl;
+  el.querySelectorAll(".tctl button").forEach(b=>b.onclick=()=>tourCtl(b.dataset.t));
+  say((title?title+". ":"")+(body||"")); }
+function tourCtl(t){ if(!TOUR) return;
+  const cap=$("tourcap"), btn=k=>cap&&cap.querySelector(`[data-t=${k}]`);
+  if(t==="stop"){ stopTour(); return; }
+  if(t==="voice"){ VOICE.on=!VOICE.on; try{ localStorage.setItem("aosTourVoice",VOICE.on?"1":"0"); }catch(e){}
+    if(!VOICE.on){ try{ speechSynthesis.cancel(); }catch(e){} } else if(TOUR_LAST) say(TOUR_LAST,true);
+    const b=btn("voice"); if(b){ b.textContent=VOICE.on?"🔊":"🔈"; b.classList.toggle("on",VOICE.on); } return; }
+  if(t==="pause"){ TOUR.paused=!TOUR.paused;
+    if(TOUR.paused){ stopPlay(); try{ speechSynthesis.pause(); }catch(e){} } else { try{ speechSynthesis.resume(); }catch(e){} if(TOUR.playing) startPlay(); }
+    const b=btn("pause"); if(b) b.textContent=TOUR.paused?"▶":"⏸"; return; }
+  if(TOUR.prep) return;
+  const cur=(TOUR.at&&TOUR.at.i)||0; TOUR.jump=Math.max(0,cur+(t==="back"?-1:1)); TOUR.paused=false;
+  try{ speechSynthesis.cancel(); }catch(e){} }
 function tourButtons(){
   const b=$("tourbtn"), r=$("tourrestart"); if(!b) return;
   if(TOUR){ b.textContent="■ Stop tour"; b.classList.add("on"); if(r) r.hidden=true; return; }
@@ -1637,7 +1747,8 @@ function tourButtons(){
 }
 function stopTour(msg){
   if(!TOUR) return; TOUR_AT=TOUR.at||null; TOUR=null; stopPlay();
-  const c=$("tourcap"); if(c) c.hidden=true; tourButtons();
+  try{ speechSynthesis.cancel(); }catch(e){} TOUR_SAID=""; document.body.classList.remove("touring");
+  const c=$("tourcap"); if(c){ c.hidden=true; c.classList.remove("intro"); } tourButtons();
   setBusy(msg||"Tour paused — you're in control. ▶ Resume tour continues from here, ↺ from the start."); setTimeout(()=>setBusy(null),4000);
 }
 function tourOverlaysOff(){ showRoads=showRoadsLocal=showWater=showIssues=showTransit=false; FAC_ON.clear(); showFacilities=false; }
@@ -1651,7 +1762,7 @@ function tourHome(){ view={...fitView(DATA.aoi.bbox||DATA.scope), pitch:mode3d?5
 function tour3d(on){ if(mode3d!==!!on && $("tilt")) $("tilt").onclick(); }
 const firstSentence=t=>{ const m=String(t||"").match(/^.*?[.!?](\s|$)/); return (m?m[0]:String(t||"")).trim().slice(0,220); };
 async function tourStep(st,i,n,id,qi){
-  if(TOUR) TOUR.at={i,qi:0};
+  if(TOUR){ TOUR.at={i,qi:0}; TOUR.playing=false; }
   if(drillCell) exitDrill();
   tourOverlaysOff(); stopPlay(); tIdx=0;
   if(window.AOS_ASK) AOS_ASK.close();
@@ -1662,6 +1773,9 @@ async function tourStep(st,i,n,id,qi){
   if(!tourOn(id)) return;
   drawLayers(); render();
   const prog=(i+1)+"/"+n;
+  if(st.intro){ tourHome();                                        // what AirawatOS is — the cards not already shown while loading
+    for(let k=(TOUR&&TOUR.introFrom)||0;k<INTRO.length&&tourOn(id);k++){ tourCap(INTRO[k].t,INTRO[k].b,prog,{intro:true}); await tourSleep(8000,id,true); }
+    if(TOUR) TOUR.introFrom=0; return; }
   if(st.ask){ await tourAsk(st,prog,id,qi||0,i); return; }
   tourCap(st.title||(L&&L.label)||"", st.cap||(L?firstSentence(L.interp||L.desc):""), prog);
   if((st.fitData||st.nameData)&&L&&DATA.data[L.key]&&(DATA.data[L.key].rows||[]).length){   // where THIS layer's cells are now
@@ -1671,7 +1785,7 @@ async function tourStep(st,i,n,id,qi){
     let rows=DATA.data[L.key].rows.filter(r=>Array.isArray(r.c)).sort((a,b)=>score(b)-score(a));
     if(mode==="cluster"||mode==="growth"){ const t=rows[0], kx=Math.cos(t.c[1]*Math.PI/180);   // the top cell and its neighbourhood
       rows=rows.filter(r=>111.32*Math.hypot((r.c[0]-t.c[0])*kx,r.c[1]-t.c[1])<=3).slice(0,10); }
-    else rows=rows.slice(0,6);
+    else rows=rows.slice(0,st.nameData==="top"?40:6);           // naming only: look further down for distinct places
     const xs=rows.map(r=>r.c[0]), ys=rows.map(r=>r.c[1]);
     const w=Math.min(...xs), e=Math.max(...xs), so=Math.min(...ys), no=Math.max(...ys);
     const span=Math.max(e-w,no-so,0.004)*1.6, zoom=Math.max(11,Math.min(13.5,Math.log2(360/span)-0.6));
@@ -1680,7 +1794,7 @@ async function tourStep(st,i,n,id,qi){
     else tourHome();                                           // nameData: name the places, keep the whole city in view
     await loadPlaces();
     const names=[...new Set(rows.map(r=>String(cellWhere(r)||"").replace(/^near /,"").replace(/ \([0-9.]+ km\)$/,"")).filter(n=>n&&!/^\d/.test(n)))].slice(0,3);
-    if(names.length) tourCap(st.title||(L&&L.label)||"", (st.cap||"")+(st.nameData==="growth"?" Grew most around: ":" Now: ")+names.join(" · ")+".", prog);
+    if(names.length) tourCap(st.title||(L&&L.label)||"", (st.cap||"")+(st.nameLabel||(st.nameData==="growth"?" Grew most around: ":" Now: "))+names.join(" · ")+".", prog);
   }
   else if(st.place){ await Promise.all([loadPlaces(),psExtra()]); const hit=psFind(st.place)[0];
     if(hit) psGo(hit);
@@ -1697,16 +1811,18 @@ async function tourStep(st,i,n,id,qi){
       try{ if(window.setAskPin) setAskPin([h3.latLngToCell(it.c[1],it.c[0],9)]); }catch(e){}
       const head=String(it.title).replace(/\s+-\s+[^-]{2,40}$/,"");
       tourCap(head, [String(it.cat).replace(/_/g," "), it.sev&&(it.sev+" severity"), String(it.at||"").slice(0,10), it.place].filter(Boolean).join(" · "), prog+" · news "+(k+1)+"/"+items.length);
-      await tourSleep(6500,id); }
+      await tourSleep(6500,id,true); }
     if(window.setAskPin) setAskPin([]);
     if(!items.length) await tourSleep(st.dur||8000,id);
     return;
   }
   if(L&&L.temporal&&(L.times||[]).length>1){
     await tourSleep(1600,id); if(!tourOn(id)) return;
-    startPlay(); await tourSleep(Math.min(L.times.length*650+900,30000),id); stopPlay();
-    await tourSleep(1800,id);
-  } else await tourSleep(st.dur||9000,id);
+    const nf=L.times.length, loops=nf<=12?2:1;                    // short series play twice; end on the latest frame
+    if(TOUR) TOUR.playing=true; startPlay(); await tourSleep(Math.min((nf*loops-1)*650+300,32000),id); if(TOUR) TOUR.playing=false; stopPlay();
+    if(tourOn(id)){ tIdx=nf-1; render(); }
+    await tourSleep(1800,id,true);
+  } else await tourSleep(st.dur||9000,id,true);
 }
 async function tourAsk(st,prog,id,q0,i){
   if(!window.AOS_ASK) return;
@@ -1720,30 +1836,44 @@ async function tourAsk(st,prog,id,q0,i){
     const r=AOS_ASK.firstRef();                                    // light up the answer's first place on the map
     if(r){ const cells=r.dataset.h3.split(","); AOS_ASK.pin(cells); r.classList.add("pin");
       try{ const c=h3.cellToLatLng(cells[0]); view={...view,longitude:c[1],latitude:c[0],zoom:Math.max(view.zoom||11,13),transitionDuration:1200}; deckgl.setProps({initialViewState:view}); }catch(e){} }
-    await tourSleep(11000,id);
+    await tourSleep(11000,id,true);
   }
   AOS_ASK.close();
 }
 async function startTour(fromStart){
   if(TOUR){ stopTour(); return; }
   const at=fromStart?null:TOUR_AT; TOUR_AT=null;
-  const id=Date.now(); TOUR={id,at}; tourButtons();
-  if(!PRELOADED){                                                 // every layer into this browser first (cached 7 days)
-    const tick=()=>{ const pb=$("preloadall"); tourCap("Preparing the tour","Loading every layer into this browser so each step opens instantly"+(pb&&/\d/.test(pb.textContent)?" — "+pb.textContent:"")+"…",""); };
-    tick(); const k=setInterval(()=>{ if(tourOn(id)) tick(); },500);
-    await (PRELOADING ? new Promise(res=>{ const w=setInterval(()=>{ if(!PRELOADING){ clearInterval(w); res(); } },300); }) : preloadAll());
-    clearInterval(k);
-  }
-  if(!tourOn(id)) return;
-  if(window.AOS_ASK){ tourCap("Preparing the tour","Warming up the City Analyst…",""); await AOS_ASK.warm(); }   // its data, without the model
+  const id=Date.now(); TOUR={id,at,prep:true,introFrom:0}; tourButtons(); document.body.classList.add("touring");
+  if(drillCell) exitDrill(); tourOverlaysOff(); active=null; drawLayers(); render(); tourHome();
+  // while every layer loads into this browser (cached 7 days) and the analyst warms up: what AirawatOS is
+  let ci=0, cardAt=Date.now(), cycled=false;
+  const tick=()=>{ if(!tourOn(id)) return; const now=Date.now();
+    if(now-cardAt>8000&&!voiceBusy()){ ci=(ci+1)%INTRO.length; if(!ci) cycled=true; cardAt=now; }
+    const pb=$("preloadall"), m=pb&&pb.textContent.match(/(\d+)\/(\d+)/);
+    tourCap(INTRO[ci].t,INTRO[ci].b,PRELOADED?"warming up the City Analyst…":"loading the city's data"+(m?" "+m[1]+"/"+m[2]:"")+"…",
+      {intro:true,prep:true,bar:PRELOADED?1:(m?m[1]/m[2]:0)}); };
+  tick(); const k=setInterval(tick,500);
+  if(!PRELOADED) await (PRELOADING ? new Promise(res=>{ const w=setInterval(()=>{ if(!PRELOADING){ clearInterval(w); res(); } },300); }) : preloadAll());
+  if(tourOn(id)&&window.AOS_ASK) await AOS_ASK.warm();            // its data, without the model
+  clearInterval(k);
+  if(!TOUR||TOUR.id!==id) return;
+  TOUR.prep=false; TOUR.introFrom=cycled?INTRO.length:ci+(Date.now()-cardAt>5000?1:0);  // the intro step shows only the cards not yet read
   const steps=TOUR_STEPS.filter(st=>!st.layer||LAYERS.some(l=>l.key===st.layer));
-  let i0=(at&&at.i<steps.length)?at.i:0, q0=at?at.qi:0;
-  while(tourOn(id)){ for(let i=i0;i<steps.length&&tourOn(id);i++){ await tourStep(steps[i],i,steps.length,id,i===i0?q0:0); } i0=0; q0=0; }
+  let i=(at&&at.i<steps.length)?at.i:0, q0=at?at.qi:0;
+  if(!at&&steps[i]&&steps[i].intro&&TOUR.introFrom>=INTRO.length) i++;
+  while(TOUR&&TOUR.id===id){
+    await tourStep(steps[i],i,steps.length,id,q0); q0=0;
+    if(!TOUR||TOUR.id!==id) break;
+    if(TOUR.jump!=null){ i=TOUR.jump%steps.length; TOUR.jump=null; continue; }
+    i=(i+1)%steps.length;
+  }
 }
 function initTour(){
   const b=$("tourbtn"); if(b) b.onclick=()=>startTour();
   const r=$("tourrestart"); if(r) r.onclick=()=>{ TOUR_AT=null; startTour(true); };
-  const stop=e=>{ if(!TOUR||!e.isTrusted) return; if(e.target&&e.target.closest&&e.target.closest("#tourbtn,#tourrestart")) return; stopTour(); };
+  const stop=e=>{ if(!TOUR||!e.isTrusted) return; if(e.target&&e.target.closest&&e.target.closest("#tourbtn,#tourrestart,#tourcap")) return;
+    if(e.type==="keydown"){ const m={ArrowLeft:"back",ArrowRight:"next"," ":"pause"}[e.key]; if(m){ tourCtl(m); return; } }   // presenter keys
+    stopTour(); };
   ["pointerdown","wheel","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,stop,{capture:true,passive:true}));
   try{ if(new URLSearchParams(location.search).get("tour")==="1") setTimeout(()=>startTour(),1200); }catch(e){}
 }
@@ -1772,6 +1902,7 @@ async function preloadAll(){
   const queue=LAYERS.slice();
   const worker=async()=>{ while(queue.length){ const L=queue.shift(); try{ await ensureLayer(L); }catch(e){ failed++; } tick(); } };
   await Promise.all([worker(),worker()]);
+  await Promise.all(LAYERS.map(L=>L._hist).filter(Boolean));   // hourly layers: their earlier hours too (the tour animates them)
   for(const k of ovs){ try{ await ensureOverlay(k); }catch(e){ failed++; } tick(); }
   try{ await Promise.all([loadPlaces(), psExtra()]); loadLakePolys(); loadLakeInfo(); }catch(e){}
   tick(); setBusy(null);
@@ -2139,7 +2270,7 @@ function fitView(bbox){
   window.AOS_ASK={                                                 // the auto-run tour drives the panel through this
     open:(wide)=>{ G('askpanel').hidden=false; setWide(!!wide); },
     close:()=>{ G('askpanel').hidden=true; setAskHover([]); setAskPin([]); },
-    type:async(q,id)=>{ const el=G('askq'); el.value=''; for(const ch of q){ if(typeof TOUR!=="undefined"&&(!TOUR||TOUR.id!==id)) return; el.value+=ch; await new Promise(r=>setTimeout(r,24)); } },
+    type:async(q,id)=>{ const el=G('askq'); el.value=''; for(const ch of q){ if(typeof tourOn==="function"&&!tourOn(id)) return; el.value+=ch; await new Promise(r=>setTimeout(r,24)); } },
     run:()=>ask(),
     warm:()=>warm(),
     pin:(cells)=>setAskPin(cells),
