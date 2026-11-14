@@ -20,10 +20,11 @@ import json, os, re, sys, time, urllib.error, urllib.request
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ.get("RUN_TOKEN", "")
 T = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""
-CID, VER = "ds:airawatdeveloper:engine/model-eval", "0.1.0"
+CID, VER = "ds:airawatdeveloper:engine/model-eval", "0.1.1"
 MAX_CASES = int(os.environ.get("MAX_CASES") or 60)
 OPS = (">", ">=", "<", "<=", "==", "!=", "between")
 APPROVED = ("approved", "live", "active")
+TASKS = {}                                        # model → the gateway task that serves it (found on first call)
 
 # rule-extract 0.1.4's prompt, verbatim — a seeded case must be the call production makes (re-seed if it changes)
 NORM_PROMPT = """Answer IMMEDIATELY with the JSON array — do not deliberate at length; if unsure about a statement, leave it out.
@@ -239,8 +240,17 @@ def run_one(run):
         for c in cases:
             t0 = time.time(); out = ""; served = None; usage = None; err = None
             try:
-                res = call("/v1/complete", {"messages": c["messages"], "max_tokens": int(c.get("max_tokens") or 1024),
-                                            "model": model, "task": "chat", "receipt": False}, timeout=240)
+                res = None
+                for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
+                    try:                                          # never on a production route (a call naming no model)
+                        res = call("/v1/complete", {"messages": c["messages"], "max_tokens": int(c.get("max_tokens") or 1024),
+                                                    "model": model, "task": task, "receipt": False}, timeout=240)
+                        TASKS[model] = (task,)
+                        break
+                    except urllib.error.HTTPError as e:
+                        if e.code == 501 and task != "eval":      # not served for this task — try the next
+                            continue
+                        raise
                 out, served, usage = res.get("content") or "", res.get("model"), res.get("usage")
             except urllib.error.HTTPError as e:
                 err = "HTTP %s: %s" % (e.code, (e.read() or b"")[:200].decode(errors="replace"))
