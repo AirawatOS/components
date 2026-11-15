@@ -230,15 +230,14 @@
     if (t.indexOf("image/") === 0 || /\.(jpe?g|png|gif|webp|bmp|svg|avif)$/.test(n)) return "image";
     if (t === "application/pdf" || /\.pdf$/.test(n)) return "tab";
     if (t.indexOf("audio/") === 0 || t.indexOf("video/") === 0 || /\.(mp3|wav|m4a|ogg|oga|flac|aac|mp4|m4v|webm|mov)$/.test(n)) return "tab";
-    if (t.indexOf("text/") === 0 || /\.(txt|csv|tsv|json|geojson|md|log|xml|ya?ml)$/.test(n)) return "tab";
+    if (/html|xml|svg|javascript/.test(t) || /\.(html?|xhtml|xml|svg|js|mjs)$/.test(n)) return "download";   // could run code
+    if (t.indexOf("text/") === 0 || /\.(txt|csv|tsv|json|geojson|md|log|ya?ml)$/.test(n)) return "tab";
     return "download";
   }
-  function viewUrl(r) {                                    // served inline, with a type the browser can render
-    var n = (r.name || "").toLowerCase(), t = r.content_type || "";
-    if (!t || t === "application/octet-stream") {
-      t = /\.pdf$/.test(n) ? "application/pdf" : /\.(json|geojson)$/.test(n) ? "application/json"
-        : /\.(csv|tsv|txt|md|log|ya?ml)$/.test(n) ? "text/plain; charset=utf-8" : t;
-    }
+  function viewUrl(r) {                                    // served inline, with a type the browser can render safely
+    var n = (r.name || "").toLowerCase(), t = (r.content_type || "").toLowerCase();
+    if (/\.pdf$/.test(n) && (!t || t === "application/octet-stream")) t = "application/pdf";
+    else if (t.indexOf("text/") === 0 || /json/.test(t) || /\.(csv|tsv|txt|md|log|ya?ml|json|geojson)$/.test(n)) t = "text/plain; charset=utf-8";
     return "/bridge/file?id=" + encodeURIComponent(r.file_id || "") + "&name=" + encodeURIComponent(r.name || "file") +
            "&type=" + encodeURIComponent(t) + "&inline=1";
   }
