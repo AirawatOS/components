@@ -25,12 +25,12 @@
 <header>
   <h1>🧪 Model Lab</h1>
   <p class="sub" id="sub">Test language models on this platform's own tasks before routing them.</p>
-  <div class="tabs"><button class="tab on" data-t="suites">Suites</button><button class="tab" data-t="cases">Cases</button><button class="tab" data-t="runs">Runs</button><button class="tab" data-t="results">Results</button></div>
+  <div class="tabs"><button class="tab on" data-t="suites">Suites</button><button class="tab" data-t="cases">Cases</button><button class="tab" data-t="models">Models</button><button class="tab" data-t="runs">Runs</button><button class="tab" data-t="results">Results</button></div>
 </header>
 <main id="main"><p class="msg">Loading…</p></main>
 <script>
 const APPID="model-lab", ENGINE="ds:airawatdeveloper:engine/model-eval";
-let TENANT="", ME="", TAB="suites", CASES=[], RUNS=[], DOCS=[], MODELS=[], SUITE=null, RUN=null, CASE=null;
+let TENANT="", ME="", TAB="suites", CASES=[], RUNS=[], DOCS=[], MODELS=[], MINFO=[], SELECTED=new Set(), SUITE=null, RUN=null, CASE=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const iso=()=>new Date().toISOString().replace(/\.\d+Z$/,"Z");
@@ -56,6 +56,7 @@ const scorePill=x=>x==null?'<span class="pill">—</span>':`<span class="pill ${
 function render(){ const el=$("main");
   if(TAB==="suites") return renderSuites(el);
   if(TAB==="cases") return renderCases(el);
+  if(TAB==="models") return renderModels(el);
   if(TAB==="runs") return renderRuns(el);
   return renderResults(el); }
 
@@ -105,18 +106,48 @@ function bindEditor(c){ $("csave").onclick=async()=>{ const e=expectOf(c); let v
     try{ await save(Object.assign({},c,{expected,labelled:true,updated_at:iso()})); $("cmsg").textContent="Saved."; await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } };
   $("cret").onclick=async()=>{ try{ await save(Object.assign({},c,{status:c.status==="active"?"retired":"active",updated_at:iso()})); await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } }; }
 
+const TEXT_TASKS=["chat","eval","extract",""];
+function modelInfo(provs){ const out=[], seen=new Set();
+  for(const p of provs.filter(p=>p.enabled!==false)){ let host=""; try{ host=new URL(p.base_url||"").hostname; }catch(e){}
+    const where=p.hosting==="in_house"?"Our hardware":/huggingface/.test(host)?"Hugging Face partners":p.protocol==="anthropic"?"Anthropic API":/airawat/.test(host+p.provider_id)?"Our endpoint ("+host+")":(host||"—");
+    for(const m of (p.models||[])){ const task=m.task||""; if(!m.name||!TEXT_TASKS.includes(task)||seen.has(m.name)) continue; seen.add(m.name);
+      out.push({name:m.name, task:task||"chat", provider:p.title||p.provider_id, where, thinking:m.thinking===true?"on":m.thinking===false?"off":(m.effort?"effort "+m.effort:"model default")}); } }
+  return out.sort((a,b)=>(a.task==="chat"?0:1)-(b.task==="chat"?0:1)||a.name.localeCompare(b.name)); }
+function modelResults(name){ const by={};
+  for(const r of RUNS){ const s=(r.summary||{})[name]; if(r.status!=="done"||!s||!s.cases) continue;
+    const at=String(r.finished_at||r.requested_at||""); if(!by[r.suite]||by[r.suite].at<at) by[r.suite]={score:s.score,ms:s.avg_latency_ms,at,note:r.note||"",cases:s.cases}; }
+  return by; }
+function renderModels(el){
+  const rows=MINFO.map(m=>{ const res=modelResults(m.name), suitesDone=Object.keys(res).sort(), last=suitesDone.map(k=>res[k].at).sort().slice(-1)[0]||"";
+    const ms=suitesDone.map(k=>res[k].ms||0).filter(Boolean), avg=ms.length?ms.reduce((a,b)=>a+b,0)/ms.length:0;
+    return `<tr><td><input type="checkbox" class="msel" value="${esc(m.name)}" ${SELECTED.has(m.name)?"checked":""}></td><td><b>${esc(m.name)}</b></td><td class="small">${esc(m.where)}</td><td class="small">${esc(m.provider)}</td>
+      <td>${m.task==="chat"?'<span class="pill good">production</span>':'<span class="pill">evaluation only</span>'}</td><td class="small">${esc(m.thinking)}</td>
+      <td>${suitesDone.map(k=>`<span title="${esc(res[k].cases+" cases · "+res[k].note)}">${esc(k)} ${scorePill(res[k].score)}</span>`).join("<br>")||'<span class="muted small">not tested</span>'}</td>
+      <td class="n">${avg?(avg/1000).toFixed(1)+" s":"—"}</td><td class="small">${esc(last.slice(0,10))}</td></tr>`; }).join("");
+  el.innerHTML=`<div class="card"><b>Models</b><p class="msg">Every text model the model gateway can call for this tenant. <b>Production</b> models serve the platform's own tasks; <b>evaluation only</b> models are reachable just from Model Lab. Scores are each suite's latest completed run (hover for its settings). Tick the models to include in the next run.</p>
+    <div class="row"><button class="btn" id="mall">Select all</button><button class="btn" id="mnone">Clear</button><button class="btn p" id="mgo">Start a run with ${SELECTED.size} selected</button></div>
+    <table><tr><th></th><th>Model</th><th>Runs on</th><th>Provider</th><th>Used for</th><th>Thinking default</th><th>Latest score by suite</th><th>Avg time</th><th>Last tested</th></tr>${rows||'<tr><td colspan="9" class="muted">No models.</td></tr>'}</table></div>`;
+  const upd=()=>{ $("mgo").textContent="Start a run with "+SELECTED.size+" selected"; };
+  el.querySelectorAll(".msel").forEach(c=>c.onchange=()=>{ c.checked?SELECTED.add(c.value):SELECTED.delete(c.value); upd(); });
+  $("mall").onclick=()=>{ MODELS.forEach(m=>SELECTED.add(m)); render(); };
+  $("mnone").onclick=()=>{ SELECTED.clear(); render(); };
+  $("mgo").onclick=()=>setTab("runs"); }
 function renderRuns(el){ const ss=suites();
   el.innerHTML=`<div class="card"><b>New run</b><p class="msg">Each model answers every active case of the suite through the model gateway — the same path production uses. One run at a time per Run; a model name the gateway does not know is recorded as served by whichever model it routed to.</p>
     <div class="row"><label>Suite</label><select id="rsuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select></div>
-    <div class="row"><label>Models</label>${MODELS.map(m=>`<label><input type="checkbox" class="rm" value="${esc(m)}" checked> ${esc(m)}</label>`).join(" ")}<input id="rmore" placeholder="more model names, comma-separated" size="34"></div>
+    <div class="row"><label>Models</label>${MODELS.map(m=>`<label><input type="checkbox" class="rm" value="${esc(m)}" ${SELECTED.has(m)?"checked":""}> ${esc(m)}</label>`).join(" ")}<input id="rmore" placeholder="more model names, comma-separated" size="34"></div>
+    <div class="row"><label>Thinking</label><select id="rthink"><option value="">model default</option><option value="on">on</option><option value="off">off</option></select>
+      <label title="Tokens each answer may use, thinking included; empty = each case's own budget">Answer budget</label><input id="rbudget" type="number" placeholder="case default" style="width:110px"></div>
     <div class="row"><label title="Skips the cases whose expected answer is 'no norm' — fewer calls, but no longer tests whether a model invents norms"><input type="checkbox" id="rnorms"> Only cases with expected norms</label></div>
     <div class="row"><input id="rnote" placeholder="note (optional)" size="50"><button class="btn p" id="rgo">Start run</button><span id="rmsg" class="msg"></span></div></div>
   <table><tr><th>Requested</th><th>Suite</th><th>Models</th><th>Status</th><th>Note</th></tr>${RUNS.slice().sort((a,b)=>String(b.requested_at).localeCompare(String(a.requested_at))).map(r=>`<tr class="click" data-r="${esc(r.id)}"><td>${esc(String(r.requested_at||"").slice(0,16).replace("T"," "))}</td><td>${esc(r.suite)}</td><td>${(r.models||[]).map(esc).join(", ")}</td><td><span class="pill ${r.status==="done"?"good":r.status==="failed"?"bad":"warn"}">${esc(r.status)}</span>${r.error?` <span class="err small">${esc(r.error)}</span>`:""}</td><td class="small">${esc(r.note||"")}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">No runs yet.</td></tr>'}</table>`;
   el.querySelectorAll("tr[data-r]").forEach(tr=>tr.onclick=()=>{ RUN=RUNS.find(x=>x.id===tr.dataset.r); setTab("results"); });
+  el.querySelectorAll(".rm").forEach(c=>c.onchange=()=>{ c.checked?SELECTED.add(c.value):SELECTED.delete(c.value); });
   $("rgo").onclick=async()=>{ const suite=$("rsuite").value; const models=[...document.querySelectorAll(".rm:checked")].map(x=>x.value).concat($("rmore").value.split(",").map(s=>s.trim()).filter(Boolean));
     if(!suite||!models.length){ $("rmsg").textContent="Pick a suite and at least one model."; return; }
     const ts=iso(), obj={schema:"intelligence.eval_run",id:"ds:"+TENANT+":intelligence/eval_run/"+slug(suite)+"-"+ts.replace(/[^0-9]/g,""),tenant:TENANT,suite,models:[...new Set(models)],status:"pending",requested_by:ME,requested_at:ts,note:$("rnote").value||undefined};
-    $("rgo").disabled=true; try{ await save(obj); await runEngine($("rnorms").checked?{CASES:"with_norms"}:undefined); $("rmsg").textContent="Started — results fill in as each model answers."; await reload(); render(); }
+    $("rgo").disabled=true; try{ await save(obj); const env={}; if($("rnorms").checked) env.CASES="with_norms"; if($("rthink").value) env.THINKING=$("rthink").value; if(+$("rbudget").value>0) env.MAX_TOKENS=String(+$("rbudget").value);
+      await runEngine(Object.keys(env).length?env:undefined); $("rmsg").textContent="Started — results fill in as each model answers."; await reload(); render(); }
     catch(e){ $("rmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } finally{ $("rgo").disabled=false; } }; }
 
 async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.requested_at).localeCompare(String(a.requested_at)));
@@ -149,8 +180,9 @@ async function reload(){ [CASES,RUNS]=await Promise.all([q("intelligence.eval_ca
     await reload();
     try{ DOCS=(await q("knowledge.document")).filter(d=>d.status==="acquired"||d.current_version||d.status==="ready"); }catch(e){ DOCS=[]; }
     try{ const prov=await fetch("/bridge/query",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({app_id:APPID,schema:"intelligence.provider",limit:200})}).then(r=>r.json());
-      MODELS=[...new Set((prov.results||[]).map(x=>x.object||x).filter(p=>p.enabled!==false).flatMap(p=>(p.models||[]).filter(m=>!m.task||m.task==="chat").map(m=>m.name)).filter(Boolean))]; }catch(e){ MODELS=[]; }
-    if(!MODELS.length) MODELS=["kimi-k3"];
+      MINFO=modelInfo((prov.results||[]).map(x=>x.object||x)); MODELS=MINFO.map(m=>m.name); }catch(e){ MINFO=[]; MODELS=[]; }
+    if(!MODELS.length){ MODELS=["kimi-k3"]; MINFO=[{name:"kimi-k3",task:"chat",where:"—",provider:"—"}]; }
+    MINFO.filter(m=>m.task==="chat").forEach(m=>SELECTED.add(m.name));
     render(); }
   catch(e){ $("main").innerHTML='<p class="err">Could not load ('+esc(e.message)+").</p>"; } })();
 </script>
