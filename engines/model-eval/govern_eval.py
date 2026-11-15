@@ -8,7 +8,7 @@ import json, os, urllib.error, urllib.request
 NETWORK = os.environ.get("NETWORK_URL", "http://network:8090")
 IDENTITY = os.environ.get("IDENTITY_URL", "http://identity:8093")
 STEWARD_USER = os.environ.get("STEWARD_USER", "steward")
-VER = "0.1.0"
+VER = "0.2.0"   # 0.2.0: eval_case inputs (image file refs), test_id, label_form; scorers counts / labels / text (ADR-0134)
 IDP = r"^ds:[a-z0-9-]+:\S+$"
 S, SN, N, IN, B = {"type": "string"}, {"type": ["string", "null"]}, {"type": ["number", "null"]}, {"type": ["integer", "null"]}, {"type": ["boolean", "null"]}
 O, A = {"type": ["object", "null"]}, {"type": ["array", "null"]}
@@ -29,9 +29,12 @@ SCHEMAS = [
      "One test case for a language-model task: the input EXACTLY as the platform sends it (messages + answer budget), the "
      "task it exercises, how to score an answer (scorer + expected answer, which may be empty until someone labels it), "
      "its suite, tags, where it came from (a document section, an LLM receipt, a person) and whether it may leave the "
-     "tenant's hardware (public) or not (private). Run by engine/model-eval; managed in the Model Lab app.",
+     "tenant's hardware (public) or not (private). Run by engine/model-eval; managed in the Model Lab app. "
+     "0.2.0 (ADR-0134): inputs = files the case shows the model ([{kind: image, file_id, region?}], by filestore id), "
+     "test_id = the test the case belongs to within its suite, label_form = the fields the labelling form shows.",
      {"suite": S, "task": S, "title": SN, "messages": {"type": "array"}, "max_tokens": IN,
-      "scorer": {"enum": ["norms", "json_fields", "contains", "exact", "grounded"]},
+      "inputs": A, "test_id": SN, "label_form": A,
+      "scorer": {"enum": ["norms", "json_fields", "contains", "exact", "grounded", "counts", "labels", "text"]},
       "expected": O, "labelled": B, "source": O, "tags": A,
       "visibility": {"enum": ["public", "private"]}, "status": {"enum": ["draft", "active", "retired"]},
       "created_by": SN, "created_at": SN, "updated_at": SN},
