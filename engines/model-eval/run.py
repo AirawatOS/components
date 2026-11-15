@@ -34,6 +34,10 @@ def budget(case):
     return MAX_TOKENS or int(case.get("max_tokens") or 1024)
 
 
+NOTE_NORMS = "cases with expected norms only"
+STOP_AFTER = int(os.environ.get("STOP_AFTER") or 1400)   # seconds; the runtime stops a run at 1,700 s, one call can take 240 s
+
+
 def has_norms(case):
     return bool(case.get("labelled")) and bool(((case.get("expected") or {}).get("norms")))
 OPS = (">", ">=", "<", "<=", "==", "!=", "between")
@@ -348,30 +352,57 @@ def rescore(run_id, rerun_cut):
     return 0
 
 
+def run_settings(run):
+    """CASES and MAX_TOKENS for a run: the environment when given, else what the run's note recorded when it first
+    started — so a run resumed by a later invocation keeps the settings it began with."""
+    note = run.get("note") or ""
+    cases = CASES if os.environ.get("CASES") else ("with_norms" if NOTE_NORMS in note else "all")
+    m = re.search(r"answer budget (\d+) tokens", note)
+    budget_ = MAX_TOKENS or (int(m.group(1)) if m else 0)
+    return cases, budget_
+
+
 def run_one(run):
+    global MAX_TOKENS
+    t0 = time.time()
+    cases_mode, MAX_TOKENS = run_settings(run)
+    note = run.get("note") or ""
+    if cases_mode == "with_norms" and NOTE_NORMS not in note:
+        note = (note + " · " + NOTE_NORMS).lstrip(" ·")
+    if MAX_TOKENS and "answer budget" not in note:
+        note = (note + " · answer budget %d tokens" % MAX_TOKENS).lstrip(" ·")
+    run = dict(run, note=note[:500] or None)
     cases = [c for c in mine("intelligence.eval_case") if c.get("suite") == run["suite"] and c.get("status") == "active"]
-    if CASES == "with_norms":               # only labelled cases that expect at least one norm — cheaper, but it no
+    if cases_mode == "with_norms":          # only labelled cases that expect at least one norm — cheaper, but it no
         cases = [c for c in cases if has_norms(c)]   # longer tests whether a model invents norms where there are none
-        run = dict(run, note=((run.get("note") or "") + " · cases with expected norms only").lstrip(" ·")[:500])
-    if MAX_TOKENS:
-        run = dict(run, note=((run.get("note") or "") + " · answer budget %d tokens" % MAX_TOKENS).lstrip(" ·")[:500])
     cases = sorted(cases, key=lambda c: c["id"])[:MAX_CASES]
-    write("intelligence.eval_run", dict(run, status="running", started_at=now(), error=None))
+    run = dict(run, started_at=run.get("started_at") or now())
+    write("intelligence.eval_run", dict(run, status="running", error=None))
     if not cases:
         write("intelligence.eval_run", dict(run, status="failed", finished_at=now(),
-              error="the suite has no active cases" + (" with expected norms" if CASES == "with_norms" else "")))
+              error="the suite has no active cases" + (" with expected norms" if cases_mode == "with_norms" else "")))
         return
     rslug = slug(run["id"].rsplit("/", 1)[-1], 40)
-    recs = []
-    for model in run.get("models") or []:
-        for c in cases:
-            out, served, usage, err, ms = ask(model, c)
-            sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
-            rec = result_record(run, rslug, model, c, out, served, usage, err, ms, sc, met)
-            write("intelligence.eval_result", rec); recs.append(rec)
-            print("  %s · %s: score %.2f · %d ms%s" % (model, c.get("title", "")[-60:], sc, ms, " · " + err[:80] if err else ""), flush=True)
+    recs = [r for r in mine("intelligence.eval_result") if r.get("run_ref") == run["id"]]   # a resumed run's results so far
+    have = {(r.get("model"), r.get("case_ref")) for r in recs}
+    todo = [(m, c) for m in run.get("models") or [] for c in cases if (m, c["id"]) not in have]
+    print("run %s: %d of %d answers already in, %d to go" % (run["id"], len(have), len(have) + len(todo), len(todo)), flush=True)
+    for i, (model, c) in enumerate(todo):
+        if time.time() - t0 > STOP_AFTER:            # leave before the runtime's limit; the next invocation resumes
+            left = len(todo) - i
+            write("intelligence.eval_run", dict(run, status="pending", summary=summarise(run, recs), error=None,
+                  note=(note + " · paused with %d answers to go" % left)[:500] if "paused with" not in note else note))
+            print("PAUSED: %d answers to go — the next run of the engine resumes it" % left, flush=True)
+            print("RESULT: " + json.dumps({"run": run["id"], "paused": True, "to_go": left}))
+            return
+        out, served, usage, err, ms = ask(model, c)
+        sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
+        rec = result_record(run, rslug, model, c, out, served, usage, err, ms, sc, met)
+        write("intelligence.eval_result", rec); recs.append(rec)
+        print("  %s · %s: score %.2f · %d ms%s" % (model, c.get("title", "")[-60:], sc, ms, " · " + err[:80] if err else ""), flush=True)
     summary = summarise(run, recs)                 # from what was written, not a re-query (read-after-write lag)
-    write("intelligence.eval_run", dict(run, status="done", started_at=run.get("started_at") or now(), finished_at=now(), summary=summary, error=None))
+    write("intelligence.eval_run", dict(run, status="done", finished_at=now(), summary=summary, error=None,
+          note=re.sub(r" · paused with \d+ answers to go", "", note)[:500] or None))
     print("RESULT: " + json.dumps({"run": run["id"], "summary": summary}))
 
 

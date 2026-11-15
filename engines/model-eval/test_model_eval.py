@@ -87,3 +87,46 @@ def test_run_budget_overrides_the_case_budget():
         assert me.budget({"max_tokens": 2500}) == 8000
     finally:
         me.MAX_TOKENS = 0
+
+
+def test_a_resumed_run_keeps_the_settings_its_note_recorded():
+    me.MAX_TOKENS, me.CASES = 0, "all"
+    old = os.environ.pop("CASES", None)
+    try:
+        assert me.run_settings({"note": "x · cases with expected norms only · answer budget 8000 tokens"}) == ("with_norms", 8000)
+        assert me.run_settings({"note": "plain"}) == ("all", 0)
+    finally:
+        if old is not None:
+            os.environ["CASES"] = old
+
+
+def _fake_run(monkey_results, stop_after):
+    """Run run_one against in-memory records: 2 models x 2 cases, with `monkey_results` already written."""
+    cases = [{"id": "ds:t:intelligence/eval_case/c%d" % i, "suite": "s", "status": "active", "scorer": "exact",
+              "messages": [{"role": "user", "content": "q"}], "expected": {"answer": "a"}, "labelled": True} for i in (1, 2)]
+    store = {"intelligence.eval_case": cases, "intelligence.eval_result": list(monkey_results)}
+    writes, asked = [], []
+    saved = (me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS)
+    me.mine = lambda scope, limit=20000: list(store.get(scope, []))
+    me.write = lambda scope, obj: writes.append((scope, obj))
+    me.ask = lambda model, c: (asked.append((model, c["id"])) or ("a", model, {}, None, 5))
+    me.T, me.STOP_AFTER, me.MAX_TOKENS = "t", stop_after, 0
+    try:
+        me.run_one({"id": "ds:t:intelligence/eval_run/r1", "suite": "s", "models": ["m1", "m2"], "status": "pending"})
+    finally:
+        me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS = saved
+    runs = [o for s_, o in writes if s_ == "intelligence.eval_run"]
+    return asked, runs
+
+
+def test_a_run_past_its_time_pauses_and_stays_pending():
+    asked, runs = _fake_run([], stop_after=-1)
+    assert asked == [] and runs[-1]["status"] == "pending" and "paused with 4 answers to go" in runs[-1]["note"]
+
+
+def test_a_resumed_run_asks_only_what_is_missing_and_finishes():
+    done = [{"run_ref": "ds:t:intelligence/eval_run/r1", "model": "m1", "case_ref": "ds:t:intelligence/eval_case/c%d" % i,
+             "score": 1.0, "metrics": {"answered": True}, "latency_ms": 5} for i in (1, 2)]
+    asked, runs = _fake_run(done, stop_after=10_000)
+    assert asked == [("m2", "ds:t:intelligence/eval_case/c1"), ("m2", "ds:t:intelligence/eval_case/c2")]
+    assert runs[-1]["status"] == "done" and runs[-1]["summary"]["m1"]["cases"] == 2 and runs[-1]["summary"]["m2"]["cases"] == 2
