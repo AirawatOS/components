@@ -1,0 +1,10 @@
+# The vision profile's library set besides torch / torchvision (installed from the CPU wheel index in the Dockerfile).
+# RT-DETRv2's reference code imports these at load time; inference itself uses torch + PIL.
+PyYAML==6.0.2
+scipy==1.14.1
+pillow==11.0.0
+numpy==2.1.3
+packaging==24.2
+faster-coco-eval==1.6.8   # RT-DETRv2 needs >= 1.6.6 (faster_coco_eval.utils.pytorch)
+pycocotools==2.0.8
+tensorboard==2.18.0     # imported by RT-DETRv2's config loader (src/core/_config.py), even for inference

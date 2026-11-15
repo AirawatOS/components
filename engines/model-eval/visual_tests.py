@@ -11,7 +11,10 @@ Field kinds → expected:
 
 SCENE = ("This is a still frame from a fixed traffic camera at a road junction in an Indian city. "
          "Judge only what is visible in this frame.\n\n")
-VEHICLES = ["car", "two_wheeler", "auto_rickshaw", "e_rickshaw", "bus", "truck", "bicycle"]
+# Vehicle classes match what in-house detectors can produce (UVH-26: AIM@IISc, Bengaluru Safe City cameras), so every
+# candidate is scored on the same classes: car = hatchback, sedan, SUV, MUV, van; three_wheeler = autos and
+# e-rickshaws; bus = buses, mini-buses, tempo travellers; truck = trucks and light commercial vehicles.
+VEHICLES = ["car", "two_wheeler", "three_wheeler", "bus", "truck", "bicycle"]
 
 
 def _json(spec):
@@ -46,8 +49,9 @@ TESTS = [
      "field": {"key": "labels", "kind": "multi", "options": VEHICLES + ["pedestrian", "none"], "label": "Present"}},
     {"test_id": "B03", "title": "Vehicles by class", "scorer": "counts",
      "prompt": SCENE + "Count the vehicles of each class visible in the frame, including partly visible ones. "
-               "two_wheeler = motorcycles and scooters; auto_rickshaw = three-wheeled autos; e_rickshaw = battery "
-               "rickshaws. Give 0 for a class you do not see."
+               "car = hatchbacks, sedans, SUVs, MUVs and vans; two_wheeler = motorcycles and scooters; three_wheeler = "
+               "autos and e-rickshaws; bus = buses, mini-buses and tempo travellers; truck = trucks and light commercial "
+               "vehicles (pick-ups, small goods carriers); bicycle = bicycles. Give 0 for a class you do not see."
                + _json('{"counts": {' + ", ".join('"%s": integer' % v for v in VEHICLES) + "}}"),
      "field": {"key": "counts", "kind": "counts", "classes": VEHICLES, "label": "Vehicle counts"}},
     {"test_id": "B04", "title": "Pedestrians", "scorer": "counts",

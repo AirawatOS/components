@@ -1,0 +1,25 @@
+# VISION-DETECT — an in-house object detector as a Model Lab candidate (ADR-0134; ADR-0132 "component subject").
+# A run lists it among its models as `component:uvh26-rtdetrv2-s`; this engine answers that run's detector tests —
+# B01 (classes present) and B03 (vehicles by class) — for every active image case, by running RT-DETRv2-S trained on
+# UVH-26 (AIM@IISc, Bengaluru Safe City cameras) on the platform's own CPU in the VISION runtime. Images are read
+# through the broker and never leave the platform, so private camera cases are allowed. It writes each answer as an
+# eval_result (output in the same JSON form a model would give, plus the raw detections); engine/model-eval then
+# scores the run (RESCORE_RUN) with the same scorers as every other candidate.
+component_id: ds:airawatdeveloper:engine/vision-detect
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Vision Detect (UVH-26 RT-DETRv2-S, in-house)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: vision                    # torch + RT-DETRv2 + the UVH-26 weights live in the certified vision runtime
+reads: [intelligence.eval_case, intelligence.eval_run]
+writes: [intelligence.eval_run, intelligence.eval_result]
+config: [DETECT_RUN, DETECT_THRESHOLD, DETECT_THREADS]
+files: [get]                         # the case images, read through the broker
+scopes:
+  - { verb: read,  scope: intelligence.eval_case }
+  - { verb: read,  scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_result }

@@ -529,6 +529,11 @@ def rescore(run_id, rerun_cut):
     return 0
 
 
+def is_component(model):
+    """A run subject answered by its own engine (e.g. component:uvh26-rtdetrv2-s → engine/vision-detect), not the gateway."""
+    return str(model).startswith("component:")
+
+
 def run_settings(run):
     """CASES and MAX_TOKENS for a run: the environment when given, else what the run's note recorded when it first
     started — so a run resumed by a later invocation keeps the settings it began with."""
@@ -566,7 +571,7 @@ def run_one(run):
     rslug = slug(run["id"].rsplit("/", 1)[-1], 40)
     recs = [r for r in mine("intelligence.eval_result") if r.get("run_ref") == run["id"]]   # a resumed run's results so far
     have = {(r.get("model"), r.get("case_ref")) for r in recs}
-    todo = [(m, c) for m in run.get("models") or [] for c in cases if (m, c["id"]) not in have]
+    todo = [(m, c) for m in run.get("models") or [] if not is_component(m) for c in cases if (m, c["id"]) not in have]
     print("run %s: %d of %d answers already in, %d to go" % (run["id"], len(have), len(have) + len(todo), len(todo)), flush=True)
     for i, (model, c) in enumerate(todo):
         if time.time() - t0 > STOP_AFTER:            # leave before the runtime's limit; the next invocation resumes
@@ -616,7 +621,10 @@ def seed_images():
     share = float(os.environ.get("SEED_DEV_SHARE") or 0.33)
     files = [f for f in mine("platform.file") if f.get("kind") == "file" and (f.get("folder") or "/").rstrip("/") == folder.rstrip("/")
              and f.get("file_id") and (str(f.get("content_type") or "").startswith("image/") or re.search(r"\.(jpe?g|png|webp)$", f.get("name") or "", re.I))]
-    have = {c["id"] for c in mine("intelligence.eval_case") if c.get("suite") == suite}
+    existing = {c["id"]: c for c in mine("intelligence.eval_case") if c.get("suite") == suite}
+    have = set(existing)
+    refresh = os.environ.get("SEED_UPDATE") == "1"           # re-write prompt, scorer and form of UNLABELLED cases
+    updated = 0
     tests = [t for t in vt.TESTS if not only or t["test_id"] in only]
     made = 0; ts = now()
     for f in sorted(files, key=lambda x: x.get("name") or ""):
@@ -624,6 +632,12 @@ def seed_images():
         for t in tests:
             cid = "ds:%s:intelligence/eval_case/%s--%s--%s" % (T, slug(suite, 40), t["test_id"].lower(), slug(f.get("name"), 70))
             if cid in have:
+                old = existing[cid]
+                if refresh and not old.get("labelled") and (old.get("messages") != [{"role": "user", "content": t["prompt"]}]
+                                                            or old.get("label_form") != [t["field"]] or old.get("scorer") != t["scorer"]):
+                    write("intelligence.eval_case", dict(old, messages=[{"role": "user", "content": t["prompt"]}],
+                          label_form=[t["field"]], scorer=t["scorer"], updated_at=ts))
+                    updated += 1
                 continue
             write("intelligence.eval_case", {
                 "schema": "intelligence.eval_case", "id": cid, "tenant": T, "suite": suite, "task": "extract",
@@ -635,8 +649,8 @@ def seed_images():
                 "tags": ["test:" + t["test_id"], "site:" + site, "view:" + view, "split:" + split_of(site, share)],
                 "visibility": "private", "status": "active", "created_by": "engine/model-eval", "created_at": ts, "updated_at": ts})
             made += 1
-    print("seeded %s from %s: %d images × %d tests → %d new cases" % (suite, folder, len(files), len(tests), made), flush=True)
-    print("RESULT: " + json.dumps({"suite": suite, "images": len(files), "tests": len(tests), "new_cases": made}))
+    print("seeded %s from %s: %d images × %d tests → %d new cases, %d unlabelled cases refreshed" % (suite, folder, len(files), len(tests), made, updated), flush=True)
+    print("RESULT: " + json.dumps({"suite": suite, "images": len(files), "tests": len(tests), "new_cases": made, "refreshed": updated}))
     return 0
 
 
@@ -649,7 +663,9 @@ def main():
         return seed_images()
     if os.environ.get("RESCORE_RUN"):
         return rescore(os.environ["RESCORE_RUN"], os.environ.get("RERUN_TRUNCATED") == "1")
-    pending = sorted([r for r in mine("intelligence.eval_run") if r.get("status") == "pending"], key=lambda r: str(r.get("requested_at") or ""))
+    pending = sorted([r for r in mine("intelligence.eval_run") if r.get("status") == "pending"
+                      and any(not is_component(m) for m in r.get("models") or [])],        # a detector-only run is not ours
+                     key=lambda r: str(r.get("requested_at") or ""))
     print("tenant=%s · %d pending run(s)" % (T, len(pending)), flush=True)
     if pending:
         run_one(pending[0])                     # one run per invocation; the schedule / the next Run takes the next

@@ -272,3 +272,45 @@ def test_visual_catalogue_is_complete_and_each_field_maps_to_its_scorer():
         assert t["field"]["kind"] in kinds[t["scorer"]], t["test_id"]
         assert "Answer with ONLY a JSON object" in t["prompt"]
     assert vt.expected_from(vt.TESTS[5]["field"], {"car": "3"}) == {"counts": {c: (3 if c == "car" else 0) for c in vt.VEHICLES}}
+
+
+def test_component_subjects_are_left_to_their_engine():
+    assert me.is_component("component:uvh26-rtdetrv2-s") and not me.is_component("claude-sonnet-5-5")
+    case = {"id": "ds:t:intelligence/eval_case/c1", "suite": "s", "status": "active", "scorer": "exact", "messages": [{"role": "user", "content": "q"}]}
+    asked = []
+    saved = (me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS)
+    me.mine = lambda scope, limit=20000: [case] if scope == "intelligence.eval_case" else []
+    me.write = lambda scope, obj: None
+    me.ask = lambda model, c: (asked.append(model) or ("a", model, {}, None, 5))
+    me.T, me.STOP_AFTER, me.MAX_TOKENS = "t", 10_000, 0
+    try:
+        me.run_one({"id": "ds:t:intelligence/eval_run/r", "suite": "s", "models": ["component:uvh26-rtdetrv2-s", "m1"], "status": "pending"})
+    finally:
+        me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS = saved
+    assert asked == ["m1"]
+
+
+def test_seed_update_refreshes_only_unlabelled_cases():
+    import visual_tests as vt
+    b03 = next(t for t in vt.TESTS if t["test_id"] == "B03")
+    old = {"id": "ds:t:intelligence/eval_case/urban-visual-intelligence--b03--a-box1-jpg", "suite": "urban-visual-intelligence",
+           "messages": [{"role": "user", "content": "old prompt"}], "label_form": [], "scorer": "counts", "labelled": False}
+    lab = dict(old, id="ds:t:intelligence/eval_case/urban-visual-intelligence--b03--b-box1-jpg", labelled=True)
+    store = {"platform.file": [{"id": "1", "kind": "file", "folder": "/f", "name": "A_BOX1.jpg", "file_id": "sha2-256:a", "content_type": "image/jpeg"},
+                               {"id": "2", "kind": "file", "folder": "/f", "name": "B_BOX1.jpg", "file_id": "sha2-256:b", "content_type": "image/jpeg"}],
+             "intelligence.eval_case": [old, lab]}
+    wrote = []
+    saved = (me.mine, me.write, me.T)
+    me.mine = lambda scope, limit=20000: list(store.get(scope, []))
+    me.write = lambda scope, obj: wrote.append(obj)
+    me.T = "t"
+    os.environ.update({"SEED_FOLDER": "/f", "SEED_TESTS": "B03", "SEED_UPDATE": "1"})
+    try:
+        me.seed_images()
+    finally:
+        me.mine, me.write, me.T = saved
+        for k in ("SEED_FOLDER", "SEED_TESTS", "SEED_UPDATE"):
+            os.environ.pop(k, None)
+    assert [o["id"] for o in wrote] == [old["id"]]                       # labelled case untouched, nothing new made
+    assert wrote[0]["messages"][0]["content"] == b03["prompt"] and wrote[0]["label_form"] == [b03["field"]]
+    assert b03["field"]["classes"] == ["car", "two_wheeler", "three_wheeler", "bus", "truck", "bicycle"]

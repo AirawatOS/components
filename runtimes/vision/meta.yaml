@@ -1,20 +1,25 @@
-# A RUNTIME PROFILE (ADR-0030). The VISION stack — object/person detection & counting (YOLOv8 via
-# ultralytics + opencv). Built FROM the modeling image so torch/torchvision are reused; this profile only
-# adds the vision-specific libraries. Components declare `runtime.profile: vision`. Kept separate from
-# modeling for the same blast-radius reason media/ is separate: ultralytics+opencv are ~250MB that only
-# vision components need.
-component_id:   ds:airawatdeveloper:runtime/vision              # a CERTIFIABLE component (kind=runtime)
+# The VISION runtime: where image models run on the platform's own hardware (CPU today; a GPU build later), so private
+# camera media never leaves for inference (ADR-0134). First model: RT-DETRv2-S trained on UVH-26 (26,646 Bengaluru
+# Safe City frames, 14 Indian vehicle classes; AIM@IISc, Apache-2.0). A component declares `runtime: { profile: vision }`.
+component_id:   ds:airawatdeveloper:runtime/vision
 kind:           runtime
 version:        0.1.0
 provider:       ds:airawatdeveloper:developer
-implements:     platform.runtime_invoke@0.1.0          # the governed placement interface (ADR-0058)
+implements:     platform.runtime_invoke@0.1.0
 runtime_id:     vision
 profile:        vision
-analytics_tier: perceptive                             # perceive/measure state from raw media
-display_name:   Vision (YOLOv8 · ultralytics · OpenCV)
+analytics_tier: descriptive                 # detects and counts objects in images
+display_name:   Vision (image models, CPU)
 image:          manishsv/airawatos-runtime-vision:0.1.0
-image_digest:   sha256:5761ea58cd6942b764ec4767d3185302e75d7557948b59d64d119f2dc955e386   # the pulled image's local .Id on the deploy host (what the launcher checks); runs only this
-provides:       [torch, torchvision, ultralytics, opencv-python-headless, pillow, numpy, h3, requests, pyyaml]
+image_digest:   sha256:bfb6534f91772d7d0276366217583b59336efa08b7b7be177f924eb8c0e27d3f   # the CERTIFIED image content id (launcher runs only this)
+provides:       [torch-2.5.1-cpu, rtdetrv2@df2a96c, uvh26-rtdetrv2-s]
+weights_sha256: da733d3e3934d5d0c10766ae06f33d0d8e6845902decf507b9ef22e02c854bb1   # matches the Hugging Face LFS oid; UVH-26-MV-RT-DETRv2-S.pth — set on first fetch, checked after
+models:
+  - id: uvh26-rtdetrv2-s
+    path: /opt/models/uvh26/rtdetrv2_s.pth
+    config: /opt/rtdetrv2/configs/rtdetrv2/uvh26_rtdetrv2_s.yml
+    source: https://huggingface.co/iisc-aim/UVH-26
+    licence: Apache-2.0
 isolation:      shared
 confidential:   false
 level:          L2

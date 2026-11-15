@@ -1,0 +1,10 @@
+# UVH-26 RT-DETRv2-S (AIM@IISc): the standard RT-DETRv2 R18vd model with the UVH-26 head — 15 outputs (the released
+# checkpoint's head; the repo's config says 16), labels = the dataset's category ids 1–14 (1 Hatchback … 14 Others), no
+# COCO remapping. Inference only: the backbone is not
+# downloaded (the UVH-26 checkpoint carries every weight).
+__include__: ['./rtdetrv2_r18vd_120e_coco.yml']
+num_classes: 15
+remap_mscoco_category: False
+eval_spatial_size: [640, 640]
+PResNet:
+  pretrained: False
