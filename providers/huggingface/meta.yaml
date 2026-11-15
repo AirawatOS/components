@@ -1,0 +1,30 @@
+# A model PROVIDER component (kind=provider). Like airawat-hosted and anthropic, it doesn't run — it's a credential +
+# config holder that makes a model endpoint pluggable: install it into a tenant, then set its API key in the
+# Components app (Settings → API keys), exactly like a driver's key. The model-gateway routes /v1/complete to this
+# provider's base_url — Hugging Face Inference Providers, an OpenAI-compatible router (https://router.huggingface.co/v1)
+# that forwards each call to a partner host serving that open-weights model — and reads THIS key from the
+# per-component secret path; the component/agent calling the broker never sees it. The matching intelligence.provider
+# record carries the routing (base_url, models by their Hugging Face ids, and the task each serves).
+#
+# Intended use: EVALUATION of open-weights models in Model Lab (task "eval") before choosing what to host on the
+# platform's own GPUs. Calls leave the platform for third-party hosts, so route only PUBLIC data through it — never a
+# private suite, never a production task.
+component_id: ds:airawatdeveloper:provider/huggingface   # ADR-0094: software stewarded by the developer participant
+kind: provider
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Hugging Face (open-weights models)
+description: >-
+  Makes open-weights models hosted through Hugging Face Inference Providers (Kimi, Qwen, DeepSeek, GLM, gpt-oss,
+  Gemma and others) available to the model-gateway, for evaluating them in Model Lab before hosting them in-house.
+  A credential + routing holder — install it and set a Hugging Face access token in the Components app; the token
+  stays in the per-component secret store. Calls go to third-party hosts: use it for public data only.
+egress:
+  - router.huggingface.co
+secrets:
+  - name: HF_TOKEN
+    label: Hugging Face access token
+    description: >-
+      A fine-grained Hugging Face token with the "Make calls to Inference Providers" permission. Calls are billed to
+      the token's Hugging Face account.
+    url: https://huggingface.co/settings/tokens
