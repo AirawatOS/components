@@ -587,11 +587,66 @@ def run_one(run):
     print("RESULT: " + json.dumps({"run": run["id"], "summary": summary}))
 
 
+# ---- seed an image suite from a Files folder (ADR-0134) -----------------------------------------------------------
+_VIEW = re.compile(r"[\s_-]*((?:box|cam)\s*\d+|ptz\s*\d*)$", re.I)
+
+
+def site_and_view(name):
+    """A camera frame's junction and view from its file name: 'BANNS_MANDI_CHAURAHA_BOX2.jpg' → ('banns-mandi-chauraha',
+    'box'); a name without a view token is its own site, view 'other'."""
+    stem = re.sub(r"\.[a-z0-9]+$", "", name or "", flags=re.I)
+    m = _VIEW.search(stem)
+    view = re.sub(r"\d+", "", m.group(1)).strip().lower() if m else "other"
+    return slug(stem[:m.start()] if m else stem, 60), view
+
+
+def split_of(site, dev_share):
+    """Development or held-back test split, by site: stable across runs, and every view of a junction lands together."""
+    import hashlib
+    return "dev" if int(hashlib.sha256(site.encode()).hexdigest()[:8], 16) % 1000 < dev_share * 1000 else "test"
+
+
+def seed_images():
+    """Build (or extend) an image suite from one Files folder: one private case per image per test in
+    visual_tests.TESTS, tagged with its site, view and split. Existing cases — and their labels — are left as they are."""
+    import visual_tests as vt
+    folder = os.environ["SEED_FOLDER"].rstrip("/") or "/"
+    suite = os.environ.get("SEED_SUITE") or "urban-visual-intelligence"
+    only = {x.strip().upper() for x in (os.environ.get("SEED_TESTS") or "").split(",") if x.strip()}
+    share = float(os.environ.get("SEED_DEV_SHARE") or 0.33)
+    files = [f for f in mine("platform.file") if f.get("kind") == "file" and (f.get("folder") or "/").rstrip("/") == folder.rstrip("/")
+             and f.get("file_id") and (str(f.get("content_type") or "").startswith("image/") or re.search(r"\.(jpe?g|png|webp)$", f.get("name") or "", re.I))]
+    have = {c["id"] for c in mine("intelligence.eval_case") if c.get("suite") == suite}
+    tests = [t for t in vt.TESTS if not only or t["test_id"] in only]
+    made = 0; ts = now()
+    for f in sorted(files, key=lambda x: x.get("name") or ""):
+        site, view = site_and_view(f.get("name"))
+        for t in tests:
+            cid = "ds:%s:intelligence/eval_case/%s--%s--%s" % (T, slug(suite, 40), t["test_id"].lower(), slug(f.get("name"), 70))
+            if cid in have:
+                continue
+            write("intelligence.eval_case", {
+                "schema": "intelligence.eval_case", "id": cid, "tenant": T, "suite": suite, "task": "extract",
+                "test_id": t["test_id"], "title": "%s · %s" % (t["title"], f.get("name")),
+                "messages": [{"role": "user", "content": t["prompt"]}], "max_tokens": 1200,
+                "inputs": [{"kind": "image", "file_id": f["file_id"], "name": f.get("name")}],
+                "scorer": t["scorer"], "label_form": [t["field"]], "expected": None, "labelled": False,
+                "source": {"kind": "files-folder", "folder": folder, "file_record": f.get("id"), "label": f.get("name")},
+                "tags": ["test:" + t["test_id"], "site:" + site, "view:" + view, "split:" + split_of(site, share)],
+                "visibility": "private", "status": "active", "created_by": "engine/model-eval", "created_at": ts, "updated_at": ts})
+            made += 1
+    print("seeded %s from %s: %d images × %d tests → %d new cases" % (suite, folder, len(files), len(tests), made), flush=True)
+    print("RESULT: " + json.dumps({"suite": suite, "images": len(files), "tests": len(tests), "new_cases": made}))
+    return 0
+
+
 def main():
     if not T:
         raise SystemExit("FATAL: no tenant for this run (WRITE_TENANT / TENANT)")
     if os.environ.get("SEED_DOC"):
         return seed()
+    if os.environ.get("SEED_FOLDER"):
+        return seed_images()
     if os.environ.get("RESCORE_RUN"):
         return rescore(os.environ["RESCORE_RUN"], os.environ.get("RERUN_TRUNCATED") == "1")
     pending = sorted([r for r in mine("intelligence.eval_run") if r.get("status") == "pending"], key=lambda r: str(r.get("requested_at") or ""))

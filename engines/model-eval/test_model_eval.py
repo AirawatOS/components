@@ -226,3 +226,49 @@ def test_text_cer_and_exact():
     assert sc == 1.0 and m["exact"] == 1.0
     sc, m = me.score_case(case, '{"timestamp": "10-16-2026 Fri 11:46:2", "camera": "ALLENGANJ BOX1"}')
     assert 0.97 < sc < 1.0 and m["exact"] == 0.5
+
+
+def test_site_view_and_split_from_camera_file_names():
+    assert me.site_and_view("BANNS_MANDI_CHAURAHA_BOX2.jpg") == ("banns-mandi-chauraha", "box")
+    assert me.site_and_view("BARRA_BYPAS_CHAURAHA__PTZ.jpg") == ("barra-bypas-chauraha", "ptz")
+    assert me.site_and_view("ALLENGANJ_Box4.jpg") == ("allenganj", "box")
+    assert me.site_and_view("some photo.png") == ("some-photo", "other")
+    assert me.split_of("allenganj", 0.33) == me.split_of("allenganj", 0.33)          # stable
+
+
+def test_seed_images_makes_private_tagged_cases_and_keeps_existing_ones():
+    store = {"platform.file": [
+        {"id": "ds:t:file/1", "kind": "file", "folder": "/frames", "name": "ALLENGANJ_BOX1.jpg", "file_id": "sha2-256:a", "content_type": "image/jpeg"},
+        {"id": "ds:t:file/2", "kind": "file", "folder": "/frames", "name": "ALLENGANJ_PTZ.jpg", "file_id": "sha2-256:b", "content_type": "image/jpeg"},
+        {"id": "ds:t:file/3", "kind": "file", "folder": "/frames", "name": "notes.txt", "file_id": "sha2-256:c", "content_type": "text/plain"},
+        {"id": "ds:t:file/4", "kind": "file", "folder": "/other", "name": "X_BOX1.jpg", "file_id": "sha2-256:d", "content_type": "image/jpeg"}],
+        "intelligence.eval_case": [{"id": "ds:t:intelligence/eval_case/urban-visual-intelligence--b03--allenganj-box1-jpg", "suite": "urban-visual-intelligence"}]}
+    wrote = []
+    saved = (me.mine, me.write, me.T)
+    me.mine = lambda scope, limit=20000: list(store.get(scope, []))
+    me.write = lambda scope, obj: wrote.append(obj)
+    me.T = "t"
+    os.environ.update({"SEED_FOLDER": "/frames", "SEED_TESTS": "B03,E03"})
+    try:
+        me.seed_images()
+    finally:
+        me.mine, me.write, me.T = saved
+        for k in ("SEED_FOLDER", "SEED_TESTS"):
+            os.environ.pop(k, None)
+    ids = sorted(o["id"].split("/")[-1] for o in wrote)
+    assert ids == ["urban-visual-intelligence--b03--allenganj-ptz-jpg", "urban-visual-intelligence--e03--allenganj-box1-jpg",
+                   "urban-visual-intelligence--e03--allenganj-ptz-jpg"]                     # existing B03 case kept, text + other folder skipped
+    c = next(o for o in wrote if o["id"].endswith("e03--allenganj-ptz-jpg"))
+    assert c["visibility"] == "private" and c["scorer"] == "labels" and c["labelled"] is False and c["inputs"][0]["file_id"] == "sha2-256:b"
+    assert "site:allenganj" in c["tags"] and "view:ptz" in c["tags"] and "test:E03" in c["tags"]
+    assert any(t.startswith("split:") for t in c["tags"]) and c["label_form"][0]["options"] == ["yes", "no", "uncertain"]
+
+
+def test_visual_catalogue_is_complete_and_each_field_maps_to_its_scorer():
+    import visual_tests as vt
+    assert [t["test_id"] for t in vt.TESTS] == ["A01", "A02", "A04", "A06", "B01", "B03", "B04", "C05", "E03"]
+    kinds = {"labels": ("choice", "multi"), "counts": ("counts",), "text": ("text",)}
+    for t in vt.TESTS:
+        assert t["field"]["kind"] in kinds[t["scorer"]], t["test_id"]
+        assert "Answer with ONLY a JSON object" in t["prompt"]
+    assert vt.expected_from(vt.TESTS[5]["field"], {"car": "3"}) == {"counts": {c: (3 if c == "car" else 0) for c in vt.VEHICLES}}
