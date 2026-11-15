@@ -93,8 +93,8 @@ def test_a_resumed_run_keeps_the_settings_its_note_recorded():
     me.MAX_TOKENS, me.CASES = 0, "all"
     old = os.environ.pop("CASES", None)
     try:
-        assert me.run_settings({"note": "x · cases with expected norms only · answer budget 8000 tokens"}) == ("with_norms", 8000)
-        assert me.run_settings({"note": "plain"}) == ("all", 0)
+        assert me.run_settings({"note": "x · cases with expected norms only · answer budget 8000 tokens · thinking on"}) == ("with_norms", 8000, "on")
+        assert me.run_settings({"note": "plain"}) == ("all", 0, "")
     finally:
         if old is not None:
             os.environ["CASES"] = old
@@ -145,3 +145,13 @@ def test_json_fields_reads_the_last_object_after_working():
     out = 'Step 1: {235000 / 90000} = 2.6, so round up.\nDraft: {"stations": 2}\nCorrected.\n{"stations": 3}'
     sc, m = me.score_case(case, out)
     assert sc == 1.0 and m["parsed"]
+
+
+def test_thinking_switch_goes_to_the_gateway_only_when_set():
+    saved = me.THINKING
+    try:
+        me.THINKING = "on"; assert me.thinking_arg() == {"thinking": True}
+        me.THINKING = "off"; assert me.thinking_arg() == {"thinking": False}
+        me.THINKING = ""; assert me.thinking_arg() == {}
+    finally:
+        me.THINKING = saved

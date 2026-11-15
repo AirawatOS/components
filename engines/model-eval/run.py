@@ -35,6 +35,12 @@ def budget(case):
 
 
 NOTE_NORMS = "cases with expected norms only"
+THINKING = (os.environ.get("THINKING") or "").strip().lower()    # on | off | "" (the model's own default)
+
+
+def thinking_arg():
+    """The gateway's per-request thinking switch for this run: on / off, or nothing (the model's default)."""
+    return {"thinking": THINKING == "on"} if THINKING in ("on", "off") else {}
 STOP_AFTER = int(os.environ.get("STOP_AFTER") or 1400)   # seconds; the runtime stops a run at 1,700 s, one call can take 240 s
 
 
@@ -308,7 +314,7 @@ def ask(model, c):
         for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
             try:                                          # never on a production route (a call naming no model)
                 res = call("/v1/complete", {"messages": c["messages"], "max_tokens": budget(c),
-                                            "model": model, "task": task, "receipt": False}, timeout=240)
+                                            "model": model, "task": task, "receipt": False, **thinking_arg()}, timeout=240)
                 TASKS[model] = (task,)
                 break
             except urllib.error.HTTPError as e:
@@ -390,18 +396,22 @@ def run_settings(run):
     cases = CASES if os.environ.get("CASES") else ("with_norms" if NOTE_NORMS in note else "all")
     m = re.search(r"answer budget (\d+) tokens", note)
     budget_ = MAX_TOKENS or (int(m.group(1)) if m else 0)
-    return cases, budget_
+    t = re.search(r"thinking (on|off)", note)
+    thinking = THINKING if THINKING in ("on", "off") else (t.group(1) if t else "")
+    return cases, budget_, thinking
 
 
 def run_one(run):
-    global MAX_TOKENS
+    global MAX_TOKENS, THINKING
     t0 = time.time()
-    cases_mode, MAX_TOKENS = run_settings(run)
+    cases_mode, MAX_TOKENS, THINKING = run_settings(run)
     note = run.get("note") or ""
     if cases_mode == "with_norms" and NOTE_NORMS not in note:
         note = (note + " · " + NOTE_NORMS).lstrip(" ·")
     if MAX_TOKENS and "answer budget" not in note:
         note = (note + " · answer budget %d tokens" % MAX_TOKENS).lstrip(" ·")
+    if THINKING in ("on", "off") and "thinking o" not in note:
+        note = (note + " · thinking " + THINKING).lstrip(" ·")
     run = dict(run, note=note[:500] or None)
     cases = [c for c in mine("intelligence.eval_case") if c.get("suite") == run["suite"] and c.get("status") == "active"]
     if cases_mode == "with_norms":          # only labelled cases that expect at least one norm — cheaper, but it no
