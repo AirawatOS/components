@@ -4,7 +4,7 @@
 <style>
   :root{--bg:#0b1520;--panel:#0f1d2b;--edge:#1f3247;--edge2:#2a4560;--ink:#e6edf5;--muted:#9fb3c8;--dim:#7c8fa3;--accent:#38bdf8;--good:#34d399;--warn:#fbbf24;--bad:#f87171}
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-  header{padding:16px 22px 0 84px;border-bottom:1px solid var(--edge)} h1{margin:0 0 4px;font-size:18px} .sub{color:var(--muted);margin:0 0 10px;font-size:13px}
+  header{padding:10px 22px 0 84px;border-bottom:1px solid var(--edge)} h1{margin:0 0 4px;font-size:18px} .sub{color:var(--muted);margin:0 0 10px;font-size:13px}
   .tabs{display:flex;gap:4px} .tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:8px 14px;font-size:14px;cursor:pointer}
   .tab.on{color:var(--ink);border-color:var(--accent)} main{padding:18px 22px;max-width:1280px}
   table{border-collapse:collapse;width:100%;font-size:13px} th,td{border-bottom:1px solid var(--edge);padding:7px 9px;text-align:left;vertical-align:top}
@@ -23,8 +23,6 @@
 </style></head>
 <body>
 <header>
-  <h1>🧪 Model Lab</h1>
-  <p class="sub" id="sub">Test language models on this platform's own tasks before routing them.</p>
   <div class="tabs"><button class="tab on" data-t="suites">Suites</button><button class="tab" data-t="cases">Cases</button><button class="tab" data-t="models">Models</button><button class="tab" data-t="runs">Runs</button><button class="tab" data-t="results">Results</button></div>
 </header>
 <main id="main"><p class="msg">Loading…</p></main>
@@ -176,7 +174,6 @@ async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.r
 
 async function reload(){ [CASES,RUNS]=await Promise.all([q("intelligence.eval_case"),q("intelligence.eval_run")]); }
 (async()=>{ try{ const s=await (await fetch("/session",{credentials:"same-origin"})).json(); TENANT=s.tenant||""; ME=s.sub||"";
-    $("sub").textContent="Test language models on "+(s.tenant_name||TENANT)+"'s own tasks before routing them — through the same model gateway production uses.";
     await reload();
     try{ DOCS=(await q("knowledge.document")).filter(d=>d.status==="acquired"||d.current_version||d.status==="ready"); }catch(e){ DOCS=[]; }
     try{ const prov=await fetch("/bridge/query",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({app_id:APPID,schema:"intelligence.provider",limit:200})}).then(r=>r.json());
