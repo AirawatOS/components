@@ -42,3 +42,20 @@ def test_vehicle_and_animal_classes_are_the_suite_catalogue_classes():
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model-eval"))
     import visual_tests as vt
     assert vd.VEHICLES == vt.VEHICLES and vd.ANIMALS == vt.ANIMALS
+
+
+def test_tiles_cover_the_frame_with_overlap():
+    tiles = vd.Detector._tiles(None, 2048, 1536)
+    assert tiles[0] == (0, 0, 2048, 1536) and len(tiles) == 5
+    quarters = tiles[1:]
+    assert min(t[0] for t in quarters) == 0 and max(t[2] for t in quarters) == 2048
+    assert min(t[1] for t in quarters) == 0 and max(t[3] for t in quarters) == 1536
+    left, right = quarters[0], quarters[2]
+    assert right[0] < left[2]                                          # neighbouring quarters overlap
+
+
+def test_low_confidence_vehicles_do_not_swallow_pedestrians():
+    vd.THRESHOLD = 0.5
+    phantom = D("truck", .3, [0, 0, 500, 500]); walker = D("pedestrian", .6, [100, 100, 140, 220])
+    vd.mark_riders([phantom, walker])
+    assert not walker.get("rider")

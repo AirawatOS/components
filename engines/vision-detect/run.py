@@ -101,8 +101,8 @@ def mark_riders(dets):
     """A COCO 'person' riding a detected two-wheeler or bicycle, or inside a car or three-wheeler, is not a pedestrian
     (B04's definition): a person mostly inside the vehicle's box stretched upward by its own height is marked
     rider=True and not counted — kept, so the rule can be checked."""
-    rides = [d["box"] for d in dets if d["class"] in ("two_wheeler", "bicycle") and d["score"] >= FLOOR]
-    holds = [d["box"] for d in dets if d["class"] in ("car", "three_wheeler", "bus", "truck") and d["score"] >= FLOOR]
+    rides = [d["box"] for d in dets if d["class"] in ("two_wheeler", "bicycle") and d["score"] >= THRESHOLD]      # counted vehicles only —
+    holds = [d["box"] for d in dets if d["class"] in ("car", "three_wheeler", "bus", "truck") and d["score"] >= THRESHOLD]  # not phantoms
     for d in dets:
         if d["class"] != "pedestrian":
             continue
@@ -127,22 +127,41 @@ class Detector:
             self.nets[name] = (cfg.model.deploy().eval(), cfg.postprocessor.deploy())
         self.tf = TT.Compose([TT.Resize((640, 640)), TT.ToTensor()])          # as UVH-26's own inference script
 
+    def _run(self, name, im, ox=0, oy=0):
+        """One pass of one model over an image (or a crop at offset ox, oy) → raw (label, box in frame pixels, score)."""
+        model, post = self.nets[name]; w, h = im.size
+        labels, boxes, scores = post(model(self.tf(im)[None]), self.torch.tensor([[w, h]]))
+        return [(int(l), [b[0] + ox, b[1] + oy, b[2] + ox, b[3] + oy], s)
+                for l, b, s in zip(labels[0].tolist(), boxes[0].tolist(), scores[0].tolist()) if s >= FLOOR]
+
+    def _tiles(self, w, h):
+        """The full frame plus a 2 × 2 grid of quarters overlapping by ~20%: people and animals far from the camera are a
+        few pixels tall once a 2048-px frame is shrunk to 640, and each quarter is seen ~2× closer (standard tiling)."""
+        tw, th = int(w * 0.6), int(h * 0.6)
+        return [(0, 0, w, h)] + [(x, y, x + tw, y + th) for x in (0, w - tw) for y in (0, h - th)]
+
     def detect(self, raw):
         from PIL import Image
+        from torchvision.ops import batched_nms
         im = Image.open(io.BytesIO(raw)).convert("RGB"); w, h = im.size
-        x, size = self.tf(im)[None], self.torch.tensor([[w, h]])
         out = []
         with self.torch.no_grad():
-            for name, (model, post) in self.nets.items():
-                labels, boxes, scores = post(model(x), size)
-                for lab, box, sc in zip(labels[0].tolist(), boxes[0].tolist(), scores[0].tolist()):
-                    lab = int(lab)
-                    if sc < FLOOR:
-                        continue
-                    if name == "uvh26" and lab in UVH:
-                        out.append({"model": name, "uvh": UVH[lab], "class": TO_CLASS.get(lab, "other"), "score": round(sc, 3), "box": [round(v, 1) for v in box]})
-                    elif name == "coco" and lab in COCO:
-                        out.append({"model": name, "coco": lab, "class": COCO[lab], "score": round(sc, 3), "box": [round(v, 1) for v in box]})
+            if "uvh26" in self.nets:                                       # vehicles: the full frame, as UVH-26 was trained
+                for lab, box, sc in self._run("uvh26", im):
+                    if lab in UVH:
+                        out.append({"model": "uvh26", "uvh": UVH[lab], "class": TO_CLASS.get(lab, "other"), "score": round(sc, 3), "box": [round(v, 1) for v in box]})
+            if "coco" in self.nets:                                        # people and animals: full frame + tiles, merged
+                raw_dets = []
+                for x1, y1, x2, y2 in self._tiles(w, h):
+                    crop = im if (x1, y1, x2, y2) == (0, 0, w, h) else im.crop((x1, y1, x2, y2))
+                    raw_dets += [d for d in self._run("coco", crop, x1, y1) if d[0] in COCO]
+                if raw_dets:
+                    T_ = self.torch
+                    keep = batched_nms(T_.tensor([d[1] for d in raw_dets], dtype=T_.float32), T_.tensor([d[2] for d in raw_dets], dtype=T_.float32),
+                                       T_.tensor([d[0] for d in raw_dets]), 0.5).tolist()
+                    for k in keep:
+                        lab, box, sc = raw_dets[k]
+                        out.append({"model": "coco", "coco": lab, "class": COCO[lab], "score": round(sc, 3), "box": [round(v, 1) for v in box]})
         return mark_riders(out), (w, h)
 
 
