@@ -11,8 +11,9 @@ def D(cls, score, box, **kw):
 def test_uvh_and_coco_classes_map_onto_the_suite_classes():
     assert {vd.TO_CLASS[i] for i in (1, 2, 3, 4, 13)} == {"car"} and 14 not in vd.TO_CLASS
     assert vd.TO_CLASS[7] == "three_wheeler" and vd.TO_CLASS[8] == "two_wheeler"
-    assert vd.COCO[1] == "pedestrian" and vd.COCO[21] == "cattle" and vd.COCO[18] == "dog" and vd.COCO[19] == "other_animal"
-    assert 3 not in vd.COCO and 16 not in vd.COCO                    # COCO cars (UVH counts vehicles) and birds ignored
+    # COCO class INDEX (deploy mode): 0 person, 1 bicycle, 3 motorcycle, 14 bird, 16 dog, 19 cow
+    assert vd.COCO[0] == "pedestrian" and vd.COCO[19] == "cattle" and vd.COCO[16] == "dog" and vd.COCO[17] == "other_animal"
+    assert 1 not in vd.COCO and 3 not in vd.COCO and 14 not in vd.COCO       # bicycles, motorcycles (UVH counts them), birds
 
 
 def test_answers_respect_the_threshold_and_what_the_pipeline_sees():
@@ -59,3 +60,12 @@ def test_low_confidence_vehicles_do_not_swallow_pedestrians():
     phantom = D("truck", .3, [0, 0, 500, 500]); walker = D("pedestrian", .6, [100, 100, 140, 220])
     vd.mark_riders([phantom, walker])
     assert not walker.get("rider")
+
+
+def test_people_can_have_their_own_threshold():
+    vd.THRESHOLD, vd.THRESHOLD_PEOPLE = 0.5, 0.3
+    try:
+        dets = [D("pedestrian", .35, [0, 0, 1, 2], model="coco"), D("car", .35, [5, 5, 9, 9], model="uvh26")]
+        assert vd.answer("B04", dets) == {"counts": {"pedestrian": 1}} and vd.answer("B03", dets)["counts"]["car"] == 0
+    finally:
+        vd.THRESHOLD_PEOPLE = None

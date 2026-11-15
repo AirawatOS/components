@@ -33,9 +33,12 @@ TO_CLASS = {1: "car", 2: "car", 3: "car", 4: "car", 13: "car", 5: "bus", 10: "bu
             7: "three_wheeler", 8: "two_wheeler", 12: "bicycle"}            # 14 Others → not counted
 VEHICLES = ["car", "two_wheeler", "three_wheeler", "bus", "truck", "bicycle"]
 ANIMALS = ["cattle", "dog", "other_animal"]
-# COCO category ids → the suite's classes, for what UVH-26 does not see. COCO's own vehicles are ignored (UVH-26 counts
-# those); birds are not counted.
-COCO = {1: "pedestrian", 21: "cattle", 18: "dog", 17: "other_animal", 19: "other_animal", 20: "other_animal", 22: "other_animal"}
+# COCO class INDEX (0–79, as RT-DETRv2's post-processor returns it in deploy mode — it maps index → COCO category id only
+# outside deploy mode) → the suite's classes, for what UVH-26 does not see: 0 person, 15 cat, 16 dog, 17 horse, 18 sheep,
+# 19 cow, 20 elephant. COCO's own vehicles are ignored (UVH-26 counts those); birds (14) are not counted. UVH-26 was trained
+# without COCO remapping, so its raw index IS its category id (1–14).
+COCO = {0: "pedestrian", 19: "cattle", 16: "dog", 15: "other_animal", 17: "other_animal", 18: "other_animal", 20: "other_animal"}
+THRESHOLD_PEOPLE = float(os.environ.get("DETECT_THRESHOLD_PEOPLE") or 0) or None   # optional own threshold for pedestrians and animals
 
 
 def call(path, body, timeout=120):
@@ -77,7 +80,7 @@ def answer(test_id, dets, sees=("vehicles",)):
     test's prompt asks a model for. `sees` = what the pipeline can detect, so B01 only claims classes it could see."""
     n = {}
     for d in dets:
-        if d["score"] >= THRESHOLD and not d.get("rider"):
+        if d["score"] >= threshold_for(d) and not d.get("rider"):
             n[d["class"]] = n.get(d["class"], 0) + 1
     if test_id == "B03":
         return {"counts": {k: n.get(k, 0) for k in VEHICLES}}
@@ -88,6 +91,11 @@ def answer(test_id, dets, sees=("vehicles",)):
     classes = VEHICLES + (["pedestrian"] + ANIMALS if "people_animals" in sees else [])       # B01
     present = [k for k in classes if n.get(k)]
     return {"labels": present or ["none"]}
+
+
+def threshold_for(d):
+    """The threshold a detection is counted at: THRESHOLD, or DETECT_THRESHOLD_PEOPLE for COCO's people and animals."""
+    return THRESHOLD_PEOPLE if (THRESHOLD_PEOPLE and d.get("model") == "coco") else THRESHOLD
 
 
 def _inside(a, b):
@@ -195,11 +203,11 @@ def run_detector(run, subject):
                 "id": "ds:%s:intelligence/eval_result/%s--%s--%s" % (T, rslug, slug(subject, 30), slug(c["id"].rsplit("/", 1)[-1], 70)),
                 "tenant": T, "run_ref": run["id"], "case_ref": c["id"], "suite": run["suite"], "model": subject,
                 "served_by": subject.replace("component:", ""), "output": out, "score": None, "latency_ms": ms, "error": err, "at": now(),
-                "metrics": {"answered": bool(out), "threshold": THRESHOLD, "floor": FLOOR, "image_size": size, "detections": dets[:400]},
+                "metrics": {"answered": bool(out), "threshold": THRESHOLD, "threshold_people": THRESHOLD_PEOPLE, "floor": FLOOR, "image_size": size, "detections": dets[:400]},
                 "usage": {"hardware": "cpu", "threads": THREADS, "device": "cpu",
                           "model": " + ".join({"uvh26": "RT-DETRv2-S (UVH-26)", "coco": "RT-DETRv2-S (COCO)"}[m] for m in spec["models"])}})
             n += 1
-        print("  %s: %d objects ≥ %.2f in %d ms%s" % (cs[0]["inputs"][0].get("name") or fid[:20], sum(1 for d in dets if d["score"] >= THRESHOLD and not d.get("rider")), THRESHOLD, ms,
+        print("  %s: %d objects ≥ %.2f in %d ms%s" % (cs[0]["inputs"][0].get("name") or fid[:20], sum(1 for d in dets if d["score"] >= threshold_for(d) and not d.get("rider")), THRESHOLD, ms,
                                                       " · " + err if err else ""), flush=True)
     if subject == [m for m in run.get("models") or [] if m in SUBJECTS][-1] and all(str(m).startswith("component:") for m in run.get("models") or []):
         write("intelligence.eval_run", dict(run, status="done", finished_at=now(), started_at=run.get("started_at") or now(),

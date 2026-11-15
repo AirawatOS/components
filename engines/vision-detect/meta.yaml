@@ -7,7 +7,7 @@
 # scores the run (RESCORE_RUN) with the same scorers as every other candidate.
 component_id: ds:airawatdeveloper:engine/vision-detect
 kind: engine
-version: 0.2.1   # 0.2.1: people and animals found on the full frame + 4 overlapping quarters (merged); riders judged against counted vehicles only. 0.2.0: + COCO RT-DETRv2-S for pedestrians and animals (B04, B09, B01), riders excluded; detections kept down to 0.25
+version: 0.2.2   # 0.2.2: FIX COCO classes — deploy mode returns class INDEX (0 person, 16 dog, 19 cow), not category id; 0.2.1 counted bicycles as people; DETECT_THRESHOLD_PEOPLE. 0.2.1: people and animals found on the full frame + 4 overlapping quarters (merged); riders judged against counted vehicles only. 0.2.0: + COCO RT-DETRv2-S for pedestrians and animals (B04, B09, B01), riders excluded; detections kept down to 0.25
 provider: ds:airawatdeveloper:developer
 display_name: Vision Detect (UVH-26 + COCO RT-DETRv2-S, in-house)
 entrypoint: run.py
@@ -16,7 +16,7 @@ runtime:
   profile: vision                    # torch + RT-DETRv2 + the UVH-26 weights live in the certified vision runtime
 reads: [intelligence.eval_case, intelligence.eval_run]
 writes: [intelligence.eval_run, intelligence.eval_result]
-config: [DETECT_RUN, DETECT_THRESHOLD, DETECT_THREADS]
+config: [DETECT_RUN, DETECT_THRESHOLD, DETECT_THRESHOLD_PEOPLE, DETECT_THREADS]
 files: [get]                         # the case images, read through the broker
 scopes:
   - { verb: read,  scope: intelligence.eval_case }
