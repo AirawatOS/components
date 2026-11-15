@@ -77,3 +77,13 @@ def test_with_norms_keeps_only_labelled_cases_that_expect_a_norm():
     assert not me.has_norms({"labelled": True, "expected": {"norms": []}})
     assert not me.has_norms({"labelled": False, "expected": {"norms": [{"metric": "x", "operator": "==", "value": 1}]}})
     assert not me.has_norms({"labelled": True})
+
+
+def test_run_budget_overrides_the_case_budget():
+    me.MAX_TOKENS = 0
+    assert me.budget({"max_tokens": 2500}) == 2500 and me.budget({}) == 1024
+    me.MAX_TOKENS = 8000
+    try:
+        assert me.budget({"max_tokens": 2500}) == 8000
+    finally:
+        me.MAX_TOKENS = 0

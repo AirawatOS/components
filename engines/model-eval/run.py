@@ -25,6 +25,15 @@ MAX_CASES = int(os.environ.get("MAX_CASES") or 60)
 CASES = (os.environ.get("CASES") or "all").strip().lower()   # all | with_norms (labelled cases expecting ≥ 1 norm)
 
 
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS") or 0)   # run-level answer budget; 0 = each case's own max_tokens
+
+
+def budget(case):
+    """The answer budget for one call: the run's MAX_TOKENS when set (thinking models spend part of it reasoning, so a
+    case's own budget can cut their answer off), else the case's max_tokens."""
+    return MAX_TOKENS or int(case.get("max_tokens") or 1024)
+
+
 def has_norms(case):
     return bool(case.get("labelled")) and bool(((case.get("expected") or {}).get("norms")))
 OPS = (">", ">=", "<", "<=", "==", "!=", "between")
@@ -263,7 +272,7 @@ def ask(model, c):
         res = None
         for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
             try:                                          # never on a production route (a call naming no model)
-                res = call("/v1/complete", {"messages": c["messages"], "max_tokens": int(c.get("max_tokens") or 1024),
+                res = call("/v1/complete", {"messages": c["messages"], "max_tokens": budget(c),
                                             "model": model, "task": task, "receipt": False}, timeout=240)
                 TASKS[model] = (task,)
                 break
@@ -344,6 +353,8 @@ def run_one(run):
     if CASES == "with_norms":               # only labelled cases that expect at least one norm — cheaper, but it no
         cases = [c for c in cases if has_norms(c)]   # longer tests whether a model invents norms where there are none
         run = dict(run, note=((run.get("note") or "") + " · cases with expected norms only").lstrip(" ·")[:500])
+    if MAX_TOKENS:
+        run = dict(run, note=((run.get("note") or "") + " · answer budget %d tokens" % MAX_TOKENS).lstrip(" ·")[:500])
     cases = sorted(cases, key=lambda c: c["id"])[:MAX_CASES]
     write("intelligence.eval_run", dict(run, status="running", started_at=now(), error=None))
     if not cases:
