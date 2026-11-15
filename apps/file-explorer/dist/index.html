@@ -10,7 +10,16 @@
   .fx-wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
   .fx-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .fx-bar .fx-spacer { flex: 1; }
-  .fx-prog { color: var(--muted, #64748b); font-size: 13px; }
+  .fx-up { position: fixed; right: 16px; bottom: 16px; width: 320px; max-width: calc(100vw - 32px); z-index: 50;
+           background: var(--surface, #fff); color: var(--text, #0f172a); border: 1px solid var(--border, #e2e8f0);
+           border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 12px 14px; font-size: 13px; }
+  .fx-up[hidden] { display: none; }
+  .fx-up-top { display: flex; align-items: center; gap: 8px; }
+  .fx-up-top b { flex: 1; font-variant-numeric: tabular-nums; }
+  .fx-up-name { color: var(--muted, #64748b); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 6px 0 8px; }
+  .fx-up-bar { height: 6px; border-radius: 3px; background: var(--surface-2, #e2e8f0); overflow: hidden; }
+  .fx-up-bar i { display: block; height: 100%; width: 0; background: var(--accent, #2563eb); transition: width .2s; }
+  .fx-up-note { color: var(--muted, #64748b); font-size: 12px; margin-top: 8px; }
   .fx-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 14px; margin-bottom: 12px; }
   .fx-crumbs a { color: var(--accent, #2563eb); cursor: pointer; text-decoration: none; }
   .fx-crumbs a:hover { text-decoration: underline; }
@@ -42,7 +51,6 @@
   <div class="fx-bar">
     <h1 style="margin:0;font-size:22px">📁 Files</h1>
     <span class="fx-spacer"></span>
-    <span class="fx-prog" id="fx-prog" aria-live="polite"></span>
     <button class="btn" id="fx-up" title="Upload one or more files (Ctrl/Cmd-click or Shift-click to pick several)">⬆︎ Upload files</button>
     <button class="btn" id="fx-updir" title="Upload a whole folder, keeping its sub-folders">📁 Upload folder</button>
     <button class="btn" id="fx-newfolder">➕ New folder</button>
@@ -54,6 +62,12 @@
   <div class="fx-crumbs" id="fx-crumbs"></div>
   <div class="fx-drop" id="fx-drop">
     <div class="fx-list" id="fx-list"></div>
+  </div>
+  <div class="fx-up" id="fx-upbox" role="status" aria-live="polite" hidden>
+    <div class="fx-up-top"><b id="fx-upcount">Uploading…</b><button class="btn" id="fx-upcancel">Cancel</button></div>
+    <div class="fx-up-name" id="fx-upname"></div>
+    <div class="fx-up-bar"><i id="fx-upbar"></i></div>
+    <div class="fx-up-note">Keep Files open until this finishes — switching apps or closing the tab stops the upload. Uploading the same files again skips those already here.</div>
   </div>
 </main>
 
@@ -196,7 +210,19 @@
   // ---- actions ----
   function pickFiles() { document.getElementById("fx-file").click(); }
   function pickFolder() { document.getElementById("fx-dir").click(); }
-  var MAX_BYTES = 25 * 1024 * 1024, BUSY = false;
+  var MAX_BYTES = 25 * 1024 * 1024, BUSY = false, CANCEL = false;
+  function panel(show, done, total, name) {
+    var box = document.getElementById("fx-upbox"); box.hidden = !show; if (!show) return;
+    document.getElementById("fx-upcount").textContent = CANCEL ? "Stopping after this file…" : "Uploading " + done + " of " + total;
+    document.getElementById("fx-upname").textContent = name || "";
+    document.getElementById("fx-upname").title = name || "";
+    document.getElementById("fx-upbar").style.width = (total ? Math.round(100 * done / total) : 0) + "%";
+  }
+  function warnLeave(e) { if (!BUSY) return; e.preventDefault(); e.returnValue = "An upload is still running."; return e.returnValue; }
+  // A file already in `dir` with this name and size: an earlier, interrupted upload of the same folder got it.
+  function alreadyHere(dir, name, size) {
+    return ALL.some(function (r) { return !isFolder(r) && (r.folder || "/") === dir && r.name === name && r.size_bytes === size; });
+  }
   // Files picked or dropped: {file, rel} where rel is the path inside what was picked ("Plans/2026/a.pdf", or just
   // "a.pdf"). Each file lands in CWD + rel's folder part; missing folders are created on the way.
   function fromFileList(list) {
@@ -216,20 +242,25 @@
     var hidden = items.filter(function (it) { return it.rel.split("/").some(function (s) { return s.charAt(0) === "." || s === "Thumbs.db" || s === "desktop.ini"; }); });
     var big = items.filter(function (it) { return hidden.indexOf(it) < 0 && it.file.size > MAX_BYTES; });
     var todo = items.filter(function (it) { return hidden.indexOf(it) < 0 && big.indexOf(it) < 0; });
-    BUSY = true; var prog = document.getElementById("fx-prog"), ok = 0, failed = [], made = {}, base = CWD;
+    BUSY = true; CANCEL = false; var ok = 0, failed = [], made = {}, base = CWD, have = 0, stopped = 0;
+    window.addEventListener("beforeunload", warnLeave);
     try {
       for (var i = 0; i < todo.length; i++) {
+        if (CANCEL) { stopped = todo.length - i; break; }
         var it = todo[i], parts = it.rel.split("/").filter(Boolean), name = parts.pop() || it.file.name;
-        prog.textContent = "Uploading " + (i + 1) + " of " + todo.length + " — " + name;
+        panel(true, i, todo.length, name);
         try {
           var dir = base;
           for (var k = 0; k < parts.length; k++) dir = await ensureFolder(dir, parts[k].replace(/[\/]/g, "-"), made);
+          if (alreadyHere(dir, name, it.file.size)) { have++; continue; }
           await uploadOne(it.file, dir, name); ok++;
         } catch (e) { failed.push(name + ": " + (e && e.message || "upload failed")); }
       }
-    } finally { BUSY = false; prog.textContent = ""; }
+    } finally { BUSY = false; CANCEL = false; panel(false); window.removeEventListener("beforeunload", warnLeave); }
     var msg = ok + " file" + (ok === 1 ? "" : "s") + " uploaded";
     var nf = Object.keys(made).length; if (nf) msg += " into " + nf + " new folder" + (nf === 1 ? "" : "s");
+    if (have) msg += " · " + have + " already here";
+    if (stopped) msg += " · cancelled with " + stopped + " not uploaded";
     if (big.length) msg += " · " + big.length + " skipped (over 25 MB)";
     if (hidden.length) msg += " · " + hidden.length + " hidden or system file" + (hidden.length === 1 ? "" : "s") + " skipped";
     if (failed.length) msg += " · " + failed.length + " failed";
@@ -484,6 +515,7 @@
     ME.isAdmin = (s.roles || []).some(function (r) { return r === "platform.tenant-admin" || r === "platform.steward" || r === "admin"; });
     document.getElementById("fx-up").onclick = pickFiles;
     document.getElementById("fx-updir").onclick = pickFolder;
+    document.getElementById("fx-upcancel").onclick = function () { CANCEL = true; document.getElementById("fx-upcount").textContent = "Stopping after this file…"; };
     document.getElementById("fx-dir").onchange = onFiles;
     document.getElementById("fx-newfolder").onclick = newFolder;
     // Organisation-to-organisation transfers are an admin action; regular users get a clean Files app until

@@ -9,7 +9,7 @@
 # ever sees their own files). Same runtime Docs/Sheets/Slides/Mail use.
 component_id: ds:airawatdeveloper:app/file-explorer
 kind: app
-version: 0.1.1   # 0.1.1: upload a whole folder (sub-folders kept) or several files; drag-and-drop folders; progress and a summary of skipped files
+version: 0.1.2   # 0.1.2: upload progress in a fixed corner panel with Cancel; leaving warns; re-uploading skips files already here. 0.1.1: upload a whole folder (sub-folders kept) or several files; drag-and-drop folders; progress and a summary of skipped files
 provider: ds:airawatdeveloper:developer
 display_name: Files
 icon: 📁
