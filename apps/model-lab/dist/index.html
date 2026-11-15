@@ -91,7 +91,18 @@ const EXPECT={norms:{key:"norms",list:true,word:"norms",help:'Expected norms —
 const expectOf=c=>EXPECT[c.scorer||"norms"]||EXPECT.norms;
 function expectCount(c){ const e=expectOf(c), v=(c.expected||{})[e.key]; return Array.isArray(v)?v.length:(v&&typeof v==="object")?Object.keys(v).length:(v==null?0:1); }
 // ---- image suites: label once per image, saved to that image's case in every test (ADR-0134) ----
-let IMG=null, IMGFILTER="todo";
+let IMG=null, IMGFILTER="todo", DETS=null, SHOWBOX=true;
+const BOXCOL={car:"#60a5fa",two_wheeler:"#f59e0b",three_wheeler:"#34d399",bus:"#f472b6",truck:"#a78bfa",bicycle:"#f87171",other:"#94a3b8"};
+async function loadDets(){                       // the latest in-house detector answer per image: boxes, classes, scores
+  const byCase={}; for(const c of CASES) byCase[c.id]=c; const out={};
+  for(const r of await q("intelligence.eval_result")){ const m=r.metrics||{}; if(!String(r.model).startsWith("component:")||!m.detections) continue;
+    const c=byCase[r.case_ref], fid=c&&((c.inputs||[])[0]||{}).file_id; if(!fid) continue;
+    if(!out[fid]||String(out[fid].at)<String(r.at)) out[fid]={at:r.at,model:r.model,detections:m.detections,size:m.image_size,threshold:m.threshold}; }
+  DETS=out; }
+function boxesSvg(d){ if(!d||!d.size) return "";
+  const [w,h]=d.size, fs=Math.max(14,Math.round(w/90)), sw=Math.max(2,Math.round(w/600));
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">${d.detections.map(x=>{ const [x1,y1,x2,y2]=x.box, col=BOXCOL[x.class]||BOXCOL.other;
+    return `<rect x="${x1}" y="${y1}" width="${x2-x1}" height="${y2-y1}" fill="none" stroke="${col}" stroke-width="${sw}"/><text x="${x1+2}" y="${Math.max(fs,y1-4)}" font-size="${fs}" fill="${col}" stroke="#000" stroke-width="${Math.max(1,sw/2)}" paint-order="stroke">${esc(x.class)} ${Math.round(x.score*100)}</text>`; }).join("")}</svg>`; }
 const tagOf=(c,k)=>((c.tags||[]).find(t=>t.startsWith(k+":"))||"").slice(k.length+1);
 function imageGroups(cs){ const g={}; for(const c of cs){ const inp=(c.inputs||[])[0]; if(!inp) continue; const k=inp.file_id;
   const x=g[k]=g[k]||{file_id:k,name:inp.name||(c.source||{}).label||k.slice(0,16),cases:[],site:tagOf(c,"site"),view:tagOf(c,"view"),split:tagOf(c,"split")}; x.cases.push(c); }
@@ -124,7 +135,8 @@ function renderImageLabelling(el,ss,cs){
     <label>Show</label><select id="ifilt">${[["todo","to label"],["done","labelled"],["dev","dev split"],["test","test split"],["all","all"]].map(([v,t])=>`<option value="${v}" ${IMGFILTER===v?"selected":""}>${t}</option>`).join("")}</select></div>
   <div class="grid2" style="grid-template-columns:minmax(220px,1fr) 3fr"><div style="max-height:75vh;overflow:auto"><table>${list.map(g=>`<tr class="click" data-i="${esc(g.file_id)}"${IMG&&g.file_id===IMG.file_id?' style="background:#13263a"':""}><td class="small">${esc(g.name)}<br><span class="muted">${esc(g.view)} · ${esc(g.split)}</span></td><td>${done(g)?'<span class="pill good">✓</span>':`<span class="pill">${g.cases.filter(c=>c.labelled).length}/${g.cases.length}</span>`}${g.cases.some(c=>!c.labelled&&(c.expected||{}).draft)?' <span class="pill warn" title="has draft labels">draft</span>':""}</td></tr>`).join("")||'<tr><td class="muted">Nothing here.</td></tr>'}</table></div>
   <div>${IMG?`<div class="card"><b>${esc(IMG.name)}</b> <span class="small muted">site ${esc(IMG.site)} · view ${esc(IMG.view)} · ${esc(IMG.split)} split · click the image to zoom</span>
-    <div style="margin:10px 0"><img id="limg" src="${imgUrl(IMG)}" alt="" style="max-width:100%;border-radius:8px;cursor:zoom-in"></div>
+    ${(()=>{ const d=DETS&&DETS[IMG.file_id]; return d?`<div class="row small"><label><input type="checkbox" id="lbox" ${SHOWBOX?"checked":""}> Show detector boxes</label><span class="muted">${d.detections.length} objects ≥ ${d.threshold} · ${esc(String(d.model).replace("component:",""))}</span>${Object.entries(BOXCOL).map(([k,c])=>`<span style="color:${c}">■ ${k}</span>`).join(" ")}</div>`:""; })()}
+    <div id="lwrap" style="position:relative;display:inline-block;max-width:100%;margin:10px 0"><img id="limg" src="${imgUrl(IMG)}" alt="" style="display:block;max-width:100%;border-radius:8px;cursor:zoom-in">${SHOWBOX&&DETS?boxesSvg(DETS[IMG.file_id]):""}</div>
     ${IMG.cases.sort((a,b)=>String(a.test_id).localeCompare(String(b.test_id))).map(fieldHtml).join("")}
     <div class="row" style="margin-top:14px"><button class="btn p" id="lsave">Save labels</button><button class="btn" id="lnext">Save and next →</button><span id="lmsg" class="msg"></span></div>
     <p class="small muted">A test left blank stays unlabelled; only saved labels count. Counts include partly visible objects.</p></div>`:'<p class="msg">No images.</p>'}</div></div>`;
@@ -132,7 +144,9 @@ function renderImageLabelling(el,ss,cs){
   $("ifilt").onchange=e=>{ IMGFILTER=e.target.value; IMG=null; render(); };
   el.querySelectorAll("tr[data-i]").forEach(tr=>tr.onclick=()=>{ IMG=all.find(g=>g.file_id===tr.dataset.i); render(); });
   if(!IMG) return;
-  $("limg").onclick=e=>{ const z=e.target.style.maxWidth==="none"; e.target.style.maxWidth=z?"100%":"none"; e.target.style.cursor=z?"zoom-in":"zoom-out"; };
+  $("limg").onclick=e=>{ const z=e.target.style.maxWidth==="none"; e.target.style.maxWidth=z?"100%":"none"; $("lwrap").style.maxWidth=z?"100%":"none"; e.target.style.cursor=z?"zoom-in":"zoom-out"; };
+  if($("lbox")) $("lbox").onchange=e=>{ SHOWBOX=e.target.checked; render(); };
+  if(DETS===null){ DETS={}; loadDets().then(render).catch(()=>{}); }
   const doSave=async(next)=>{ $("lsave").disabled=$("lnext").disabled=true; let n=0;
     try{ for(const c of IMG.cases){ const exp=readField(c); if(!exp) continue;
         await save(Object.assign({},c,{expected:exp,labelled:true,updated_at:iso()})); n++; }
