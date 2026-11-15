@@ -79,20 +79,30 @@ function renderCases(el){ const ss=suites(); SUITE=SUITE||(ss[0]||{}).name;
   const cs=CASES.filter(c=>c.suite===SUITE).sort((a,b)=>a.id.localeCompare(b.id));
   const c=CASE&&cs.find(x=>x.id===CASE.id);
   el.innerHTML=`<div class="row"><label>Suite</label><select id="csuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select><span class="muted small">${cs.length} cases · ${cs.filter(x=>x.labelled).length} labelled</span></div>
-  <div class="grid2"><div><table><tr><th>Case</th><th>Labelled</th><th>Status</th></tr>${cs.map(x=>`<tr class="click" data-c="${esc(x.id)}"><td>${esc((x.source||{}).label||x.title)}</td><td>${x.labelled?`<span class="pill good">${((x.expected||{}).norms||[]).length} expected</span>`:((x.expected||{}).draft?`<span class="pill" title="Drafted — open to review and save">draft · ${((x.expected||{}).norms||[]).length}</span>`:'<span class="pill">not yet</span>')}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join("")||'<tr><td colspan="3" class="muted">No cases.</td></tr>'}</table></div>
+  <div class="grid2"><div><table><tr><th>Case</th><th>Labelled</th><th>Status</th></tr>${cs.map(x=>`<tr class="click" data-c="${esc(x.id)}"><td>${esc((x.source||{}).label||x.title)}</td><td>${x.labelled?`<span class="pill good">${expectCount(x)} ${expectOf(x).word}</span>`:((x.expected||{}).draft?`<span class="pill" title="Drafted — open to review and save">draft · ${((x.expected||{}).norms||[]).length}</span>`:'<span class="pill">not yet</span>')}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join("")||'<tr><td colspan="3" class="muted">No cases.</td></tr>'}</table></div>
   <div>${c?caseEditor(c):'<p class="msg">Pick a case to see its prompt and label its expected answer.</p>'}</div></div>`;
   $("csuite").onchange=e=>{ SUITE=e.target.value; CASE=null; render(); };
   el.querySelectorAll("tr[data-c]").forEach(tr=>tr.onclick=()=>{ CASE=CASES.find(x=>x.id===tr.dataset.c); render(); });
   if(c) bindEditor(c); }
+const EXPECT={norms:{key:"norms",list:true,word:"norms",help:'Expected norms — a JSON list of {metric, operator, value, unit}; an empty list means "this section states no quantitative norm".'},
+  json_fields:{key:"fields",list:false,word:"fields",help:"Expected answer — a JSON object of field: value. Numbers match within 1%; text matches ignoring case."},
+  contains:{key:"contains",list:true,word:"phrases",help:"Phrases the answer must contain — a JSON list of strings."},
+  exact:{key:"answer",list:false,word:"answer",help:"The exact answer — a JSON string."}};
+const expectOf=c=>EXPECT[c.scorer||"norms"]||EXPECT.norms;
+function expectCount(c){ const e=expectOf(c), v=(c.expected||{})[e.key]; return Array.isArray(v)?v.length:(v&&typeof v==="object")?Object.keys(v).length:(v==null?0:1); }
 function caseEditor(c){ const exp=c.expected||{}; const prompt=((c.messages||[])[0]||{}).content||"";
   const sect=(prompt.split("Text:\n")[1]||prompt).split("\n\nOutput ONLY")[0];
   return `<div class="card"><b>${esc(c.title)}</b><div class="small muted">scorer ${esc(c.scorer)} · answer budget ${esc(c.max_tokens)} tokens · ${esc(c.visibility)}</div>
     <p class="msg">Section text (the full prompt is what the model receives):</p><pre>${esc(sect.slice(0,4000))}</pre>
-    <p class="msg">Expected norms — a JSON list of {metric, operator, value, unit}; an empty list means "this section states no quantitative norm". Saving marks the case labelled.</p>${exp.draft&&!c.labelled?`<p class="msg"><b>Draft</b> by ${esc(exp.draft.by||"")} — check it against the section text; it counts only after you save it.</p>`:""}
-    <textarea id="cexp" rows="8">${esc(JSON.stringify(exp.norms||[],null,1))}</textarea>
+    <p class="msg">${esc(expectOf(c).help)} Saving marks the case labelled.</p>${exp.draft&&!c.labelled?`<p class="msg"><b>Draft</b> by ${esc(exp.draft.by||"")} — check it against the section text; it counts only after you save it.</p>`:""}
+    <textarea id="cexp" rows="8">${esc(JSON.stringify(exp[expectOf(c).key]??(expectOf(c).list?[]:{}),null,1))}</textarea>
     <div class="row"><button class="btn p" id="csave">Save expected answer</button><button class="btn" id="cret">${c.status==="active"?"Retire case":"Re-activate"}</button><span id="cmsg" class="msg"></span></div></div>`; }
-function bindEditor(c){ $("csave").onclick=async()=>{ let norms; try{ norms=JSON.parse($("cexp").value); if(!Array.isArray(norms)) throw new Error("must be a JSON list"); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; return; }
-    try{ await save(Object.assign({},c,{expected:{norms},labelled:true,updated_at:iso()})); $("cmsg").textContent="Saved."; await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } };
+function bindEditor(c){ $("csave").onclick=async()=>{ const e=expectOf(c); let val; try{ val=JSON.parse($("cexp").value);
+      if(e.list&&!Array.isArray(val)) throw new Error("must be a JSON list");
+      if(e.key==="fields"&&(!val||typeof val!=="object"||Array.isArray(val))) throw new Error("must be a JSON object of field: value");
+      if(e.key==="answer"&&typeof val!=="string") throw new Error("must be a JSON string"); }catch(err){ $("cmsg").innerHTML='<span class="err">'+esc(err.message)+"</span>"; return; }
+    const expected=Object.assign({},c.expected||{},{[e.key]:val}); delete expected.draft;
+    try{ await save(Object.assign({},c,{expected,labelled:true,updated_at:iso()})); $("cmsg").textContent="Saved."; await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } };
   $("cret").onclick=async()=>{ try{ await save(Object.assign({},c,{status:c.status==="active"?"retired":"active",updated_at:iso()})); await reload(); render(); }catch(e){ $("cmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } }; }
 
 function renderRuns(el){ const ss=suites();
@@ -123,7 +133,7 @@ async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.r
   <div class="card"><b>Leaderboard</b> <span class="muted small">${esc(RUN.suite)} · ${res.length} answers so far</span>
   <table><tr><th>Model</th><th>Score</th><th></th><th class="n">Answered</th><th class="n">Empty</th><th class="n">Errors</th><th class="n">Avg time</th><th class="n">Avg tokens</th><th>Served by</th></tr>
   ${agg.map(a=>`<tr><td><b>${esc(a.m)}</b></td><td>${scorePill(a.n?a.score:null)}</td><td><div class="bar"><i style="width:${Math.round(a.score*100)}%"></i></div></td><td class="n">${a.ans}/${a.n}</td><td class="n">${a.empty}</td><td class="n">${a.errs}</td><td class="n">${(a.lat/1000).toFixed(1)} s</td><td class="n">${Math.round(a.tok)}</td><td class="small">${esc(a.served)}</td></tr>`).join("")}</table>
-  <p class="small muted">Unlabelled cases score whether the model answered with valid norms whose numbers all appear in the section; labelled cases score F1 against the expected norms.</p></div>
+  <p class="small muted">Unlabelled cases score whether the model answered with valid norms whose numbers all appear in the section; labelled cases score against their expected answer (F1 on norms, or the share of expected fields matched).</p></div>
   <div class="card"><b>Answers side by side</b><table><tr><th>Case</th>${models.map(m=>`<th>${esc(m)}</th>`).join("")}</tr>
   ${Object.keys(byCase).sort().map(cid=>`<tr class="click" data-cc="${esc(cid)}"><td>${esc(caseTitle(cid))}</td>${models.map(m=>{ const r=byCase[cid][m]; if(!r) return "<td class='muted'>…</td>";
     const mt=r.metrics||{}; return `<td>${scorePill(r.score)} <span class="small muted">${r.error?"error":mt.answered?(mt.valid??"")+" valid, "+(mt.grounded??"")+" grounded":"empty"} · ${((r.latency_ms||0)/1000).toFixed(1)} s</span></td>`; }).join("")}</tr>
