@@ -35,6 +35,28 @@ OBSTRUCTION = ("Obstruction is about the ROAD ITSELF: something stationary block
                "parked where they leave the lanes and footpath clear, deliberate traffic control (police barricades, cones). "
                "yes = at least one clear obstruction; no = the roads and footpaths you can see are clear; uncertain = the "
                "relevant area cannot be seen (dark, blurred, occluded) or you cannot tell whether something is stationary.")
+BLUR = ("Sharpness is about DETAIL, not lighting or compression of colours: sharp = edges are crisp and small things "
+        "(number plates' outline, pole edges, lane markings) are distinct; slightly_blurred = edges are soft but objects are "
+        "easy to tell apart; blurred = motion blur, focus blur or heavy smearing makes objects hard to tell apart. Judge the "
+        "road area, not the sky or the frame edges. Darkness or glare alone is not blur (that is A02).")
+VIEWPOINT = ("Viewpoint is how the camera looks at the road: steep_overhead = looking almost straight down, the road "
+             "surface fills most of the frame and vehicles are seen from above; high_oblique = mounted high (pole, "
+             "building, gantry) looking down at an angle, the junction or approach is laid out with the horizon near or "
+             "above the top; low_oblique = near street level (below about 4 m), looking along the road, vehicles seen from "
+             "the side and far objects hidden behind near ones.")
+SCENE_ATTRS = ("Choose exactly ONE land use and exactly ONE road environment. Land use (what lines the road): "
+               "land_commercial = shops, offices, markets; land_residential = houses, apartments; land_mixed = shops "
+               "below homes, or a clear mix; land_industrial = factories, warehouses, yards; land_institutional = "
+               "government, hospital, school, religious complex; land_open = parks, water, open ground, vacant. Road "
+               "environment: road_divided_arterial = a main road with a median or divider; road_undivided_main = a main "
+               "road with no divider; road_local_street = a narrow residential or market lane; road_flyover_or_highway = "
+               "an elevated road, flyover or highway with fast traffic. Weather is not asked here (that is A02).")
+FOOTPATH = ("Footpath condition is about the raised or marked pedestrian space beside the road that the camera can "
+            "see: clear = a usable footpath with nothing blocking it; obstructed = parked vehicles, vendors, goods, "
+            "construction material or debris block part of it, so people must step into the road; damaged = broken, "
+            "missing or uneven paving, open drains or holes; no_footpath = no footpath is visible along the visible "
+            "road edges; uncertain = the road edge cannot be seen well enough to tell. Choose every one that applies "
+            "(obstructed and damaged can both apply).")
 
 
 def _json(spec):
@@ -52,10 +74,16 @@ TESTS = [
      "prompt": SCENE + "Which lighting and visibility conditions apply? Choose every one that applies: day, night, "
                "glare, haze, low_light, rain." + _json('{"labels": ["day" | "night" | "glare" | "haze" | "low_light" | "rain", …]}'),
      "field": {"key": "labels", "kind": "multi", "options": ["day", "night", "glare", "haze", "low_light", "rain"], "label": "Lighting"}},
+    {"test_id": "A03", "title": "Blur", "scorer": "labels",
+     "prompt": SCENE + BLUR + " How sharp is this frame?" + _json('{"label": "sharp" | "slightly_blurred" | "blurred"}'),
+     "field": {"key": "labels", "kind": "choice", "options": ["sharp", "slightly_blurred", "blurred"], "label": "Sharpness", "help": BLUR}},
     {"test_id": "A04", "title": "Occlusion", "scorer": "labels",
      "prompt": SCENE + OCCLUSION + " Which kinds of occlusion apply to this frame? Choose every one that applies, or "
                "none." + _json('{"labels": ["vegetation" | "cable" | "structure" | "vehicle" | "none", …]}'),
      "field": {"key": "labels", "kind": "multi", "options": ["vegetation", "cable", "structure", "vehicle", "none"], "label": "Occlusion", "help": OCCLUSION}},
+    {"test_id": "A05", "title": "Camera viewpoint", "scorer": "labels",
+     "prompt": SCENE + VIEWPOINT + " Which viewpoint is this?" + _json('{"label": "steep_overhead" | "high_oblique" | "low_oblique"}'),
+     "field": {"key": "labels", "kind": "choice", "options": ["steep_overhead", "high_oblique", "low_oblique"], "label": "Viewpoint", "help": VIEWPOINT}},
     {"test_id": "A06", "title": "Analytics suitability", "scorer": "labels",
      "prompt": SCENE + "Which tasks could this camera view support reliably? vehicle_counting (the carriageway is "
                "visible and vehicles can be told apart), vehicle_tracking (vehicles stay in view long enough to follow), "
@@ -89,6 +117,13 @@ TESTS = [
                "camera or location name. Use an empty string for anything not shown."
                + _json('{"timestamp": "…", "camera_name": "…"}'),
      "field": {"key": "text", "kind": "text", "fields": ["timestamp", "camera_name"], "label": "Overlay text"}},
+    {"test_id": "C06", "title": "Scene attributes", "scorer": "labels",
+     "prompt": SCENE + SCENE_ATTRS + _json('{"labels": [<one land_… value>, <one road_… value>]}'),
+     "field": {"key": "labels", "kind": "multi", "options": ['land_commercial', 'land_residential', 'land_mixed', 'land_industrial', 'land_institutional', 'land_open', 'road_divided_arterial', 'road_undivided_main', 'road_local_street', 'road_flyover_or_highway'], "label": "Land use and road", "help": SCENE_ATTRS}},
+    {"test_id": "D05", "title": "Footpath condition", "scorer": "labels",
+     "prompt": SCENE + FOOTPATH + " What is the condition of the footpaths you can see?"
+               + _json('{"labels": ["clear" | "obstructed" | "damaged" | "no_footpath" | "uncertain", …]}'),
+     "field": {"key": "labels", "kind": "multi", "options": ["clear", "obstructed", "damaged", "no_footpath", "uncertain"], "label": "Footpath", "help": FOOTPATH}},
     {"test_id": "E03", "title": "Obstruction", "scorer": "labels",
      "prompt": SCENE + OBSTRUCTION + " Is there an obstruction in this frame?"
                + _json('{"label": "yes" | "no" | "uncertain", "reason": "one sentence"}'),

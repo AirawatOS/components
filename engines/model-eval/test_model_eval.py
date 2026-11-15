@@ -319,13 +319,18 @@ def test_seed_images_makes_private_tagged_cases_and_keeps_existing_ones():
 
 def test_visual_catalogue_is_complete_and_each_field_maps_to_its_scorer():
     import visual_tests as vt
-    assert [t["test_id"] for t in vt.TESTS] == ["A01", "A02", "A04", "A06", "B01", "B03", "B04", "B09", "C05", "E03"]
-    assert "cattle" in vt.TESTS[4]["field"]["options"] and vt.TESTS[2]["field"]["help"] == vt.OCCLUSION and vt.TESTS[-1]["field"]["help"] == vt.OBSTRUCTION
+    assert [t["test_id"] for t in vt.TESTS] == ["A01", "A02", "A03", "A04", "A05", "A06", "B01", "B03", "B04", "B09", "C05", "C06", "D05", "E03"]
+    T = {t["test_id"]: t for t in vt.TESTS}
+    assert "cattle" in T["B01"]["field"]["options"] and T["A04"]["field"]["help"] == vt.OCCLUSION and T["E03"]["field"]["help"] == vt.OBSTRUCTION
+    for tid, d in (("A03", vt.BLUR), ("A05", vt.VIEWPOINT), ("C06", vt.SCENE_ATTRS), ("D05", vt.FOOTPATH)):
+        assert T[tid]["field"]["help"] == d and d in T[tid]["prompt"], tid    # the same words for the model and the reviewer
+    opts = T["C06"]["field"]["options"]                                     # one of each group, every option defined
+    assert {o.split("_")[0] for o in opts} == {"land", "road"} and all(o in vt.SCENE_ATTRS for o in opts)
     kinds = {"labels": ("choice", "multi"), "counts": ("counts",), "text": ("text",)}
     for t in vt.TESTS:
         assert t["field"]["kind"] in kinds[t["scorer"]], t["test_id"]
         assert "Answer with ONLY a JSON object" in t["prompt"]
-    assert vt.expected_from(vt.TESTS[5]["field"], {"car": "3"}) == {"counts": {c: (3 if c == "car" else 0) for c in vt.VEHICLES}}
+    assert vt.expected_from(T["B03"]["field"], {"car": "3"}) == {"counts": {c: (3 if c == "car" else 0) for c in vt.VEHICLES}}
 
 
 def test_component_subjects_are_left_to_their_engine():
@@ -447,3 +452,13 @@ def test_a_drafting_run_takes_only_the_named_tests_and_unlabelled_cases_and_says
     assert sorted(a.rsplit("--", 2)[-2] for a in asked) == ["A01", "C05"]
     run = [o for s_, o in writes if s_ == "intelligence.eval_run"][-1]
     assert "tests A01,C05 only" in run["note"] and "unlabelled cases only" in run["note"]
+
+
+def test_new_form_tests_score_with_the_labels_scorer():
+    # C06: one land use + one road environment; getting one of the two right is half credit (F1 = 0.5)
+    case = {"scorer": "labels", "labelled": True, "expected": {"labels": ["land_commercial", "road_divided_arterial"]}}
+    assert me.score_case(case, '{"labels": ["land_commercial", "road_divided_arterial"]}')[0] == 1.0
+    assert me.score_case(case, '{"labels": ["land_commercial", "road_local_street"]}')[0] == 0.5
+    # D05 multi-label and A03 single choice
+    assert me.score_case({"scorer": "labels", "labelled": True, "expected": {"labels": ["obstructed", "damaged"]}}, '{"labels": ["obstructed"]}')[0] == 0.667
+    assert me.score_case({"scorer": "labels", "labelled": True, "expected": {"labels": "sharp"}}, '{"label": "sharp"}')[0] == 1.0
