@@ -91,18 +91,65 @@ const EXPECT={norms:{key:"norms",list:true,word:"norms",help:'Expected norms —
 const expectOf=c=>EXPECT[c.scorer||"norms"]||EXPECT.norms;
 function expectCount(c){ const e=expectOf(c), v=(c.expected||{})[e.key]; return Array.isArray(v)?v.length:(v&&typeof v==="object")?Object.keys(v).length:(v==null?0:1); }
 // ---- image suites: label once per image, saved to that image's case in every test (ADR-0134) ----
-let IMG=null, IMGFILTER="todo", DETS=null, SHOWBOX=true;
-const BOXCOL={car:"#60a5fa",two_wheeler:"#f59e0b",three_wheeler:"#34d399",bus:"#f472b6",truck:"#a78bfa",bicycle:"#f87171",other:"#94a3b8"};
+let IMG=null, IMGFILTER="todo", DETS=null, DETSLOADING=false, SHOWBOX=true, ZOOM=false;
+const BOXCOL={car:"#60a5fa",two_wheeler:"#f59e0b",three_wheeler:"#34d399",bus:"#f472b6",truck:"#a78bfa",bicycle:"#f87171",pedestrian:"#e5e7eb",other:"#94a3b8"};
 async function loadDets(){                       // the latest in-house detector answer per image: boxes, classes, scores
   const byCase={}; for(const c of CASES) byCase[c.id]=c; const out={};
   for(const r of await q("intelligence.eval_result")){ const m=r.metrics||{}; if(!String(r.model).startsWith("component:")||!m.detections) continue;
     const c=byCase[r.case_ref], fid=c&&((c.inputs||[])[0]||{}).file_id; if(!fid) continue;
     if(!out[fid]||String(out[fid].at)<String(r.at)) out[fid]={at:r.at,model:r.model,detections:m.detections,size:m.image_size,threshold:m.threshold}; }
   DETS=out; }
-function boxesSvg(d){ if(!d||!d.size) return "";
-  const [w,h]=d.size, fs=Math.max(14,Math.round(w/90)), sw=Math.max(2,Math.round(w/600));
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">${d.detections.map(x=>{ const [x1,y1,x2,y2]=x.box, col=BOXCOL[x.class]||BOXCOL.other;
-    return `<rect x="${x1}" y="${y1}" width="${x2-x1}" height="${y2-y1}" fill="none" stroke="${col}" stroke-width="${sw}"/><text x="${x1+2}" y="${Math.max(fs,y1-4)}" font-size="${fs}" fill="${col}" stroke="#000" stroke-width="${Math.max(1,sw/2)}" paint-order="stroke">${esc(x.class)} ${Math.round(x.score*100)}</text>`; }).join("")}</svg>`; }
+// ---- box review: the reviewer's boxes are the image's ground truth; counts and classes follow from them ----
+let EDIT={}, DRAWCLS="two_wheeler", SEL=-1;
+function boxClasses(g){ const b03=g.cases.find(c=>c.test_id==="B03"); return [...(((b03&&b03.label_form)||[])[0]||{}).classes||Object.keys(BOXCOL).filter(k=>k!=="pedestrian"&&k!=="other"),"pedestrian"]; }
+function boxState(g){                            // saved review if any, else the detector's boxes (unreviewed)
+  if(EDIT[g.file_id]) return EDIT[g.file_id];
+  const b03=g.cases.find(c=>c.test_id==="B03"), saved=b03&&b03.labelled&&(b03.expected||{}).boxes, d=DETS&&DETS[g.file_id];
+  const boxes=saved?saved.map(x=>({class:x.class,box:x.box.slice(),origin:x.origin,score:x.score}))
+    :(d?d.detections.filter(x=>x.class!=="other").map(x=>({class:x.class,box:x.box.slice(),origin:"detector",score:x.score})):[]);
+  return EDIT[g.file_id]={boxes,removed:0,size:(d&&d.size)||null,saved:!!saved,src:d?{model:d.model,threshold:d.threshold}:null}; }
+function boxCounts(st){ const n={}; st.boxes.forEach(b=>n[b.class]=(n[b.class]||0)+1); return n; }
+function syncFields(g){                          // B03 vehicle counts, B04 pedestrians, B01 classes present ← the boxes
+  const st=boxState(g), n=boxCounts(st);
+  for(const c of g.cases){ const f=(c.label_form||[])[0]||{}, id="lf-"+String(c.test_id||"x").toLowerCase();
+    if(c.test_id==="B03"||c.test_id==="B04") document.querySelectorAll(`input[data-f="${id}"]`).forEach(x=>x.value=String(n[x.dataset.k]||0));
+    if(c.test_id==="B01"){ const present=new Set(Object.keys(n)); document.querySelectorAll(`input[data-f="${id}"]`).forEach(x=>x.checked=x.value==="none"?present.size===0:present.has(x.value)); } } }
+function boxSvg(st){ if(!st.size) return "";
+  const [w,h]=st.size, fs=Math.max(14,Math.round(w/90)), sw=Math.max(2,Math.round(w/600));
+  return `<svg id="lsvg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none"><rect data-bg="1" x="0" y="0" width="${w}" height="${h}" fill="rgba(0,0,0,0)"/>${st.boxes.map((x,i)=>{ const [x1,y1,x2,y2]=x.box, col=BOXCOL[x.class]||BOXCOL.other, sel=i===SEL;
+    return `<rect data-i="${i}" x="${x1}" y="${y1}" width="${x2-x1}" height="${y2-y1}" fill="${sel?"rgba(255,255,255,.12)":"rgba(0,0,0,0)"}" stroke="${col}" stroke-width="${sel?sw*2:sw}" ${x.origin==="added"?`stroke-dasharray="${sw*3} ${sw*2}"`:""} style="cursor:pointer"/><text x="${x1+2}" y="${Math.max(fs,y1-4)}" font-size="${fs}" fill="${col}" stroke="#000" stroke-width="${Math.max(1,sw/2)}" paint-order="stroke" pointer-events="none">${esc(x.class)}${x.origin==="detector"||x.origin==="kept"?" "+Math.round((x.score||0)*100):""}${x.origin==="added"?" +":""}</text>`; }).join("")}<rect id="ldraft" x="0" y="0" width="0" height="0" fill="none" stroke="#fff" stroke-width="${sw}" stroke-dasharray="${sw*3} ${sw*2}" pointer-events="none"/></svg>`; }
+function boxBar(g){ const st=boxState(g), n=boxCounts(st), cls=boxClasses(g), b=st.boxes[SEL];
+  const added=st.boxes.filter(x=>x.origin==="added").length, changed=st.boxes.filter(x=>x.origin==="changed").length;
+  return `<div class="row small"><b>Boxes</b> <span class="muted">${st.boxes.length} · ${Object.entries(n).map(([k,v])=>`<span style="color:${BOXCOL[k]||"#94a3b8"}">${esc(k)} ${v}</span>`).join(" ")||"none"}</span>
+      <span class="muted">· ${st.saved?"your saved review":st.src?"detector boxes (≥ "+st.src.threshold+"), not reviewed yet":"no detector boxes — draw them"}${added||changed||st.removed?` · ${added} added, ${changed} changed, ${st.removed} removed`:""}</span></div>
+    <div class="row small"><label>Draw as</label>${cls.map(k=>`<label style="color:${BOXCOL[k]||"#94a3b8"}"><input type="radio" name="ldraw" value="${esc(k)}" ${k===DRAWCLS?"checked":""}> ${esc(k)}</label>`).join(" ")}
+      <button class="btn" id="lzoom">${ZOOM?"Fit":"Zoom"}</button></div>
+    ${b?`<div class="row small"><b>Selected:</b> <select id="lselcls">${cls.map(k=>`<option ${k===b.class?"selected":""}>${esc(k)}</option>`).join("")}</select><button class="btn" id="ldel">Delete box</button><span class="muted">${b.origin==="added"?"drawn by you":b.origin==="changed"?"class changed by you":"from the detector"+(b.score?" ("+Math.round(b.score*100)+"%)":"")} · Del removes · Esc deselects</span></div>`
+      :`<div class="small muted">Drag on the image to draw a missed object as the class above. Click a box to change its class or delete it. Counts below follow the boxes.</div>`}`; }
+function redrawBoxes(g){ const st=boxState(g); $("lwrap").querySelector("svg")?.remove(); $("lwrap").insertAdjacentHTML("beforeend",boxSvg(st));
+  $("lbar").innerHTML=boxBar(g); wireBoxes(g); syncFields(g); }
+function wireBoxes(g){ const st=boxState(g), svg=$("lsvg");
+  document.querySelectorAll('input[name="ldraw"]').forEach(x=>x.onchange=()=>{ DRAWCLS=x.value; });
+  if($("lzoom")) $("lzoom").onclick=()=>{ ZOOM=!ZOOM; $("lwrap").style.maxWidth=ZOOM?"none":"100%"; $("limg").style.maxWidth=ZOOM?"none":"100%"; $("lzoom").textContent=ZOOM?"Fit":"Zoom"; };
+  if($("lselcls")) $("lselcls").onchange=e=>{ const b=st.boxes[SEL]; if(!b) return; b.class=e.target.value; if(b.origin!=="added") b.origin="changed"; redrawBoxes(g); };
+  if($("ldel")) $("ldel").onclick=()=>{ const b=st.boxes[SEL]; if(!b) return; if(b.origin!=="added") st.removed++; st.boxes.splice(SEL,1); SEL=-1; redrawBoxes(g); };
+  if(!svg) return;
+  const pt=e=>{ const r=svg.getBoundingClientRect(); return [Math.max(0,Math.min(st.size[0],(e.clientX-r.left)/r.width*st.size[0])),Math.max(0,Math.min(st.size[1],(e.clientY-r.top)/r.height*st.size[1]))]; };
+  let start=null;
+  svg.onpointerdown=e=>{ const t=e.target;
+    if(t.dataset.i!==undefined){ SEL=+t.dataset.i; redrawBoxes(g); return; }
+    if(!t.dataset.bg) return; start=pt(e); svg.setPointerCapture(e.pointerId); };
+  svg.onpointermove=e=>{ if(!start) return; const [x,y]=pt(e), d=$("ldraft");
+    d.setAttribute("x",Math.min(start[0],x)); d.setAttribute("y",Math.min(start[1],y)); d.setAttribute("width",Math.abs(x-start[0])); d.setAttribute("height",Math.abs(y-start[1])); };
+  svg.onpointerup=e=>{ if(!start) return; const [x,y]=pt(e), s0=start; start=null;
+    const minpx=Math.max(4,st.size[0]/400);
+    if(Math.abs(x-s0[0])<minpx||Math.abs(y-s0[1])<minpx){ SEL=-1; redrawBoxes(g); return; }        // a click on empty space deselects
+    st.boxes.push({class:DRAWCLS,box:[Math.min(s0[0],x),Math.min(s0[1],y),Math.max(s0[0],x),Math.max(s0[1],y)].map(v=>Math.round(v*10)/10),origin:"added"});
+    SEL=st.boxes.length-1; redrawBoxes(g); }; }
+document.addEventListener("keydown",e=>{ if(!IMG||!EDIT[IMG.file_id]||/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||"")) return;
+  const st=EDIT[IMG.file_id];
+  if((e.key==="Delete"||e.key==="Backspace")&&st.boxes[SEL]){ e.preventDefault(); if(st.boxes[SEL].origin!=="added") st.removed++; st.boxes.splice(SEL,1); SEL=-1; redrawBoxes(IMG); }
+  else if(e.key==="Escape"&&SEL>=0){ SEL=-1; redrawBoxes(IMG); } });
 const tagOf=(c,k)=>((c.tags||[]).find(t=>t.startsWith(k+":"))||"").slice(k.length+1);
 function imageGroups(cs){ const g={}; for(const c of cs){ const inp=(c.inputs||[])[0]; if(!inp) continue; const k=inp.file_id;
   const x=g[k]=g[k]||{file_id:k,name:inp.name||(c.source||{}).label||k.slice(0,16),cases:[],site:tagOf(c,"site"),view:tagOf(c,"view"),split:tagOf(c,"split")}; x.cases.push(c); }
@@ -135,22 +182,29 @@ function renderImageLabelling(el,ss,cs){
     <label>Show</label><select id="ifilt">${[["todo","to label"],["done","labelled"],["dev","dev split"],["test","test split"],["all","all"]].map(([v,t])=>`<option value="${v}" ${IMGFILTER===v?"selected":""}>${t}</option>`).join("")}</select></div>
   <div class="grid2" style="grid-template-columns:minmax(220px,1fr) 3fr"><div style="max-height:75vh;overflow:auto"><table>${list.map(g=>`<tr class="click" data-i="${esc(g.file_id)}"${IMG&&g.file_id===IMG.file_id?' style="background:#13263a"':""}><td class="small">${esc(g.name)}<br><span class="muted">${esc(g.view)} · ${esc(g.split)}</span></td><td>${done(g)?'<span class="pill good">✓</span>':`<span class="pill">${g.cases.filter(c=>c.labelled).length}/${g.cases.length}</span>`}${g.cases.some(c=>!c.labelled&&(c.expected||{}).draft)?' <span class="pill warn" title="has draft labels">draft</span>':""}</td></tr>`).join("")||'<tr><td class="muted">Nothing here.</td></tr>'}</table></div>
   <div>${IMG?`<div class="card"><b>${esc(IMG.name)}</b> <span class="small muted">site ${esc(IMG.site)} · view ${esc(IMG.view)} · ${esc(IMG.split)} split · click the image to zoom</span>
-    ${(()=>{ const d=DETS&&DETS[IMG.file_id]; return d?`<div class="row small"><label><input type="checkbox" id="lbox" ${SHOWBOX?"checked":""}> Show detector boxes</label><span class="muted">${d.detections.length} objects ≥ ${d.threshold} · ${esc(String(d.model).replace("component:",""))}</span>${Object.entries(BOXCOL).map(([k,c])=>`<span style="color:${c}">■ ${k}</span>`).join(" ")}</div>`:""; })()}
-    <div id="lwrap" style="position:relative;display:inline-block;max-width:100%;margin:10px 0"><img id="limg" src="${imgUrl(IMG)}" alt="" style="display:block;max-width:100%;border-radius:8px;cursor:zoom-in">${SHOWBOX&&DETS?boxesSvg(DETS[IMG.file_id]):""}</div>
+    ${DETS===null?'<div class="small muted">Loading the detector\'s boxes…</div>':`<div class="row small"><label><input type="checkbox" id="lbox" ${SHOWBOX?"checked":""}> Review boxes (counts and classes follow them)</label></div><div id="lbar">${SHOWBOX?boxBar(IMG):""}</div>`}
+    <div id="lwrap" style="position:relative;display:inline-block;max-width:${ZOOM?"none":"100%"};margin:10px 0;user-select:none"><img id="limg" src="${imgUrl(IMG)}" alt="" draggable="false" style="display:block;max-width:${ZOOM?"none":"100%"};border-radius:8px"></div>
     ${IMG.cases.sort((a,b)=>String(a.test_id).localeCompare(String(b.test_id))).map(fieldHtml).join("")}
     <div class="row" style="margin-top:14px"><button class="btn p" id="lsave">Save labels</button><button class="btn" id="lnext">Save and next →</button><span id="lmsg" class="msg"></span></div>
     <p class="small muted">A test left blank stays unlabelled; only saved labels count. Counts include partly visible objects.</p></div>`:'<p class="msg">No images.</p>'}</div></div>`;
   $("csuite").onchange=e=>{ SUITE=e.target.value; IMG=null; render(); };
   $("ifilt").onchange=e=>{ IMGFILTER=e.target.value; IMG=null; render(); };
-  el.querySelectorAll("tr[data-i]").forEach(tr=>tr.onclick=()=>{ IMG=all.find(g=>g.file_id===tr.dataset.i); render(); });
+  el.querySelectorAll("tr[data-i]").forEach(tr=>tr.onclick=()=>{ IMG=all.find(g=>g.file_id===tr.dataset.i); SEL=-1; render(); });
   if(!IMG) return;
-  $("limg").onclick=e=>{ const z=e.target.style.maxWidth==="none"; e.target.style.maxWidth=z?"100%":"none"; $("lwrap").style.maxWidth=z?"100%":"none"; e.target.style.cursor=z?"zoom-in":"zoom-out"; };
   if($("lbox")) $("lbox").onchange=e=>{ SHOWBOX=e.target.checked; render(); };
-  if(DETS===null){ DETS={}; loadDets().then(render).catch(()=>{}); }
+  if(DETS===null&&!DETSLOADING){ DETSLOADING=true; loadDets().catch(()=>{ DETS={}; }).finally(()=>{ DETSLOADING=false; render(); }); }
+  if(DETS!==null&&SHOWBOX){ const st=boxState(IMG);
+    const draw=()=>{ if(!st.size) st.size=[$("limg").naturalWidth,$("limg").naturalHeight]; redrawBoxes(IMG); };
+    if(st.size) draw(); else if($("limg").complete&&$("limg").naturalWidth) draw(); else $("limg").onload=draw; }
   const doSave=async(next)=>{ $("lsave").disabled=$("lnext").disabled=true; let n=0;
-    try{ for(const c of IMG.cases){ const exp=readField(c); if(!exp) continue;
+    try{ const st=SHOWBOX&&EDIT[IMG.file_id];
+      for(const c of IMG.cases){ const exp=readField(c); if(!exp) continue;
+        if(st&&c.test_id==="B03"){                   // the reviewed boxes: the image's localization ground truth
+          exp.boxes=st.boxes.map(b=>({class:b.class,box:b.box,origin:b.origin==="detector"?"kept":b.origin,score:b.score}));
+          exp.box_review={at:iso(),by:ME,from:st.src,kept:exp.boxes.filter(b=>b.origin==="kept").length,changed:exp.boxes.filter(b=>b.origin==="changed").length,
+                          added:exp.boxes.filter(b=>b.origin==="added").length,removed:st.removed}; }
         await save(Object.assign({},c,{expected:exp,labelled:true,updated_at:iso()})); n++; }
-      $("lmsg").textContent=n+" of "+IMG.cases.length+" tests saved."; await reload();
+      $("lmsg").textContent=n+" of "+IMG.cases.length+" tests saved."; delete EDIT[IMG.file_id]; SEL=-1; await reload();
       if(next){ const cur=IMG.file_id, i=list.findIndex(g=>g.file_id===cur); IMG=list[i+1]||null; }
       render(); }
     catch(e){ $("lmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; $("lsave").disabled=$("lnext").disabled=false; } };
