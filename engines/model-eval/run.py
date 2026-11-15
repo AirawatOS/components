@@ -35,6 +35,18 @@ def budget(case):
 
 
 NOTE_NORMS = "cases with expected norms only"
+ONLY_TESTS = [t.strip().upper() for t in (os.environ.get("ONLY_TESTS") or "").split(",") if t.strip()]   # e.g. A01,A02,C05
+ONLY_UNLABELLED = (os.environ.get("ONLY_UNLABELLED") or "").strip().lower() in ("1", "true", "yes")       # drafting runs
+
+
+def run_filters(run):
+    """Which tests, and whether only unlabelled cases: the environment when given, else what the run's note recorded
+    when it first started (so a resumed run keeps them). Used for drafting labels on new images (0.2.8)."""
+    note = run.get("note") or ""
+    m = re.search(r"tests ([A-Z0-9,]+) only", note)
+    tests = ONLY_TESTS or (m.group(1).split(",") if m else [])
+    unl = ONLY_UNLABELLED or "unlabelled cases only" in note
+    return tests, unl
 THINKING = (os.environ.get("THINKING") or "").strip().lower()    # on | off | "" (the model's own default)
 
 
@@ -600,6 +612,18 @@ def run_one(run):
     cases = [c for c in mine("intelligence.eval_case") if c.get("suite") == run["suite"] and c.get("status") == "active"]
     if cases_mode == "with_norms":          # only labelled cases that expect at least one norm — cheaper, but it no
         cases = [c for c in cases if has_norms(c)]   # longer tests whether a model invents norms where there are none
+    tests, unl = run_filters(run)
+    if tests:
+        cases = [c for c in cases if (c.get("test_id") or "").upper() in tests]
+        if "tests %s only" % ",".join(tests) not in note:
+            note = (note + " · tests %s only" % ",".join(tests)).lstrip(" ·")
+    if unl:
+        cases = [c for c in cases if not c.get("labelled")]
+        if "unlabelled cases only" not in note:
+            note = (note + " · unlabelled cases only").lstrip(" ·")
+    if len(cases) > MAX_CASES and "MAX_CASES" not in note:   # say so — a silent cut once hid three whole tests
+        note = (note + " · first %d of %d cases (MAX_CASES)" % (MAX_CASES, len(cases))).lstrip(" ·")
+    run = dict(run, note=note[:500] or None)
     cases = sorted(cases, key=lambda c: c["id"])[:MAX_CASES]
     run = dict(run, started_at=run.get("started_at") or now())
     write("intelligence.eval_run", dict(run, status="running", error=None))

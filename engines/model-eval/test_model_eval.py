@@ -426,3 +426,24 @@ def test_mine_follows_every_page():
         assert [o["id"] for o in me.mine("x")] == ["ds:t:x/1", "ds:t:x/2"]
     finally:
         me.call, me.T = saved
+
+
+def test_a_drafting_run_takes_only_the_named_tests_and_unlabelled_cases_and_says_so():
+    mk = lambda t, lab, i: {"id": "ds:t:intelligence/eval_case/s--%s--%d" % (t, i), "suite": "s", "status": "active", "test_id": t,
+                            "scorer": "labels", "messages": [{"role": "user", "content": "q"}], "labelled": lab,
+                            "expected": {"labels": "good"} if lab else None}
+    store = {"intelligence.eval_case": [mk("A01", True, 1), mk("A01", False, 2), mk("B03", False, 3), mk("C05", False, 4)],
+             "intelligence.eval_result": []}
+    writes, asked = [], []
+    saved = (me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS, me.ONLY_TESTS, me.ONLY_UNLABELLED)
+    me.mine = lambda scope, limit=20000: list(store.get(scope, []))
+    me.write = lambda scope, obj: writes.append((scope, obj))
+    me.ask = lambda model, c: (asked.append(c["id"]) or ('{"label": "good"}', model, {}, None, 5))
+    me.T, me.STOP_AFTER, me.MAX_TOKENS, me.ONLY_TESTS, me.ONLY_UNLABELLED = "t", 1400, 0, ["A01", "C05"], True
+    try:
+        me.run_one({"id": "ds:t:intelligence/eval_run/d", "suite": "s", "models": ["m"], "status": "pending"})
+    finally:
+        me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS, me.ONLY_TESTS, me.ONLY_UNLABELLED = saved
+    assert sorted(a.rsplit("--", 2)[-2] for a in asked) == ["A01", "C05"]
+    run = [o for s_, o in writes if s_ == "intelligence.eval_run"][-1]
+    assert "tests A01,C05 only" in run["note"] and "unlabelled cases only" in run["note"]
