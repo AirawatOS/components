@@ -62,7 +62,17 @@ def call(path, body, timeout=120):
 
 
 def mine(scope, limit=20000):
-    rows = [r.get("object") or r for r in (call("/v1/query", {"scope": scope, "limit": limit}).get("results") or [])]
+    """Every record of `scope` in this tenant, up to `limit`, following the broker's pages (next_cursor) — 0.3.2."""
+    rows, cur = [], None
+    while len(rows) < limit:
+        body = {"scope": scope, "limit": min(5000, limit - len(rows))}
+        if cur:
+            body["cursor"] = cur
+        d = call("/v1/query", body)
+        rows += [r.get("object") or r for r in (d.get("results") or [])]
+        cur = d.get("next_cursor")
+        if not cur:
+            break
     return [o for o in rows if str(o.get("id", "")).startswith("ds:%s:" % T)]
 
 
