@@ -101,7 +101,9 @@ function fieldValue(c){ const f=(c.label_form||[])[0]||{}, e=c.expected||{};
   if(f.kind==="choice") return typeof e.labels==="string"?e.labels:""; if(f.kind==="multi") return Array.isArray(e.labels)?e.labels:[];
   if(f.kind==="counts") return e.counts||{}; return e.text||{}; }
 function fieldHtml(c){ const f=(c.label_form||[])[0]||{}, v=fieldValue(c), id="lf-"+String(c.test_id||"x").toLowerCase();
-  const head=`<div class="small muted" style="margin-top:10px"><b>${esc(c.test_id||"")}</b> ${esc(f.label||"")} ${c.labelled?'<span class="pill good">labelled</span>':""}</div>`;
+  const dr=(c.expected||{}).draft;
+  const head=`<div class="small muted" style="margin-top:10px"><b>${esc(c.test_id||"")}</b> ${esc(f.label||"")} ${c.labelled?'<span class="pill good">labelled</span>':dr?`<span class="pill warn" title="${esc(dr.by||"")}">draft — check before saving</span>`:""}</div>`
+    +(dr&&!c.labelled&&dr.note?`<div class="small muted">${esc(dr.note)}</div>`:"");
   if(f.kind==="choice") return head+`<div class="row">${f.options.map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${v===o?"checked":""}> ${esc(o)}</label>`).join(" ")}</div>`;
   if(f.kind==="multi") return head+`<div class="row">${f.options.map(o=>`<label><input type="checkbox" data-f="${id}" value="${esc(o)}" ${v.includes(o)?"checked":""}> ${esc(o)}</label>`).join(" ")}</div>`;
   if(f.kind==="counts") return head+`<div class="row">${f.classes.map(k=>`<label>${esc(k)} <input type="number" min="0" step="1" data-f="${id}" data-k="${esc(k)}" value="${v[k]??""}" style="width:64px"></label>`).join(" ")}</div>`;
@@ -120,7 +122,7 @@ function renderImageLabelling(el,ss,cs){
   el.innerHTML=`<div class="row"><label>Suite</label><select id="csuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select>
     <span class="muted small">${all.length} images × ${tests.length} tests (${esc(tests.join(" "))}) · ${n} images fully labelled · cases are private</span>
     <label>Show</label><select id="ifilt">${[["todo","to label"],["done","labelled"],["dev","dev split"],["test","test split"],["all","all"]].map(([v,t])=>`<option value="${v}" ${IMGFILTER===v?"selected":""}>${t}</option>`).join("")}</select></div>
-  <div class="grid2" style="grid-template-columns:minmax(220px,1fr) 3fr"><div style="max-height:75vh;overflow:auto"><table>${list.map(g=>`<tr class="click" data-i="${esc(g.file_id)}"${IMG&&g.file_id===IMG.file_id?' style="background:#13263a"':""}><td class="small">${esc(g.name)}<br><span class="muted">${esc(g.view)} · ${esc(g.split)}</span></td><td>${done(g)?'<span class="pill good">✓</span>':`<span class="pill">${g.cases.filter(c=>c.labelled).length}/${g.cases.length}</span>`}</td></tr>`).join("")||'<tr><td class="muted">Nothing here.</td></tr>'}</table></div>
+  <div class="grid2" style="grid-template-columns:minmax(220px,1fr) 3fr"><div style="max-height:75vh;overflow:auto"><table>${list.map(g=>`<tr class="click" data-i="${esc(g.file_id)}"${IMG&&g.file_id===IMG.file_id?' style="background:#13263a"':""}><td class="small">${esc(g.name)}<br><span class="muted">${esc(g.view)} · ${esc(g.split)}</span></td><td>${done(g)?'<span class="pill good">✓</span>':`<span class="pill">${g.cases.filter(c=>c.labelled).length}/${g.cases.length}</span>`}${g.cases.some(c=>!c.labelled&&(c.expected||{}).draft)?' <span class="pill warn" title="has draft labels">draft</span>':""}</td></tr>`).join("")||'<tr><td class="muted">Nothing here.</td></tr>'}</table></div>
   <div>${IMG?`<div class="card"><b>${esc(IMG.name)}</b> <span class="small muted">site ${esc(IMG.site)} · view ${esc(IMG.view)} · ${esc(IMG.split)} split · click the image to zoom</span>
     <div style="margin:10px 0"><img id="limg" src="${imgUrl(IMG)}" alt="" style="max-width:100%;border-radius:8px;cursor:zoom-in"></div>
     ${IMG.cases.sort((a,b)=>String(a.test_id).localeCompare(String(b.test_id))).map(fieldHtml).join("")}
