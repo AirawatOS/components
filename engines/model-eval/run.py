@@ -316,6 +316,8 @@ def score_case(case, content):
         ok = [k for k, v in fields.items() if isinstance(obj, dict) and k in obj and field_equal(obj[k], v)]
         return (round(len(ok) / len(fields), 3) if fields else 0.0), {"answered": bool(text), "parsed": isinstance(obj, dict),
                 "matched": len(ok), "of": len(fields), "wrong": [k for k in fields if k not in ok][:20]}
+    if sc in ("counts", "labels", "text") and not case.get("labelled"):
+        return None, {"answered": bool((content or "").strip()), "unlabelled": True}      # nothing to score against yet
     if sc == "counts":
         return score_counts(case, content)
     if sc == "labels":
@@ -491,7 +493,8 @@ def summarise(run, results):
         summary[model] = {"cases": len(rs), "answered": sum(1 for m in mets if m.get("answered")),
                           "empty": sum(1 for r, m in zip(rs, mets) if not r.get("error") and not m.get("answered")),
                           "errors": sum(1 for r in rs if r.get("error")),
-                          "score": round(sum(float(r.get("score") or 0) for r in rs) / n, 3),
+                          "score": (round(sum(float(r["score"]) for r in scored) / len(scored), 3) if (scored := [r for r in rs if r.get("score") is not None]) else None),
+                          "scored": len([r for r in rs if r.get("score") is not None]),
                           "valid": sum(int(m.get("valid") or 0) for m in mets), "grounded": sum(int(m.get("grounded") or 0) for m in mets),
                           "avg_latency_ms": int(sum(int(r.get("latency_ms") or 0) for r in rs) / n),
                           "avg_completion_tokens": int(sum(int((r.get("usage") or {}).get("completion_tokens") or 0) for r in rs) / n),
@@ -520,6 +523,8 @@ def rescore(run_id, rerun_cut):
                 new.append(r); kept += 1; continue
             out, served, usage, err, ms = ask(r["model"], c); how = "re-asked (answer had been cut at 6,000 characters)"; rerun += 1
         sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
+        if how == "rescored":                       # keep what the candidate recorded (a detector's boxes, threshold, …)
+            met = dict({k: v for k, v in (r.get("metrics") or {}).items() if k not in ("rescored",)}, **met)
         rec = result_record(run, rslug, r["model"], c, out, served, usage, err, ms, sc, met, rescored={"at": now(), "how": how, "was": r.get("score")})
         write("intelligence.eval_result", rec); new.append(rec); redone += 1
     summary = summarise(run, new)

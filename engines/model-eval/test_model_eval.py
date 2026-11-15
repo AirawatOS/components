@@ -204,7 +204,7 @@ def test_a_non_image_input_is_an_error_not_a_silent_send():
 
 
 def test_counts_score_mae_exact_and_bias():
-    case = {"scorer": "counts", "expected": {"counts": {"car": 4, "two_wheeler": 6, "bus": 0}}}
+    case = {"scorer": "counts", "expected": {"counts": {"car": 4, "two_wheeler": 6, "bus": 0}}, "labelled": True}
     sc, m = me.score_case(case, '{"counts": {"car": 5, "two_wheeler": 6}}')         # missing class counts as 0
     assert sc == 0.9 and m["mae"] == 0.333 and m["exact"] == 0.667 and m["bias"] == 0.333
     assert me.score_case(case, '{"car": 4, "two_wheeler": 6, "bus": 0}')[0] == 1.0   # flat object accepted
@@ -212,16 +212,16 @@ def test_counts_score_mae_exact_and_bias():
 
 
 def test_labels_f1_single_multi_and_uncertain():
-    multi = {"scorer": "labels", "expected": {"labels": ["day", "glare"]}}
+    multi = {"scorer": "labels", "expected": {"labels": ["day", "glare"]}, "labelled": True}
     assert me.score_case(multi, '{"labels": ["Day", "glare"]}')[0] == 1.0
     assert me.score_case(multi, '{"labels": ["day"]}')[0] == 0.667
-    one = {"scorer": "labels", "expected": {"labels": "uncertain"}}
+    one = {"scorer": "labels", "expected": {"labels": "uncertain"}, "labelled": True}
     assert me.score_case(one, '{"label": "uncertain"}')[0] == 1.0
     assert me.score_case(one, '{"label": "yes"}')[0] == 0.0
 
 
 def test_text_cer_and_exact():
-    case = {"scorer": "text", "expected": {"text": {"timestamp": "10-16-2026 Fri 11:46:22", "camera": "ALLENGANJ BOX1"}}}
+    case = {"scorer": "text", "expected": {"text": {"timestamp": "10-16-2026 Fri 11:46:22", "camera": "ALLENGANJ BOX1"}}, "labelled": True}
     sc, m = me.score_case(case, '{"timestamp": "10-16-2026 Fri 11:46:22", "camera": "allenganj  box1"}')
     assert sc == 1.0 and m["exact"] == 1.0
     sc, m = me.score_case(case, '{"timestamp": "10-16-2026 Fri 11:46:2", "camera": "ALLENGANJ BOX1"}')
@@ -315,3 +315,29 @@ def test_seed_update_refreshes_only_unlabelled_cases():
     assert [o["id"] for o in wrote] == [old["id"]]                       # labelled case untouched, nothing new made
     assert wrote[0]["messages"][0]["content"] == b03["prompt"] and wrote[0]["label_form"] == [b03["field"]]
     assert b03["field"]["classes"] == ["car", "two_wheeler", "three_wheeler", "bus", "truck", "bicycle"]
+
+
+def test_rescore_keeps_a_detectors_boxes():
+    case = {"id": "ds:t:intelligence/eval_case/c1", "suite": "s", "scorer": "counts", "expected": {"counts": {"car": 2}}, "labelled": True}
+    res = {"id": "x", "run_ref": "ds:t:intelligence/eval_run/r", "case_ref": case["id"], "model": "component:d", "output": '{"counts": {"car": 2}}',
+           "metrics": {"detections": [{"class": "car", "box": [0, 0, 1, 1]}], "threshold": 0.5}, "score": None}
+    store = {"intelligence.eval_run": [{"id": "ds:t:intelligence/eval_run/r", "suite": "s", "models": ["component:d"], "status": "done"}],
+             "intelligence.eval_case": [case], "intelligence.eval_result": [res]}
+    wrote = []
+    saved = (me.mine, me.write, me.T)
+    me.mine = lambda scope, limit=20000: list(store.get(scope, []))
+    me.write = lambda scope, obj: wrote.append((scope, obj))
+    me.T = "t"
+    try:
+        me.rescore("ds:t:intelligence/eval_run/r", False)
+    finally:
+        me.mine, me.write, me.T = saved
+    r = next(o for s_, o in wrote if s_ == "intelligence.eval_result")
+    assert r["score"] == 1.0 and r["metrics"]["detections"] and r["metrics"]["threshold"] == 0.5 and r["metrics"]["mae"] == 0
+
+
+def test_unlabelled_image_cases_get_no_score_and_summaries_skip_them():
+    sc, m = me.score_case({"scorer": "counts", "expected": None, "labelled": False}, '{"counts": {"car": 0}}')
+    assert sc is None and m["unlabelled"]
+    s = me.summarise({"models": ["m"]}, [{"model": "m", "score": 0.5, "metrics": {"answered": True}}, {"model": "m", "score": None, "metrics": {"answered": True}}])
+    assert s["m"]["score"] == 0.5 and s["m"]["scored"] == 1 and s["m"]["cases"] == 2

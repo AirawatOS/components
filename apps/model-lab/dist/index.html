@@ -277,7 +277,8 @@ async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.r
   let res=[]; try{ res=(await q("intelligence.eval_result")).filter(r=>r.run_ref===RUN.id); }catch(e){ el.innerHTML='<p class="err">'+esc(e.message)+"</p>"; return; }
   const models=RUN.models||[], byCase={}; for(const r of res){ (byCase[r.case_ref]=byCase[r.case_ref]||{})[r.model]=r; }
   const agg=models.map(m=>{ const rs=res.filter(r=>r.model===m), n=rs.length||1;
-    const s=RUN.summary&&RUN.summary[m]; return {m, n:rs.length, score:rs.reduce((a,r)=>a+(r.score||0),0)/n, ans:rs.filter(r=>(r.metrics||{}).answered).length,
+    const s=RUN.summary&&RUN.summary[m], sc=rs.filter(r=>typeof r.score==="number");
+    return {m, n:rs.length, scored:sc.length, score:sc.length?sc.reduce((a,r)=>a+r.score,0)/sc.length:null, ans:rs.filter(r=>(r.metrics||{}).answered).length,
       empty:rs.filter(r=>!r.error&&!(r.metrics||{}).answered).length, errs:rs.filter(r=>r.error).length, lat:rs.reduce((a,r)=>a+(r.latency_ms||0),0)/n,
       tok:rs.reduce((a,r)=>a+(((r.usage||{}).completion_tokens)||0),0)/n, served:[...new Set(rs.map(r=>r.served_by).filter(Boolean))].join(", ")}; }).sort((a,b)=>b.score-a.score);
   const caseTitle=id=>{ const c=CASES.find(x=>x.id===id); return c?((c.source||{}).label||c.title):id.split("/").pop(); };
@@ -286,6 +287,15 @@ async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.r
   <table><tr><th>Model</th><th>Score</th><th></th><th class="n">Answered</th><th class="n">Empty</th><th class="n">Errors</th><th class="n">Avg time</th><th class="n">Avg tokens</th><th>Served by</th></tr>
   ${agg.map(a=>`<tr><td><b>${esc(a.m)}</b></td><td>${scorePill(a.n?a.score:null)}</td><td><div class="bar"><i style="width:${Math.round(a.score*100)}%"></i></div></td><td class="n">${a.ans}/${a.n}</td><td class="n">${a.empty}</td><td class="n">${a.errs}</td><td class="n">${(a.lat/1000).toFixed(1)} s</td><td class="n">${Math.round(a.tok)}</td><td class="small">${esc(a.served)}</td></tr>`).join("")}</table>
   <p class="small muted">Unlabelled cases score whether the model answered with valid norms whose numbers all appear in the section; labelled cases score against their expected answer (F1 on norms, or the share of expected fields matched).</p></div>
+  ${(()=>{ const byCase={}; for(const c of CASES) byCase[c.id]=c;                 // image suites: by test, and by view
+      const rows=res.map(r=>({r,c:byCase[r.case_ref]})).filter(x=>x.c&&x.c.test_id&&typeof x.r.score==="number");
+      if(!rows.length) return "";
+      const tg=(c,k)=>((c.tags||[]).find(t=>t.startsWith(k+":"))||"").slice(k.length+1);
+      const groups=[...new Set(rows.map(x=>x.c.test_id))].sort(), views=[...new Set(rows.map(x=>tg(x.c,"view")).filter(Boolean))].sort();
+      const cell=(m,f)=>{ const xs=rows.filter(x=>x.r.model===m&&f(x.c)).map(x=>x.r.score); return xs.length?`${scorePill(xs.reduce((a,b)=>a+b,0)/xs.length)} <span class="small muted">${xs.length}</span>`:'<span class="muted">—</span>'; };
+      return `<div class="card"><b>By test</b> <span class="small muted">labelled cases only · the small number is how many cases</span><table><tr><th>Test</th>${models.map(m=>`<th>${esc(m)}</th>`).join("")}</tr>
+        ${groups.map(t=>`<tr><td>${esc(t)} <span class="small muted">${esc(((CASES.find(c=>c.test_id===t)||{}).title||"").split(" · ")[0])}</span></td>${models.map(m=>`<td>${cell(m,c=>c.test_id===t)}</td>`).join("")}</tr>`).join("")}
+        ${views.map(v=>`<tr><td class="muted">all tests · view ${esc(v)}</td>${models.map(m=>`<td>${cell(m,c=>tg(c,"view")===v)}</td>`).join("")}</tr>`).join("")}</table></div>`; })()}
   <div class="card"><b>Answers side by side</b><table><tr><th>Case</th>${models.map(m=>`<th>${esc(m)}</th>`).join("")}</tr>
   ${Object.keys(byCase).sort().map(cid=>`<tr class="click" data-cc="${esc(cid)}"><td>${esc(caseTitle(cid))}</td>${models.map(m=>{ const r=byCase[cid][m]; if(!r) return "<td class='muted'>…</td>";
     const mt=r.metrics||{}; return `<td>${scorePill(r.score)} <span class="small muted">${r.error?"error":mt.answered?(mt.valid??"")+" valid, "+(mt.grounded??"")+" grounded":"empty"} · ${((r.latency_ms||0)/1000).toFixed(1)} s</span></td>`; }).join("")}</tr>
