@@ -16,10 +16,10 @@
   .fx-up[hidden] { display: none; }
   .fx-view { position: fixed; inset: 0; z-index: 60; background: rgba(8,12,18,.94); display: flex; flex-direction: column; }
   .fx-view[hidden] { display: none; }
-  .fx-view-top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 13px; }
+  .fx-view-top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 13px; border-top: 1px solid rgba(148,163,184,.25); }
   .fx-view-top b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
   .fx-view-top span { color: #94a3b8; font-variant-numeric: tabular-nums; }
-  .fx-view-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; overflow: auto; }
+  .fx-view-stage { flex: 1; min-height: 0; margin-top: 40px; display: flex; align-items: center; justify-content: center; position: relative; overflow: auto; }
   .fx-view-stage img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
   .fx-view-stage.zoom { align-items: flex-start; justify-content: flex-start; }
   .fx-view-stage.zoom img { max-width: none; max-height: none; cursor: zoom-out; }
@@ -75,9 +75,9 @@
     <div class="fx-list" id="fx-list"></div>
   </div>
   <div class="fx-view" id="fx-view" role="dialog" aria-modal="true" aria-label="Image viewer" hidden>
-    <div class="fx-view-top"><b id="fx-vname"></b><span id="fx-vpos"></span>
-      <button class="btn" id="fx-vdl" title="Download">⬇︎ Download</button><button class="btn" id="fx-vclose" title="Close (Esc)">✕</button></div>
     <div class="fx-view-stage" id="fx-vstage"><img id="fx-vimg" alt=""></div>
+    <div class="fx-view-top"><b id="fx-vname"></b><span id="fx-vpos"></span>
+      <button class="btn" id="fx-vdl" title="Download">⬇︎ Download</button><button class="btn" id="fx-vclose" title="Close (Esc)">✕ Close</button></div>
     <button class="btn fx-view-nav prev" id="fx-vprev" title="Previous (←)">‹</button>
     <button class="btn fx-view-nav next" id="fx-vnext" title="Next (→)">›</button>
   </div>
