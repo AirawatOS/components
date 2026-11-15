@@ -1,325 +1,400 @@
-<!doctype html><meta charset="utf-8"><title>Data</title>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data</title>
 <style>
-  :root{--bg:#0d1117;--card:#161b22;--line:#21262d;--ink:#e6edf3;--dim:#8b949e;--accent:#3b82f6;--good:#3fb950}
+  :root{--bg:#0d1117;--panel:#0f141b;--card:#161b22;--line:#21262d;--soft:#1a1f27;--ink:#e6edf3;--dim:#8b949e;--faint:#5f6b78;
+        --accent:#3b82f6;--sel:#1b2530;--good:#3fb950;--bad:#f85149;--mono:ui-monospace,Menlo,Consolas,monospace}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
-  h1{margin:0;font-size:16px} .who{margin-left:auto;color:var(--dim);font-size:12px}
-  .layout{display:flex;height:calc(100vh - 49px)}
-  .list{width:280px;flex:none;border-right:1px solid var(--line);overflow:auto}
-  .it{padding:11px 14px;border-bottom:1px solid #1a1f27;cursor:pointer}
-  .it:hover{background:#161b22} .it.sel{background:#1b2530;border-left:2px solid var(--accent)}
-  .it .nm{font-weight:600;font-size:13px;text-transform:capitalize} .it .sub{color:#5f6b78;font-size:11px;font-family:ui-monospace,Menlo,monospace}
-  .grp{padding:9px 14px 5px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;background:#0f141b;border-bottom:1px solid #1a1f27;position:sticky;top:0}
-  .detail{flex:1;overflow:auto;padding:18px 20px}
-  .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px}
-  /* the inline attribution surface — shown WITH the data, in context */
-  .attrib{border:1px solid #24304a;background:#0f1723;border-radius:10px;padding:12px 14px;margin:0 0 16px}
-  .attrib .hd{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-  .src{margin:0 0 8px} .src:last-child{margin:0}
-  .src .cred{color:var(--ink)} .src .meta{font-size:12px;color:var(--dim);margin-top:2px}
-  .src a{color:var(--accent);font-size:12px;text-decoration:none;margin-right:12px}
-  .chip{display:inline-block;background:#0d1117;border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;margin-right:8px;font-family:ui-monospace,Menlo,monospace}
-  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
-  th{color:var(--dim);text-align:left;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg)}
-  td{padding:5px 8px;border-bottom:1px solid #1a1f27;font-family:ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
-  .empty{color:var(--dim);text-align:center;padding:48px}
-  .pager{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--dim);font-size:12px}
-  .pbtn{border:1px solid var(--line);background:#161b22;color:var(--ink);border-radius:6px;padding:3px 9px;cursor:pointer}
-  .pbtn:disabled{opacity:.4;cursor:default}
-  .tabb{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);font:inherit;padding:6px 10px;cursor:pointer}
-  .tabb.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
-  .card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px 16px;margin:0 0 16px;max-width:820px}
-  .card h3{margin:0 0 10px;font-size:13px}
-  .btn{border:1px solid var(--line);background:#161b22;color:var(--ink);border-radius:6px;padding:4px 11px;cursor:pointer;font:inherit;font-size:12px}
-  .btn.p{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
-  .btn.d{border-color:#f85149;color:#f85149}
-  #net input,#net select,#net textarea{background:#0d1117;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 8px;font:inherit}
+  button{font:inherit;color:inherit}
+  input,select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .app{display:flex;height:calc(100vh - 44px);overflow:hidden}
+  /* the run shell pins its Desktop button (left) and account badge (right) over the top 44px — keep that band for a breadcrumb */
+  .crumbs{height:44px;display:flex;align-items:center;gap:6px;padding:0 320px 0 150px;border-bottom:1px solid var(--line);color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden}
+  .crumbs b{color:var(--ink);font-weight:600;text-transform:capitalize} .crumbs a{color:var(--dim);cursor:pointer;text-transform:capitalize} .crumbs a:hover{color:var(--ink)}
+  .ib{background:none;border:0;color:var(--dim);cursor:pointer;border-radius:6px;padding:3px 7px;font-size:14px;line-height:1}
+  .ib:hover{background:var(--card);color:var(--ink)}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:4px 11px;cursor:pointer;font-size:12px;white-space:nowrap}
+  .btn:hover{border-color:#30363d} .btn.p{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+  .btn.d{border-color:var(--bad);color:var(--bad)}
+  .muted{color:var(--dim);font-size:12px} .mono{font-family:var(--mono)}
+  .empty{color:var(--dim);text-align:center;padding:48px 20px}
+
+  /* ---- left: registries ---- */
+  #left{width:272px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;transition:width .15s}
+  #left .top{display:flex;gap:6px;align-items:center;padding:10px 10px 8px}
+  #left .top input{flex:1;min-width:0}
+  #reglist{flex:1;overflow:auto}
+  .grp{display:flex;align-items:center;gap:6px;padding:8px 12px 4px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none}
+  .grp:hover{color:var(--ink)} .grp .n{margin-left:auto;text-transform:none;letter-spacing:0;color:var(--faint)}
+  .grp .car{display:inline-block;width:10px;transition:transform .1s} .grp.closed .car{transform:rotate(-90deg)}
+  .it{display:flex;align-items:baseline;gap:8px;padding:6px 12px 6px 28px;cursor:pointer;border-left:2px solid transparent}
+  .it:hover{background:var(--card)} .it.sel{background:var(--sel);border-left-color:var(--accent)}
+  .it .nm{font-size:13px;text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .it .ct{margin-left:auto;color:var(--faint);font-size:11px;font-variant-numeric:tabular-nums}
+  mark{background:#3b82f633;color:inherit;border-radius:2px}
+  #left .foot{border-top:1px solid var(--line);padding:6px}
+  .nav{display:flex;gap:8px;align-items:center;width:100%;text-align:left;background:none;border:0;border-radius:6px;padding:7px 8px;cursor:pointer;color:var(--dim);font-size:13px}
+  .nav:hover{background:var(--card);color:var(--ink)} .nav.on{background:var(--sel);color:var(--ink)}
+  /* collapsed rail */
+  .lcol{display:flex;flex-direction:column;height:100%}
+  #left.rail{width:44px} #left.rail .full{display:none} #left:not(.rail) .railonly{display:none}
+  .railbox{display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 0;height:100%}
+  .railname{writing-mode:vertical-rl;transform:rotate(180deg);color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;max-height:60vh;text-transform:capitalize}
+  .railname:hover{color:var(--ink)}
+
+  /* ---- middle: records ---- */
+  #mid{flex:1;min-width:0;display:flex;flex-direction:column}
+  .mhead{padding:12px 18px 8px;border-bottom:1px solid var(--line)}
+  .mtitle{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .mtitle h2{margin:0;font-size:16px;text-transform:capitalize}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .toolbar .search{flex:1;min-width:180px;max-width:360px}
+  .chip{display:inline-flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:1px 4px 1px 10px;font-size:12px}
+  .chip b{font-weight:600} .chip .x{background:none;border:0;color:var(--dim);cursor:pointer;padding:0 5px;font-size:13px}
+  .chip .x:hover{color:var(--bad)}
+  .fform{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+  .attrib{margin-top:10px;border:1px solid #24304a;background:#0f1723;border-radius:8px;padding:10px 12px}
+  .attrib .src{margin:0 0 6px} .attrib .src:last-child{margin:0}
+  .attrib a{color:var(--accent);font-size:12px;text-decoration:none;margin-right:12px}
+  .tag{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:11px;margin-right:6px;font-family:var(--mono)}
+  .tablewrap{flex:1;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{color:var(--dim);text-align:left;font-weight:500;padding:7px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);white-space:nowrap}
+  td{padding:6px 10px;border-bottom:1px solid var(--soft);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+  tbody tr{cursor:pointer} tbody tr:hover{background:var(--panel)} tbody tr.sel{background:var(--sel);box-shadow:inset 2px 0 0 var(--accent)}
+  .mfoot{display:flex;align-items:center;gap:10px;padding:8px 18px;border-top:1px solid var(--line);color:var(--dim);font-size:12px}
+
+  /* ---- right: one record ---- */
+  #right{width:420px;flex:none;border-left:1px solid var(--line);background:var(--panel);display:none;flex-direction:column}
+  #right.open{display:flex}
+  .rhead{display:flex;align-items:center;gap:6px;padding:10px 12px 0}
+  .rhead .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .tabs{display:flex;gap:2px;padding:6px 10px 0;border-bottom:1px solid var(--line)}
+  .tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:6px 10px;cursor:pointer;font-size:13px}
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  #rbody{flex:1;overflow:auto;padding:10px 14px}
+  .kv{display:grid;grid-template-columns:minmax(90px,34%) 1fr;gap:0;font-size:12px}
+  .kv .k{color:var(--dim);padding:6px 8px 6px 0;border-bottom:1px solid var(--soft);overflow-wrap:anywhere}
+  .kv .v{padding:6px 0;border-bottom:1px solid var(--soft);font-family:var(--mono);overflow-wrap:anywhere;white-space:pre-wrap}
+  pre.json{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow:auto;font:12px/1.5 var(--mono);white-space:pre}
+  .ver{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:8px 10px;margin:8px 0;background:var(--bg);font-size:12px}
+  .ver.tomb{border-left-color:var(--bad);opacity:.85} .ver .h{font-weight:700;font-size:13px;margin-bottom:2px}
+  .chg{font:12px/1.6 var(--mono)} .del{color:var(--bad)} .ins{color:var(--good)}
+
+  /* ---- network view ---- */
+  #net{flex:1;overflow:auto;padding:16px 20px;display:none}
+  .card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px 16px;margin:0 0 14px;max-width:860px}
+  .card h3{margin:0 0 8px;font-size:14px}
+  .off{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--panel)}
   .row2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
-  .off{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:#0f141b}
-  .muted{color:var(--dim);font-size:12px}
-  .ver{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;margin:8px 0;background:#0f141b}
-  .ver.tomb{border-left-color:#f85149;opacity:.85}
-  .verhd{font-weight:700;font-size:13px;margin-bottom:4px}
-  .difflist{margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
-  .chg{font:12px/1.6 ui-monospace,Menlo,monospace;color:var(--ink)}
-  .chg .del{color:#f85149} .chg .ins{color:var(--good)}
+
+  @media (max-width:900px){ #right{position:fixed;right:0;top:0;bottom:0;width:min(420px,100vw);z-index:5;box-shadow:-8px 0 24px #0008} }
 </style>
-<header><h1>📂 Data</h1>
-  <button class="tabb on" id="tab-browse" onclick="setTab('browse')">Browse</button>
-  <button class="tabb" id="tab-net" onclick="setTab('net')">Network 🔗</button>
-  <button class="tabb" id="tab-upload" title="Upload a CSV or JSON — the schema is inferred and the data ingested into the registry" onclick="document.getElementById('upf').click()">⬆ Upload</button>
-  <input type="file" id="upf" accept=".csv,.tsv,.json" style="display:none">
-  <span class="who" id="who"></span></header>
-<div id="browse"><div class="layout">
-  <div class="list" id="list"></div>
-  <div class="detail" id="detail"><div class="empty">Select a dataset to browse the data you have access to.</div></div>
-</div></div>
-<div id="net" style="display:none;padding:18px 22px;overflow:auto;height:calc(100vh - 49px)"></div>
+<nav class="crumbs" id="crumbs"></nav>
+<div class="app">
+  <aside id="left">
+    <div class="full lcol">
+      <div class="top">
+        <input id="regq" placeholder="Filter registries…" autocomplete="off" aria-label="Filter registries">
+        <button class="ib" id="collapse" title="Hide the registry list">«</button>
+      </div>
+      <div class="muted" id="regcount" style="padding:0 12px 4px"></div>
+      <div id="reglist"><div class="empty">Finding registries…</div></div>
+      <div class="foot"><button class="nav" id="nav-net" title="Offer data to other organisations, request theirs, decide requests">🔗 Shared with organisations</button></div>
+    </div>
+    <div class="railonly railbox">
+      <button class="ib" id="expand" title="Show the registry list">»</button>
+      <div class="railname" id="railname" title="Show the registry list"></div>
+    </div>
+  </aside>
+
+  <main id="mid">
+    <div id="browse" style="display:flex;flex-direction:column;height:100%;min-height:0">
+      <div class="empty" style="margin:auto">Pick a registry on the left to see its records.</div>
+    </div>
+    <div id="net"></div>
+  </main>
+
+  <aside id="right">
+    <div class="rhead">
+      <span class="t" id="rtitle"></span>
+      <button class="ib" id="rprev" title="Previous record (↑)">↑</button>
+      <button class="ib" id="rnext" title="Next record (↓)">↓</button>
+      <button class="ib" id="rclose" title="Close (Esc)">✕</button>
+    </div>
+    <div class="muted mono" id="rid" style="padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+    <div class="tabs">
+      <button class="tab on" data-t="fields">Fields</button>
+      <button class="tab" data-t="json">JSON</button>
+      <button class="tab" data-t="hist">History</button>
+    </div>
+    <div id="rbody"></div>
+  </aside>
+</div>
 <script>
-// The Data app is a GOVERNED DATA BROWSER: it lists every governed schema that actually has rows in the
-// caller's tenant (from /bridge/data-schemas, which excludes sensitivity=sensitive schemas), grouped by
-// domain. The user only ever SEES rows the kernel returns under their token — a user's read is tenant-scoped
-// and RBAC-gated at the kernel boundary, not here.
+// The Data app is a GOVERNED DATA BROWSER. Every read goes through the app-host under the signed-in user's token,
+// so the kernel decides what they may see (tenant-scoped, RBAC-gated); nothing here widens access. Three panes:
+// registries (left, folds to a rail once one is picked) · records (middle: search, field filters, paging) · one
+// record (right: fields, JSON, version history). Attribution for the data shown is displayed with it.
 const DOMAIN_LABEL={air:'Air quality',cell:'Cells (H3)',geo:'Geospatial',demographics:'Demographics',econ:'Economy',
   environment:'Environment',met:'Meteorology',project:'Projects',finance:'Finance',funding:'Funding',hr:'HR',org:'Organisation',
   waste:'Solid waste',welfare:'Welfare',tax:'Tax',campaign:'Campaigns',chat:'Chat',mail:'Mail',platform:'Platform',
   governance:'Governance',prov:'Provenance',space:'Space / AOI',ref:'Reference',city:'City',metering:'Metering',
   signal:'Signals / alerts',doc:'Documents',knowledge:'Knowledge',justice:'Justice',stat:'Statistics',credential:'Credentials',
-  interaction:'Interactions',safety:'Safety',mobility:'Mobility',infra:'Infrastructure',plan:'Planning',viz:'Map layers'};
-const DSET=[];                     // discovered [{schema, count, domain}]
-let APPID, SEL=null, CUR=null, PAGE=[];
-async function jpost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function subject(s){return s.split('.',2)[1]||s;}
-function renderList(){
-  const byDom={}; DSET.forEach(d=>{(byDom[d.domain]=byDom[d.domain]||[]).push(d);});
-  const doms=Object.keys(byDom).sort((a,b)=>(DOMAIN_LABEL[a]||a).localeCompare(DOMAIN_LABEL[b]||b));
-  document.getElementById('list').innerHTML = doms.map(dom=>
-    `<div class="grp">${esc(DOMAIN_LABEL[dom]||dom)}</div>`+
-    byDom[dom].map(d=>`<div class="it" data-s="${esc(d.schema)}">
-      <div class="nm">${esc(subject(d.schema).replace(/_/g,' '))}</div>
-      <div class="sub">${esc(d.schema)}${d.count!=null?' · '+d.count.toLocaleString():''}</div></div>`).join('')
-  ).join('') || '<div class="empty" style="padding:24px">No data in this tenant yet.</div>';
-  document.querySelectorAll('.it').forEach(el=>el.onclick=()=>{
-    document.querySelectorAll('.it').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
-    SEL={schema:el.dataset.s, name:subject(el.dataset.s).replace(/_/g,' ')}; CUR=null; PAGE=[]; load(true);});
+  interaction:'Interactions',safety:'Safety',mobility:'Mobility',infra:'Infrastructure',plan:'Planning',viz:'Map layers',
+  intelligence:'Intelligence',dataset:'Uploaded datasets'};
+// The registry's indexed (Postgres) query matches a field EXACTLY, as text; it has no other operators yet (an operator
+// filter silently matches nothing), so a filter is "field is value". Partial matches: the search box, over loaded rows.
+const S={schemas:[], closed:new Set(), sel:null, rows:[], cursor:null, total:null, matching:null, filters:[], quick:'',
+         attrib:null, showSrc:false, rec:-1, tab:'fields', view:'browse', loading:false, req:0};
+let APPID='', TENANT='';
+const $=id=>document.getElementById(id);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function jpost(p,b){const r=await fetch(p,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
+const subject=s=>(s.split('.').slice(1).join('.')||s).replace(/_/g,' ');
+const domLabel=d=>DOMAIN_LABEL[d]||d;
+const fmtN=n=>n==null?'':Number(n).toLocaleString();
+function hl(text,q){ const t=esc(text); if(!q) return t; const i=String(text).toLowerCase().indexOf(q); if(i<0) return t;
+  return esc(String(text).slice(0,i))+'<mark>'+esc(String(text).slice(i,i+q.length))+'</mark>'+esc(String(text).slice(i+q.length)); }
+
+// ---------------- registries (left) ----------------
+function renderRegs(){
+  const q=$('regq').value.trim().toLowerCase();
+  const match=d=>!q||subject(d.schema).toLowerCase().includes(q)||d.schema.toLowerCase().includes(q)||domLabel(d.domain).toLowerCase().includes(q);
+  const shown=S.schemas.filter(match), by={};
+  shown.forEach(d=>(by[d.domain]=by[d.domain]||[]).push(d));
+  const doms=Object.keys(by).sort((a,b)=>domLabel(a).localeCompare(domLabel(b)));
+  $('regcount').textContent=q?`${shown.length} of ${S.schemas.length} registries`:`${S.schemas.length} registries`;
+  $('reglist').innerHTML=doms.map(dom=>{ const closed=!q&&S.closed.has(dom);
+    return `<div class="grp${closed?' closed':''}" data-d="${esc(dom)}"><span class="car">▾</span>${hl(domLabel(dom),q)}<span class="n">${by[dom].length}</span></div>`+
+      (closed?'':by[dom].sort((a,b)=>subject(a.schema).localeCompare(subject(b.schema))).map(d=>
+        `<div class="it${S.sel&&S.sel.schema===d.schema?' sel':''}" data-s="${esc(d.schema)}" title="${esc(d.schema)}">
+          <span class="nm">${hl(subject(d.schema),q)}</span><span class="ct">${fmtN(d.count)}</span></div>`).join('')); }).join('')
+    || `<div class="empty">${S.schemas.length?'No registry matches “'+esc(q)+'”.':'No data you can see yet.'}</div>`;
+  $('reglist').querySelectorAll('.grp').forEach(g=>g.onclick=()=>{ const d=g.dataset.d; S.closed.has(d)?S.closed.delete(d):S.closed.add(d); renderRegs(); });
+  $('reglist').querySelectorAll('.it').forEach(el=>el.onclick=()=>pickRegistry(el.dataset.s));
 }
-async function boot(){
-  const cfg=await fetch('./config.json').then(r=>r.json()); APPID=cfg.app_id;
-  fetch('/session').then(r=>r.json()).then(s=>{document.getElementById('who').textContent=s.authenticated?('● '+s.sub):'';
-    TENANT=s.tenant||(s.sub||'').split('/')[2]||''; ROLES=s.roles||[];}).catch(()=>{});
-  document.getElementById('list').innerHTML='<div class="empty" style="padding:24px">Discovering datasets…</div>';
-  const r=await jpost('/bridge/data-schemas',{});
-  if(r.ok&&r.j.schemas){ DSET.push(...r.j.schemas); renderList(); }
-  else { document.getElementById('list').innerHTML=`<div class="empty" style="padding:24px">Could not list datasets (${r.status||'?'}).</div>`; }
+function crumbs(){ const C=$('crumbs');
+  if(S.view==='net'){ C.innerHTML='<b>Shared with organisations</b>'; return; }
+  if(!S.sel){ C.innerHTML=''; return; }
+  C.innerHTML=`<a id="cr-dom">${esc(domLabel(S.sel.domain||S.sel.schema.split('.')[0]))}</a><span>›</span><b>${esc(subject(S.sel.schema))}</b>`+
+    (S.rec>=0&&S.rows[S.rec]?`<span>›</span><span>${esc(recTitle(S.rows[S.rec]))}</span>`:'');
+  $('cr-dom').onclick=()=>{ setRail(false); $('regq').value=domLabel(S.sel.domain||''); renderRegs(); };
 }
-function attribBox(attr){
-  if(!attr||!attr.length) return '<div class="attrib"><div class="hd">Data sources</div><div class="meta" style="color:var(--dim)">no external-source attribution recorded for this data</div></div>';
-  const lk=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${t} ↗</a>`:'';
-  return `<div class="attrib"><div class="hd">Data sources — attribution &amp; licence</div>`+
-    attr.map(s=>`<div class="src"><div class="cred">${esc(s.attribution||s.source_id)}</div>
-      <div class="meta">${s.license&&s.license.id?`<span class="chip">${esc(s.license.id)}</span>`:''}${lk(s.license&&s.license.url,'licence')}${lk(s.terms_url,'terms')}${lk(s.url,'source')}</div></div>`).join('')+
-    `</div>`;
+function setRail(on){ $('left').classList.toggle('rail',on); $('railname').textContent=S.sel?subject(S.sel.schema):'Registries'; }
+function pickRegistry(schema){
+  const d=S.schemas.find(x=>x.schema===schema)||{schema};
+  S.sel=d; S.rows=[]; S.cursor=null; S.filters=[]; S.quick=''; S.matching=null; S.attrib=null; S.showSrc=false; S.total=d.count??null;
+  closeRecord(); setView('browse'); renderRegs(); setRail(true); renderBrowse(); load(true);
 }
+
+// ---------------- records (middle) ----------------
 function columns(rows){
-  const skip=new Set(['schema','conforms_to','prov']); const cols=[];
-  for(const r of rows.slice(0,20)) for(const k of Object.keys(r)){
-    const v=r[k]; if(skip.has(k)||cols.includes(k)) continue;
-    if(v==null||typeof v==='object') { if(k!=='space') continue; } cols.push(k);
-  }
-  const ordered=['id',...cols.filter(c=>c!=='id')]; return ordered.slice(0,7);
+  const skip=new Set(['schema','conforms_to','prov','tenant']), cols=[];
+  for(const r of rows.slice(0,30)) for(const k of Object.keys(r)){ const v=r[k];
+    if(skip.has(k)||cols.includes(k)) continue; if(v!=null&&typeof v==='object'&&k!=='space') continue; cols.push(k); }
+  const pref=['name','title','label'], first=pref.filter(c=>cols.includes(c));
+  return ['id',...first,...cols.filter(c=>c!=='id'&&!first.includes(c))].filter(c=>c==='id'||cols.includes(c)).slice(0,8);
 }
-function cell(v){ if(v==null)return ''; if(typeof v==='object'){ if(v.h3)return v.h3; if(Array.isArray(v))return v.join(','); return JSON.stringify(v).slice(0,40);} return String(v); }
-function showRec(i){
-  const o=PAGE[i]; if(!o)return;
-  const R=document.getElementById('rec'); if(!R)return;
-  R.innerHTML=`<div class="row2" style="margin:14px 0 8px">
-      <button class="tabb on" id="rt-detail">Record</button>
-      <button class="tabb" id="rt-hist">History ⟲</button>
-      <span class="muted" style="margin-left:auto">${esc(o.id||'')}</span></div>
-    <div id="recbody"></div>`;
-  const detail=()=>document.getElementById('recbody').innerHTML=
-    `<pre style="background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--ink);white-space:pre;max-height:340px">${esc(JSON.stringify(o,null,2))}</pre>`;
-  const sel=t=>{document.getElementById('rt-detail').classList.toggle('on',t==='d');document.getElementById('rt-hist').classList.toggle('on',t==='h');};
-  document.getElementById('rt-detail').onclick=()=>{sel('d');detail();};
-  document.getElementById('rt-hist').onclick=()=>{sel('h');renderHistory(o.id);};
-  detail(); R.scrollIntoView({behavior:'smooth',block:'nearest'});
+function fieldNames(rows){ const s=new Set(); rows.slice(0,50).forEach(r=>Object.keys(r).forEach(k=>{ if(!['conforms_to','prov','schema'].includes(k)) s.add(k); })); return [...s].sort(); }
+function cell(v){ if(v==null) return ''; if(typeof v==='object'){ if(v.h3) return v.h3; if(Array.isArray(v)) return v.join(', '); return JSON.stringify(v); } return String(v); }
+function visible(){ const q=S.quick.toLowerCase(); return S.rows.map((o,i)=>[o,i]).filter(([o])=>!q||JSON.stringify(o).toLowerCase().includes(q)); }
+function serverFilter(){ const f={};
+  for(const x of S.filters) f[x.field]=x.value;        // the value as typed: the store compares text
+  return f; }
+function renderBrowse(){
+  const B=$('browse'); if(!S.sel){ B.innerHTML='<div class="empty" style="margin:auto">Pick a registry on the left to see its records.</div>'; return; }
+  const d=S.sel, fields=fieldNames(S.rows);
+  const count = S.filters.length ? (S.matching!=null?`${fmtN(S.matching)} matching`:'filtered') : (S.total!=null?`${fmtN(S.total)} records`:'');
+  B.innerHTML=`<div class="mhead">
+      <div class="mtitle"><h2>${esc(subject(d.schema))}</h2><span class="muted mono">${esc(d.schema)}</span>
+        <span class="muted">${esc(count)}</span>
+        <span style="margin-left:auto"></span>
+        <button class="btn" id="srcbtn" title="Where this data comes from, and its licence">Sources${S.attrib&&S.attrib.length?' ('+S.attrib.length+')':''}</button></div>
+      ${S.showSrc?attribBox(S.attrib):''}
+      <div class="toolbar">
+        <input class="search" id="quick" placeholder="Search loaded records…" value="${esc(S.quick)}" autocomplete="off">
+        <button class="btn" id="addf">+ Filter</button>
+        ${S.filters.map((f,i)=>`<span class="chip"><b>${esc(f.field)}</b> is ${esc(f.value)}<button class="x" data-i="${i}" title="Remove filter">×</button></span>`).join('')}
+        ${S.filters.length>1?'<button class="btn" id="clearf">Clear filters</button>':''}
+      </div>
+      <div id="fformbox"></div>
+    </div>
+    <div class="tablewrap" id="tw"></div>
+    <div class="mfoot" id="mfoot"></div>`;
+  $('srcbtn').onclick=()=>{ S.showSrc=!S.showSrc; renderBrowse(); };
+  const qi=$('quick'); qi.oninput=()=>{ S.quick=qi.value; renderTable(); };
+  $('addf').onclick=()=>openFilterForm(fields);
+  B.querySelectorAll('.chip .x').forEach(x=>x.onclick=()=>{ S.filters.splice(+x.dataset.i,1); load(true); });
+  if($('clearf')) $('clearf').onclick=()=>{ S.filters=[]; load(true); };
+  renderTable();
 }
-// The BITEMPORAL registry made visible: /bridge/history returns every version of a record with BOTH time axes
-// (valid = true-in-the-world; transaction = when we recorded it), the writing agent (component obo user), and
-// tombstones. We render newest-first and diff each version against the next-older one — so you see who changed
-// what, when, and under which belief. This is the append-only, attributed, tamper-evident audit trail as UI.
-function fmtAgent(a){ if(!a) return '<span class="muted">unknown</span>';
-  const m=/component:\/\/([^ ]+?)(?:@[^ ]*)?\s+obo\s+user:\/\/(.+)/.exec(a);
-  if(m) return `<b>${esc(m[1].split('/').pop())}</b> <span class="muted">on behalf of</span> ${esc(m[2].split('/').pop())}`;
-  return esc(String(a).replace(/^user:\/\//,'').replace(/^component:\/\//,''));
+function openFilterForm(fields){
+  const box=$('fformbox'); if(box.innerHTML){ box.innerHTML=''; return; }
+  box.innerHTML=`<div class="fform">
+      <select id="ff">${fields.map(f=>`<option>${esc(f)}</option>`).join('')||'<option value="">— no fields yet —</option>'}</select>
+      <span class="muted">is</span>
+      <input id="fv" placeholder="value" style="min-width:160px">
+      <button class="btn p" id="fapply">Apply</button><button class="btn" id="fcancel">Cancel</button>
+      <span class="muted" style="flex-basis:100%">Finds records in the whole registry whose field is exactly this value (case-sensitive). For part of a word, use the search box.</span></div>`;
+  const v=$('fv');
+  const apply=()=>{ const field=$('ff').value; if(!field) return; if(!v.value.trim()){ v.focus(); return; }
+    S.filters=S.filters.filter(x=>x.field!==field).concat([{field, value:v.value.trim()}]); load(true); };
+  $('fapply').onclick=apply; v.onkeydown=e=>{ if(e.key==='Enter') apply(); if(e.key==='Escape') box.innerHTML=''; };
+  $('fcancel').onclick=()=>box.innerHTML=''; v.focus();
 }
-function trunc(s){ s=(s==null?'':String(s)); return s.length>60?s.slice(0,57)+'…':s; }
-function diffFields(a,b){
-  const skip=new Set(['conforms_to','prov','schema','id','tenant']);
-  if(!a) return '<div class="chg"><span class="ins">created</span></div>';
-  const keys=[...new Set([...Object.keys(a||{}),...Object.keys(b||{})])].filter(k=>!skip.has(k));
-  const rows=[];
-  for(const k of keys){ const av=JSON.stringify(a?.[k]), bv=JSON.stringify(b?.[k]); if(av===bv) continue;
-    rows.push(`<div class="chg"><b>${esc(k)}</b> <span class="del">${esc(trunc(av===undefined?'∅':av))}</span> → <span class="ins">${esc(trunc(bv===undefined?'∅':bv))}</span></div>`); }
-  return rows.length?rows.join(''):'<div class="chg muted">no field changes</div>';
-}
-async function renderHistory(id){
-  const B=document.getElementById('recbody'); if(!B) return;
-  B.innerHTML='<div class="muted" style="padding:8px">Loading version history…</div>';
-  const r=await jpost('/bridge/history',{app_id:APPID,id});
-  if(!r.ok){ B.innerHTML=`<div class="muted" style="padding:8px">could not load history (${r.status||'?'})</div>`; return; }
-  const H=r.j.history||[];
-  if(!H.length){ B.innerHTML='<div class="muted" style="padding:8px">no version history recorded</div>'; return; }
-  B.innerHTML=`<div class="muted" style="margin:2px 0 10px">${H.length} version${H.length>1?'s':''} · newest first · valid = true-in-world, recorded = when the system learned it</div>`+
-    H.map((v,idx)=>{ const older=H[idx+1]; const tt=v.transaction_time||{}, vt=v.valid_time||{};
-      return `<div class="ver${v.retracted?' tomb':''}">
-        <div class="verhd">v${esc(v.version)}${v.retracted?' · <span class="del">retracted (tombstone)</span>':idx===0?' · <span class="ins">current</span>':''}</div>
-        <div class="meta">recorded ${esc(tt.from||'—')}${tt.to?(' → '+esc(tt.to)):''}</div>
-        <div class="meta">valid ${esc(vt.from||'—')}${vt.to?(' → '+esc(vt.to)):''}</div>
-        <div class="meta">by ${fmtAgent(v.wrote_by)}</div>
-        <div class="difflist">${diffFields(older&&older.object, v.object)}</div></div>`;
-    }).join('');
+function renderTable(){
+  const W=$('tw'), F=$('mfoot'); if(!W) return;
+  if(S.loading&&!S.rows.length){ W.innerHTML='<div class="empty">Loading records…</div>'; F.innerHTML=''; return; }
+  if(S.error){ W.innerHTML=`<div class="empty">${esc(S.error)}</div>`; F.innerHTML=''; return; }
+  const cols=columns(S.rows), rows=visible(), q=S.quick.toLowerCase();
+  W.innerHTML = !S.rows.length ? `<div class="empty">${S.filters.length?'No records match these filters.':'No records you can see in this registry.'}</div>`
+    : !rows.length ? `<div class="empty">None of the ${S.rows.length} loaded records contain “${esc(S.quick)}”.${S.cursor?' Load more, or use + Filter to search the whole registry.':''}</div>`
+    : `<table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(([o,i])=>
+        `<tr data-i="${i}" class="${i===S.rec?'sel':''}">${cols.map(c=>{ const t=cell(o[c]); return `<td title="${esc(t)}">${hl(c==='id'?t.split('/').pop():t,q)}</td>`; }).join('')}</tr>`).join('')}</tbody></table>`;
+  W.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>openRecord(+tr.dataset.i));
+  F.innerHTML=`<span>${S.quick?`${rows.length} of ${S.rows.length} loaded`:`${S.rows.length} loaded`}${S.cursor?'':' · all shown'}</span>
+    ${S.cursor?`<button class="btn" id="more">${S.loading?'Loading…':'Load more'}</button>`:''}
+`;
+  if($('more')) $('more').onclick=()=>load(false);
 }
 async function load(reset){
-  const D=document.getElementById('detail');
-  const r=await jpost('/bridge/query',{app_id:APPID,schema:SEL.schema,paginate:true,limit:25,cursor:reset?null:CUR});
-  if(!r.ok){D.innerHTML=`<div class="empty">could not read ${esc(SEL.schema)} (${r.status})</div>`;return;}
-  const rows=(r.j.results||[]).map(x=>x.object||x); PAGE=reset?rows:PAGE.concat(rows); CUR=r.j.next_cursor||null;
-  const cols=columns(PAGE);
-  D.innerHTML=`<div style="font-weight:600;font-size:15px">${esc(SEL.name)}</div>
-    <div class="sub" style="color:#5f6b78;font-family:ui-monospace,Menlo,monospace;font-size:11px;margin:2px 0 14px">${esc(SEL.schema)}</div>
-    ${attribBox(r.j.attributions)}
-    <div class="lbl">Records (${PAGE.length}${CUR?'+':''})</div>
-    ${PAGE.length?`<div style="overflow:auto"><table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
-      ${PAGE.map((o,i)=>`<tr data-i="${i}" style="cursor:pointer" title="click for the full record">${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</table></div>`
-      :'<div class="empty">no records you can access in this dataset</div>'}
-    <div class="pager">${CUR?'<button class="pbtn" id="more">Load more</button>':'<span>— end —</span>'}</div>
-    <div id="rec"></div>`;
-  const m=document.getElementById('more'); if(m)m.onclick=()=>load(false);
-  document.querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>showRec(+tr.dataset.i));
-}
-// ---- Data Exchange (ADR-0087 R1): all network ops go through the GENERIC /bridge/gov proxy — this app declares
-//      calls:[network.data_exchange@0.1.0] in its meta; there is NO bespoke host bridge per operation. ----
-let TENANT='', ROLES=[];
-function setTab(t){
-  document.getElementById('browse').style.display = t==='browse'?'':'none';
-  document.getElementById('net').style.display = t==='net'?'':'none';
-  document.getElementById('tab-browse').classList.toggle('on',t==='browse');
-  document.getElementById('tab-net').classList.toggle('on',t==='net');
-  if(t==='net') renderNet();
-}
-async function gov(op,payload){
-  const r=await jpost('/bridge/gov',{interface:'network.data_exchange@0.1.0',op,app_id:APPID,payload:payload||{}});
-  if(!r.ok) return {__err:(r.j&&r.j.error)||('HTTP '+r.status)};
-  return r.j.result||r.j||{};
-}
-function offSlug(s){return (s||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();}
-async function doPublish(){
-  const sch=document.getElementById('pub-sch').value, title=document.getElementById('pub-title').value.trim();
-  if(!sch||!title){alert('pick a dataset and enter a title');return;}
-  const id=`ds:${TENANT}:offering/${offSlug(subject(sch))}`;
-  const res=await gov('publish-offering',{id,title,data_schema:sch,domain:sch.split('.')[0],description:document.getElementById('pub-desc').value.trim(),access_mode:'request'});
-  alert(res.__err? ('Publish failed: '+res.__err) : ('Shared on network: '+((res.offering||{}).id||id))); renderNet();
-}
-async function doRequest(oid){
-  const purpose=prompt('Why do you need this data? (purpose, recorded on the request)','')||'';
-  // NB: component_id is injected by the host from the app's certificate (the app never asserts its own cid).
-  const res=await gov('request',{offering_id:oid,purpose});
-  alert(res.__err? ('Request failed: '+res.__err) : ('Request filed — the owner will decide. '+(res.filed||''))); renderNet();
-}
-// THE READER: once the owner has approved (consumer-bound, offering-scoped grant), read the foreign rows IN
-// PLACE via the aggregator lane — /bridge/query with the provider tenant. The kernel authorizes ONLY this
-// tenant's copy of the app (consumer_tenant binding) and returns the owner's rows without any copy.
-function offTenantSlug(o){ const t=o.tenant||o._prov||''; const m=/^ds:([^:]+):/.exec(t); return m?m[1]:t; }
-async function doBrowse(schema, tenant, title){
-  const P=document.getElementById('shared-preview');
-  P.innerHTML=`<div class="card"><div class="muted">Reading ${esc(schema)} from ${esc(tenant)} in place…</div></div>`;
-  const r=await jpost('/bridge/query',{app_id:APPID,schema,tenant,paginate:true,limit:25});
-  if(!r.ok){ P.innerHTML=`<div class="card"><b>${esc(title)}</b> — cannot read (HTTP ${r.status}). Request access first, then have the owner approve.</div>`; return; }
+  if(!S.sel) return;
+  const my=++S.req; S.loading=true; S.error=null;
+  if(reset){ S.rows=[]; S.cursor=null; closeRecord(); renderBrowse(); }
+  const filter=serverFilter(), body={app_id:APPID, schema:S.sel.schema, paginate:true, limit:50, cursor:reset?null:S.cursor};
+  if(Object.keys(filter).length) body.filter=filter;
+  const r=await jpost('/bridge/query',body);
+  if(my!==S.req) return;                       // a newer load started; drop this answer
+  S.loading=false;
+  if(!r.ok){ S.error=`Could not read ${S.sel.schema} (${r.status}${r.j&&r.j.error?': '+r.j.error:''}).`; renderTable(); return; }
   const rows=(r.j.results||[]).map(x=>x.object||x);
-  if(!rows.length){ P.innerHTML=`<div class="card"><b>${esc(title)}</b> — 0 rows (no active grant for your tenant, or the dataset is empty).</div>`; return; }
-  const cols=columns(rows);
-  P.innerHTML=`<div class="card"><b>${esc(title)}</b> <span class="muted">— ${rows.length} rows from <b>${esc(tenant)}</b>, read in place under a signed grant</span>
-    <div style="overflow:auto;margin-top:8px"><table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
-    ${rows.map(o=>`<tr>${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</table></div></div>`;
-  P.scrollIntoView({behavior:'smooth',block:'nearest'});
+  S.rows=reset?rows:S.rows.concat(rows); S.cursor=r.j.next_cursor||null;
+  if(reset&&r.j.attributions) S.attrib=r.j.attributions;
+  if(reset){ renderBrowse();
+    if(Object.keys(filter).length){ jpost('/bridge/query',{app_id:APPID,schema:S.sel.schema,filter,count:true})
+      .then(c=>{ if(my===S.req&&c.ok&&c.j.count!=null){ S.matching=c.j.count; renderBrowse(); } }); } else S.matching=null;
+  } else renderTable();
 }
-// MOUNT: once the owner has granted access, mount schema@owner into THIS tenant's registry. The kernel then
-// unions the owner's rows into every normal read — so the dataset shows up in Browse (and in City Scan etc.)
-// as if local, with NO app change. mode 'live' = read-in-place; 'cached' = a refreshed local copy.
-async function doMount(schema, tenant, title){
-  if(!schema||!tenant){ alert('missing schema/owner'); return; }
-  const cached = confirm(`Mount "${schema}" from ${tenant}.\n\nOK = CACHED copy (refreshes on a schedule)\nCancel = LIVE (always read in place)`);
-  let refresh=60;
-  if(cached){ const v=prompt('Refresh every how many minutes?','60'); if(v===null) return; refresh=parseInt(v,10)||60; }
-  const r=await jpost('/bridge/data-mount',{source_tenant:tenant,source_schema:schema,mode:cached?'cached':'live',refresh_minutes:refresh,title});
-  alert(r.ok? `Mounted ${schema} from ${tenant} (${cached?'cached · every '+refresh+'m':'live'}). It now appears in Browse.` : ('Mount failed: '+((r.j&&r.j.error)||('HTTP '+r.status))));
-  renderNet();
+function attribBox(attr){
+  if(!attr||!attr.length) return '<div class="attrib muted">No external source is recorded for this data.</div>';
+  const lk=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${t} ↗</a>`:'';
+  return '<div class="attrib">'+attr.map(s=>`<div class="src"><div>${esc(s.attribution||s.source_id)}</div>
+    <div class="muted">${s.license&&s.license.id?`<span class="tag">${esc(s.license.id)}</span>`:''}${lk(s.license&&s.license.url,'licence')}${lk(s.terms_url,'terms')}${lk(s.url,'source')}</div></div>`).join('')+'</div>';
 }
-async function doUnmount(mid){ if(!confirm('Unmount? This tenant stops seeing the shared rows.')) return;
-  const o=/ds:[^:]+:data\/mount\/([^-]+)--(.+)/.exec(mid); if(!o){alert('bad mount id');return;}
-  const r=await jpost('/bridge/data-mount',{source_tenant:o[1],source_schema:o[2],disable:true});
-  alert(r.ok?'Unmounted':'Failed'); renderNet();
+
+// ---------------- one record (right) ----------------
+function recTitle(o){ return o.name||o.title||o.label||String(o.id||'').split('/').pop()||'Record'; }
+function openRecord(i){ if(i<0||i>=S.rows.length) return; S.rec=i; $('right').classList.add('open');
+  $('tw')&&$('tw').querySelectorAll('tbody tr').forEach(tr=>tr.classList.toggle('sel',+tr.dataset.i===i));
+  const tr=$('tw')&&$('tw').querySelector(`tr[data-i="${i}"]`); if(tr) tr.scrollIntoView({block:'nearest'});
+  const o=S.rows[i]; $('rtitle').textContent=recTitle(o); $('rid').textContent=o.id||''; $('rid').title=o.id||'';
+  renderRecord(); crumbs(); }
+function closeRecord(){ S.rec=-1; $('right').classList.remove('open'); crumbs(); $('tw')&&$('tw').querySelectorAll('tr.sel').forEach(t=>t.classList.remove('sel')); }
+function step(d){ if(S.rec<0) return; const vis=visible().map(([,i])=>i); const k=vis.indexOf(S.rec)+d; if(k>=0&&k<vis.length) openRecord(vis[k]);
+  else if(d>0&&k>=vis.length&&S.cursor&&!S.loading) load(false); }
+function renderRecord(){
+  document.querySelectorAll('#right .tab').forEach(t=>t.classList.toggle('on',t.dataset.t===S.tab));
+  const o=S.rows[S.rec], B=$('rbody'); if(!o){ B.innerHTML=''; return; }
+  if(S.tab==='json'){ B.innerHTML=`<pre class="json">${esc(JSON.stringify(o,null,2))}</pre>`; return; }
+  if(S.tab==='hist'){ renderHistory(o.id); return; }
+  const keys=Object.keys(o).filter(k=>!['conforms_to','prov'].includes(k));
+  B.innerHTML=`<div class="kv">${keys.map(k=>{ const v=o[k]; const s=v!=null&&typeof v==='object'?JSON.stringify(v,null,1):String(v??'');
+    return `<div class="k">${esc(k)}</div><div class="v">${esc(s.length>2000?s.slice(0,2000)+' …':s)}</div>`; }).join('')}</div>
+    ${o.prov?'<div class="muted" style="margin-top:10px">Provenance is in the JSON tab.</div>':''}`;
 }
-async function loadMounts(){ const r=await jpost('/bridge/query',{app_id:APPID,schema:'data.mount',paginate:true,limit:100});
-  return r.ok? (r.j.results||[]).map(x=>x.object||x).filter(m=>m&&m.enabled!==false) : []; }
-async function doDecide(rid,dec){ const res=await gov('decide',{request_id:rid,decision:dec}); alert(res.__err?('Failed: '+res.__err):(dec+' → '+((res.grant||{}).issued||res.decision||'done'))); renderNet(); }
-async function doRetire(oid){ if(!confirm('Remove from network? Others stop discovering it (existing grants stay until revoked).'))return; const res=await gov('retire-offering',{id:oid}); alert(res.__err?('Failed: '+res.__err):'Retired'); renderNet(); }
-async function doRevoke(gid){ if(!confirm('Revoke this access grant? The consumer immediately loses access.'))return; const res=await gov('revoke',{grant_id:gid}); alert(res.__err?('Failed: '+res.__err):'Revoked'); renderNet(); }
-function offProvider(o){ const p=o.provider; return typeof p==='object'&&p ? (p.id||p.tenant||'') : (p||''); }
-function offSchema(o){ return o.data_schema||o.schema_ref||o.schema||''; }
+function fmtAgent(a){ if(!a) return '<span class="muted">unknown</span>';
+  const m=/component:\/\/([^ ]+?)(?:@[^ ]*)?\s+obo\s+user:\/\/(.+)/.exec(a);
+  if(m) return `<b>${esc(m[1].split('/').pop())}</b> <span class="muted">for</span> ${esc(m[2].split('/').pop())}`;
+  return esc(String(a).replace(/^user:\/\//,'').replace(/^component:\/\//,'')); }
+const trunc=s=>{ s=(s==null?'':String(s)); return s.length>60?s.slice(0,57)+'…':s; };
+function diffFields(a,b){ const skip=new Set(['conforms_to','prov','schema','id','tenant']);
+  if(!a) return '<div class="chg"><span class="ins">created</span></div>';
+  const rows=[...new Set([...Object.keys(a||{}),...Object.keys(b||{})])].filter(k=>!skip.has(k)).map(k=>{ const av=JSON.stringify(a?.[k]), bv=JSON.stringify(b?.[k]);
+    return av===bv?'':`<div class="chg"><b>${esc(k)}</b> <span class="del">${esc(trunc(av===undefined?'∅':av))}</span> → <span class="ins">${esc(trunc(bv===undefined?'∅':bv))}</span></div>`; }).join('');
+  return rows||'<div class="chg muted">no field changes</div>'; }
+async function renderHistory(id){
+  const B=$('rbody'); B.innerHTML='<div class="muted">Loading version history…</div>';
+  const r=await jpost('/bridge/history',{app_id:APPID,id});
+  if(S.tab!=='hist'||!S.rows[S.rec]||S.rows[S.rec].id!==id) return;
+  if(!r.ok){ B.innerHTML=`<div class="muted">Could not load history (${r.status||'?'}).</div>`; return; }
+  const H=r.j.history||[]; if(!H.length){ B.innerHTML='<div class="muted">No version history recorded.</div>'; return; }
+  B.innerHTML=`<div class="muted" style="margin-bottom:6px">${H.length} version${H.length>1?'s':''}, newest first. “Valid” is when it was true; “recorded” is when the system learned it.</div>`+
+    H.map((v,i)=>{ const tt=v.transaction_time||{}, vt=v.valid_time||{};
+      return `<div class="ver${v.retracted?' tomb':''}"><div class="h">v${esc(v.version)}${v.retracted?' · <span class="del">retracted</span>':i===0?' · <span class="ins">current</span>':''}</div>
+        <div class="muted">recorded ${esc(tt.from||'—')}${tt.to?' → '+esc(tt.to):''} · valid ${esc(vt.from||'—')}${vt.to?' → '+esc(vt.to):''}</div>
+        <div class="muted">by ${fmtAgent(v.wrote_by)}</div><div style="margin-top:4px">${diffFields(H[i+1]&&H[i+1].object,v.object)}</div></div>`; }).join('');
+}
+
+// ---------------- sharing with other organisations (ADR-0087 Data Exchange, via the generic /bridge/gov) -------
+function setView(v){ S.view=v; $('browse').style.display=v==='browse'?'flex':'none'; $('net').style.display=v==='net'?'block':'none';
+  $('nav-net').classList.toggle('on',v==='net'); crumbs(); if(v==='net'){ closeRecord(); setRail(false); renderNet(); } }
+async function gov(op,payload){ const r=await jpost('/bridge/gov',{interface:'network.data_exchange@0.1.0',op,app_id:APPID,payload:payload||{}});
+  return r.ok?(r.j.result||r.j||{}):{__err:(r.j&&r.j.error)||('HTTP '+r.status)}; }
+const offSlug=s=>(s||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+const offProvider=o=>{ const p=o.provider; return typeof p==='object'&&p?(p.id||p.tenant||''):(p||''); };
+const offSchema=o=>o.data_schema||o.schema_ref||o.schema||'';
+const offTenant=o=>{ const t=o.tenant||o._prov||''; const m=/^ds:([^:]+):/.exec(t); return m?m[1]:t; };
+async function act(fn,msg){ const res=await fn(); if(res&&res.__err) alert(msg+' failed: '+res.__err); renderNet(); }
 async function renderNet(){
-  const N=document.getElementById('net'); N.innerHTML='<div class="muted">Loading the network Data Exchange…</div>';
-  const disc=await gov('discover',{}); const offs=(disc.offerings||[]).map(o=>({...o, _prov:offProvider(o), _schema:offSchema(o)}));
-  const mine=offs.filter(o=>o._prov===TENANT||(o._prov||'').includes(':'+TENANT+':')||(o._prov||'').startsWith('ds:'+TENANT)), others=offs.filter(o=>!mine.includes(o));
-  const reqs=((await gov('requests',{tenant:TENANT})).requests)||[];
-  const mounts=await loadMounts();
-  const opts=DSET.map(d=>`<option value="${esc(d.schema)}">${esc(subject(d.schema).replace(/_/g,' '))} (${esc(d.schema)})</option>`).join('');
-  N.innerHTML=`
-   <div id="shared-preview"></div>
-   <div class="card"><h3>📤 Share a dataset on the network</h3>
-     <div class="row2"><select id="pub-sch">${opts||'<option>— no datasets —</option>'}</select>
-       <input id="pub-title" placeholder="Offering title" style="min-width:220px"></div>
-     <div class="row2"><input id="pub-desc" placeholder="Short description (optional)" style="min-width:360px">
-       <button class="btn p" onclick="doPublish()">Share on network</button></div>
-     <div class="muted">Shares by REFERENCE — the data stays in your registry; approved consumers read it in place under a signed grant.</div></div>
-   <div class="card"><h3>🔎 Discover data on the network (${others.length})</h3>
-     ${others.length? others.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="chip">${esc(o._schema)}</span>
-        <div class="muted">from <b>${esc(o._prov)}</b>${o.jurisdiction?(' · '+esc(o.jurisdiction)):''} · ${esc(o.access_mode||o.visibility||'request')}</div>
-        <div class="muted">${esc(o.description||'')}</div>
-        <div class="row2"><button class="btn" onclick="doRequest('${esc(o.id)}')">Request access</button>
-          <button class="btn" onclick="doBrowse('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">Browse shared data</button>
-          <button class="btn p" onclick="doMount('${esc(o._schema)}','${esc(offTenantSlug(o))}','${esc(o.title||o.id)}')">⤵ Mount</button></div></div>`).join('')
-      : '<div class="muted">No offerings from other participants yet.</div>'}</div>
-   <div class="card"><h3>⤵ Mounted registries (${mounts.length})</h3>
-     <div class="muted">Shared datasets mounted into this tenant — they appear in Browse and in any app (City Scan, etc.) as if local.</div>
-     ${mounts.length? mounts.map(m=>`<div class="off"><b>${esc(m.title||m.source_schema)}</b> <span class="chip">${esc(m.source_schema)}</span>
-        <div class="muted">from <b>${esc(m.source_tenant)}</b> · ${esc(m.mode||'live')}${m.mode==='cached'?(' · every '+esc(m.refresh_minutes||60)+'m'):' · read in place'}</div>
-        <div class="row2"><button class="btn d" onclick="doUnmount('${esc(m.id)}')">Unmount</button></div></div>`).join('')
-      : '<div class="muted" style="margin-top:6px">Nothing mounted yet — mount a dataset from “Discover” above.</div>'}</div>
-   <div class="card"><h3>📥 Requests for MY data (${reqs.length})</h3>
-     ${reqs.length? reqs.map(r=>`<div class="off"><b>${esc(r.requested_by||r.component_id)}</b> requests <span class="chip">${esc((r.reads||[]).join(', ')||r.offering_id||'')}</span>
-        <div class="muted">purpose: ${esc(r.purpose||'—')} · status: <b>${esc(r.status)}</b></div>
-        <div class="row2">${r.status==='pending'?`<button class="btn p" onclick="doDecide('${esc(r.id)}','approve')">Approve</button>
-          <button class="btn d" onclick="doDecide('${esc(r.id)}','reject')">Reject</button>`
-          : (r.grant?`<button class="btn d" onclick="doRevoke('${esc(r.grant)}')">Revoke access</button>`:'')}</div></div>`).join('')
-      : '<div class="muted">No inbound requests.</div>'}</div>
-   <div class="card"><h3>📡 My shared datasets (${mine.length})</h3>
-     ${mine.length? mine.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="chip">${esc(o._schema)}</span> · ${esc(o.status||'active')}
-        <div class="row2"><button class="btn d" onclick="doRetire('${esc(o.id)}')">Retire (stop sharing)</button></div></div>`).join('')
-      : '<div class="muted">You have not shared any datasets yet.</div>'}</div>`;
+  const N=$('net'); N.innerHTML='<div class="muted">Loading…</div>';
+  const offs=((await gov('discover',{})).offerings||[]).map(o=>({...o,_prov:offProvider(o),_schema:offSchema(o)}));
+  const isMine=o=>o._prov===TENANT||(o._prov||'').startsWith('ds:'+TENANT+':')||(o._prov||'').includes(':'+TENANT+':');
+  const mine=offs.filter(isMine), others=offs.filter(o=>!isMine(o)), reqs=((await gov('requests',{tenant:TENANT})).requests)||[];
+  const pending=reqs.filter(r=>r.status==='pending');
+  N.innerHTML=`<h2 style="margin:0 0 4px;font-size:16px">Shared with organisations</h2>
+    <p class="muted" style="margin:0 0 14px;max-width:860px">Offer a registry to other organisations on the network; they ask for access and you decide. Data is shared by reference: it stays in your registry and approved organisations read it in place.</p>
+    ${pending.length?`<div class="card"><h3>Waiting for your decision (${pending.length})</h3>${pending.map(r=>`<div class="off"><b>${esc(r.requested_by||r.component_id)}</b> asks for <span class="tag">${esc((r.reads||[]).join(', ')||r.offering_id||'')}</span>
+      <div class="muted">Purpose: ${esc(r.purpose||'—')}</div><div class="row2"><button class="btn p" data-dec="approve" data-r="${esc(r.id)}">Approve</button><button class="btn d" data-dec="reject" data-r="${esc(r.id)}">Reject</button></div></div>`).join('')}</div>`:''}
+    <div class="card"><h3>Offer a registry</h3>
+      <div class="row2"><select id="pub-sch">${S.schemas.map(d=>`<option value="${esc(d.schema)}">${esc(subject(d.schema))} — ${esc(d.schema)}</option>`).join('')}</select>
+        <input id="pub-title" placeholder="Title others will see" style="min-width:220px"></div>
+      <div class="row2"><input id="pub-desc" placeholder="Short description (optional)" style="min-width:360px"><button class="btn p" id="pub">Offer</button></div></div>
+    <div class="card"><h3>Your offers (${mine.length})</h3>${mine.length?mine.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="tag">${esc(o._schema)}</span> <span class="muted">${esc(o.status||'active')}</span>
+      <div class="row2"><button class="btn d" data-retire="${esc(o.id)}">Stop offering</button></div></div>`).join(''):'<div class="muted">You are not offering any registry yet.</div>'}
+      ${reqs.filter(r=>r.status!=='pending'&&r.grant).map(r=>`<div class="off"><b>${esc(r.requested_by||r.component_id)}</b> has access to <span class="tag">${esc((r.reads||[]).join(', ')||r.offering_id||'')}</span>
+        <div class="row2"><button class="btn d" data-revoke="${esc(r.grant)}">Remove access</button></div></div>`).join('')}</div>
+    <div class="card"><h3>Offered by other organisations (${others.length})</h3>${others.length?others.map(o=>`<div class="off"><b>${esc(o.title||o.id)}</b> <span class="tag">${esc(o._schema)}</span>
+      <div class="muted">from <b>${esc(o._prov)}</b>${o.description?' · '+esc(o.description):''}</div>
+      <div class="row2"><button class="btn" data-ask="${esc(o.id)}">Ask for access</button><button class="btn" data-peek="${esc(o._schema)}|${esc(offTenant(o))}|${esc(o.title||o.id)}">Preview</button></div></div>`).join(''):'<div class="muted">Nothing offered by other organisations yet.</div>'}
+      <div id="peek"></div></div>`;
+  $('pub').onclick=()=>{ const sch=$('pub-sch').value, title=$('pub-title').value.trim(); if(!sch||!title){ alert('Pick a registry and give it a title.'); return; }
+    act(()=>gov('publish-offering',{id:`ds:${TENANT}:offering/${offSlug(subject(sch))}`,title,data_schema:sch,domain:sch.split('.')[0],description:$('pub-desc').value.trim(),access_mode:'request'}),'Offer'); };
+  N.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>act(()=>gov('decide',{request_id:b.dataset.r,decision:b.dataset.dec}),'Decision'));
+  N.querySelectorAll('[data-retire]').forEach(b=>b.onclick=()=>{ if(confirm('Stop offering this registry? Organisations that already have access keep it until you remove it.')) act(()=>gov('retire-offering',{id:b.dataset.retire}),'Stop offering'); });
+  N.querySelectorAll('[data-revoke]').forEach(b=>b.onclick=()=>{ if(confirm('Remove this organisation’s access now?')) act(()=>gov('revoke',{grant_id:b.dataset.revoke}),'Remove access'); });
+  N.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{ const p=prompt('Why do you need this data? The owner sees this.',''); if(p!==null) act(()=>gov('request',{offering_id:b.dataset.ask,purpose:p}),'Request'); });
+  N.querySelectorAll('[data-peek]').forEach(b=>b.onclick=()=>peek(...b.dataset.peek.split('|')));
 }
-// ---- UPLOAD: parse a CSV/JSON client-side → POST rows to /bridge/data-upload (infers + governs schema, ingests).
-function _splitDelim(l,d){ const out=[]; let cur='',q=false;
-  for(let i=0;i<l.length;i++){ const ch=l[i];
-    if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
-    else { if(ch==='"') q=true; else if(ch===d){ out.push(cur); cur=''; } else cur+=ch; } }
-  out.push(cur); return out; }
-function parseTable(text,d){
-  const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.length);
-  if(!lines.length) return [];
-  const hdr=_splitDelim(lines[0],d).map(h=>h.trim());
-  return lines.slice(1).map(l=>{ const c=_splitDelim(l,d); const o={};
-    hdr.forEach((h,i)=>{ let v=c[i]; if(v===undefined) v='';
-      else { v=v.trim(); if(v!==''&&/^-?\d+(\.\d+)?$/.test(v)) v=Number(v); else if(v==='true'||v==='false') v=(v==='true'); }
-      o[h]=v; }); return o; });
+async function peek(schema,tenant,title){
+  const P=$('peek'); P.innerHTML='<div class="muted">Reading…</div>';
+  const r=await jpost('/bridge/query',{app_id:APPID,schema,tenant,paginate:true,limit:25});
+  const rows=r.ok?(r.j.results||[]).map(x=>x.object||x):[];
+  if(!rows.length){ P.innerHTML=`<div class="off muted">${r.ok?'No rows yet — ask for access and wait for the owner to approve.':'Cannot read it yet (HTTP '+r.status+') — ask for access first.'}</div>`; return; }
+  const cols=columns(rows);
+  P.innerHTML=`<div class="off"><b>${esc(title)}</b> <span class="muted">${rows.length} rows from ${esc(tenant)}, read in place</span>
+    <div style="overflow:auto;margin-top:6px"><table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(o=>`<tr>${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
 }
-async function doUpload(ev){
-  const f=ev.target.files&&ev.target.files[0]; if(!f) return; ev.target.value='';
-  let rows=[]; const text=await f.text();
-  try{ if(/\.json$/i.test(f.name)){ const j=JSON.parse(text); rows=Array.isArray(j)?j:(j.rows||j.data||(j&&typeof j==='object'?[j]:[])); }
-       else rows=parseTable(text, /\.tsv$/i.test(f.name)?'\t':','); }
-  catch(e){ alert('Could not parse '+f.name+': '+e.message); return; }
-  rows=rows.filter(r=>r&&typeof r==='object');
-  if(!rows.length){ alert('No rows found in '+f.name); return; }
-  const name=(prompt('Dataset name — becomes the governed schema dataset.<name>:', f.name.replace(/\.[^.]+$/,''))||'').trim();
-  if(!name) return;
-  const r=await jpost('/bridge/data-upload',{name,rows});
-  if(r.ok&&r.j.ok){ alert('Uploaded "'+r.j.schema+'" — '+r.j.written+'/'+r.j.rows+' rows ingested. It now appears in Browse (and can be shared on the Network tab).'); DSET.length=0; setTab('browse'); boot(); }
-  else alert('Upload failed: '+((r.j&&r.j.error)||('HTTP '+(r.status||'?'))));
+
+// ---------------- wiring ----------------
+$('regq').oninput=renderRegs;
+$('regq').onkeydown=e=>{ if(e.key==='Enter'){ const f=$('reglist').querySelector('.it'); if(f) pickRegistry(f.dataset.s); } if(e.key==='Escape'){ $('regq').value=''; renderRegs(); } };
+$('collapse').onclick=()=>setRail(true);
+$('expand').onclick=$('railname').onclick=()=>{ setRail(false); $('regq').focus(); };
+$('nav-net').onclick=()=>setView(S.view==='net'?'browse':'net');
+$('rclose').onclick=closeRecord; $('rprev').onclick=()=>step(-1); $('rnext').onclick=()=>step(1);
+document.querySelectorAll('#right .tab').forEach(t=>t.onclick=()=>{ S.tab=t.dataset.t; renderRecord(); });
+document.addEventListener('keydown',e=>{ const typing=/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'');
+  if(e.key==='Escape'&&S.rec>=0&&!typing) closeRecord();
+  if(!typing&&S.rec>=0&&(e.key==='ArrowDown'||e.key==='ArrowUp')){ e.preventDefault(); step(e.key==='ArrowDown'?1:-1); }
+  if(!typing&&e.key==='/'){ e.preventDefault(); const q=$('quick'); if(q) q.focus(); else { setRail(false); $('regq').focus(); } } });
+async function boot(){
+  try{ APPID=(await fetch('./config.json').then(r=>r.json())).app_id; }catch(e){}
+  fetch('/session',{credentials:'same-origin'}).then(r=>r.json()).then(s=>{ TENANT=s.tenant||(s.sub||'').split('/')[2]||''; }).catch(()=>{});
+  const r=await jpost('/bridge/data-schemas',{});
+  if(r.ok&&r.j.schemas){ S.schemas=r.j.schemas; renderRegs(); }
+  else $('reglist').innerHTML=`<div class="empty">Could not list registries (${r.status||'?'}).</div>`;
 }
-document.getElementById('upf').addEventListener('change', doUpload);
 boot();
 </script>
