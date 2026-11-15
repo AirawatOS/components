@@ -15,7 +15,7 @@ Two jobs, one engine:
 
 Scorers: norms · json_fields · contains · exact · grounded. Deterministic — no model judges another here.
 """
-import json, os, re, sys, time, urllib.error, urllib.request
+import base64, json, os, re, sys, time, urllib.error, urllib.request
 
 API = os.environ.get("AIRAWAT_API", "http://localhost:8080")
 TOKEN = os.environ.get("RUN_TOKEN", "")
@@ -229,6 +229,74 @@ def field_equal(got, want):
     return str(got).strip().lower() == str(want).strip().lower()
 
 
+def _answer(content):
+    return last_json_object((content or "").strip())
+
+
+def score_counts(case, content):
+    """Counts per class (ADR-0134 B03/B04): expected.counts {class: n}; the answer's "counts" object (or the
+    object itself). Score = 1 − total absolute error / total expected (floor 0); metrics: per-class error, MAE,
+    exact-count accuracy and bias (+ over-counting, − under-counting)."""
+    want = ((case.get("expected") or {}).get("counts") or {})
+    obj = _answer(content); got = (obj.get("counts") if isinstance(obj, dict) and isinstance(obj.get("counts"), dict) else obj) or {}
+    if not isinstance(got, dict):
+        got = {}
+    errs = {}
+    for k, v in want.items():
+        g = _num(got.get(k)) if k in got else 0.0
+        errs[k] = (g if g is not None else 0.0) - float(v)
+    n = max(1, len(want)); total = sum(abs(e) for e in errs.values()); base = max(1.0, float(sum(want.values())))
+    m = {"answered": bool((content or "").strip()), "parsed": isinstance(obj, dict), "per_class_error": errs,
+         "mae": round(total / n, 3), "exact": round(sum(1 for e in errs.values() if abs(e) < 0.5) / n, 3),
+         "bias": round(sum(errs.values()) / n, 3)}
+    return (round(max(0.0, 1 - total / base), 3) if m["parsed"] else 0.0), m
+
+
+def score_labels(case, content):
+    """Class labels (ADR-0134 A01 A02 A04 A06 B01 E03): expected.labels — a list (multi-label) or one string; the
+    answer's "labels" (list) or "label" (string). Score = F1 between the sets; "uncertain" is an ordinary label, so
+    answering "uncertain" where the reference says so scores, and anywhere else does not."""
+    exp = (case.get("expected") or {}).get("labels")
+    want = {str(x).strip().lower() for x in (exp if isinstance(exp, list) else [exp] if exp else [])}
+    obj = _answer(content); got = set()
+    if isinstance(obj, dict):
+        v = obj.get("labels", obj.get("label"))
+        got = {str(x).strip().lower() for x in (v if isinstance(v, list) else [v] if v not in (None, "") else [])}
+    hit = len(want & got)
+    p = hit / len(got) if got else (1.0 if not want else 0.0)
+    r = hit / len(want) if want else (1.0 if not got else 0.0)
+    f1 = 0.0 if p + r == 0 else 2 * p * r / (p + r)
+    return round(f1, 3), {"answered": bool((content or "").strip()), "parsed": isinstance(obj, dict), "expected": sorted(want),
+                          "got": sorted(got), "precision": round(p, 3), "recall": round(r, 3)}
+
+
+def _cer(a, b):
+    a, b = a or "", b or ""
+    if not b:
+        return 0.0 if not a else 1.0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return min(1.0, prev[-1] / len(b))
+
+
+def score_text(case, content):
+    """Text read from the image (ADR-0134 C05): expected.text {field: string}; the answer's fields of the same name.
+    Compared ignoring case and repeated spaces. Score = 1 − mean character error rate; metrics: CER per field and
+    exact-match share."""
+    want = ((case.get("expected") or {}).get("text") or {})
+    obj = _answer(content) or {}
+    norm = lambda x: " ".join(str(x or "").lower().split())
+    cers = {k: round(_cer(norm(obj.get(k)) if isinstance(obj, dict) else "", norm(v)), 3) for k, v in want.items()}
+    n = max(1, len(want))
+    return (round(1 - sum(cers.values()) / n, 3) if isinstance(obj, dict) else 0.0), {
+        "answered": bool((content or "").strip()), "parsed": isinstance(obj, dict), "cer": cers,
+        "exact": round(sum(1 for c in cers.values() if c == 0) / n, 3)}
+
+
 def score_case(case, content):
     sc = case.get("scorer") or "norms"
     exp = case.get("expected") or {}
@@ -248,6 +316,12 @@ def score_case(case, content):
         ok = [k for k, v in fields.items() if isinstance(obj, dict) and k in obj and field_equal(obj[k], v)]
         return (round(len(ok) / len(fields), 3) if fields else 0.0), {"answered": bool(text), "parsed": isinstance(obj, dict),
                 "matched": len(ok), "of": len(fields), "wrong": [k for k in fields if k not in ok][:20]}
+    if sc == "counts":
+        return score_counts(case, content)
+    if sc == "labels":
+        return score_labels(case, content)
+    if sc == "text":
+        return score_text(case, content)
     if sc == "grounded":
         src = " ".join(m.get("content", "") for m in case.get("messages") or [] if isinstance(m, dict))
         out, ins = numbers_in(text), numbers_in(src)
@@ -306,14 +380,80 @@ OUT_MAX = 40000           # a full answer (was 6,000: long answers were cut and 
 OLD_CAP = 6000
 
 
+# ---- images and the privacy guard (ADR-0134) ---------------------------------------------------------------------
+HOSTING = None           # model name → "in_house" | "external", from the tenant's intelligence.provider records
+
+
+def model_hosting(model):
+    """Where a model runs. Only an operator-set hosting: in_house on its provider record counts as in-house;
+    anything else — including a model on no record — is treated as external."""
+    global HOSTING
+    if HOSTING is None:
+        HOSTING = {}
+        try:
+            for p in mine("intelligence.provider"):
+                for m in p.get("models") or []:
+                    if m.get("name") and m["name"] not in HOSTING:
+                        HOSTING[m["name"]] = "in_house" if p.get("hosting") == "in_house" else "external"
+        except Exception:
+            pass                                          # unreadable → every model counts as external
+    return HOSTING.get(model, "external")
+
+
+def refuse_private(c, model):
+    """A private case is never sent to a model that is not in-house. Returns the refusal, or None."""
+    if (c.get("visibility") or "private") == "private" and c.get("inputs") and model_hosting(model) != "in_house":
+        return "refused: private case (camera media) — %s is not an in-house model" % model
+    if c.get("visibility") == "private" and not c.get("inputs") and model_hosting(model) != "in_house":
+        return "refused: private case — %s is not an in-house model" % model
+    return None
+
+
+def _mime(raw):
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def with_images(c):
+    """The case's messages with its image inputs attached to the first user message as OpenAI-style image parts
+    (data URLs). The gateway passes them to OpenAI-compatible providers as they are and converts them for Anthropic.
+    The engine reads each file through the broker, so the gateway does no file access."""
+    imgs = [i for i in (c.get("inputs") or []) if i.get("kind") == "image" and i.get("file_id")]
+    msgs = [dict(m) for m in c.get("messages") or []]
+    if not imgs:
+        return msgs
+    parts = []
+    for i in imgs:
+        raw = base64.b64decode((call("/v1/file/get", {"id": i["file_id"]}, timeout=90) or {}).get("content_b64") or "")
+        mime = _mime(raw)
+        if not mime:
+            raise ValueError("input %s is not a JPEG, PNG or WebP image" % i["file_id"][:24])
+        parts.append({"type": "image_url", "image_url": {"url": "data:%s;base64,%s" % (mime, base64.b64encode(raw).decode())}})
+    k = next((n for n, m in enumerate(msgs) if m.get("role") == "user"), None)
+    if k is None:
+        msgs.append({"role": "user", "content": parts}); return msgs
+    text = msgs[k].get("content")
+    msgs[k]["content"] = ([{"type": "text", "text": text}] if isinstance(text, str) else list(text or [])) + parts
+    return msgs
+
+
 def ask(model, c):
     """One case to one model through the broker → (output, served_by, usage, error, ms)."""
     t0 = time.time(); out = ""; served = None; usage = None; err = None
+    why = refuse_private(c, model)
+    if why:                                               # ADR-0132 §5 / ADR-0134: never sent, recorded as refused
+        return "", None, None, why, 0
     try:
         res = None
+        msgs = with_images(c)
         for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
             try:                                          # never on a production route (a call naming no model)
-                res = call("/v1/complete", {"messages": c["messages"], "max_tokens": budget(c),
+                res = call("/v1/complete", {"messages": msgs, "max_tokens": budget(c),
                                             "model": model, "task": task, "receipt": False, **thinking_arg()}, timeout=240)
                 TASKS[model] = (task,)
                 break

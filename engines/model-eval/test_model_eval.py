@@ -155,3 +155,74 @@ def test_thinking_switch_goes_to_the_gateway_only_when_set():
         me.THINKING = ""; assert me.thinking_arg() == {}
     finally:
         me.THINKING = saved
+
+
+# ---- ADR-0134: images, privacy, counts / labels / text -------------------------------------------------------------
+import base64 as _b64
+
+JPEG = b"\xff\xd8\xff\xe0" + b"0" * 20
+IMG_CASE = {"id": "ds:t:intelligence/eval_case/x", "visibility": "private", "inputs": [{"kind": "image", "file_id": "sha2-256:ab"}],
+            "messages": [{"role": "user", "content": "Count the vehicles."}], "scorer": "counts"}
+
+
+def test_private_image_case_is_never_sent_to_an_external_model():
+    saved = (me.HOSTING, me.call)
+    sent = []
+    me.HOSTING = {"google/gemma-4-31B-it": "external", "local-gemma": "in_house"}
+    me.call = lambda path, body, timeout=180: sent.append(path) or {"content": "{}", "model": "x"}
+    try:
+        out, served, usage, err, ms = me.ask("google/gemma-4-31B-it", IMG_CASE)
+        assert err and err.startswith("refused: private case") and sent == []
+        assert me.ask("unknown-model", IMG_CASE)[3].startswith("refused")          # not on any record → external
+    finally:
+        me.HOSTING, me.call = saved
+
+
+def test_images_go_as_data_url_parts_after_the_text():
+    saved = me.call
+    me.call = lambda path, body, timeout=180: {"content_b64": _b64.b64encode(JPEG).decode()} if path == "/v1/file/get" else {}
+    try:
+        msgs = me.with_images(IMG_CASE)
+        parts = msgs[0]["content"]
+        assert parts[0] == {"type": "text", "text": "Count the vehicles."}
+        assert parts[1]["type"] == "image_url" and parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+        assert IMG_CASE["messages"][0]["content"] == "Count the vehicles."                 # the case itself is untouched
+    finally:
+        me.call = saved
+
+
+def test_a_non_image_input_is_an_error_not_a_silent_send():
+    saved = me.call
+    me.call = lambda path, body, timeout=180: {"content_b64": _b64.b64encode(b"%PDF-1.7").decode()}
+    try:
+        try:
+            me.with_images(IMG_CASE); assert False, "should refuse"
+        except ValueError as e:
+            assert "not a JPEG" in str(e)
+    finally:
+        me.call = saved
+
+
+def test_counts_score_mae_exact_and_bias():
+    case = {"scorer": "counts", "expected": {"counts": {"car": 4, "two_wheeler": 6, "bus": 0}}}
+    sc, m = me.score_case(case, '{"counts": {"car": 5, "two_wheeler": 6}}')         # missing class counts as 0
+    assert sc == 0.9 and m["mae"] == 0.333 and m["exact"] == 0.667 and m["bias"] == 0.333
+    assert me.score_case(case, '{"car": 4, "two_wheeler": 6, "bus": 0}')[0] == 1.0   # flat object accepted
+    assert me.score_case(case, "no idea")[0] == 0.0
+
+
+def test_labels_f1_single_multi_and_uncertain():
+    multi = {"scorer": "labels", "expected": {"labels": ["day", "glare"]}}
+    assert me.score_case(multi, '{"labels": ["Day", "glare"]}')[0] == 1.0
+    assert me.score_case(multi, '{"labels": ["day"]}')[0] == 0.667
+    one = {"scorer": "labels", "expected": {"labels": "uncertain"}}
+    assert me.score_case(one, '{"label": "uncertain"}')[0] == 1.0
+    assert me.score_case(one, '{"label": "yes"}')[0] == 0.0
+
+
+def test_text_cer_and_exact():
+    case = {"scorer": "text", "expected": {"text": {"timestamp": "10-16-2026 Fri 11:46:22", "camera": "ALLENGANJ BOX1"}}}
+    sc, m = me.score_case(case, '{"timestamp": "10-16-2026 Fri 11:46:22", "camera": "allenganj  box1"}')
+    assert sc == 1.0 and m["exact"] == 1.0
+    sc, m = me.score_case(case, '{"timestamp": "10-16-2026 Fri 11:46:2", "camera": "ALLENGANJ BOX1"}')
+    assert 0.97 < sc < 1.0 and m["exact"] == 0.5
