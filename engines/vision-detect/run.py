@@ -22,6 +22,7 @@ MODELS = {
     "coco_l": ("/opt/rtdetrv2/configs/rtdetrv2/coco_o365_rtdetrv2_l.yml", "/opt/models/coco/rtdetrv2_l_o365.pth"),
 }
 PEOPLE_MODELS = ("coco", "coco_l")      # COCO-class detectors (same 80 classes, same index order)
+MODEL_NAMES = {"uvh26": "RT-DETRv2-S (UVH-26)", "coco": "RT-DETRv2-S (COCO)", "coco_l": "RT-DETRv2-L (COCO from Objects365)"}
 # Subjects this engine answers, and with which models: UVH-26 alone (vehicles), or UVH-26 + COCO (+ pedestrians, animals).
 SUBJECTS = {
     "component:uvh26-rtdetrv2-s": {"models": ["uvh26"], "tests": ("B01", "B03")},
@@ -211,7 +212,7 @@ def run_detector(run, subject):
                 "served_by": subject.replace("component:", ""), "output": out, "score": None, "latency_ms": ms, "error": err, "at": now(),
                 "metrics": {"answered": bool(out), "threshold": THRESHOLD, "threshold_people": THRESHOLD_PEOPLE, "floor": FLOOR, "image_size": size, "detections": dets[:400]},
                 "usage": {"hardware": "cpu", "threads": THREADS, "device": "cpu",
-                          "model": " + ".join({"uvh26": "RT-DETRv2-S (UVH-26)", "coco": "RT-DETRv2-S (COCO)"}[m] for m in spec["models"])}})
+                          "model": " + ".join(MODEL_NAMES[m] for m in spec["models"])}})
             n += 1
         print("  %s: %d objects ≥ %.2f in %d ms%s" % (cs[0]["inputs"][0].get("name") or fid[:20], sum(1 for d in dets if d["score"] >= threshold_for(d) and not d.get("rider")), THRESHOLD, ms,
                                                       " · " + err if err else ""), flush=True)

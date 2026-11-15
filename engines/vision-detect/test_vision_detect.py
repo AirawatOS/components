@@ -90,3 +90,9 @@ def test_one_dog_is_one_animal_even_if_also_called_a_horse():
     grp = torch.tensor([0 if vd.COCO[d[0]] == "pedestrian" else 1 for d in dets])
     keep = batched_nms(torch.tensor([d[1] for d in dets]), torch.tensor([d[2] for d in dets]), grp, 0.5).tolist()
     assert sorted(keep) == [0, 2]                                        # the dog and the walker, not the 'horse'
+
+
+def test_every_model_a_subject_uses_has_a_name_and_files():
+    for subject, spec in vd.SUBJECTS.items():
+        for m in spec["models"]:
+            assert m in vd.MODELS and m in vd.MODEL_NAMES, (subject, m)
