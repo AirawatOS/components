@@ -138,3 +138,10 @@ def test_json_fields_compare_numbers_within_one_percent():
     assert sc == 1.0 and m["wrong"] == []
     sc, m = me.score_case(case, '{"land_ha": 4.6, "stations": 3, "ok": true, "src": "state"}')
     assert sc == 0.5 and sorted(m["wrong"]) == ["land_ha", "ok"]
+
+
+def test_json_fields_reads_the_last_object_after_working():
+    case = {"scorer": "json_fields", "expected": {"fields": {"stations": 3}}}
+    out = 'Step 1: {235000 / 90000} = 2.6, so round up.\nDraft: {"stations": 2}\nCorrected.\n{"stations": 3}'
+    sc, m = me.score_case(case, out)
+    assert sc == 1.0 and m["parsed"]

@@ -1,0 +1,168 @@
+[
+ {
+  "key": "police-table-distractors",
+  "title": "Police stations from a table with distractor rows",
+  "tags": [
+   "table",
+   "distractor",
+   "ceiling",
+   "multi-step"
+  ],
+  "body": "URDPFI Table 8.58, norms for police facilities (population served per unit, land):\n| Category | Population per unit | Land |\n| Police post | 40,000-50,000 (only where no police station serves the area) | 0.16 ha |\n| Police station | 90,000 | 1.50 ha, plus 0.05 ha for civil defence and home guards |\n| District office and battalion | 10 lakh | 4.80 ha |\n| District jail | 10 lakh | 10.00 ha |\nEach requirement is per population served \"or part thereof\".\nA ward of 3,10,000 people is fully served by police stations and has 2 today, each already with its civil-defence land.\nHow many new police stations are needed, and how much land in total for them?",
+  "schema": "{\"new_stations\": integer, \"land_ha\": number}",
+  "fields": {
+   "new_stations": 2,
+   "land_ha": 3.1
+  },
+  "note": ""
+ },
+ {
+  "key": "conflicting-population",
+  "title": "Conflicting population figures",
+  "tags": [
+   "conflict",
+   "recency",
+   "ceiling",
+   "cost"
+  ],
+  "body": "Census 2011 gives the ward's population as 8,42,000. A 2024 household survey by the city gives 11.6 lakh. The plan must use the most recent figure.\nURDPFI norm: one neighbourhood park of 1 ha for every 15,000 population or part thereof. The ward has 51 neighbourhood parks.\nDeveloping a park costs Rs 1.2 crore per hectare.\nHow many parks does the ward need, what is the gap, and what would closing it cost (Rs crore)?",
+  "schema": "{\"parks_needed\": integer, \"gap\": integer, \"cost_crore\": number}",
+  "fields": {
+   "parks_needed": 78,
+   "gap": 27,
+   "cost_crore": 32.4
+  },
+  "note": ""
+ },
+ {
+  "key": "two-stage-projection",
+  "title": "Two-stage growth with losses",
+  "tags": [
+   "projection",
+   "compound",
+   "multi-step",
+   "units"
+  ],
+  "body": "A city has 9.5 lakh people in 2026. Population grows 3% a year (compound) until 2036, then 2% a year (compound) until 2046.\nDesign for 135 litres per person per day, and add 15% of that demand for distribution losses.\nWhat is the 2046 population, the 2046 demand without losses (MLD), and the supply to plan for including losses (MLD)?",
+  "schema": "{\"population_2046\": number, \"demand_mld\": number, \"supply_mld\": number}",
+  "fields": {
+   "population_2046": 1556315,
+   "demand_mld": 210.1,
+   "supply_mld": 241.6
+  },
+  "note": ""
+ },
+ {
+  "key": "mixed-terrain-density",
+  "title": "Density for a town on plain and hill land",
+  "tags": [
+   "range",
+   "split",
+   "condition"
+  ],
+  "body": "URDPFI developed-area density for medium towns (1 to 5 lakh people): 100-150 persons per hectare in plain areas, 60-90 in hill areas.\nA medium town of 1,80,000 people will house 60% of them on plain land and 40% on hill land.\nWhat is the smallest and largest total developed area (ha) the density ranges allow?",
+  "schema": "{\"min_area_ha\": number, \"max_area_ha\": number}",
+  "fields": {
+   "min_area_ha": 1520.0,
+   "max_area_ha": 2280.0
+  },
+  "note": ""
+ },
+ {
+  "key": "m1-restricted",
+  "title": "Mixed industrial zone: permitted, restricted or prohibited",
+  "tags": [
+   "zoning",
+   "threshold",
+   "classify"
+  ],
+  "body": "URDPFI zoning for an M1 (mixed industrial) zone: non-industrial uses (commercial, institutional, recreational, residential) may take up to 20-30% of the area as of right; with the Competent Authority's approval (\"restricted\") they may be increased to between 20 and 50%; above 50% is not allowed.\nA 12 ha M1 parcel proposes 4.2 ha of commercial and residential use.\nWhat is the non-industrial share (%), and is the proposal permitted as of right, restricted (needs approval), or prohibited?",
+  "schema": "{\"share_pct\": number, \"status\": \"permitted\" | \"restricted\" | \"prohibited\"}",
+  "fields": {
+   "share_pct": 35.0,
+   "status": "restricted"
+  },
+  "note": ""
+ },
+ {
+  "key": "landfill-screening",
+  "title": "Screening landfill sites against three rules",
+  "tags": [
+   "multi-constraint",
+   "prohibition",
+   "abstain"
+  ],
+  "body": "Rules for a new solid waste landfill:\n1. Prohibited within 10 km of an Aerodrome Reference Point (ARP).\n2. Not on land with slope above 45 degrees (undevelopable).\n3. Not inside an eco-sensitive zone, which here extends 10 km around the protected area.\nCandidate sites:\n- Site A: 7 km from the ARP, slope 10 degrees, 25 km from the protected area.\n- Site B: 12 km from the ARP, slope 48 degrees, 30 km from the protected area.\n- Site C: 14 km from the ARP, slope 20 degrees, 6 km from the protected area.\nWhich sites are acceptable? If none is, say \"none\".",
+  "schema": "{\"acceptable\": \"A\" | \"B\" | \"C\" | \"none\", \"count\": integer}",
+  "fields": {
+   "acceptable": "none",
+   "count": 0
+  },
+  "note": "every site fails one rule; tests that the model does not pick the 'least bad' site"
+ },
+ {
+  "key": "budget-priority",
+  "title": "Allocating a park budget by need",
+  "tags": [
+   "allocation",
+   "greedy",
+   "crore"
+  ],
+  "body": "Park shortfalls (number of 1 ha neighbourhood parks): Ward A 3, Ward B 4, Ward C 5.\nDeveloping a park costs Rs 1.2 crore. The budget is Rs 10 crore, and only whole parks can be funded.\nFund the ward with the largest shortfall first, completing its shortfall before moving to the next.\nHow many parks does each ward get, and how much money is left over (Rs crore)?",
+  "schema": "{\"parks_a\": integer, \"parks_b\": integer, \"parks_c\": integer, \"leftover_crore\": number}",
+  "fields": {
+   "parks_a": 0,
+   "parks_b": 3,
+   "parks_c": 5,
+   "leftover_crore": 0.4
+  },
+  "note": ""
+ },
+ {
+  "key": "dhobi-acres",
+  "title": "Dhobi ghats for a city, in acres",
+  "tags": [
+   "lakh",
+   "units",
+   "ceiling"
+  ],
+  "body": "URDPFI norm: one dhobi ghat for every 1 lakh population or part thereof, each with a minimum of 5,000 sqm.\nA city has 23 lakh people. 1 ha = 10,000 sqm; 1 acre = 0.404686 ha.\nHow many dhobi ghats are needed, and what is their total minimum area in acres?",
+  "schema": "{\"count\": integer, \"area_acres\": number}",
+  "fields": {
+   "count": 23,
+   "area_acres": 28.42
+  },
+  "note": ""
+ },
+ {
+  "key": "reverse-capacity",
+  "title": "Largest population a park area supports",
+  "tags": [
+   "inverse",
+   "ceiling"
+  ],
+  "body": "URDPFI norm: one neighbourhood park of 1 ha for every 15,000 population or part thereof.\nA new colony has land for exactly 7 neighbourhood parks.\nWhat is the largest population the colony can have while still meeting the norm?",
+  "schema": "{\"max_population\": integer}",
+  "fields": {
+   "max_population": 105000
+  },
+  "note": "'or part thereof': 105,001 people would need an eighth park"
+ },
+ {
+  "key": "grown-ward",
+  "title": "Ward grown since a survey",
+  "tags": [
+   "projection",
+   "compound",
+   "ceiling",
+   "gap"
+  ],
+  "body": "In 2019 a ward had 1,92,000 people and 2 police stations. It has grown 4% a year (compound) since.\nURDPFI norm: one police station for every 90,000 population or part thereof.\nWhat is the 2026 population, and how many more police stations does the ward need in 2026?",
+  "schema": "{\"population_2026\": number, \"additional_stations\": integer}",
+  "fields": {
+   "population_2026": 252659,
+   "additional_stations": 1
+  },
+  "note": ""
+ }
+]

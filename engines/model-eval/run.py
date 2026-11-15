@@ -189,6 +189,21 @@ def score_norms(case, content):
     return round(sc, 3), m
 
 
+def last_json_object(text):
+    """The LAST JSON object in a text: a model that shows its working before the answer may use braces in the
+    working, so the answer is the final object that parses."""
+    dec = json.JSONDecoder()
+    for i in range(len(text) - 1, -1, -1):
+        if text[i] == "{":
+            try:
+                obj, _ = dec.raw_decode(text, i)
+            except ValueError:
+                continue
+            if isinstance(obj, dict):
+                return obj
+    return None
+
+
 def _num(v):
     if isinstance(v, bool):
         return None
@@ -222,11 +237,7 @@ def score_case(case, content):
         got = [w for w in want if w.lower() in text.lower()]
         return (round(len(got) / len(want), 3) if want else 0.0), {"answered": bool(text), "found": len(got), "of": len(want)}
     if sc == "json_fields":
-        mobj = re.search(r"\{.*\}", text, re.S); obj = None
-        try:
-            obj = json.loads(mobj.group(0)) if mobj else None
-        except Exception:
-            obj = None
+        obj = last_json_object(text)
         fields = exp.get("fields") or {}
         ok = [k for k, v in fields.items() if isinstance(obj, dict) and k in obj and field_equal(obj[k], v)]
         return (round(len(ok) / len(fields), 3) if fields else 0.0), {"answered": bool(text), "parsed": isinstance(obj, dict),
