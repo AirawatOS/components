@@ -14,6 +14,17 @@
            background: var(--surface, #fff); color: var(--text, #0f172a); border: 1px solid var(--border, #e2e8f0);
            border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 12px 14px; font-size: 13px; }
   .fx-up[hidden] { display: none; }
+  .fx-view { position: fixed; inset: 0; z-index: 60; background: rgba(8,12,18,.94); display: flex; flex-direction: column; }
+  .fx-view[hidden] { display: none; }
+  .fx-view-top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 13px; }
+  .fx-view-top b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .fx-view-top span { color: #94a3b8; font-variant-numeric: tabular-nums; }
+  .fx-view-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; overflow: auto; }
+  .fx-view-stage img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+  .fx-view-stage.zoom { align-items: flex-start; justify-content: flex-start; }
+  .fx-view-stage.zoom img { max-width: none; max-height: none; cursor: zoom-out; }
+  .fx-view-nav { position: fixed; top: 50%; transform: translateY(-50%); font-size: 28px; padding: 10px 14px; z-index: 61; }
+  .fx-view-nav.prev { left: 10px; } .fx-view-nav.next { right: 10px; }
   .fx-up-top { display: flex; align-items: center; gap: 8px; }
   .fx-up-top b { flex: 1; font-variant-numeric: tabular-nums; }
   .fx-up-name { color: var(--muted, #64748b); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 6px 0 8px; }
@@ -62,6 +73,13 @@
   <div class="fx-crumbs" id="fx-crumbs"></div>
   <div class="fx-drop" id="fx-drop">
     <div class="fx-list" id="fx-list"></div>
+  </div>
+  <div class="fx-view" id="fx-view" role="dialog" aria-modal="true" aria-label="Image viewer" hidden>
+    <div class="fx-view-top"><b id="fx-vname"></b><span id="fx-vpos"></span>
+      <button class="btn" id="fx-vdl" title="Download">⬇︎ Download</button><button class="btn" id="fx-vclose" title="Close (Esc)">✕</button></div>
+    <div class="fx-view-stage" id="fx-vstage"><img id="fx-vimg" alt=""></div>
+    <button class="btn fx-view-nav prev" id="fx-vprev" title="Previous (←)">‹</button>
+    <button class="btn fx-view-nav next" id="fx-vnext" title="Next (→)">›</button>
   </div>
   <div class="fx-up" id="fx-upbox" role="status" aria-live="polite" hidden>
     <div class="fx-up-top"><b id="fx-upcount">Uploading…</b><button class="btn" id="fx-upcancel">Cancel</button></div>
@@ -166,7 +184,8 @@
       nameWrap.appendChild(fn);
     } else {
       var a = document.createElement("a"); a.className = "n file"; a.textContent = r.name;
-      a.href = fileUrl(r); a.setAttribute("download", r.name);
+      a.href = fileUrl(r); a.title = kindOf(r) === "download" ? "Download" : "Open";
+      a.onclick = function (e) { e.preventDefault(); openFile(r); };
       nameWrap.appendChild(a);
     }
     var meta = document.createElement("div"); meta.className = "fx-meta";
@@ -174,6 +193,7 @@
 
     var acts = document.createElement("div"); acts.className = "fx-acts";
     if (!isFolder(r)) {
+      if (kindOf(r) !== "download") acts.appendChild(actBtn("👁", "Open", function () { openFile(r); }));
       acts.appendChild(actBtn("⬇︎", "Download", function () { window.location.href = fileUrl(r); }));
       if (ME.isAdmin) acts.appendChild(actBtn("📤", "Send to another organisation", function () { shareFile(r); }));
       var star = actBtn(r.starred ? "★" : "☆", "Star", function () { toggleStar(r); });
@@ -200,6 +220,71 @@
     if (/\.(csv|xlsx?|numbers)$/.test(n) || t.indexOf("sheet") >= 0) return "📊";
     if (/\.(js|py|html?|json|yaml|yml|css|ts|md)$/.test(n)) return "📃";
     return "📄";
+  }
+  // ---- open ----
+  // Images open in the viewer here. PDFs, audio, video and text open in a new browser tab — asked of the AirawatOS
+  // shell, because a tab this sandboxed app opened itself would inherit the sandbox (and Chrome will not show a PDF
+  // there). Anything else downloads. An older shell that does not answer within a moment → download instead.
+  function kindOf(r) {
+    var t = (r.content_type || "").toLowerCase(), n = (r.name || "").toLowerCase();
+    if (t.indexOf("image/") === 0 || /\.(jpe?g|png|gif|webp|bmp|svg|avif)$/.test(n)) return "image";
+    if (t === "application/pdf" || /\.pdf$/.test(n)) return "tab";
+    if (t.indexOf("audio/") === 0 || t.indexOf("video/") === 0 || /\.(mp3|wav|m4a|ogg|oga|flac|aac|mp4|m4v|webm|mov)$/.test(n)) return "tab";
+    if (t.indexOf("text/") === 0 || /\.(txt|csv|tsv|json|geojson|md|log|xml|ya?ml)$/.test(n)) return "tab";
+    return "download";
+  }
+  function viewUrl(r) {                                    // served inline, with a type the browser can render
+    var n = (r.name || "").toLowerCase(), t = r.content_type || "";
+    if (!t || t === "application/octet-stream") {
+      t = /\.pdf$/.test(n) ? "application/pdf" : /\.(json|geojson)$/.test(n) ? "application/json"
+        : /\.(csv|tsv|txt|md|log|ya?ml)$/.test(n) ? "text/plain; charset=utf-8" : t;
+    }
+    return "/bridge/file?id=" + encodeURIComponent(r.file_id || "") + "&name=" + encodeURIComponent(r.name || "file") +
+           "&type=" + encodeURIComponent(t) + "&inline=1";
+  }
+  var OPEN_WAIT = {};
+  window.addEventListener("message", function (e) {
+    if (e.origin === location.origin && e.data && e.data.type === "airawat-open-file-done" && OPEN_WAIT[e.data.id]) {
+      clearTimeout(OPEN_WAIT[e.data.id]); delete OPEN_WAIT[e.data.id];
+    }
+  });
+  function openFile(r) {
+    var k = kindOf(r);
+    if (k === "image") return openViewer(r);
+    if (k === "download" || window.parent === window) { window.location.href = fileUrl(r); return; }
+    var id = "o" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    OPEN_WAIT[id] = setTimeout(function () { delete OPEN_WAIT[id]; window.location.href = fileUrl(r); }, 800);
+    window.parent.postMessage({ type: "airawat-open-file", id: id, url: viewUrl(r) }, location.origin);
+  }
+  // ---- image viewer ----
+  var VIEW = { list: [], i: 0 };
+  function openViewer(r) {
+    VIEW.list = childrenOf(r.folder || "/").filter(function (x) { return !isFolder(x) && kindOf(x) === "image"; });
+    VIEW.i = Math.max(0, VIEW.list.findIndex(function (x) { return x.id === r.id; }));
+    document.getElementById("fx-view").hidden = false; showView();
+  }
+  function showView() {
+    var r = VIEW.list[VIEW.i]; if (!r) return closeViewer();
+    document.getElementById("fx-vstage").classList.remove("zoom");
+    var img = document.getElementById("fx-vimg"); img.src = viewUrl(r); img.alt = r.name || "";
+    document.getElementById("fx-vname").textContent = r.name || "";
+    document.getElementById("fx-vpos").textContent = (VIEW.i + 1) + " of " + VIEW.list.length;
+    document.getElementById("fx-vprev").hidden = VIEW.list.length < 2;
+    document.getElementById("fx-vnext").hidden = VIEW.list.length < 2;
+    var nx = VIEW.list[(VIEW.i + 1) % VIEW.list.length]; if (nx && nx !== r) { var pre = new Image(); pre.src = viewUrl(nx); }
+  }
+  function stepView(d) { if (VIEW.list.length) { VIEW.i = (VIEW.i + d + VIEW.list.length) % VIEW.list.length; showView(); } }
+  function closeViewer() { document.getElementById("fx-view").hidden = true; document.getElementById("fx-vimg").removeAttribute("src"); }
+  function wireViewer() {
+    document.getElementById("fx-vclose").onclick = closeViewer;
+    document.getElementById("fx-vprev").onclick = function () { stepView(-1); };
+    document.getElementById("fx-vnext").onclick = function () { stepView(1); };
+    document.getElementById("fx-vdl").onclick = function () { var r = VIEW.list[VIEW.i]; if (r) window.location.href = fileUrl(r); };
+    document.getElementById("fx-vimg").onclick = function () { document.getElementById("fx-vstage").classList.toggle("zoom"); };
+    document.addEventListener("keydown", function (e) {
+      if (document.getElementById("fx-view").hidden) return;
+      if (e.key === "Escape") closeViewer(); else if (e.key === "ArrowLeft") stepView(-1); else if (e.key === "ArrowRight") stepView(1);
+    });
   }
   function fileUrl(r) {
     return "/bridge/file?id=" + encodeURIComponent(r.file_id || "") +
@@ -526,6 +611,7 @@
     document.getElementById("fx-refresh").onclick = refresh;
     document.getElementById("fx-file").onchange = onFiles;
     wireDrop();
+    wireViewer();
     refresh();
   });
 })();
