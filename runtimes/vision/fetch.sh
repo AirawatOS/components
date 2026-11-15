@@ -11,7 +11,14 @@ if [ ! -d build/rtdetrv2_pytorch ]; then
   curl -fsSL "https://codeload.github.com/lyuwenyu/RT-DETR/tar.gz/$RTDETR_SHA" | tar xz -C build
   mv "build/RT-DETR-$RTDETR_SHA/rtdetrv2_pytorch" build/rtdetrv2_pytorch && rm -rf "build/RT-DETR-$RTDETR_SHA"
 fi
+check() {  # file, expected sha256 (PENDING = print it, to be recorded in meta.yaml)
+  got=$(sha256sum "$1" | cut -d' ' -f1)
+  if [ "$2" = "PENDING" ]; then echo "$1 sha256 (record in meta.yaml): $got"; elif [ "$got" != "$2" ]; then echo "$1 sha256 mismatch: $got" >&2; exit 1; fi
+}
 [ -f build/UVH-26-MV-RT-DETRv2-S.pth ] || curl -fsSL -o build/UVH-26-MV-RT-DETRv2-S.pth "$WEIGHTS_URL"
-GOT=$(sha256sum build/UVH-26-MV-RT-DETRv2-S.pth | cut -d' ' -f1)
-if [ "$WEIGHTS_SHA256" = "PENDING" ]; then echo "weights sha256 (record in meta.yaml): $GOT"; elif [ "$GOT" != "$WEIGHTS_SHA256" ]; then echo "weights sha256 mismatch: $GOT" >&2; exit 1; fi
-echo "fetched: rtdetrv2_pytorch@$RTDETR_SHA, weights $GOT"
+check build/UVH-26-MV-RT-DETRv2-S.pth "$WEIGHTS_SHA256"
+COCO_URL=https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth
+COCO_SHA256=$(sed -n 's/^coco_weights_sha256: *\([0-9A-Za-z]*\).*/\1/p' meta.yaml)
+[ -f build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth ] || curl -fsSL -o build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth "$COCO_URL"
+check build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth "$COCO_SHA256"
+echo "fetched: rtdetrv2_pytorch@$RTDETR_SHA, UVH-26 and COCO weights checked"

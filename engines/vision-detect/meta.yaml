@@ -7,9 +7,9 @@
 # scores the run (RESCORE_RUN) with the same scorers as every other candidate.
 component_id: ds:airawatdeveloper:engine/vision-detect
 kind: engine
-version: 0.1.0
+version: 0.2.0   # 0.2.0: + COCO RT-DETRv2-S for pedestrians and animals (B04, B09, B01), riders excluded; detections kept down to 0.25
 provider: ds:airawatdeveloper:developer
-display_name: Vision Detect (UVH-26 RT-DETRv2-S, in-house)
+display_name: Vision Detect (UVH-26 + COCO RT-DETRv2-S, in-house)
 entrypoint: run.py
 confinement_min: L1
 runtime:

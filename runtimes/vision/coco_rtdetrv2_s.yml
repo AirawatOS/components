@@ -1,0 +1,6 @@
+# RT-DETRv2-S trained on COCO (lyuwenyu/RT-DETR model zoo, Apache-2.0; 48.1 AP): the standard R18vd config, labels mapped
+# back to COCO category ids (1 person, 17 cat, 18 dog, 19 horse, 20 sheep, 21 cow, 22 elephant …). Used for what UVH-26
+# does not detect — pedestrians and animals. Inference only: the backbone is not downloaded.
+__include__: ['./rtdetrv2_r18vd_120e_coco.yml']
+PResNet:
+  pretrained: False

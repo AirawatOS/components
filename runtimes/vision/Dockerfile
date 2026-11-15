@@ -13,6 +13,9 @@ COPY build/rtdetrv2_pytorch /opt/rtdetrv2
 COPY uvh26_rtdetrv2_s.yml /opt/rtdetrv2/configs/rtdetrv2/uvh26_rtdetrv2_s.yml
 # UVH-26 RT-DETRv2-S weights (AIM@IISc, Apache-2.0), checked against the sha256 in meta.yaml by fetch.sh.
 COPY build/UVH-26-MV-RT-DETRv2-S.pth /opt/models/uvh26/rtdetrv2_s.pth
+# RT-DETRv2-S trained on COCO (lyuwenyu/RT-DETR model zoo, Apache-2.0): pedestrians and animals, which UVH-26 does not detect.
+COPY coco_rtdetrv2_s.yml /opt/rtdetrv2/configs/rtdetrv2/coco_rtdetrv2_s.yml
+COPY build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth /opt/models/coco/rtdetrv2_s.pth
 
 WORKDIR /drivers
 ENV PYTHONPATH=/drivers:/opt/rtdetrv2 PYTHONUNBUFFERED=1 OMP_NUM_THREADS=4 TORCH_HOME=/tmp/torch

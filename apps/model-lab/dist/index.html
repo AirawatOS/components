@@ -92,27 +92,29 @@ const expectOf=c=>EXPECT[c.scorer||"norms"]||EXPECT.norms;
 function expectCount(c){ const e=expectOf(c), v=(c.expected||{})[e.key]; return Array.isArray(v)?v.length:(v&&typeof v==="object")?Object.keys(v).length:(v==null?0:1); }
 // ---- image suites: label once per image, saved to that image's case in every test (ADR-0134) ----
 let IMG=null, IMGFILTER="todo", DETS=null, DETSLOADING=false, SHOWBOX=true, ZOOM=false;
-const BOXCOL={car:"#60a5fa",two_wheeler:"#f59e0b",three_wheeler:"#34d399",bus:"#f472b6",truck:"#a78bfa",bicycle:"#f87171",pedestrian:"#e5e7eb",other:"#94a3b8"};
+const BOXCOL={car:"#60a5fa",two_wheeler:"#f59e0b",three_wheeler:"#34d399",bus:"#f472b6",truck:"#a78bfa",bicycle:"#f87171",pedestrian:"#e5e7eb",cattle:"#a3e635",dog:"#fb923c",other_animal:"#2dd4bf",other:"#94a3b8"};
 async function loadDets(){                       // the latest in-house detector answer per image: boxes, classes, scores
   const byCase={}; for(const c of CASES) byCase[c.id]=c; const out={};
   for(const r of await q("intelligence.eval_result")){ const m=r.metrics||{}; if(!String(r.model).startsWith("component:")||!m.detections) continue;
     const c=byCase[r.case_ref], fid=c&&((c.inputs||[])[0]||{}).file_id; if(!fid) continue;
     if(!out[fid]||String(out[fid].at)<String(r.at)) out[fid]={at:r.at,model:r.model,detections:m.detections,size:m.image_size,threshold:m.threshold}; }
+  // prefer the fullest pipeline's latest run (people and animals too) over a vehicles-only one
   DETS=out; }
 // ---- box review: the reviewer's boxes are the image's ground truth; counts and classes follow from them ----
 let EDIT={}, DRAWCLS="two_wheeler", SEL=-1;
-function boxClasses(g){ const b03=g.cases.find(c=>c.test_id==="B03"); return [...(((b03&&b03.label_form)||[])[0]||{}).classes||Object.keys(BOXCOL).filter(k=>k!=="pedestrian"&&k!=="other"),"pedestrian"]; }
+function boxClasses(g){ const cl=t=>((((g.cases.find(c=>c.test_id===t)||{}).label_form)||[])[0]||{}).classes||[];   // vehicles, pedestrian, animals
+  return [...new Set([...(cl("B03").length?cl("B03"):["car","two_wheeler","three_wheeler","bus","truck","bicycle"]),"pedestrian",...(cl("B09").length?cl("B09"):["cattle","dog","other_animal"])])]; }
 function boxState(g){                            // saved review if any, else the detector's boxes (unreviewed)
   if(EDIT[g.file_id]) return EDIT[g.file_id];
   const b03=g.cases.find(c=>c.test_id==="B03"), saved=b03&&b03.labelled&&(b03.expected||{}).boxes, d=DETS&&DETS[g.file_id];
   const boxes=saved?saved.map(x=>({class:x.class,box:x.box.slice(),origin:x.origin,score:x.score}))
-    :(d?d.detections.filter(x=>x.class!=="other").map(x=>({class:x.class,box:x.box.slice(),origin:"detector",score:x.score})):[]);
+    :(d?d.detections.filter(x=>x.class!=="other"&&!x.rider&&x.score>=(d.threshold||0)).map(x=>({class:x.class,box:x.box.slice(),origin:"detector",score:x.score})):[]);
   return EDIT[g.file_id]={boxes,removed:0,size:(d&&d.size)||null,saved:!!saved,src:d?{model:d.model,threshold:d.threshold}:null}; }
 function boxCounts(st){ const n={}; st.boxes.forEach(b=>n[b.class]=(n[b.class]||0)+1); return n; }
 function syncFields(g){                          // B03 vehicle counts, B04 pedestrians, B01 classes present ← the boxes
   const st=boxState(g), n=boxCounts(st);
   for(const c of g.cases){ const f=(c.label_form||[])[0]||{}, id="lf-"+String(c.test_id||"x").toLowerCase();
-    if(c.test_id==="B03"||c.test_id==="B04") document.querySelectorAll(`input[data-f="${id}"]`).forEach(x=>x.value=String(n[x.dataset.k]||0));
+    if(c.test_id==="B03"||c.test_id==="B04"||c.test_id==="B09") document.querySelectorAll(`input[data-f="${id}"]`).forEach(x=>x.value=String(n[x.dataset.k]||0));
     if(c.test_id==="B01"){ const present=new Set(Object.keys(n)); document.querySelectorAll(`input[data-f="${id}"]`).forEach(x=>x.checked=x.value==="none"?present.size===0:present.has(x.value)); } } }
 function boxSvg(st){ if(!st.size) return "";
   const [w,h]=st.size, fs=Math.max(14,Math.round(w/90)), sw=Math.max(2,Math.round(w/600));
@@ -161,7 +163,8 @@ function fieldValue(c){ const f=(c.label_form||[])[0]||{}, e=c.expected||{};
 function fieldHtml(c){ const f=(c.label_form||[])[0]||{}, v=fieldValue(c), id="lf-"+String(c.test_id||"x").toLowerCase();
   const dr=(c.expected||{}).draft;
   const head=`<div class="small muted" style="margin-top:10px"><b>${esc(c.test_id||"")}</b> ${esc(f.label||"")} ${c.labelled?'<span class="pill good">labelled</span>':dr?`<span class="pill warn" title="${esc(dr.by||"")}">draft — check before saving</span>`:""}</div>`
-    +(dr&&!c.labelled&&dr.note?`<div class="small muted">${esc(dr.note)}</div>`:"");
+    +(dr&&!c.labelled&&dr.note?`<div class="small muted">${esc(dr.note)}</div>`:"")
+    +(f.help?`<details class="small muted"><summary>Definition</summary>${esc(f.help)}</details>`:"");
   if(f.kind==="choice") return head+`<div class="row">${f.options.map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${v===o?"checked":""}> ${esc(o)}</label>`).join(" ")}</div>`;
   if(f.kind==="multi") return head+`<div class="row">${f.options.map(o=>`<label><input type="checkbox" data-f="${id}" value="${esc(o)}" ${v.includes(o)?"checked":""}> ${esc(o)}</label>`).join(" ")}</div>`;
   if(f.kind==="counts") return head+`<div class="row">${f.classes.map(k=>`<label>${esc(k)} <input type="number" min="0" step="1" data-f="${id}" data-k="${esc(k)}" value="${v[k]??""}" style="width:64px"></label>`).join(" ")}</div>`;

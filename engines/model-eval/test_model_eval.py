@@ -266,7 +266,8 @@ def test_seed_images_makes_private_tagged_cases_and_keeps_existing_ones():
 
 def test_visual_catalogue_is_complete_and_each_field_maps_to_its_scorer():
     import visual_tests as vt
-    assert [t["test_id"] for t in vt.TESTS] == ["A01", "A02", "A04", "A06", "B01", "B03", "B04", "C05", "E03"]
+    assert [t["test_id"] for t in vt.TESTS] == ["A01", "A02", "A04", "A06", "B01", "B03", "B04", "B09", "C05", "E03"]
+    assert "cattle" in vt.TESTS[4]["field"]["options"] and vt.TESTS[2]["field"]["help"] == vt.OCCLUSION and vt.TESTS[-1]["field"]["help"] == vt.OBSTRUCTION
     kinds = {"labels": ("choice", "multi"), "counts": ("counts",), "text": ("text",)}
     for t in vt.TESTS:
         assert t["field"]["kind"] in kinds[t["scorer"]], t["test_id"]

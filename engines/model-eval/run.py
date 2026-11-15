@@ -626,6 +626,9 @@ def seed_images():
     refresh = os.environ.get("SEED_UPDATE") == "1"           # re-write prompt, scorer and form of UNLABELLED cases
     updated = 0
     tests = [t for t in vt.TESTS if not only or t["test_id"] in only]
+    if os.environ.get("SEED_ONLY_ACTIVE") == "1":             # new tests only for images already in the working set
+        active = {(c.get("inputs") or [{}])[0].get("file_id") for c in existing.values() if c.get("status") == "active"}
+        files = [f for f in files if f["file_id"] in active]
     made = 0; ts = now()
     for f in sorted(files, key=lambda x: x.get("name") or ""):
         site, view = site_and_view(f.get("name"))
