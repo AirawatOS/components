@@ -1,24 +1,15 @@
-<!doctype html><meta charset="utf-8"><title>Slides</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Slides</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/shared/aos.css">
+<link rel="stylesheet" href="/shared/workspace.css">
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141a;--line:#21262d;--txt:#e6edf3;--dim:#8b949e;--accent:#7c5cff;--accent2:#2f81f7;--good:#3fb950;--warn:#d29922;--err:#f85149;--slidebg:#f7f6f3;--slideink:#1a1a1a}
-  *{box-sizing:border-box} html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
-  .hbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
-  .brand{font-weight:700;display:flex;align-items:center;gap:7px} .brand .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--warn),var(--err));display:grid;place-items:center;font-size:13px}
-  .titlein{flex:1;background:transparent;border:0;color:var(--txt);font:600 15px/1.4 inherit;padding:6px 8px;border-radius:8px} .titlein:hover,.titlein:focus{background:var(--bg);outline:none}
-  .status{font-size:12px;color:var(--dim);min-width:80px;text-align:right} .status.saving{color:var(--warn)} .status.saved{color:var(--good)}
-  .body{flex:1;display:flex;min-height:0}
-  .side{width:210px;background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;flex:0 0 auto}
-  .side .top{padding:9px 10px;display:flex;gap:6px;border-bottom:1px solid var(--line)} .side .top b{flex:1;align-self:center}
-  .list{flex:1;overflow:auto;padding:6px} .item{padding:8px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent}
-  .item:hover{background:#1b222c} .item.on{background:#1b2430;border-color:#2b3a55} .item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .item .m{font-size:11px;color:var(--dim)}
-  .center{flex:1;display:flex;flex-direction:column;min-width:0}
-  .toolbar{display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
-  .btn{background:#21262d;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer} .btn.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
-  .aiBtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:0;border-radius:8px;padding:6px 12px;font:600 13px/1 inherit;cursor:pointer} .present{background:var(--good);border-color:var(--good);color:#04250f}
+  /* App-specific only — tokens from aos.css, the frame from workspace.css. Slides stay paper-white. */
+  :root{--txt:var(--ink);--err:var(--danger);--accent2:var(--pri);--slidebg:#f7f6f3;--slideink:#1a1a1a}
+  .titlein{flex:1;min-width:120px;background:transparent;border:1px solid transparent;color:var(--ink);font:600 16px/1.4 var(--sans);padding:4px 8px;border-radius:8px}
+  .titlein:hover,.titlein:focus{background:var(--panel2);border-color:var(--line);outline:none}
+  .status{font-size:12px;color:var(--dim);white-space:nowrap} .status.saving{color:var(--warn)} .status.saved{color:var(--good)} .status.err{color:var(--danger)}
   .work{flex:1;display:flex;min-height:0}
-  .rail{width:150px;overflow:auto;border-right:1px solid var(--line);background:var(--panel2);padding:8px;flex:0 0 auto}
+  .slides-rail{width:150px;overflow:auto;border-right:1px solid var(--line);background:var(--panel2);padding:8px;flex:0 0 auto}
   .thumb{border:1px solid var(--line);border-radius:6px;background:var(--slidebg);color:var(--slideink);aspect-ratio:16/9;padding:7px;margin-bottom:8px;cursor:pointer;overflow:hidden;position:relative}
   .thumb.on{outline:2px solid var(--accent2)} .thumb .n{position:absolute;top:2px;left:4px;font-size:9px;color:#999} .thumb .tt{font-weight:700;font-size:9px;margin-top:8px;line-height:1.15;overflow:hidden}
   .thumb .del{position:absolute;top:2px;right:3px;color:#b33;font-size:11px;cursor:pointer;display:none} .thumb:hover .del{display:block}
@@ -41,65 +32,89 @@
   .sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:480px;max-width:92vw}
   .in{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;margin-top:6px} textarea.in{resize:vertical;min-height:70px}
   .sub{color:var(--dim);font-size:12px} .spin{display:inline-block;width:12px;height:12px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px} @keyframes sp{to{transform:rotate(360deg)}}
-  .ic{cursor:pointer;color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--bg)} .ic:hover{color:var(--txt)}
-</style>
-<div class="hbar">
-  <span class="brand"><span class="logo">📽️</span>Slides</span>
-  <input class="titlein" id="title" placeholder="Untitled presentation" autocomplete="off">
-  <span class="status" id="status"></span>
-  <span class="ic" id="delBtn" title="Move to trash">🗑</span>
-</div>
-<div class="body">
-  <div class="side">
-    <div class="top"><b>Presentations</b><button class="btn primary" id="newBtn" title="New">＋</button></div>
-    <div class="list" id="list"></div>
-  </div>
-  <div class="center">
-    <div class="toolbar">
-      <button class="aiBtn" id="aiBtn">✨ Generate deck</button>
-      <span style="flex:1"></span>
-      <span class="sub" id="counter"></span>
-      <button class="btn present" id="presentBtn">▶ Present</button>
+</style></head>
+<body class="ws">
+<nav class="ws-top" id="ws-top" aria-label="Location"></nav>
+<div class="ws-app">
+  <aside class="ws-left" id="ws-left" aria-label="Presentations">
+    <div class="ws-left-top">
+      <input id="ws-search" type="search" placeholder="Search presentations…" autocomplete="off" aria-label="Search presentations">
+      <button class="ws-ib" id="ws-collapse" title="Hide this pane">«</button>
     </div>
-    <div class="work" id="work"><div class="welcome" id="welcome">Create a deck with ＋, or ✨ generate one from a topic.</div></div>
-  </div>
+    <button class="btn pri ws-new" id="newBtn">＋ New presentation</button>
+    <div class="ws-nav">
+      <button class="ws-nav-item on" data-v="mine"><span class="ic">📽️</span>My presentations<span class="ct"></span></button>
+      <button class="ws-nav-item" data-v="recent"><span class="ic">🕒</span>Recent</button>
+    </div>
+    <div class="ws-sect" id="ws-listhead">All presentations</div>
+    <div class="ws-scroll" id="ws-list"></div>
+    <div class="ws-railbox"><button class="ws-ib" id="ws-expand" title="Show this pane">»</button><div class="ws-railname" id="ws-railname">Slides</div></div>
+  </aside>
+
+  <main class="ws-main" id="ws-main">
+    <div class="ws-toolbar">
+      <input class="titlein" id="title" placeholder="Untitled presentation" autocomplete="off" aria-label="Presentation title">
+      <span class="status" id="status"></span>
+      <button class="btn sm" id="aiBtn" title="Generate a deck from a topic">✨ Generate deck</button>
+      <button class="btn sm pri" id="presentBtn">▶ Present</button>
+      <button class="ws-ib" id="infoBtn" title="Details and history">ⓘ</button>
+      <button class="ws-ib" id="delBtn" title="Move to trash">🗑</button>
+    </div>
+    <div class="work" id="work"><div class="welcome" id="welcome">Create a deck with ＋ New presentation, or ✨ generate one from a topic.</div></div>
+    <div class="ws-foot"><span id="counter"></span></div>
+  </main>
+
+  <aside class="ws-right" id="ws-right" aria-label="Details">
+    <div class="ws-right-head"><span class="t"></span><button class="ws-ib" id="ws-rclose" title="Close (Esc)">✕</button></div>
+    <div class="ws-right-sub"></div>
+    <div class="ws-tabs"><button class="ws-tab on" data-t="info">Info</button><button class="ws-tab" data-t="hist">History</button></div>
+    <div class="ws-right-body" id="ws-rbody"></div>
+  </aside>
 </div>
+<script src="/shared/workspace.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let ME='',TENANT='',DECKS=[],CUR=null,slides=[],idx=0,savet=null;
+let ME='',TENANT='',DECKS=[],CUR=null,slides=[],idx=0,savet=null,RTAB='info',LIST=null;
 async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());ME=s.sub||'';TENANT=s.tenant||'';}catch(e){}
+  WS.init({onTab:t=>{RTAB=t;renderRight();}});
+  LIST=WS.itemList({items:()=>DECKS,current:()=>CUR&&CUR.id,open:open,title:d=>d.title||'Untitled presentation',
+    meta:d=>(d.slides||[]).map(x=>x.title).join(' '),noun:'presentations',empty:'No presentations yet — press ＋ New presentation.'});
   await load(); $('newBtn').onclick=newDeck; $('delBtn').onclick=trash;
-  $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();}};
+  $('infoBtn').onclick=()=>{RTAB='info';WS.openRight(CUR&&CUR.title||'Untitled presentation','Presentation');WS.tab('info');renderRight();};
+  $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();crumbs();}};
   $('aiBtn').onclick=aiDeck; $('presentBtn').onclick=present;
   if(DECKS.length)open(DECKS[0].id); else newDeck();
 }
+function crumbs(){WS.crumbs([{label:'My presentations'},{label:(CUR&&CUR.title)||'Untitled presentation'}]);}
+function renderRight(){if(!CUR||!WS.isRightOpen())return;const B=$('ws-rbody');
+  const h=document.querySelector('#ws-right .ws-right-head .t');if(h)h.textContent=CUR.title||'Untitled presentation';
+  if(RTAB==='hist')return WS.history(B,'slides',CUR.id,(o,old)=>o.title!==old.title?'Renamed from “'+(old.title||'Untitled')+'”':(o.slides||[]).length!==(old.slides||[]).length?((o.slides||[]).length>(old.slides||[]).length?'Added a slide':'Removed a slide'):'Edited slides');
+  WS.info(B,[['Title',CUR.title||'Untitled presentation'],['Slides',slides.length],['Created',WS.when(CUR.created_at)],
+    ['Last edited',WS.when(CUR.updated_at)],['Owner',String(CUR.owner||'').split('/').pop()]]);}
 async function load(){const r=await api('/bridge/query',{app_id:'slides',schema:'doc.deck'});
   DECKS=(r.results||[]).map(x=>x.object||x).filter(d=>!d.archived);
   DECKS.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));renderList();}
-function renderList(){const L=$('list');
-  if(!DECKS.length){L.innerHTML='<div class="sub" style="padding:16px;text-align:center">No presentations yet.</div>';return;}
-  L.innerHTML=DECKS.map(d=>`<div class="item ${CUR&&d.id===CUR.id?'on':''}" data-id="${esc(d.id)}"><div class="t">${esc(d.title||'Untitled')}</div><div class="m">${(d.slides||[]).length} slides</div></div>`).join('');
-  L.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>open(el.dataset.id));}
+function renderList(){if(LIST)LIST.render();}
 function blankSlide(){return{title:'',bullets:[''],notes:''};}
 function newDeck(){const id='ds:'+TENANT+':doc/deck/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   const now=new Date().toISOString();CUR={schema:'doc.deck',id,title:'',owner:ME,slides:[{title:'Title slide',bullets:['Subtitle or author'],notes:''}],created_at:now,updated_at:now};
   DECKS.unshift(CUR);slides=CUR.slides;idx=0;paint();renderList();setTimeout(()=>$('title').focus(),30);}
 function open(id){const d=DECKS.find(x=>x.id===id);if(!d)return;CUR=d;slides=(d.slides&&d.slides.length?d.slides:[blankSlide()]).map(s=>({title:s.title||'',bullets:(s.bullets||[]).slice(),notes:s.notes||''}));idx=0;paint();renderList();}
-function paint(){$('title').value=CUR.title||'';renderWork();setStatus(CUR._saved?'saved':'');}
-function setStatus(s){const el=$('status');el.className='status'+(s==='saving'?' saving':s==='saved'?' saved':'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved ✓':'';el.style.color='';}
+function paint(){$('title').value=CUR.title||'';renderWork();setStatus(CUR._saved?'saved':'');crumbs();renderRight();}
+function setStatus(s,msg){const el=$('status');el.className='status'+(s?' '+s:'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved':s==='err'?'⚠ '+msg:'';}
 function schedule(){setStatus('saving');clearTimeout(savet);savet=setTimeout(save,900);}
 async function save(){if(!CUR)return;CUR.slides=slides;CUR.title=$('title').value;CUR.updated_at=new Date().toISOString();
   const obj=Object.assign({},CUR);delete obj._saved;const r=await api('/bridge/save',{app_id:'slides',object:obj});
-  if(r.saved){CUR._saved=true;setStatus('saved');}else{setStatus('');$('status').textContent='⚠ '+(r.error||'save failed');$('status').style.color='var(--err)';}}
+  if(r.saved){CUR._saved=true;setStatus('saved');renderList();}else setStatus('err',r.error||'save failed');}
 async function trash(){if(!CUR)return;if(!confirm('Trash "'+(CUR.title||'Untitled')+'"?'))return;
   CUR.archived=true;await api('/bridge/save',{app_id:'slides',object:Object.assign({},CUR,{slides,archived:true})});
-  DECKS=DECKS.filter(d=>d.id!==CUR.id);CUR=null;if(DECKS.length)open(DECKS[0].id);else newDeck();}
+  DECKS=DECKS.filter(d=>d.id!==CUR.id);CUR=null;WS.closeRight();if(DECKS.length)open(DECKS[0].id);else newDeck();}
 function renderWork(){
   const W=$('work');
-  W.innerHTML=`<div class="rail" id="rail"></div>
+  W.innerHTML=`<div class="slides-rail" id="rail"></div>
     <div class="editor"><div class="canvas">
       <div class="slideedit"><input class="st" id="st" placeholder="Slide title"><textarea class="sb" id="sb" data-voice placeholder="One bullet per line"></textarea></div>
       <div class="notes"><div class="lbl">Speaker notes</div><textarea id="notes" data-voice rows="2" placeholder="Notes for this slide (not shown when presenting)"></textarea></div>
@@ -155,3 +170,4 @@ function modal(html){const w=document.createElement('div');w.className='modal';w
 boot();
 </script>
 <script src="/shared/voice.js" defer></script>
+</body></html>

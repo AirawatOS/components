@@ -1,65 +1,77 @@
-<!doctype html><meta charset="utf-8"><title>Sheets</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sheets</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/shared/aos.css">
+<link rel="stylesheet" href="/shared/workspace.css">
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141a;--line:#21262d;--txt:#e6edf3;--dim:#8b949e;--accent:#7c5cff;--accent2:#2f81f7;--good:#3fb950;--warn:#d29922;--err:#f85149;--grid:#1c232c;--hdr:#141a21;--sel:#2f5fd0}
-  *{box-sizing:border-box} html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--txt);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
-  .hbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
-  .brand{font-weight:700;display:flex;align-items:center;gap:7px} .brand .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--good),var(--accent2));display:grid;place-items:center;font-size:13px}
-  .titlein{flex:1;background:transparent;border:0;color:var(--txt);font:600 15px/1.4 inherit;padding:6px 8px;border-radius:8px} .titlein:hover,.titlein:focus{background:var(--bg);outline:none}
-  .status{font-size:12px;color:var(--dim);min-width:90px;text-align:right} .status.saving{color:var(--warn)} .status.saved{color:var(--good)}
-  .body{flex:1;display:flex;min-height:0}
-  .side{width:230px;background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;flex:0 0 auto}
-  .side .top{padding:9px 10px;display:flex;gap:6px;border-bottom:1px solid var(--line)} .side .top b{flex:1;align-self:center}
-  .list{flex:1;overflow:auto;padding:6px} .item{padding:8px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent}
-  .item:hover{background:#1b222c} .item.on{background:#1b2430;border-color:#2b3a55} .item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .item .m{font-size:11px;color:var(--dim)}
-  .center{flex:1;display:flex;flex-direction:column;min-width:0}
+  /* App-specific only — tokens from aos.css, the frame from workspace.css */
+  :root{--txt:var(--ink);--err:var(--danger);--grid:var(--line);--hdr:var(--panel2);--sel:var(--focus)}
+  .titlein{flex:1;min-width:120px;background:transparent;border:1px solid transparent;color:var(--ink);font:600 16px/1.4 var(--sans);padding:4px 8px;border-radius:8px}
+  .titlein:hover,.titlein:focus{background:var(--panel2);border-color:var(--line);outline:none}
+  .status{font-size:12px;color:var(--dim);white-space:nowrap} .status.saving{color:var(--warn)} .status.saved{color:var(--good)} .status.err{color:var(--danger)}
   .fbar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
   .cellref{font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--dim);min-width:42px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:6px}
   .fx{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:7px 10px;font:13px/1 ui-monospace,Menlo,monospace}
-  .aiBtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:0;border-radius:8px;height:30px;padding:0 12px;font:600 13px/1 inherit;cursor:pointer}
   .gridwrap{flex:1;overflow:auto;background:var(--bg)}
   table{border-collapse:collapse;table-layout:fixed} td,th{border:1px solid var(--grid);height:26px;min-width:92px;max-width:92px;padding:0 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   th{background:var(--hdr);color:var(--dim);font-weight:600;text-align:center;position:sticky;top:0;z-index:2}
   td.rownum,th.corner{background:var(--hdr);color:var(--dim);text-align:center;min-width:40px;max-width:40px;position:sticky;left:0;z-index:1}
   th.corner{z-index:3;left:0}
-  td{cursor:cell} td.num{text-align:right} td.sel{outline:2px solid var(--sel);outline-offset:-2px;background:#12233f}
-  td input{width:100%;height:100%;border:0;background:#0b1830;color:#fff;font:13px/1 inherit;padding:0 5px;outline:none}
+  td{cursor:cell} td.num{text-align:right} td.sel{outline:2px solid var(--sel);outline-offset:-2px;background:var(--panel)}
+  td input{width:100%;height:100%;border:0;background:var(--panel);color:var(--ink);font:13px/1 inherit;padding:0 5px;outline:none}
   .welcome{flex:1;display:grid;place-items:center;color:var(--dim);text-align:center;padding:30px}
-  .btn{background:#21262d;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer} .btn.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
-  .ic{cursor:pointer;color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--bg)} .ic:hover{color:var(--txt)}
   .modal{position:fixed;inset:0;background:rgba(4,7,12,.6);display:flex;align-items:center;justify-content:center;z-index:60}
   .sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:460px;max-width:92vw}
   .in{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;margin-top:6px} textarea.in{resize:vertical;min-height:70px}
   .sub{color:var(--dim);font-size:12px} .spin{display:inline-block;width:12px;height:12px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
-</style>
-<div class="hbar">
-  <span class="brand"><span class="logo">📊</span>Sheets</span>
-  <input class="titlein" id="title" placeholder="Untitled spreadsheet" autocomplete="off">
-  <span class="status" id="status"></span>
-  <span class="ic" id="delBtn" title="Move to trash">🗑</span>
-</div>
-<div class="body">
-  <div class="side">
-    <div class="top"><b>Spreadsheets</b><button class="btn primary" id="newBtn" title="New">＋</button></div>
-    <div class="list" id="list"></div>
-  </div>
-  <div class="center">
+</style></head>
+<body class="ws">
+<nav class="ws-top" id="ws-top" aria-label="Location"></nav>
+<div class="ws-app">
+  <aside class="ws-left" id="ws-left" aria-label="Spreadsheets">
+    <div class="ws-left-top">
+      <input id="ws-search" type="search" placeholder="Search spreadsheets…" autocomplete="off" aria-label="Search spreadsheets">
+      <button class="ws-ib" id="ws-collapse" title="Hide this pane">«</button>
+    </div>
+    <button class="btn pri ws-new" id="newBtn">＋ New spreadsheet</button>
+    <div class="ws-nav">
+      <button class="ws-nav-item on" data-v="mine"><span class="ic">📊</span>My spreadsheets<span class="ct"></span></button>
+      <button class="ws-nav-item" data-v="recent"><span class="ic">🕒</span>Recent</button>
+    </div>
+    <div class="ws-sect" id="ws-listhead">All spreadsheets</div>
+    <div class="ws-scroll" id="ws-list"></div>
+    <div class="ws-railbox"><button class="ws-ib" id="ws-expand" title="Show this pane">»</button><div class="ws-railname" id="ws-railname">Sheets</div></div>
+  </aside>
+
+  <main class="ws-main" id="ws-main">
+    <div class="ws-toolbar">
+      <input class="titlein" id="title" placeholder="Untitled spreadsheet" autocomplete="off" aria-label="Spreadsheet title">
+      <span class="status" id="status"></span>
+      <button class="btn sm" id="aiBtn" title="Generate a table with AI">✨ AI</button>
+      <button class="ws-ib" id="infoBtn" title="Details and history">ⓘ</button>
+      <button class="ws-ib" id="delBtn" title="Move to trash">🗑</button>
+    </div>
     <div class="fbar">
       <span class="cellref" id="cellref">A1</span>
-      <input class="fx" id="fx" placeholder="Value or =SUM(A1:A5)">
-      <button class="aiBtn" id="aiBtn">✨ AI</button>
+      <input class="fx" id="fx" placeholder="Value or =SUM(A1:A5)" aria-label="Cell value or formula">
     </div>
-    <div class="gridwrap" id="gridwrap"><div class="welcome" id="welcome">Create a spreadsheet with ＋</div></div>
-  </div>
+    <div class="gridwrap" id="gridwrap"><div class="welcome" id="welcome">Create a spreadsheet with ＋ New spreadsheet</div></div>
+    <div class="ws-foot" id="foot"></div>
+  </main>
+
+  <aside class="ws-right" id="ws-right" aria-label="Details">
+    <div class="ws-right-head"><span class="t"></span><button class="ws-ib" id="ws-rclose" title="Close (Esc)">✕</button></div>
+    <div class="ws-right-sub"></div>
+    <div class="ws-tabs"><button class="ws-tab on" data-t="info">Info</button><button class="ws-tab" data-t="hist">History</button></div>
+    <div class="ws-right-body" id="ws-rbody"></div>
+  </aside>
 </div>
+<script src="/shared/workspace.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const NC=12, NR=50, COLS=Array.from({length:NC},(_,i)=>String.fromCharCode(65+i));
-let ME='',TENANT='',SHEETS=[],CUR=null,cells={},sel='A1',editing=false,savet=null;
+let ME='',TENANT='',SHEETS=[],CUR=null,cells={},sel='A1',editing=false,savet=null,RTAB='info',LIST=null;
 async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
 // ---- formula engine ----
@@ -114,32 +126,39 @@ const isNumeric=v=>v!==''&&v!=null&&!isNaN(parseFloat(v))&&isFinite(v);
 // ---- data ----
 async function boot(){
   try{const s=await fetch('/session').then(r=>r.json());ME=s.sub||'';TENANT=s.tenant||'';}catch(e){}
+  WS.init({searchKey:false, onTab:t=>{RTAB=t;renderRight();}});      // the grid types "/" itself
+  LIST=WS.itemList({items:()=>SHEETS,current:()=>CUR&&CUR.id,open:open,title:s=>s.title||'Untitled spreadsheet',
+    noun:'spreadsheets',empty:'No spreadsheets yet — press ＋ New spreadsheet.'});
   await load(); $('newBtn').onclick=newSheet; $('delBtn').onclick=trash;
-  $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();}};
+  $('infoBtn').onclick=()=>{RTAB='info';WS.openRight(CUR&&CUR.title||'Untitled spreadsheet','Spreadsheet');WS.tab('info');renderRight();};
+  $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();crumbs();}};
   $('fx').onchange=()=>{setCell(sel,$('fx').value);}; $('fx').onkeydown=e=>{if(e.key==='Enter'){setCell(sel,$('fx').value);move(1,0);}};
   $('aiBtn').onclick=aiFill;
-  if(SHEETS.length)open(SHEETS[0].id); else newSheet();
+  if(SHEETS.length)open(SHEETS.slice().sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''))[0].id); else newSheet();
 }
+function crumbs(){WS.crumbs([{label:'My spreadsheets'},{label:(CUR&&CUR.title)||'Untitled spreadsheet'}]);}
+function renderRight(){if(!CUR||!WS.isRightOpen())return;const B=$('ws-rbody');
+  const h=document.querySelector('#ws-right .ws-right-head .t');if(h)h.textContent=CUR.title||'Untitled spreadsheet';
+  if(RTAB==='hist')return WS.history(B,'sheets',CUR.id,(o,old)=>o.title!==old.title?'Renamed from “'+(old.title||'Untitled')+'”':'Edited cells');
+  WS.info(B,[['Title',CUR.title||'Untitled spreadsheet'],['Filled cells',Object.keys(cells).length],['Size',NR+' rows × '+NC+' columns'],
+    ['Created',WS.when(CUR.created_at)],['Last edited',WS.when(CUR.updated_at)],['Owner',String(CUR.owner||'').split('/').pop()]]);}
 async function load(){const r=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet'});
   SHEETS=(r.results||[]).map(x=>x.object||x).filter(s=>!s.archived);
   SHEETS.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));renderList();}
-function renderList(){const L=$('list');
-  if(!SHEETS.length){L.innerHTML='<div class="sub" style="padding:16px;text-align:center">No spreadsheets yet.</div>';return;}
-  L.innerHTML=SHEETS.map(s=>`<div class="item ${CUR&&s.id===CUR.id?'on':''}" data-id="${esc(s.id)}"><div class="t">${esc(s.title||'Untitled')}</div><div class="m">${Object.keys(s.cells||{}).length} cells</div></div>`).join('');
-  L.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>open(el.dataset.id));}
+function renderList(){if(LIST)LIST.render();$('foot').textContent=CUR?Object.keys(cells).length+' filled cells':'';}
 function newSheet(){const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   const now=new Date().toISOString();CUR={schema:'doc.sheet',id,title:'',owner:ME,cells:{},rows:NR,cols:NC,created_at:now,updated_at:now};
   SHEETS.unshift(CUR);cells={};sel='A1';paint();renderList();setTimeout(()=>$('title').focus(),30);}
 function open(id){const s=SHEETS.find(x=>x.id===id);if(!s)return;CUR=s;cells=Object.assign({},s.cells||{});sel='A1';paint();renderList();}
-function paint(){$('title').value=CUR.title||'';renderGrid();setStatus(CUR._saved?'saved':'');}
-function setStatus(s){const el=$('status');el.className='status'+(s==='saving'?' saving':s==='saved'?' saved':'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved ✓':'';el.style.color='';}
+function paint(){$('title').value=CUR.title||'';renderGrid();setStatus(CUR._saved?'saved':'');crumbs();renderRight();renderList();}
+function setStatus(s,msg){const el=$('status');el.className='status'+(s?' '+s:'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved':s==='err'?'⚠ '+msg:'';}
 function schedule(){setStatus('saving');clearTimeout(savet);savet=setTimeout(save,900);}
 async function save(){if(!CUR)return;CUR.cells=cells;CUR.title=$('title').value;CUR.updated_at=new Date().toISOString();
   const obj=Object.assign({},CUR);delete obj._saved;const r=await api('/bridge/save',{app_id:'sheets',object:obj});
-  if(r.saved){CUR._saved=true;setStatus('saved');}else{setStatus('');$('status').textContent='⚠ '+(r.error||'save failed');$('status').style.color='var(--err)';}}
+  if(r.saved){CUR._saved=true;setStatus('saved');renderList();}else setStatus('err',r.error||'save failed');}
 async function trash(){if(!CUR)return;if(!confirm('Trash "'+(CUR.title||'Untitled')+'"?'))return;
   CUR.archived=true;await api('/bridge/save',{app_id:'sheets',object:Object.assign({},CUR,{cells,archived:true})});
-  SHEETS=SHEETS.filter(s=>s.id!==CUR.id);CUR=null;if(SHEETS.length)open(SHEETS[0].id);else newSheet();}
+  SHEETS=SHEETS.filter(s=>s.id!==CUR.id);CUR=null;WS.closeRight();if(SHEETS.length)open(SHEETS[0].id);else newSheet();}
 
 // ---- grid ----
 function renderGrid(){
@@ -210,3 +229,4 @@ function modal(html){const w=document.createElement('div');w.className='modal';w
 boot();
 </script>
 <script src="/shared/voice.js" defer></script>
+</body></html>

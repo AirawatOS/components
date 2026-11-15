@@ -8,7 +8,7 @@
 # every read and write, so a user only ever sees their own docs). Reused by Sheets/Slides/Mail/Chat.
 component_id: ds:airawatdeveloper:app/docs
 kind: app
-version: 0.1.0
+version: 0.2.0   # 0.2.0: the shared workspace layout (/shared/workspace.css + .js, same frame as Files and Data): left — search, ＋ New, My … / Recent, the list; main — title, save status, actions, the editor; right — Info and History (Docs: also the AI assistant); breadcrumb under the shell's controls; the old header (with a wrong 'not signed in' badge) removed. Was 0.1.0.
 provider: ds:airawatdeveloper:developer
 display_name: Docs
 icon: 📄
