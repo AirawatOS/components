@@ -10,6 +10,7 @@
   .fx-wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
   .fx-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .fx-bar .fx-spacer { flex: 1; }
+  .fx-prog { color: var(--muted, #64748b); font-size: 13px; }
   .fx-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 14px; margin-bottom: 12px; }
   .fx-crumbs a { color: var(--accent, #2563eb); cursor: pointer; text-decoration: none; }
   .fx-crumbs a:hover { text-decoration: underline; }
@@ -41,11 +42,14 @@
   <div class="fx-bar">
     <h1 style="margin:0;font-size:22px">📁 Files</h1>
     <span class="fx-spacer"></span>
-    <button class="btn" id="fx-up">⬆︎ Upload</button>
+    <span class="fx-prog" id="fx-prog" aria-live="polite"></span>
+    <button class="btn" id="fx-up" title="Upload one or more files (Ctrl/Cmd-click or Shift-click to pick several)">⬆︎ Upload files</button>
+    <button class="btn" id="fx-updir" title="Upload a whole folder, keeping its sub-folders">📁 Upload folder</button>
     <button class="btn" id="fx-newfolder">➕ New folder</button>
     <button class="btn" id="fx-shares">📤 Shares</button>
     <button class="btn" id="fx-refresh" aria-label="Refresh">🔄</button>
     <input type="file" id="fx-file" multiple hidden>
+    <input type="file" id="fx-dir" webkitdirectory directory multiple hidden>
   </div>
   <div class="fx-crumbs" id="fx-crumbs"></div>
   <div class="fx-drop" id="fx-drop">
@@ -117,7 +121,7 @@
     list.innerHTML = "";
     var kids = childrenOf(CWD);
     if (!kids.length) {
-      list.innerHTML = '<div class="fx-empty"><div class="big">📂</div>This folder is empty.<br>Upload a file or create a folder to get started.</div>';
+      list.innerHTML = '<div class="fx-empty"><div class="big">📂</div>This folder is empty.<br>Upload files or a whole folder, drag them here, or create a folder to get started.</div>';
       return;
     }
     kids.forEach(function (r) { list.appendChild(rowEl(r)); });
@@ -191,23 +195,81 @@
 
   // ---- actions ----
   function pickFiles() { document.getElementById("fx-file").click(); }
+  function pickFolder() { document.getElementById("fx-dir").click(); }
+  var MAX_BYTES = 25 * 1024 * 1024, BUSY = false;
+  // Files picked or dropped: {file, rel} where rel is the path inside what was picked ("Plans/2026/a.pdf", or just
+  // "a.pdf"). Each file lands in CWD + rel's folder part; missing folders are created on the way.
+  function fromFileList(list) {
+    var out = [];
+    for (var i = 0; i < list.length; i++) out.push({ file: list[i], rel: list[i].webkitRelativePath || list[i].name });
+    return out;
+  }
   async function onFiles(ev) {
-    var files = ev.target ? ev.target.files : ev;
-    if (!files || !files.length) return;
-    var ok = 0;
-    for (var i = 0; i < files.length; i++) {
-      try { await uploadOne(files[i]); ok++; }
-      catch (e) { AOS.toast && AOS.toast((files[i].name || "file") + " — " + (e && e.message || "upload failed")); }
-    }
-    document.getElementById("fx-file").value = "";
-    if (ok) AOS.toast && AOS.toast(ok + " file" + (ok > 1 ? "s" : "") + " uploaded");
+    var input = ev && ev.target, list = input ? input.files : ev;
+    var items = fromFileList(list || []);                    // a FileList from the picker (or any list of File objects)
+    if (input) input.value = "";
+    await uploadItems(items);
+  }
+  async function uploadItems(items) {
+    if (!items.length) return;
+    if (BUSY) { AOS.toast && AOS.toast("An upload is already running — wait for it to finish"); return; }
+    var hidden = items.filter(function (it) { return it.rel.split("/").some(function (s) { return s.charAt(0) === "." || s === "Thumbs.db" || s === "desktop.ini"; }); });
+    var big = items.filter(function (it) { return hidden.indexOf(it) < 0 && it.file.size > MAX_BYTES; });
+    var todo = items.filter(function (it) { return hidden.indexOf(it) < 0 && big.indexOf(it) < 0; });
+    BUSY = true; var prog = document.getElementById("fx-prog"), ok = 0, failed = [], made = {}, base = CWD;
+    try {
+      for (var i = 0; i < todo.length; i++) {
+        var it = todo[i], parts = it.rel.split("/").filter(Boolean), name = parts.pop() || it.file.name;
+        prog.textContent = "Uploading " + (i + 1) + " of " + todo.length + " — " + name;
+        try {
+          var dir = base;
+          for (var k = 0; k < parts.length; k++) dir = await ensureFolder(dir, parts[k].replace(/[\/]/g, "-"), made);
+          await uploadOne(it.file, dir, name); ok++;
+        } catch (e) { failed.push(name + ": " + (e && e.message || "upload failed")); }
+      }
+    } finally { BUSY = false; prog.textContent = ""; }
+    var msg = ok + " file" + (ok === 1 ? "" : "s") + " uploaded";
+    var nf = Object.keys(made).length; if (nf) msg += " into " + nf + " new folder" + (nf === 1 ? "" : "s");
+    if (big.length) msg += " · " + big.length + " skipped (over 25 MB)";
+    if (hidden.length) msg += " · " + hidden.length + " hidden or system file" + (hidden.length === 1 ? "" : "s") + " skipped";
+    if (failed.length) msg += " · " + failed.length + " failed";
+    AOS.toast && AOS.toast(msg);
+    if (failed.length) AOS.toast && AOS.toast(failed.slice(0, 3).join(" · ") + (failed.length > 3 ? " …" : ""));
     await refresh();
   }
-  async function uploadOne(f) {
+  // The path of folder `name` inside `dir`, creating its record when neither the loaded tree nor this upload has it.
+  async function ensureFolder(dir, name, made) {
+    var path = join(dir, name);
+    if (made[path] || folderExists(path)) return path;
+    await AOS.save({ schema: "platform.file", id: newId(), kind: "folder", name: name, folder: dir, created_at: nowIso(), updated_at: nowIso() });
+    made[path] = true; return path;
+  }
+  // A dropped folder: walk its entries (Chrome, Edge, Firefox, Safari all expose webkitGetAsEntry on drop).
+  async function fromDrop(dt) {
+    var entries = [];
+    for (var i = 0; i < (dt.items || []).length; i++) {
+      var en = dt.items[i].webkitGetAsEntry && dt.items[i].webkitGetAsEntry(); if (en) entries.push(en);
+    }
+    if (!entries.length) return fromFileList(dt.files || []);
+    var out = [];
+    async function walk(en, prefix) {
+      if (en.isFile) { var f = await new Promise(function (ok, no) { en.file(ok, no); }); out.push({ file: f, rel: prefix + f.name }); return; }
+      if (!en.isDirectory) return;
+      var reader = en.createReader(), batch;
+      do {                                                   // readEntries returns at most ~100 at a time
+        batch = await new Promise(function (ok, no) { reader.readEntries(ok, no); });
+        for (var j = 0; j < batch.length; j++) await walk(batch[j], prefix + en.name + "/");
+      } while (batch.length);
+    }
+    for (var e = 0; e < entries.length; e++) await walk(entries[e], "");
+    return out;
+  }
+  async function uploadOne(f, dir, name) {
+    dir = dir || CWD; name = name || f.name;
     if (f.size > 25 * 1024 * 1024)                           // app-host cap — fail fast with a clear message
       throw new Error("too large (" + (f.size/1048576).toFixed(1) + " MB; max 25 MB) — split the file or use a smaller export");
     var ctype = f.type || "application/octet-stream";
-    var q = "?name=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(ctype);
+    var q = "?name=" + encodeURIComponent(name) + "&type=" + encodeURIComponent(ctype);
     var res = await fetch("/bridge/file-upload" + q, { method: "POST", headers: { "X-Upload-Type": ctype }, body: f });
     if (!res.ok) {                                           // surface the server's real reason, not a generic failure
       var msg = "upload failed (" + res.status + ")";
@@ -217,7 +279,7 @@
     var up = await res.json();                              // {file_id, filename, content_type, size}
     await AOS.save({
       schema: "platform.file", id: newId(), kind: "file",
-      name: f.name, folder: CWD, file_id: up.file_id,
+      name: name, folder: dir, file_id: up.file_id,
       content_type: up.content_type || ctype, size_bytes: up.size,
       created_at: nowIso(), updated_at: nowIso()
     });
@@ -407,7 +469,11 @@
     var d = document.getElementById("fx-drop");
     ["dragenter", "dragover"].forEach(function (ev) { d.addEventListener(ev, function (e) { e.preventDefault(); d.classList.add("over"); }); });
     ["dragleave", "drop"].forEach(function (ev) { d.addEventListener(ev, function (e) { e.preventDefault(); d.classList.remove("over"); }); });
-    d.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) onFiles(e.dataTransfer.files); });
+    d.addEventListener("drop", async function (e) {
+      if (!e.dataTransfer) return;
+      try { await uploadItems(await fromDrop(e.dataTransfer)); }
+      catch (err) { AOS.toast && AOS.toast("Could not read what was dropped — " + (err && err.message || err)); }
+    });
   }
 
   // ---- boot ----
@@ -417,6 +483,8 @@
     ME.sub = s.sub || "";
     ME.isAdmin = (s.roles || []).some(function (r) { return r === "platform.tenant-admin" || r === "platform.steward" || r === "admin"; });
     document.getElementById("fx-up").onclick = pickFiles;
+    document.getElementById("fx-updir").onclick = pickFolder;
+    document.getElementById("fx-dir").onchange = onFiles;
     document.getElementById("fx-newfolder").onclick = newFolder;
     // Organisation-to-organisation transfers are an admin action; regular users get a clean Files app until
     // per-person sharing (ADR-0103) ships.
