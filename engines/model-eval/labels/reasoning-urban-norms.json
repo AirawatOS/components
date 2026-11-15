@@ -1,0 +1,225 @@
+[
+ {
+  "key": "police-stations",
+  "title": "Police stations for a ward",
+  "tags": [
+   "count",
+   "ceiling"
+  ],
+  "prompt": "URDPFI norm: one police station for every 90,000 population or part thereof; each needs 1.50 ha of land.\nA ward has a population of 2,35,000.\nHow many police stations does it need, and how much land in total?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"stations\": integer, \"land_ha\": number}",
+  "fields": {
+   "stations": 3,
+   "land_ha": 4.5
+  },
+  "note": ""
+ },
+ {
+  "key": "police-gap",
+  "title": "Police station gap",
+  "tags": [
+   "gap",
+   "ceiling"
+  ],
+  "prompt": "URDPFI norm: one police station for every 90,000 population or part thereof; each needs 1.50 ha.\nA ward of 2,35,000 people has 2 police stations today.\nHow many more stations are needed, and how much additional land?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"additional_stations\": integer, \"additional_land_ha\": number}",
+  "fields": {
+   "additional_stations": 1,
+   "additional_land_ha": 1.5
+  },
+  "note": ""
+ },
+ {
+  "key": "district-parks",
+  "title": "District parks for a city",
+  "tags": [
+   "lakh",
+   "ceiling"
+  ],
+  "prompt": "URDPFI norm (plain areas): one district park of 25 ha for every 5 lakh population or part thereof.\nA city has a population of 42 lakh.\nHow many district parks does it need and what total area?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"parks\": integer, \"area_ha\": number}",
+  "fields": {
+   "parks": 9,
+   "area_ha": 225
+  },
+  "note": ""
+ },
+ {
+  "key": "medium-town-area",
+  "title": "Developed area from density",
+  "tags": [
+   "classify",
+   "range",
+   "division"
+  ],
+  "prompt": "Settlement classes: small town under 1 lakh; medium town 1 lakh to 5 lakh; large city 5 to 10 lakh; metropolitan 10 lakh to 1 crore; megapolis above 1 crore.\nURDPFI developed-area density (persons per hectare, plain areas): small 75-125, medium 100-150, large 125-175, metropolitan 125-175, megapolis above 200.\nA town in a plain area will have 3,20,000 people.\nWhich class is it, and what is the smallest and largest developed area (ha) the density range allows?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"class\": \"small\" | \"medium\" | \"large\" | \"metropolitan\" | \"megapolis\", \"min_area_ha\": number, \"max_area_ha\": number}",
+  "fields": {
+   "class": "medium",
+   "min_area_ha": 2133.3,
+   "max_area_ha": 3200.0
+  },
+  "note": ""
+ },
+ {
+  "key": "hill-town-area",
+  "title": "Hill town developed area",
+  "tags": [
+   "classify",
+   "range",
+   "condition"
+  ],
+  "prompt": "Settlement classes: small town under 1 lakh; medium town 1 lakh to 5 lakh; large city 5 to 10 lakh.\nURDPFI developed-area density (persons per hectare): small towns 75-125 in plain areas and 45-75 in hill areas; medium towns 100-150 plain and 60-90 hill.\nA hill town will have 80,000 people.\nWhat is the smallest and largest developed area (ha) the density range allows?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"min_area_ha\": number, \"max_area_ha\": number}",
+  "fields": {
+   "min_area_ha": 1066.7,
+   "max_area_ha": 1777.8
+  },
+  "note": ""
+ },
+ {
+  "key": "township-acres",
+  "title": "Township minimum area in acres",
+  "tags": [
+   "units",
+   "threshold"
+  ],
+  "prompt": "Maharashtra's integrated township policy requires a minimum area of 100 acres (1 acre = 0.404686 ha).\nA developer holds 38 ha.\nDoes the land meet the minimum, and how many more hectares would be needed (0 if none)?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"meets_minimum\": true | false, \"shortfall_ha\": number}",
+  "fields": {
+   "meets_minimum": false,
+   "shortfall_ha": 2.47
+  },
+  "note": ""
+ },
+ {
+  "key": "water-design-demand",
+  "title": "Water demand at design year",
+  "tags": [
+   "projection",
+   "compound",
+   "units"
+  ],
+  "prompt": "CPHEEO design period for a water distribution system: 30 years from commissioning.\nA distribution system is commissioned in 2026 for a city of 12 lakh people, growing at 2.5% a year (compound).\nDesign for 135 litres per person per day.\nWhat is the design year, the design-year population, and the demand in million litres per day (MLD)?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"design_year\": integer, \"population\": number, \"demand_mld\": number}",
+  "fields": {
+   "design_year": 2056,
+   "population": 2517081,
+   "demand_mld": 339.8
+  },
+  "note": ""
+ },
+ {
+  "key": "m2-compliance",
+  "title": "Mixed residential zone compliance",
+  "tags": [
+   "percentage",
+   "threshold",
+   "inverse"
+  ],
+  "prompt": "URDPFI zoning: in an M2 (mixed residential) zone, residential use must be at least 60% of the area.\nA 2.4 ha M2 parcel has 1.3 ha residential, 0.8 ha commercial and 0.3 ha institutional.\nWhat is the residential share (%), does it comply, and how many hectares of non-residential use must convert to residential to comply (0 if none), keeping the parcel size fixed?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"residential_share_pct\": number, \"complies\": true | false, \"convert_ha\": number}",
+  "fields": {
+   "residential_share_pct": 54.2,
+   "complies": false,
+   "convert_ha": 0.14
+  },
+  "note": ""
+ },
+ {
+  "key": "tannery-airport",
+  "title": "Tannery near an airport",
+  "tags": [
+   "prohibition",
+   "distance"
+  ],
+  "prompt": "URDPFI zoning: butcheries, tanneries and solid waste disposal sites are prohibited within 10 km of an Aerodrome Reference Point (ARP).\nA tannery is proposed 8.5 km from the ARP.\nIs it allowed, and how much farther (km) would it have to be to be allowed (0 if already allowed)?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"allowed\": true | false, \"move_further_km\": number}",
+  "fields": {
+   "allowed": false,
+   "move_further_km": 1.5
+  },
+  "note": ""
+ },
+ {
+  "key": "slope-developable",
+  "title": "Developable area by slope",
+  "tags": [
+   "filter",
+   "sum",
+   "threshold"
+  ],
+  "prompt": "URDPFI: land with slope higher than 45 degrees is undevelopable.\nA site has four parts: 4.2 ha at 30 degrees, 1.6 ha at 47 degrees, 0.9 ha at 52 degrees, and 2.3 ha at 44 degrees.\nHow much of the site is developable, and what share of the whole site is that?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"developable_ha\": number, \"developable_pct\": number}",
+  "fields": {
+   "developable_ha": 6.5,
+   "developable_pct": 72.2
+  },
+  "note": ""
+ },
+ {
+  "key": "insufficient-fire",
+  "title": "Missing norm \u2014 fire stations",
+  "tags": [
+   "insufficient",
+   "abstain"
+  ],
+  "prompt": "URDPFI norms given to you: one police station per 90,000 population (1.50 ha); one dhobi ghat per 1 lakh population (5,000 sqm).\nA ward has 2,35,000 people.\nUsing ONLY the norms given above, how many fire stations does it need? If the norms given do not allow an answer, say so rather than guessing.\n\nAnswer with ONLY a JSON object with exactly these fields: {\"answer\": \"insufficient_information\" | integer}",
+  "fields": {
+   "answer": "insufficient_information"
+  },
+  "note": "tests whether the model refuses to invent a missing norm"
+ },
+ {
+  "key": "open-space-conflict",
+  "title": "URDPFI vs a stricter state rule",
+  "tags": [
+   "conflict",
+   "precedence",
+   "rate"
+  ],
+  "prompt": "URDPFI suggests open space of 1.4 to 1.6 ha per 1,000 persons for medium towns. The state's development control rules require 2.0 ha per 1,000 persons, and state rules prevail where they are stricter.\nA medium town has 2,50,000 people.\nHow much open space is required, and which source decides it?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"required_ha\": number, \"source\": \"urdpfi\" | \"state\"}",
+  "fields": {
+   "required_ha": 500.0,
+   "source": "state"
+  },
+  "note": ""
+ },
+ {
+  "key": "sector-land-budget",
+  "title": "Land budget for a new sector",
+  "tags": [
+   "multi-step",
+   "ceiling",
+   "sum"
+  ],
+  "prompt": "URDPFI norms, each per population served 'or part thereof':\n- police station: 1 per 90,000; 1.50 ha each\n- dhobi ghat: 1 per 1 lakh; 5,000 sqm each\n- community park: 1 per 1 lakh; 5 ha each\n- community multipurpose ground: 1 per 1 lakh; 2 ha each\nA new sector is planned for 1,50,000 people.\nHow many police stations does it need, and how much land in total for all four facilities (ha)?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"police_stations\": integer, \"total_land_ha\": number}",
+  "fields": {
+   "police_stations": 2,
+   "total_land_ha": 18.0
+  },
+  "note": ""
+ },
+ {
+  "key": "ward-park-priority",
+  "title": "Which ward is most short of parks",
+  "tags": [
+   "rank",
+   "ceiling",
+   "gap"
+  ],
+  "prompt": "URDPFI norm: one neighbourhood park (1 ha) for every 15,000 population or part thereof.\nWard A: 98,000 people, 4 neighbourhood parks.\nWard B: 1,42,000 people, 6 parks.\nWard C: 61,000 people, 0 parks.\nWhich ward has the largest shortfall in number of parks, and what is each ward's shortfall?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"top_ward\": \"A\" | \"B\" | \"C\", \"shortfall_a\": integer, \"shortfall_b\": integer, \"shortfall_c\": integer}",
+  "fields": {
+   "top_ward": "C",
+   "shortfall_a": 3,
+   "shortfall_b": 4,
+   "shortfall_c": 5
+  },
+  "note": ""
+ },
+ {
+  "key": "park-budget",
+  "title": "Park budget in crore",
+  "tags": [
+   "crore",
+   "division",
+   "gap"
+  ],
+  "prompt": "Developing a park costs Rs 1.2 crore per hectare. The city has a budget of Rs 15 crore and a park deficit of 14 ha.\nHow many hectares can the budget develop, and how much more money (Rs crore) is needed to close the whole deficit?\n\nAnswer with ONLY a JSON object with exactly these fields: {\"fundable_ha\": number, \"extra_crore\": number}",
+  "fields": {
+   "fundable_ha": 12.5,
+   "extra_crore": 1.8
+  },
+  "note": ""
+ }
+]

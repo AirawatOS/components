@@ -130,3 +130,11 @@ def test_a_resumed_run_asks_only_what_is_missing_and_finishes():
     asked, runs = _fake_run(done, stop_after=10_000)
     assert asked == [("m2", "ds:t:intelligence/eval_case/c1"), ("m2", "ds:t:intelligence/eval_case/c2")]
     assert runs[-1]["status"] == "done" and runs[-1]["summary"]["m1"]["cases"] == 2 and runs[-1]["summary"]["m2"]["cases"] == 2
+
+
+def test_json_fields_compare_numbers_within_one_percent():
+    case = {"scorer": "json_fields", "expected": {"fields": {"land_ha": 4.5, "stations": 3, "ok": False, "src": "state"}}}
+    sc, m = me.score_case(case, '```json\n{"land_ha": "4.50", "stations": 3.0, "ok": false, "src": "State"}\n```')
+    assert sc == 1.0 and m["wrong"] == []
+    sc, m = me.score_case(case, '{"land_ha": 4.6, "stations": 3, "ok": true, "src": "state"}')
+    assert sc == 0.5 and sorted(m["wrong"]) == ["land_ha", "ok"]

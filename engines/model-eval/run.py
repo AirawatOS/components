@@ -189,6 +189,25 @@ def score_norms(case, content):
     return round(sc, 3), m
 
 
+def _num(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).replace(",", "").strip())
+    except ValueError:
+        return None
+
+
+def field_equal(got, want):
+    """One expected JSON field: numbers within 1% (4.5 = 4.50 = "4.5"), everything else as case-insensitive text."""
+    g, w = _num(got), _num(want)
+    if g is not None and w is not None:
+        return close(g, w)
+    return str(got).strip().lower() == str(want).strip().lower()
+
+
 def score_case(case, content):
     sc = case.get("scorer") or "norms"
     exp = case.get("expected") or {}
@@ -209,8 +228,9 @@ def score_case(case, content):
         except Exception:
             obj = None
         fields = exp.get("fields") or {}
-        ok = [k for k, v in fields.items() if isinstance(obj, dict) and str(obj.get(k, "")).strip().lower() == str(v).strip().lower()]
-        return (round(len(ok) / len(fields), 3) if fields else 0.0), {"answered": bool(text), "parsed": isinstance(obj, dict), "matched": len(ok), "of": len(fields)}
+        ok = [k for k, v in fields.items() if isinstance(obj, dict) and k in obj and field_equal(obj[k], v)]
+        return (round(len(ok) / len(fields), 3) if fields else 0.0), {"answered": bool(text), "parsed": isinstance(obj, dict),
+                "matched": len(ok), "of": len(fields), "wrong": [k for k in fields if k not in ok][:20]}
     if sc == "grounded":
         src = " ".join(m.get("content", "") for m in case.get("messages") or [] if isinstance(m, dict))
         out, ins = numbers_in(text), numbers_in(src)
