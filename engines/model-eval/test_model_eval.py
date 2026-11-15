@@ -414,3 +414,15 @@ def test_a_run_over_unlabelled_image_cases_completes():
     res = [o for s_, o in writes if s_ == "intelligence.eval_result"]
     run = [o for s_, o in writes if s_ == "intelligence.eval_run"][-1]
     assert len(res) == 1 and res[0]["score"] is None and run["status"] == "done"
+
+
+def test_mine_follows_every_page():
+    # 0.2.7: the broker pages; reading only the first page dropped cases (B09, C05, E03 never ran on staging)
+    pages = {None: {"results": [{"object": {"id": "ds:t:x/1"}}], "next_cursor": "c1"},
+             "c1": {"results": [{"object": {"id": "ds:t:x/2"}}, {"object": {"id": "ds:other:x/3"}}], "next_cursor": None}}
+    saved = (me.call, me.T)
+    me.call, me.T = (lambda path, body, timeout=180: pages[body.get("cursor")]), "t"
+    try:
+        assert [o["id"] for o in me.mine("x")] == ["ds:t:x/1", "ds:t:x/2"]
+    finally:
+        me.call, me.T = saved
