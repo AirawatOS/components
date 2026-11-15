@@ -22,6 +22,11 @@ TOKEN = os.environ.get("RUN_TOKEN", "")
 T = os.environ.get("WRITE_TENANT") or os.environ.get("TENANT") or ""
 CID, VER = "ds:airawatdeveloper:engine/model-eval", "0.1.2"
 MAX_CASES = int(os.environ.get("MAX_CASES") or 60)
+CASES = (os.environ.get("CASES") or "all").strip().lower()   # all | with_norms (labelled cases expecting ≥ 1 norm)
+
+
+def has_norms(case):
+    return bool(case.get("labelled")) and bool(((case.get("expected") or {}).get("norms")))
 OPS = (">", ">=", "<", "<=", "==", "!=", "between")
 APPROVED = ("approved", "live", "active")
 TASKS = {}                                        # model → the gateway task that serves it (found on first call)
@@ -336,10 +341,14 @@ def rescore(run_id, rerun_cut):
 
 def run_one(run):
     cases = [c for c in mine("intelligence.eval_case") if c.get("suite") == run["suite"] and c.get("status") == "active"]
+    if CASES == "with_norms":               # only labelled cases that expect at least one norm — cheaper, but it no
+        cases = [c for c in cases if has_norms(c)]   # longer tests whether a model invents norms where there are none
+        run = dict(run, note=((run.get("note") or "") + " · cases with expected norms only").lstrip(" ·")[:500])
     cases = sorted(cases, key=lambda c: c["id"])[:MAX_CASES]
     write("intelligence.eval_run", dict(run, status="running", started_at=now(), error=None))
     if not cases:
-        write("intelligence.eval_run", dict(run, status="failed", finished_at=now(), error="the suite has no active cases"))
+        write("intelligence.eval_run", dict(run, status="failed", finished_at=now(),
+              error="the suite has no active cases" + (" with expected norms" if CASES == "with_norms" else "")))
         return
     rslug = slug(run["id"].rsplit("/", 1)[-1], 40)
     recs = []

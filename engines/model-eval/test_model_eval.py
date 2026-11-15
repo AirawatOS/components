@@ -70,3 +70,10 @@ def test_a_norm_written_in_plain_numbers_from_a_lakh_figure_is_grounded():
 def test_metrics_keep_the_parsed_norms():
     sc, m = me.score_case(SECTION, '[{"metric":"water_supply","operator":"==","value":135,"unit":"lpcd"}]')
     assert m["norms"] == [{"metric": "water_supply", "operator": "==", "value": 135, "unit": "lpcd"}]
+
+
+def test_with_norms_keeps_only_labelled_cases_that_expect_a_norm():
+    assert me.has_norms({"labelled": True, "expected": {"norms": [{"metric": "x", "operator": "==", "value": 1}]}})
+    assert not me.has_norms({"labelled": True, "expected": {"norms": []}})
+    assert not me.has_norms({"labelled": False, "expected": {"norms": [{"metric": "x", "operator": "==", "value": 1}]}})
+    assert not me.has_norms({"labelled": True})
