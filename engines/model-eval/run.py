@@ -613,7 +613,8 @@ def run_one(run):
         sc, met = (0.0, {"answered": False}) if err else score_case(c, out)
         rec = result_record(run, rslug, model, c, out, served, usage, err, ms, sc, met)
         write("intelligence.eval_result", rec); recs.append(rec)
-        print("  %s · %s: score %.2f · %d ms%s" % (model, c.get("title", "")[-60:], sc, ms, " · " + err[:80] if err else ""), flush=True)
+        print("  %s · %s: score %s · %d ms%s" % (model, c.get("title", "")[-60:], "—" if sc is None else "%.2f" % sc, ms,
+                                                   " · " + err[:80] if err else ""), flush=True)   # None = unlabelled
     summary = summarise(run, recs)                 # from what was written, not a re-query (read-after-write lag)
     write("intelligence.eval_run", dict(run, status="done", finished_at=now(), summary=summary, error=None,
           note=re.sub(r" · paused with \d+ answers to go", "", note)[:500] or None))

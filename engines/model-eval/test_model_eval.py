@@ -394,3 +394,23 @@ def test_unlabelled_image_cases_get_no_score_and_summaries_skip_them():
     assert sc is None and m["unlabelled"]
     s = me.summarise({"models": ["m"]}, [{"model": "m", "score": 0.5, "metrics": {"answered": True}}, {"model": "m", "score": None, "metrics": {"answered": True}}])
     assert s["m"]["score"] == 0.5 and s["m"]["scored"] == 1 and s["m"]["cases"] == 2
+
+
+def test_a_run_over_unlabelled_image_cases_completes():
+    # 0.2.5 regression: an unlabelled case's score is None and the progress line formatted it as a number → crash
+    case = {"id": "ds:t:intelligence/eval_case/u", "suite": "s", "status": "active", "scorer": "counts", "test_id": "B03",
+            "messages": [{"role": "user", "content": "q"}], "expected": None, "labelled": False}
+    store = {"intelligence.eval_case": [case], "intelligence.eval_result": []}
+    writes = []
+    saved = (me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS)
+    me.mine = lambda scope, limit=20000: list(store.get(scope, []))
+    me.write = lambda scope, obj: writes.append((scope, obj))
+    me.ask = lambda model, c: ('{"counts": {"car": 1}}', model, {}, None, 5)
+    me.T, me.STOP_AFTER, me.MAX_TOKENS = "t", 1400, 0
+    try:
+        me.run_one({"id": "ds:t:intelligence/eval_run/u", "suite": "s", "models": ["m"], "status": "pending"})
+    finally:
+        me.mine, me.write, me.ask, me.T, me.STOP_AFTER, me.MAX_TOKENS = saved
+    res = [o for s_, o in writes if s_ == "intelligence.eval_result"]
+    run = [o for s_, o in writes if s_ == "intelligence.eval_run"][-1]
+    assert len(res) == 1 and res[0]["score"] is None and run["status"] == "done"
