@@ -383,32 +383,52 @@ OLD_CAP = 6000
 
 
 # ---- images and the privacy guard (ADR-0134) ---------------------------------------------------------------------
-HOSTING = None           # model name → "in_house" | "external", from the tenant's intelligence.provider records
+IN_HOUSE = {}            # model → (task, None) once the gateway confirmed an in-house route, or (None, reason)
+PROBE = [{"role": "user", "content": "Reply with OK."}]   # carries no case data
 
 
-def model_hosting(model):
-    """Where a model runs. Only an operator-set hosting: in_house on its provider record counts as in-house;
-    anything else — including a model on no record — is treated as external."""
-    global HOSTING
-    if HOSTING is None:
-        HOSTING = {}
-        try:
-            for p in mine("intelligence.provider"):
-                for m in p.get("models") or []:
-                    if m.get("name") and m["name"] not in HOSTING:
-                        HOSTING[m["name"]] = "in_house" if p.get("hosting") == "in_house" else "external"
-        except Exception:
-            pass                                          # unreadable → every model counts as external
-    return HOSTING.get(model, "external")
+def in_house_route(model):
+    """Does the gateway serve this model in-house, and does it enforce require_in_house? Asked once per model with a
+    text-only probe. Only the gateway can answer: it matches a model name across every tenant's provider records and
+    the first match wins, while this engine sees only its own tenant's records. In-house = the operator's own
+    provider record marked hosting: in_house (a tenant's record cannot make an endpoint in-house). A gateway that
+    ignores the flag answers without `hosting`, and then nothing private is sent."""
+    if model not in IN_HOUSE:
+        why = "not served by an in-house provider"
+        for task in TASKS.get(model, ("chat", "eval")):
+            try:
+                r = call("/v1/complete", {"messages": PROBE, "max_tokens": 5, "model": model, "task": task,
+                                          "receipt": False, "require_in_house": True}, timeout=60)
+            except urllib.error.HTTPError as e:
+                if e.code in (403, 501):                  # refused or not served for this task — try the next
+                    continue
+                why = "the in-house check failed (HTTP %s)" % e.code
+                break
+            except Exception as e:
+                why = "the in-house check failed (%s)" % type(e).__name__
+                break
+            if r.get("hosting") == "in_house":
+                IN_HOUSE[model] = (task, None)
+            else:
+                why = "the model gateway does not enforce in-house routing"
+            break
+        IN_HOUSE.setdefault(model, (None, why))
+    return IN_HOUSE[model]
+
+
+def is_private(c):
+    """Cases with camera media are private unless marked otherwise; text cases only when marked private."""
+    return (c.get("visibility") or "private") == "private" if c.get("inputs") else c.get("visibility") == "private"
 
 
 def refuse_private(c, model):
     """A private case is never sent to a model that is not in-house. Returns the refusal, or None."""
-    if (c.get("visibility") or "private") == "private" and c.get("inputs") and model_hosting(model) != "in_house":
-        return "refused: private case (camera media) — %s is not an in-house model" % model
-    if c.get("visibility") == "private" and not c.get("inputs") and model_hosting(model) != "in_house":
-        return "refused: private case — %s is not an in-house model" % model
-    return None
+    if not is_private(c):
+        return None
+    task, why = in_house_route(model)
+    if task:
+        return None
+    return "refused: private case%s — %s: %s" % (" (camera media)" if c.get("inputs") else "", model, why)
 
 
 def _mime(raw):
@@ -453,10 +473,13 @@ def ask(model, c):
     try:
         res = None
         msgs = with_images(c)
-        for task in TASKS.get(model, ("chat", "eval")):   # 'eval' = models registered for evaluation only —
+        private = is_private(c)                           # the gateway re-checks the route on every private call
+        tasks = (in_house_route(model)[0],) if private else TASKS.get(model, ("chat", "eval"))
+        for task in tasks:                                # 'eval' = models registered for evaluation only —
             try:                                          # never on a production route (a call naming no model)
-                res = call("/v1/complete", {"messages": msgs, "max_tokens": budget(c),
-                                            "model": model, "task": task, "receipt": False, **thinking_arg()}, timeout=240)
+                res = call("/v1/complete", {"messages": msgs, "max_tokens": budget(c), "model": model, "task": task,
+                                            "receipt": False, **({"require_in_house": True} if private else {}),
+                                            **thinking_arg()}, timeout=240)
                 TASKS[model] = (task,)
                 break
             except urllib.error.HTTPError as e:

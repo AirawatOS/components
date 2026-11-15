@@ -159,23 +159,76 @@ def test_thinking_switch_goes_to_the_gateway_only_when_set():
 
 # ---- ADR-0134: images, privacy, counts / labels / text -------------------------------------------------------------
 import base64 as _b64
+import io
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 20
 IMG_CASE = {"id": "ds:t:intelligence/eval_case/x", "visibility": "private", "inputs": [{"kind": "image", "file_id": "sha2-256:ab"}],
             "messages": [{"role": "user", "content": "Count the vehicles."}], "scorer": "counts"}
 
 
-def test_private_image_case_is_never_sent_to_an_external_model():
-    saved = (me.HOSTING, me.call)
+def _gateway(serves):
+    """A fake broker /v1/complete: `serves` maps model → hosting the gateway would report ('in_house' | 'external' |
+    None for an older gateway that ignores require_in_house). Returns (call, sent bodies)."""
     sent = []
-    me.HOSTING = {"google/gemma-4-31B-it": "external", "local-gemma": "in_house"}
-    me.call = lambda path, body, timeout=180: sent.append(path) or {"content": "{}", "model": "x"}
+
+    def call(path, body, timeout=180):
+        if path == "/v1/file/get":
+            return {"content_b64": _b64.b64encode(JPEG).decode()}
+        sent.append(body)
+        h = serves.get(body.get("model"), "external")
+        if body.get("require_in_house") and h == "external":
+            raise me.urllib.error.HTTPError(path, 403, "refused", {}, io.BytesIO(b'{"error": "refused"}'))
+        return dict({"content": "{}", "model": body.get("model")}, **({"hosting": h} if h else {}))
+    return call, sent
+
+
+def _private_case(fn):
+    saved = (me.IN_HOUSE, me.TASKS, me.call)
+    me.IN_HOUSE, me.TASKS = {}, {}
     try:
-        out, served, usage, err, ms = me.ask("google/gemma-4-31B-it", IMG_CASE)
-        assert err and err.startswith("refused: private case") and sent == []
-        assert me.ask("unknown-model", IMG_CASE)[3].startswith("refused")          # not on any record → external
+        return fn()
     finally:
-        me.HOSTING, me.call = saved
+        me.IN_HOUSE, me.TASKS, me.call = saved
+
+
+def _has_image(body):
+    return any(isinstance(m.get("content"), list) for m in body.get("messages") or [])
+
+
+def test_private_image_case_is_never_sent_to_an_external_model():
+    def go():
+        me.call, sent = _gateway({"local-gemma": "in_house"})
+        out, served, usage, err, ms = me.ask("google/gemma-4-31B-it", IMG_CASE)
+        assert err and err.startswith("refused: private case (camera media)")
+        assert sent and not any(_has_image(b) for b in sent)            # only the data-free probe went out
+        assert all(b["messages"] == me.PROBE and b["require_in_house"] for b in sent)
+    _private_case(go)
+
+
+def test_an_older_gateway_that_ignores_the_flag_gets_nothing_private():
+    def go():
+        me.call, sent = _gateway({"kimi-k3": None})                     # answers, but without `hosting`
+        err = me.ask("kimi-k3", IMG_CASE)[3]
+        assert "does not enforce" in err and len(sent) == 1 and not _has_image(sent[0])
+    _private_case(go)
+
+
+def test_an_in_house_model_gets_the_frame_with_the_flag_set():
+    def go():
+        me.call, sent = _gateway({"kimi-k3": "in_house"})
+        assert me.ask("kimi-k3", IMG_CASE)[3] is None
+        assert me.ask("kimi-k3", IMG_CASE)[3] is None                   # probed once per model, not per case
+        assert [_has_image(b) for b in sent] == [False, True, True]
+        assert all(b["require_in_house"] for b in sent)
+    _private_case(go)
+
+
+def test_a_public_text_case_is_not_probed():
+    def go():
+        me.call, sent = _gateway({})
+        assert me.ask("claude-sonnet-5-5", {"id": "x", "messages": [{"role": "user", "content": "Hi"}]})[3] is None
+        assert len(sent) == 1 and "require_in_house" not in sent[0]
+    _private_case(go)
 
 
 def test_images_go_as_data_url_parts_after_the_text():
