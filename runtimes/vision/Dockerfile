@@ -16,6 +16,9 @@ COPY build/UVH-26-MV-RT-DETRv2-S.pth /opt/models/uvh26/rtdetrv2_s.pth
 # RT-DETRv2-S trained on COCO (lyuwenyu/RT-DETR model zoo, Apache-2.0): pedestrians and animals, which UVH-26 does not detect.
 COPY coco_rtdetrv2_s.yml /opt/rtdetrv2/configs/rtdetrv2/coco_rtdetrv2_s.yml
 COPY build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth /opt/models/coco/rtdetrv2_s.pth
+# RT-DETRv2-L, COCO fine-tune from Objects365 pre-training (Apache-2.0): the stronger people / animals candidate.
+COPY coco_o365_rtdetrv2_l.yml /opt/rtdetrv2/configs/rtdetrv2/coco_o365_rtdetrv2_l.yml
+COPY build/rtdetrv2_r50vd_2x_coco_objects365_from_paddle.pth /opt/models/coco/rtdetrv2_l_o365.pth
 
 WORKDIR /drivers
 ENV PYTHONPATH=/drivers:/opt/rtdetrv2 PYTHONUNBUFFERED=1 OMP_NUM_THREADS=4 TORCH_HOME=/tmp/torch

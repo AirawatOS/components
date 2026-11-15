@@ -1,0 +1,6 @@
+# RT-DETRv2-L (R50vd) fine-tuned on COCO from Objects365 pre-training (lyuwenyu/RT-DETR model zoo, Apache-2.0; 55.2 AP vs
+# 48.1 for RT-DETRv2-S): a stronger detector for people and animals, which are small and far away in junction cameras.
+# Same 80 COCO classes, same index order. Inference only: the backbone is not downloaded.
+__include__: ['./rtdetrv2_r50vd_6x_coco.yml']
+PResNet:
+  pretrained: False

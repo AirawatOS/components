@@ -3,18 +3,19 @@
 # Safe City frames, 14 Indian vehicle classes; AIM@IISc, Apache-2.0). A component declares `runtime: { profile: vision }`.
 component_id:   ds:airawatdeveloper:runtime/vision
 kind:           runtime
-version:        0.2.0   # 0.2.0: + RT-DETRv2-S COCO (pedestrians, animals)
+version:        0.3.0   # 0.3.0: + RT-DETRv2-L COCO from Objects365 (stronger people / animals). 0.2.0: + RT-DETRv2-S COCO
 provider:       ds:airawatdeveloper:developer
 implements:     platform.runtime_invoke@0.1.0
 runtime_id:     vision
 profile:        vision
 analytics_tier: descriptive                 # detects and counts objects in images
 display_name:   Vision (image models, CPU)
-image:          manishsv/airawatos-runtime-vision:0.2.0
-image_digest:   sha256:e71fd1d1540ac3e25298ef2bff9e6157a87c817d2f3799d2c782d10a306d2654   # the CERTIFIED image content id (launcher runs only this)
-provides:       [torch-2.5.1-cpu, rtdetrv2@df2a96c, uvh26-rtdetrv2-s, coco-rtdetrv2-s]
+image:          manishsv/airawatos-runtime-vision:0.3.0
+image_digest:   sha256:1577bda0837a33e32b49c64d7b0f2639dc4ad3f0b55e81d5eaedaf024d73f403   # the CERTIFIED image content id (launcher runs only this)
+provides:       [torch-2.5.1-cpu, rtdetrv2@df2a96c, uvh26-rtdetrv2-s, coco-rtdetrv2-s, o365-rtdetrv2-l]
 weights_sha256: da733d3e3934d5d0c10766ae06f33d0d8e6845902decf507b9ef22e02c854bb1   # matches the Hugging Face LFS oid; UVH-26-MV-RT-DETRv2-S.pth — set on first fetch, checked after
 coco_weights_sha256: 2ace52184b620204004509b72752ac7bfe64aadaf7fc1d076b18df8ab5a5c77e   # rtdetrv2_r18vd_120e_coco_rerun_48.1.pth — no published hash; recorded at first fetch, checked after
+o365_l_weights_sha256: 050aad6efb07c8ab02d392143cc7a9f4292cd25c8db9b2ea6eecc529ef78a359   # rtdetrv2_r50vd_2x_coco_objects365_from_paddle.pth — no published hash; recorded at first fetch
 models:
   - id: uvh26-rtdetrv2-s
     path: /opt/models/uvh26/rtdetrv2_s.pth
@@ -25,6 +26,11 @@ models:
     path: /opt/models/coco/rtdetrv2_s.pth
     config: /opt/rtdetrv2/configs/rtdetrv2/coco_rtdetrv2_s.yml
     source: https://github.com/lyuwenyu/RT-DETR (model zoo, v0.2 release)
+    licence: Apache-2.0
+  - id: o365-rtdetrv2-l
+    path: /opt/models/coco/rtdetrv2_l_o365.pth
+    config: /opt/rtdetrv2/configs/rtdetrv2/coco_o365_rtdetrv2_l.yml
+    source: https://github.com/lyuwenyu/RT-DETR (model zoo, v0.1 release; COCO fine-tune from Objects365)
     licence: Apache-2.0
 isolation:      shared
 confidential:   false

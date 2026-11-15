@@ -19,11 +19,14 @@ THREADS = int(os.environ.get("DETECT_THREADS") or 4)
 MODELS = {
     "uvh26": ("/opt/rtdetrv2/configs/rtdetrv2/uvh26_rtdetrv2_s.yml", "/opt/models/uvh26/rtdetrv2_s.pth"),
     "coco": ("/opt/rtdetrv2/configs/rtdetrv2/coco_rtdetrv2_s.yml", "/opt/models/coco/rtdetrv2_s.pth"),
+    "coco_l": ("/opt/rtdetrv2/configs/rtdetrv2/coco_o365_rtdetrv2_l.yml", "/opt/models/coco/rtdetrv2_l_o365.pth"),
 }
+PEOPLE_MODELS = ("coco", "coco_l")      # COCO-class detectors (same 80 classes, same index order)
 # Subjects this engine answers, and with which models: UVH-26 alone (vehicles), or UVH-26 + COCO (+ pedestrians, animals).
 SUBJECTS = {
     "component:uvh26-rtdetrv2-s": {"models": ["uvh26"], "tests": ("B01", "B03")},
     "component:uvh26+coco-rtdetrv2-s": {"models": ["uvh26", "coco"], "tests": ("B01", "B03", "B04", "B09")},
+    "component:uvh26+o365-rtdetrv2-l": {"models": ["uvh26", "coco_l"], "tests": ("B01", "B03", "B04", "B09")},
 }
 
 # UVH-26 category ids (the released checkpoint's labels) → the suite's vehicle classes (visual_tests.VEHICLES).
@@ -95,7 +98,7 @@ def answer(test_id, dets, sees=("vehicles",)):
 
 def threshold_for(d):
     """The threshold a detection is counted at: THRESHOLD, or DETECT_THRESHOLD_PEOPLE for COCO's people and animals."""
-    return THRESHOLD_PEOPLE if (THRESHOLD_PEOPLE and d.get("model") == "coco") else THRESHOLD
+    return THRESHOLD_PEOPLE if (THRESHOLD_PEOPLE and d.get("model") in PEOPLE_MODELS) else THRESHOLD
 
 
 def _inside(a, b):
@@ -158,18 +161,21 @@ class Detector:
                 for lab, box, sc in self._run("uvh26", im):
                     if lab in UVH:
                         out.append({"model": "uvh26", "uvh": UVH[lab], "class": TO_CLASS.get(lab, "other"), "score": round(sc, 3), "box": [round(v, 1) for v in box]})
-            if "coco" in self.nets:                                        # people and animals: full frame + tiles, merged
+            for name in [n for n in self.nets if n in PEOPLE_MODELS]:      # people and animals: full frame + tiles, merged
                 raw_dets = []
                 for x1, y1, x2, y2 in self._tiles(w, h):
                     crop = im if (x1, y1, x2, y2) == (0, 0, w, h) else im.crop((x1, y1, x2, y2))
-                    raw_dets += [d for d in self._run("coco", crop, x1, y1) if d[0] in COCO]
+                    raw_dets += [d for d in self._run(name, crop, x1, y1) if d[0] in COCO]
                 if raw_dets:
                     T_ = self.torch
+                    # one group per SUITE class, so a dog the model also called a horse or a sheep (all animals here) is
+                    # one animal, not two: overlapping animal boxes merge across cattle / dog / other_animal
+                    grp = T_.tensor([0 if COCO[d[0]] == "pedestrian" else 1 for d in raw_dets])
                     keep = batched_nms(T_.tensor([d[1] for d in raw_dets], dtype=T_.float32), T_.tensor([d[2] for d in raw_dets], dtype=T_.float32),
-                                       T_.tensor([d[0] for d in raw_dets]), 0.5).tolist()
+                                       grp, 0.5).tolist()
                     for k in keep:
                         lab, box, sc = raw_dets[k]
-                        out.append({"model": "coco", "coco": lab, "class": COCO[lab], "score": round(sc, 3), "box": [round(v, 1) for v in box]})
+                        out.append({"model": name, "coco": lab, "class": COCO[lab], "score": round(sc, 3), "box": [round(v, 1) for v in box]})
         return mark_riders(out), (w, h)
 
 

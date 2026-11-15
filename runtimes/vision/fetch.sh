@@ -21,4 +21,8 @@ COCO_URL=https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18
 COCO_SHA256=$(sed -n 's/^coco_weights_sha256: *\([0-9A-Za-z]*\).*/\1/p' meta.yaml)
 [ -f build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth ] || curl -fsSL -o build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth "$COCO_URL"
 check build/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth "$COCO_SHA256"
-echo "fetched: rtdetrv2_pytorch@$RTDETR_SHA, UVH-26 and COCO weights checked"
+L_URL=https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_2x_coco_objects365_from_paddle.pth
+L_SHA256=$(sed -n 's/^o365_l_weights_sha256: *\([0-9A-Za-z]*\).*/\1/p' meta.yaml)
+[ -f build/rtdetrv2_r50vd_2x_coco_objects365_from_paddle.pth ] || curl -fsSL -o build/rtdetrv2_r50vd_2x_coco_objects365_from_paddle.pth "$L_URL"
+check build/rtdetrv2_r50vd_2x_coco_objects365_from_paddle.pth "$L_SHA256"
+echo "fetched: rtdetrv2_pytorch@$RTDETR_SHA, UVH-26, COCO-S and Objects365-L weights checked"

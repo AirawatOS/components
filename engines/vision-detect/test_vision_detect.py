@@ -69,3 +69,24 @@ def test_people_can_have_their_own_threshold():
         assert vd.answer("B04", dets) == {"counts": {"pedestrian": 1}} and vd.answer("B03", dets)["counts"]["car"] == 0
     finally:
         vd.THRESHOLD_PEOPLE = None
+
+
+def test_people_models_and_subjects():
+    assert vd.SUBJECTS["component:uvh26+o365-rtdetrv2-l"]["models"] == ["uvh26", "coco_l"]
+    assert set(vd.PEOPLE_MODELS) == {"coco", "coco_l"}
+    vd.THRESHOLD, vd.THRESHOLD_PEOPLE = 0.5, 0.3
+    try:
+        assert vd.threshold_for({"model": "coco_l"}) == 0.3 and vd.threshold_for({"model": "uvh26"}) == 0.5
+    finally:
+        vd.THRESHOLD_PEOPLE = None
+
+
+def test_one_dog_is_one_animal_even_if_also_called_a_horse():
+    import torch
+    from torchvision.ops import batched_nms
+    dog, horse = (16, [10.0, 10.0, 60.0, 50.0], 0.8), (17, [12.0, 11.0, 61.0, 52.0], 0.5)   # same animal, two COCO classes
+    walker = (0, [100.0, 10.0, 120.0, 60.0], 0.7)
+    dets = [dog, horse, walker]
+    grp = torch.tensor([0 if vd.COCO[d[0]] == "pedestrian" else 1 for d in dets])
+    keep = batched_nms(torch.tensor([d[1] for d in dets]), torch.tensor([d[2] for d in dets]), grp, 0.5).tolist()
+    assert sorted(keep) == [0, 2]                                        # the dog and the walker, not the 'horse'
