@@ -76,6 +76,7 @@ function renderSuites(el){ const ss=suites();
 
 function renderCases(el){ const ss=suites(); SUITE=SUITE||(ss[0]||{}).name;
   const cs=CASES.filter(c=>c.suite===SUITE).sort((a,b)=>a.id.localeCompare(b.id));
+  if(cs.some(c=>(c.inputs||[]).length)) return renderImageLabelling(el,ss,cs.filter(c=>c.status!=="retired"));   // retired images are out of the working set
   const c=CASE&&cs.find(x=>x.id===CASE.id);
   el.innerHTML=`<div class="row"><label>Suite</label><select id="csuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select><span class="muted small">${cs.length} cases · ${cs.filter(x=>x.labelled).length} labelled</span></div>
   <div class="grid2"><div><table><tr><th>Case</th><th>Labelled</th><th>Status</th></tr>${cs.map(x=>`<tr class="click" data-c="${esc(x.id)}"><td>${esc((x.source||{}).label||x.title)}</td><td>${x.labelled?`<span class="pill good">${expectCount(x)} ${expectOf(x).word}</span>`:((x.expected||{}).draft?`<span class="pill" title="Drafted — open to review and save">draft · ${((x.expected||{}).norms||[]).length}</span>`:'<span class="pill">not yet</span>')}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join("")||'<tr><td colspan="3" class="muted">No cases.</td></tr>'}</table></div>
@@ -89,6 +90,55 @@ const EXPECT={norms:{key:"norms",list:true,word:"norms",help:'Expected norms —
   exact:{key:"answer",list:false,word:"answer",help:"The exact answer — a JSON string."}};
 const expectOf=c=>EXPECT[c.scorer||"norms"]||EXPECT.norms;
 function expectCount(c){ const e=expectOf(c), v=(c.expected||{})[e.key]; return Array.isArray(v)?v.length:(v&&typeof v==="object")?Object.keys(v).length:(v==null?0:1); }
+// ---- image suites: label once per image, saved to that image's case in every test (ADR-0134) ----
+let IMG=null, IMGFILTER="todo";
+const tagOf=(c,k)=>((c.tags||[]).find(t=>t.startsWith(k+":"))||"").slice(k.length+1);
+function imageGroups(cs){ const g={}; for(const c of cs){ const inp=(c.inputs||[])[0]; if(!inp) continue; const k=inp.file_id;
+  const x=g[k]=g[k]||{file_id:k,name:inp.name||(c.source||{}).label||k.slice(0,16),cases:[],site:tagOf(c,"site"),view:tagOf(c,"view"),split:tagOf(c,"split")}; x.cases.push(c); }
+  return Object.values(g).sort((a,b)=>a.name.localeCompare(b.name)); }
+const imgUrl=g=>"/bridge/file?id="+encodeURIComponent(g.file_id)+"&name="+encodeURIComponent(g.name)+"&type=image%2Fjpeg&inline=1";
+function fieldValue(c){ const f=(c.label_form||[])[0]||{}, e=c.expected||{};
+  if(f.kind==="choice") return typeof e.labels==="string"?e.labels:""; if(f.kind==="multi") return Array.isArray(e.labels)?e.labels:[];
+  if(f.kind==="counts") return e.counts||{}; return e.text||{}; }
+function fieldHtml(c){ const f=(c.label_form||[])[0]||{}, v=fieldValue(c), id="lf-"+String(c.test_id||"x").toLowerCase();
+  const head=`<div class="small muted" style="margin-top:10px"><b>${esc(c.test_id||"")}</b> ${esc(f.label||"")} ${c.labelled?'<span class="pill good">labelled</span>':""}</div>`;
+  if(f.kind==="choice") return head+`<div class="row">${f.options.map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${v===o?"checked":""}> ${esc(o)}</label>`).join(" ")}</div>`;
+  if(f.kind==="multi") return head+`<div class="row">${f.options.map(o=>`<label><input type="checkbox" data-f="${id}" value="${esc(o)}" ${v.includes(o)?"checked":""}> ${esc(o)}</label>`).join(" ")}</div>`;
+  if(f.kind==="counts") return head+`<div class="row">${f.classes.map(k=>`<label>${esc(k)} <input type="number" min="0" step="1" data-f="${id}" data-k="${esc(k)}" value="${v[k]??""}" style="width:64px"></label>`).join(" ")}</div>`;
+  return head+f.fields.map(k=>`<div class="row"><label style="min-width:110px">${esc(k)}</label><input type="text" data-f="${id}" data-k="${esc(k)}" value="${esc(v[k]||"")}" style="flex:1"></div>`).join(""); }
+function readField(c){ const f=(c.label_form||[])[0]||{}, id="lf-"+String(c.test_id||"x").toLowerCase();       // → expected, or null when left blank
+  if(f.kind==="choice"){ const x=document.querySelector(`input[name="${id}"]:checked`); return x?{labels:x.value}:null; }
+  if(f.kind==="multi"){ const xs=[...document.querySelectorAll(`input[data-f="${id}"]:checked`)].map(x=>x.value); return xs.length?{labels:xs}:null; }
+  const ins=[...document.querySelectorAll(`input[data-f="${id}"]`)];
+  if(f.kind==="counts"){ if(ins.every(x=>x.value==="")) return null; const o={}; ins.forEach(x=>o[x.dataset.k]=Math.max(0,parseInt(x.value||"0",10)||0)); return {counts:o}; }
+  if(ins.every(x=>x.value.trim()==="")) return null; const o={}; ins.forEach(x=>o[x.dataset.k]=x.value.trim()); return {text:o}; }
+function renderImageLabelling(el,ss,cs){
+  const all=imageGroups(cs), done=g=>g.cases.every(c=>c.labelled);
+  const list=all.filter(g=>IMGFILTER==="all"||(IMGFILTER==="todo"?!done(g):IMGFILTER==="done"?done(g):g.split===IMGFILTER));
+  IMG=IMG&&all.find(g=>g.file_id===IMG.file_id)||list[0]||all[0]||null;
+  const n=all.filter(done).length, tests=[...new Set(cs.map(c=>c.test_id))].sort();
+  el.innerHTML=`<div class="row"><label>Suite</label><select id="csuite">${ss.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select>
+    <span class="muted small">${all.length} images × ${tests.length} tests (${esc(tests.join(" "))}) · ${n} images fully labelled · cases are private</span>
+    <label>Show</label><select id="ifilt">${[["todo","to label"],["done","labelled"],["dev","dev split"],["test","test split"],["all","all"]].map(([v,t])=>`<option value="${v}" ${IMGFILTER===v?"selected":""}>${t}</option>`).join("")}</select></div>
+  <div class="grid2" style="grid-template-columns:minmax(220px,1fr) 3fr"><div style="max-height:75vh;overflow:auto"><table>${list.map(g=>`<tr class="click" data-i="${esc(g.file_id)}"${IMG&&g.file_id===IMG.file_id?' style="background:#13263a"':""}><td class="small">${esc(g.name)}<br><span class="muted">${esc(g.view)} · ${esc(g.split)}</span></td><td>${done(g)?'<span class="pill good">✓</span>':`<span class="pill">${g.cases.filter(c=>c.labelled).length}/${g.cases.length}</span>`}</td></tr>`).join("")||'<tr><td class="muted">Nothing here.</td></tr>'}</table></div>
+  <div>${IMG?`<div class="card"><b>${esc(IMG.name)}</b> <span class="small muted">site ${esc(IMG.site)} · view ${esc(IMG.view)} · ${esc(IMG.split)} split · click the image to zoom</span>
+    <div style="margin:10px 0"><img id="limg" src="${imgUrl(IMG)}" alt="" style="max-width:100%;border-radius:8px;cursor:zoom-in"></div>
+    ${IMG.cases.sort((a,b)=>String(a.test_id).localeCompare(String(b.test_id))).map(fieldHtml).join("")}
+    <div class="row" style="margin-top:14px"><button class="btn p" id="lsave">Save labels</button><button class="btn" id="lnext">Save and next →</button><span id="lmsg" class="msg"></span></div>
+    <p class="small muted">A test left blank stays unlabelled; only saved labels count. Counts include partly visible objects.</p></div>`:'<p class="msg">No images.</p>'}</div></div>`;
+  $("csuite").onchange=e=>{ SUITE=e.target.value; IMG=null; render(); };
+  $("ifilt").onchange=e=>{ IMGFILTER=e.target.value; IMG=null; render(); };
+  el.querySelectorAll("tr[data-i]").forEach(tr=>tr.onclick=()=>{ IMG=all.find(g=>g.file_id===tr.dataset.i); render(); });
+  if(!IMG) return;
+  $("limg").onclick=e=>{ const z=e.target.style.maxWidth==="none"; e.target.style.maxWidth=z?"100%":"none"; e.target.style.cursor=z?"zoom-in":"zoom-out"; };
+  const doSave=async(next)=>{ $("lsave").disabled=$("lnext").disabled=true; let n=0;
+    try{ for(const c of IMG.cases){ const exp=readField(c); if(!exp) continue;
+        await save(Object.assign({},c,{expected:exp,labelled:true,updated_at:iso()})); n++; }
+      $("lmsg").textContent=n+" of "+IMG.cases.length+" tests saved."; await reload();
+      if(next){ const cur=IMG.file_id, i=list.findIndex(g=>g.file_id===cur); IMG=list[i+1]||null; }
+      render(); }
+    catch(e){ $("lmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; $("lsave").disabled=$("lnext").disabled=false; } };
+  $("lsave").onclick=()=>doSave(false); $("lnext").onclick=()=>doSave(true); }
 function caseEditor(c){ const exp=c.expected||{}; const prompt=((c.messages||[])[0]||{}).content||"";
   const sect=(prompt.split("Text:\n")[1]||prompt).split("\n\nOutput ONLY")[0];
   return `<div class="card"><b>${esc(c.title)}</b><div class="small muted">scorer ${esc(c.scorer)} · answer budget ${esc(c.max_tokens)} tokens · ${esc(c.visibility)}</div>
