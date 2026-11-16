@@ -7,7 +7,10 @@
 # the kernel's aggregate, evaluate_rules through the rule engine) — see the staging patch notes.
 component_id: ds:airawatdeveloper:app/agent-studio
 kind: app
-version: 0.1.1   # 0.1.1: Try it shows the answer's **bold** and `code` instead of the raw marks
+version: 0.2.2   # 0.2.2: up to two retries; repairs raw line breaks inside the model's JSON
+# 0.2.1: 0.2.1: shorter AI instructions + one retry (Kimi returned nothing when it spent its answer budget reasoning)
+# 0.2.0: ✨ Draft a skill or an agent with AI (Kimi-K3 via /bridge/ai-assist), and improve a skill from a Try it answer
+# 0.1.1: Try it shows the answer's **bold** and `code` instead of the raw marks
 provider: ds:airawatdeveloper:developer
 display_name: Agent Studio
 icon: 🧠

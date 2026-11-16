@@ -54,6 +54,7 @@
   .ex{cursor:pointer} .ex:hover{border-color:var(--accent)}
   .note{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--dim)}
   .err{color:var(--bad)} .ok{color:var(--good)}
+  .card.ai{border-color:#2d4a7a;background:#111a28} .aibar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
   .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
   @media (max-width:1100px){ #right{width:340px} }
@@ -146,7 +147,7 @@ function renderEditor(){
     const regRows=(o.registries||[]).map((r,i)=>`<div class="reg"><div class="row"><b>${esc(subj(r.schema))}</b><span class="muted mono">${esc(r.schema)}</span><span style="margin-left:auto"></span>${ro?'':`<button class="btn d" data-rmreg="${i}">Remove</button>`}</div>
         <div class="fl" id="fl-${i}"><span class="muted">Loading fields…</span></div>
         <input data-regnote="${i}" value="${esc(r.note||'')}" placeholder="What this registry is used for (optional)" style="margin-top:6px"${ro?' disabled':''}></div>`).join('');
-    M.innerHTML=head+`<div class="card"><h3>The skill</h3>${common}
+    M.innerHTML=head+aiCard('skill',o)+`<div class="card"><h3>The skill</h3>${common}
       <label class="f">When to use it <span class="hint">The assistant reads this to decide whether the question matches.</span><textarea id="e-when" rows="2"${ro?' disabled':''}>${esc(o.when_to_use)}</textarea></label>
       <label class="f">Steps <span class="hint">What to do, in order. Name the registries, fields and rule sets to use.</span><textarea id="e-steps" rows="7"${ro?' disabled':''}>${esc(o.steps)}</textarea></label>
       <label class="f">How to answer<textarea id="e-fmt" rows="2" placeholder="e.g. A short table by ward, then one sentence on what stands out. Say which records it is based on."${ro?' disabled':''}>${esc(o.answer_format)}</textarea></label>
@@ -159,7 +160,7 @@ function renderEditor(){
       box.innerHTML=f.length?f.map(k=>`<label><input type="checkbox" data-fld="${i}" value="${esc(k)}"${(r.fields||[]).includes(k)?' checked':''}${ro?' disabled':''}>${esc(k)}</label>`).join(''):'<span class="muted">No records yet, so no fields to show.</span>';
       box.querySelectorAll('[data-fld]').forEach(cb=>cb.onchange=()=>{const set=new Set(r.fields||[]);cb.checked?set.add(cb.value):set.delete(cb.value);r.fields=[...set];dirty();});});
   } else {
-    M.innerHTML=head+`<div class="card"><h3>The agent</h3>${common}
+    M.innerHTML=head+aiCard('agent',o)+`<div class="card"><h3>The agent</h3>${common}
       <label class="f">Persona <span class="hint">Who the agent is and how it speaks. Goes before the assistant's instructions.</span><textarea id="e-persona" rows="4"${ro?' disabled':''}>${esc(o.persona)}</textarea></label>
       <label class="f">Description<input id="e-desc" value="${esc(o.description||'')}"${ro?' disabled':''}></label></div>
     <div class="card"><h3>Skills</h3><div class="muted">The agent uses only these. Draft skills are used only in Try it.</div>
@@ -174,6 +175,7 @@ function actions(o){if(!ADMIN)return '';
     <span class="muted" id="emsg">${S.msg}</span></div>`;}
 function dirty(){S.dirty=true;const m=$('emsg');if(m)m.innerHTML='<span class="muted">Unsaved changes</span>';}
 function wire(){const o=S.cur,v=id=>$(id)?$(id).value:'';
+  if($('ai-desc')){$('ai-desc').oninput=e=>S.aiDesc=e.target.value;$('ai-go').onclick=()=>S.kind==='skill'?draftSkill():draftAgent();}
   const bind=(id,fn)=>{const el=$(id);if(el)el.oninput=()=>{fn(el.value);dirty();};};
   bind('e-title',x=>{o.title=x;if(o._new&&!S.nameEdited){o.name=snake(x);$('e-name').value=o.name;}});
   bind('e-name',x=>{o.name=snake(x);S.nameEdited=true;});
@@ -221,6 +223,12 @@ function renderTry(){const o=S.cur;
        ${m.propose?`<div class="prop">The assistant would now ask the person to confirm: <b>${esc(m.propose.label||m.propose.name)}</b> <span class="mono small">${esc(JSON.stringify(m.propose.args||{}))}</span><div class="muted">Writes are never carried out from Try it.</div></div>`:''}`).join('')
     +(S.busy?'<div class="muted"><span class="spin"></span> Thinking…</div>':'')
     :`<div class="muted">${o._new?'Save the '+S.kind+' first, then ask it a question.':'Ask a question below'+(ex.length?' or pick an example':'')+'.'}</div>`;
+  const last=S.chat[S.chat.length-1];
+  if(S.kind==='skill'&&ADMIN&&!S.busy&&last&&last.a&&!last.err){
+    B.insertAdjacentHTML('beforeend',`<div class="card ai" style="padding:10px 12px;margin-top:8px"><div class="muted">Not the answer you wanted?</div>
+      <input id="imp-note" placeholder="What was wrong (optional), e.g. it should use the ward number" style="margin-top:6px">
+      <div class="aibar"><button class="btn" id="imp-go">✨ Improve the skill from this answer</button><span class="muted" id="imp-msg"></span></div></div>`);
+    $('imp-go').onclick=improveSkill;}
   B.scrollTop=B.scrollHeight;$('ask').disabled=S.busy||o._new||!ADMIN;}
 async function ask(){const o=S.cur,q=$('q').value.trim();if(!o||!q||S.busy)return;
   if(S.dirty&&!(await save()))return;
@@ -232,9 +240,116 @@ async function ask(){const o=S.cur,q=$('q').value.trim();if(!o||!q||S.busy)retur
   else S.chat.push({a:r.j.reply||'(no answer)',steps:r.j.steps||[],propose:r.j.propose});
   renderTry();}
 
+
+// ---------------- drafting with AI (Kimi-K3, hosted by Airawat) ----------------
+// Uses the platform's shared AI seam /bridge/ai-assist (model gateway, the signed-in user's session; nothing leaves
+// Airawat). Only names of the user's registries, their field names with one example value each, rule-set names and
+// skill names are sent. A draft only fills the editor: nothing is saved until the person saves it, and anything the
+// model names that does not exist (a registry, a field, a rule set, a skill) is dropped and reported.
+// Kept SHORT on purpose: /bridge/ai-assist gives the model a fixed answer budget, and a long instruction makes Kimi-K3
+// spend it reasoning and return nothing. aiJSON retries once, asking for the JSON straight away.
+const toolsNote=()=>'Assistant tools: summarize_data(schema, group_by, metric count|sum|avg|min|max, field, filter {field: value}) gives totals and counts; query_data(schema) gives a count and examples'+(S.rulesets.length?'; evaluate_rules(ruleset, facts or schema) applies an approved rule set':'')+'.';
+const SKILL_KEYS='{"title":"","name":"snake_case","when_to_use":"","steps":"numbered, one per line","registries":[{"schema":"","fields":[],"note":""}],"rulesets":[],"answer_format":"","examples":["",""]}';
+const SYS_PICK='Choose the registries (at most 4) from the DATA that the described skill needs. Reply ONLY a JSON array of exact ids, or [].';
+const sysSkill=()=>'Write a SKILL (a playbook for an AI assistant) as JSON. '+toolsNote()+' Use only registries, fields and rule sets from the DATA; steps name exact ids, fields and tool arguments; totals always come from summarize_data, never mental arithmetic; say which field holds what when names are ambiguous. Reply ONLY this JSON: '+SKILL_KEYS;
+const sysImprove=()=>'Revise a SKILL (a playbook for an AI assistant) so the TRY question in the DATA is answered correctly and directly; keep what works. '+toolsNote()+' Use only registries, fields and rule sets from the DATA. Reply ONLY this JSON: {"skill":'+SKILL_KEYS+',"changes":"one sentence"}';
+const SYS_AGENT='Compose an AGENT for an AI assistant: pick the fitting skills from the DATA (exact names) and write a short persona (who it is, its tone, what it never does). Reply ONLY this JSON: {"title":"","name":"snake_case","description":"","persona":"","skills":[]}';
+async function aiJSON(system,prompt,context){
+  // Kimi-K3 sometimes spends the bridge's whole answer budget reasoning and returns nothing: retry up to twice
+  let last;for(let i=0;i<3;i++){try{return pickJSON(await ai(i?system+' Do not deliberate: output the JSON now.':system,prompt,context));}catch(e){last=e;}}
+  throw last;}
+async function ai(system,prompt,context){
+  const r=await jpost('/bridge/ai-assist',{task:'assist',app_id:APP,system,prompt,context:String(context||'').slice(0,9000)});
+  if(!r.ok)throw new Error((r.j&&r.j.error)||('the AI model did not answer ('+r.status+')'));
+  return String(r.j.content||'');}
+function pickJSON(t){t=String(t).replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/<think>[\s\S]*$/i,'').replace(/```(json)?/gi,'');
+  const ia=t.indexOf('{'),ib=t.indexOf('['),a=[ia,ib].filter(i=>i>=0).sort((x,y)=>x-y)[0];
+  if(a==null)throw new Error('the model did not return a draft — try describing it differently');
+  const b=t.lastIndexOf(t[a]==='{'?'}':']');if(b<a)throw new Error('the model’s answer was cut off — try a shorter description');
+  const raw=t.slice(a,b+1);
+  try{return JSON.parse(raw);}catch(e){}
+  // repair: raw line breaks / tabs inside strings, and trailing commas
+  let out='',q=false,esc2=false;for(const ch of raw){if(q){if(esc2){esc2=false;out+=ch;continue;}if(ch==='\\'){esc2=true;out+=ch;continue;}
+    if(ch==='"'){q=false;out+=ch;continue;}out+=ch==='\n'?'\\n':ch==='\r'?'':ch==='\t'?'\\t':ch;continue;}if(ch==='"')q=true;out+=ch;}
+  try{return JSON.parse(out.replace(/,\s*([}\]])/g,'$1'));}catch(e){throw new Error('the model’s answer was not valid JSON — try again');}}
+async function regInfo(schema){if(S.finfo&&S.finfo[schema])return S.finfo[schema];S.finfo=S.finfo||{};
+  const r=await jpost('/bridge/query',{app_id:APP,schema,limit:20});const rows=((r.ok&&r.j.results)||[]).map(x=>x.object||x),info={};
+  rows.forEach(o=>Object.entries(o).forEach(([k,v])=>{if(['schema','id','tenant','owner','prov','conforms_to','kind','_rev'].includes(k)||info[k])return;
+    const ty=typeof v==='number'?(Number.isInteger(v)?'whole number':'number'):typeof v==='boolean'?'yes/no':v&&typeof v==='object'?'object':'text';
+    let ex=v&&typeof v==='object'?'':String(v);if(ex.length>40)ex=ex.slice(0,37)+'…';info[k]={name:k,type:ty,ex};}));
+  return S.finfo[schema]=Object.values(info);}
+const regLine=(s,inf)=>'- '+s+': '+(inf.length?inf.map(f=>f.name+' ('+f.type+(f.ex!==''?', e.g. '+f.ex:'')+')').join('; '):'(no records yet)');
+function aiCard(kind,o){if(!ADMIN)return '';
+  const fresh=o._new||(kind==='skill'?!(o.steps||'').trim():!(o.skills||[]).length);
+  if(!fresh)return '';
+  return `<div class="card ai"><div class="row"><h3>✨ Draft with AI</h3><span class="muted">Kimi-K3, hosted by Airawat: nothing leaves the platform.</span></div>
+    <textarea id="ai-desc" rows="3" style="margin-top:6px" placeholder="${kind==='skill'?'Describe what the skill should do, e.g. “Answer questions about ward works: sanctioned amounts by ward or status, works done and pending.”':'Describe the role, e.g. “A ward finance officer who tracks works spending and pending works in their wards.”'}">${esc(S.aiDesc||'')}</textarea>
+    <div class="aibar"><button class="btn" id="ai-go">✨ Draft</button><span class="muted" id="ai-msg">${kind==='skill'?(o.registries&&o.registries.length?'Uses the registries already picked below.':'Kimi picks the registries, then reads their fields.'):'Kimi picks from your '+S.skills.filter(x=>x.status!=='retired').length+' skills.'}</span></div></div>`;}
+function aiBusy(on,msg,id){const b=$(id==='imp'?'imp-go':'ai-go'),m=$(id==='imp'?'imp-msg':'ai-msg');if(b)b.disabled=on;if(m)m.innerHTML=(on?'<span class="spin"></span> ':'')+msg;}
+function applySkill(o,d,knownRegs){const dropped=[];
+  if(d.title&&!o.title)o.title=String(d.title).slice(0,80);
+  if(o._new){const nm=snake(d.name||d.title||o.title);o.name=S.skills.some(x=>x.name===nm)?nm+'_2':nm;}
+  const txt=v=>Array.isArray(v)?v.join('\n'):String(v||'');
+  if(d.when_to_use)o.when_to_use=txt(d.when_to_use);if(d.steps)o.steps=txt(d.steps);if(d.answer_format)o.answer_format=txt(d.answer_format);
+  if(Array.isArray(d.examples))o.examples=d.examples.map(String).filter(Boolean).slice(0,5);
+  if(Array.isArray(d.registries)){const regs=[];
+    for(const r of d.registries){const sc=r&&(r.schema||r.id);if(!sc)continue;
+      if(!knownRegs[sc]){dropped.push('registry '+sc);continue;}
+      const names=new Set(knownRegs[sc].map(f=>f.name)),fl=(r.fields||[]).map(String);
+      fl.filter(f=>!names.has(f)).forEach(f=>dropped.push('field '+sc+'.'+f));
+      regs.push({schema:sc,fields:fl.filter(f=>names.has(f)),note:String(r.note||'')});}
+    if(regs.length||!o.registries.length)o.registries=regs;}
+  if(Array.isArray(d.rulesets)){const ok=new Set(S.rulesets.map(r=>r.name));
+    d.rulesets.map(String).filter(x=>!ok.has(x)).forEach(x=>dropped.push('rule set '+x));o.rulesets=d.rulesets.map(String).filter(x=>ok.has(x));}
+  return dropped;}
+async function draftSkill(){const o=S.cur,desc=(S.aiDesc||'').trim();if(!desc){$('ai-desc').focus();return;}
+  try{let picks=(o.registries||[]).map(r=>r.schema);
+    if(!picks.length){aiBusy(true,'Choosing registries…');
+      const p=await aiJSON(SYS_PICK,desc,'REGISTRIES:\n'+S.regs.map(s=>'- '+s+' ('+subj(s)+')').join('\n'));
+      picks=(Array.isArray(p)?p:[]).map(String).filter(x=>S.regs.includes(x)).slice(0,4);}
+    aiBusy(true,picks.length?'Reading the fields of '+picks.join(', ')+'…':'No registry seemed to fit; drafting without one…');
+    const infos=await Promise.all(picks.map(regInfo)),known={};picks.forEach((s,i)=>known[s]=infos[i]);
+    const ctx='REGISTRIES:\n'+(picks.map((s,i)=>regLine(s,infos[i])).join('\n')||'(none)')+
+      '\nRULE SETS:\n'+(S.rulesets.map(r=>'- '+r.name+(r.title?': '+r.title:'')).join('\n')||'(none)')+
+      '\nEXISTING SKILLS (do not reuse these names): '+(S.skills.map(x=>x.name).join(', ')||'none');
+    aiBusy(true,'Writing the skill…');
+    const d=await aiJSON(sysSkill(),desc,ctx);
+    const dropped=applySkill(o,d,known);S.dirty=true;
+    S.msg='<span class="ok">Drafted by Kimi-K3.</span> Check every part, then save and try it.'+(dropped.length?' <span class="err">Left out (not in your data): '+esc(dropped.join(', '))+'.</span>':'');
+    renderEditor();renderTry();}
+  catch(e){aiBusy(false,'<span class="err">'+esc(e.message)+'</span>');}}
+async function improveSkill(){const o=S.cur;let qi=-1;for(let i=S.chat.length-1;i>=0;i--)if(S.chat[i].q){qi=i;break;}
+  const q=S.chat[qi],a=S.chat[qi+1];if(!q||!a)return;
+  try{aiBusy(true,'Reading the skill’s registries…','imp');
+    const regs=(o.registries||[]).map(r=>r.schema),infos=await Promise.all(regs.map(regInfo)),known={};regs.forEach((s,i)=>known[s]=infos[i]);
+    const cur={title:o.title,name:o.name,when_to_use:o.when_to_use,steps:o.steps,registries:o.registries,rulesets:o.rulesets,answer_format:o.answer_format,examples:o.examples};
+    const ctx='CURRENT SKILL:\n'+JSON.stringify(cur)+'\nREGISTRY FIELDS:\n'+(regs.map((s,i)=>regLine(s,infos[i])).join('\n')||'(none)')+
+      '\nRULE SETS:\n'+(S.rulesets.map(r=>'- '+r.name).join('\n')||'(none)')+
+      '\nTRY:\nQuestion: '+q.q+'\nTool calls: '+((a.steps||[]).map(s=>s.tool+' '+JSON.stringify(s.args||{})).join(' | ')||'none')+'\nAnswer: '+String(a.a).slice(0,1500);
+    const note=($('imp-note')&&$('imp-note').value.trim())||'';
+    aiBusy(true,'Revising the skill…','imp');
+    const r=await aiJSON(sysImprove(),note||'Make the skill answer this kind of question correctly and directly.',ctx);
+    const d=r.skill||r,dropped=applySkill(o,d,known);S.dirty=true;
+    S.msg='<span class="ok">Revised by Kimi-K3'+(r.changes?': '+esc(String(r.changes).slice(0,300)):'')+'</span> Check it, save, and ask again.'+(dropped.length?' <span class="err">Left out (not in your data): '+esc(dropped.join(', '))+'.</span>':'');
+    renderEditor();renderTry();}
+  catch(e){aiBusy(false,'<span class="err">'+esc(e.message)+'</span>','imp');}}
+async function draftAgent(){const o=S.cur,desc=(S.aiDesc||'').trim();if(!desc){$('ai-desc').focus();return;}
+  const pool=S.skills.filter(x=>x.status!=='retired');
+  if(!pool.length){aiBusy(false,'<span class="err">Write a skill first: an agent is made of skills.</span>');return;}
+  try{aiBusy(true,'Choosing skills and writing the persona…');
+    const d=await aiJSON(SYS_AGENT,desc,'SKILLS:\n'+pool.map(x=>'- '+x.name+' ['+x.status+']: '+x.title+' — '+(x.when_to_use||'').slice(0,200)).join('\n'));
+    const names=new Set(pool.map(x=>x.name)),want=(d.skills||[]).map(String),dropped=want.filter(x=>!names.has(x));
+    if(d.title&&!o.title)o.title=String(d.title).slice(0,80);
+    if(o._new){const nm=snake(d.name||d.title||o.title);o.name=S.agents.some(x=>x.name===nm)?nm+'_2':nm;}
+    if(d.persona)o.persona=String(d.persona);if(d.description)o.description=String(d.description);
+    o.skills=want.filter(x=>names.has(x));S.dirty=true;
+    S.msg='<span class="ok">Drafted by Kimi-K3.</span> Check the persona and skills, then save and try it.'+(dropped.length?' <span class="err">Left out (no such skill): '+esc(dropped.join(', '))+'.</span>':'');
+    renderEditor();renderTry();}
+  catch(e){aiBusy(false,'<span class="err">'+esc(e.message)+'</span>');}}
+
 // ---------------- wiring ----------------
 document.querySelectorAll('.lt').forEach(b=>b.onclick=()=>{if(S.dirty&&!confirm('Discard unsaved changes?'))return;S.kind=b.dataset.k;S.cur=null;S.dirty=false;S.chat=[];renderList();renderEditor();renderTry();});
-$('new').onclick=()=>{if(S.dirty&&!confirm('Discard unsaved changes?'))return;S.cur=blank(S.kind);S.dirty=false;S.nameEdited=false;S.msg='';S.chat=[];renderList();renderEditor();renderTry();$('e-title').focus();};
+$('new').onclick=()=>{if(S.dirty&&!confirm('Discard unsaved changes?'))return;S.cur=blank(S.kind);S.aiDesc='';S.dirty=false;S.nameEdited=false;S.msg='';S.chat=[];renderList();renderEditor();renderTry();$('e-title').focus();};
 $('ask').onclick=ask;$('q').onkeydown=e=>{if(e.key==='Enter')ask();};
 window.addEventListener('beforeunload',e=>{if(S.dirty){e.preventDefault();e.returnValue='';}});
 (async function boot(){
