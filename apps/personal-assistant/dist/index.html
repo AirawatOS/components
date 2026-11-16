@@ -21,9 +21,14 @@
   #q{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:10px 12px;font:inherit;resize:none}
   a{color:var(--acc)}
   .empty{color:var(--mut);text-align:center;margin-top:12vh}
+  #agent{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;max-width:240px}
+  #agentinfo{color:var(--mut);font-size:12px;padding:6px 16px;border-bottom:1px solid var(--line);display:none}
+  .sys{color:var(--mut);font-size:12px;text-align:center;margin:12px 0}
   .empty h2{color:var(--ink);font-weight:600} .chip{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:5px 11px;margin:4px;cursor:pointer;font-size:12.5px}
 </style>
-<header><span style="font-size:18px">✨</span><div><b>Assistant</b> <span class="sub">· your personal AI on AirawatOS</span></div><span id="who"></span></header>
+<header><span style="font-size:18px">✨</span><div><b>Assistant</b> <span class="sub">· your personal AI on AirawatOS</span></div>
+  <select id="agent" title="Choose who you are talking to" hidden><option value="">Assistant (all skills)</option></select><span id="who"></span></header>
+<div id="agentinfo"></div>
 <div id="log"><div class="empty" id="empty"><h2>How can I help?</h2><div style="color:var(--mut);margin:6px 0 14px">I work across your installed apps — I plan, read your data, and act with your confirmation.</div>
   <span class="chip">How many documents do I have?</span>
   <span class="chip">Draft a doc titled “Status” with 3 bullet points about my week</span>
@@ -38,6 +43,28 @@ function bubble(role,html){const L=$('log');const e=$('empty');if(e)e.remove();
   wrap.innerHTML=`<div class="av">${role==='user'?'🙂':'✨'}</div><div style="min-width:0"><div class="bub">${html}</div></div>`;
   L.appendChild(wrap);L.scrollTop=L.scrollHeight;return wrap.querySelector('div[style]');}
 async function agent(payload){return fetch('/bridge/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());}
+// AGENT PICKER: the organisation's active agents (made in Agent Studio) that this person may use. "Assistant (all
+// skills)" uses every active skill they may use; an agent uses only its own skills, with its persona. The choice is
+// remembered per browser. Switching starts a fresh conversation (a plan never carries over to another agent).
+let AGENT='',AGENTS=[];
+const AKEY='assistant.agent';
+function agentInfo(){const a=AGENTS.find(x=>x.name===AGENT),I=$('agentinfo');
+  if(!a){I.style.display='none';return;}
+  I.style.display='block';
+  I.innerHTML='<b style="color:var(--ink)">'+esc(a.title)+'</b>'+(a.description?' · '+esc(a.description):'')+
+    (a.skills.length?' · skills: '+esc(a.skills.join(', ')):' · <i>no active skills yet</i>')+
+    (a.examples.length?'<div style="margin-top:4px">'+a.examples.map(e=>'<span class="chip">'+esc(e)+'</span>').join('')+'</div>':'');}
+async function loadAgents(){
+  try{const r=await agent({list_agents:true});AGENTS=Array.isArray(r.agents)?r.agents:[];}catch(e){AGENTS=[];}
+  const sel=$('agent');if(!AGENTS.length){sel.hidden=true;return;}
+  sel.innerHTML='<option value="">Assistant (all skills)</option>'+AGENTS.map(a=>'<option value="'+esc(a.name)+'">'+esc(a.title)+'</option>').join('');
+  let saved='';try{saved=localStorage.getItem(AKEY)||'';}catch(e){}
+  AGENT=AGENTS.some(a=>a.name===saved)?saved:'';sel.value=AGENT;sel.hidden=false;agentInfo();
+  sel.onchange=()=>{AGENT=sel.value;try{localStorage.setItem(AKEY,AGENT);}catch(e){}
+    HIST=[];const n=document.createElement('div');n.className='sys';
+    n.textContent='— now talking to '+(AGENT?(AGENTS.find(a=>a.name===AGENT)||{}).title:'the Assistant (all skills)')+'; a new conversation starts —';
+    $('log').appendChild(n);$('log').scrollTop=$('log').scrollHeight;agentInfo();$('q').focus();};}
+loadAgents();
 function renderReply(slot,j){
   slot.querySelector('.bub').innerHTML=esc(j.reply||'').replace(/\n/g,'<br>')+(j.link?` &nbsp;<a href="${esc(j.link)}" target="_top">Open ↗</a>`:'');
   if(Array.isArray(j.steps)&&j.steps.length){const t=document.createElement('div');t.className='tools';t.textContent='· used: '+j.steps.map(s=>s.tool).join(', ');slot.appendChild(t);}
@@ -76,7 +103,7 @@ function renderReply(slot,j){
 async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(!q)return;$('q').value='';
   bubble('user',esc(q));HIST.push({role:'user',content:q});BUSY=true;
   const slot=bubble('ai','<span style="color:var(--mut)">thinking…</span>');
-  try{const j=await agent({message:q,history:HIST.slice(0,-1)});renderReply(slot,j);HIST.push({role:'assistant',content:j.reply||''});}
+  try{const j=await agent(Object.assign({message:q,history:HIST.slice(0,-1)},AGENT?{agent:AGENT}:{}));renderReply(slot,j);HIST.push({role:'assistant',content:j.reply||''});}
   catch(e){slot.querySelector('.bub').textContent='✗ '+e;}BUSY=false;$('q').focus();
 }
 $('send').onclick=()=>send();

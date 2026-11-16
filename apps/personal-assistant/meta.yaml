@@ -4,7 +4,7 @@
 component_id: ds:airawatdeveloper:app/personal-assistant
 kind: app
 name: Assistant
-version: 0.1.0
+version: 0.2.0   # 0.2.0: agent picker — talk to the Assistant (all active skills) or to one Agent Studio agent (its skills + persona)
 provider: ds:airawatdeveloper:developer
 entrypoint: index.html
 personal: true
