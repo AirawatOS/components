@@ -1,122 +1,242 @@
-<!doctype html><meta charset="utf-8"><title>Assistant</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/shared/aos.css">
+<link rel="stylesheet" href="/shared/workspace.css">
 <style>
-  :root{--bg:#0b0f16;--panel:#0f1521;--line:#1e2836;--ink:#e6edf6;--mut:#8aa0b6;--acc:#5b9dff;--good:#3fb37f}
-  *{box-sizing:border-box} html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
-  header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
-  header b{font-size:15px} header .sub{color:var(--mut);font-size:12px}
-  #who{margin-left:auto;color:var(--mut);font-size:12px}
-  #log{flex:1;overflow:auto;padding:16px;max-width:860px;width:100%;margin:0 auto}
-  .msg{margin:10px 0;display:flex;gap:10px}
-  .msg .av{width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;font-size:14px}
-  .me .av{background:#1b2740} .ai .av{background:#14241c}
-  .bub{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;white-space:pre-wrap;max-width:100%}
-  .me .bub{background:#12203a}
-  .tools{color:var(--mut);font-size:11.5px;margin:3px 0 0 36px}
-  .propose{margin:6px 0 2px 36px;background:#101a12;border:1px solid #2b6;border-radius:9px;padding:10px 12px}
-  .propose .lbl{font-size:12px;color:var(--mut)}
-  .btn{background:var(--acc);color:#03101f;border:0;border-radius:7px;padding:7px 13px;font-weight:600;cursor:pointer;font-size:13px}
-  .btn.ghost{background:transparent;color:var(--mut);border:1px solid var(--line)}
-  footer{border-top:1px solid var(--line);padding:12px 16px;display:flex;gap:8px;max-width:860px;width:100%;margin:0 auto}
-  #q{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:10px 12px;font:inherit;resize:none}
-  a{color:var(--acc)}
-  .empty{color:var(--mut);text-align:center;margin-top:12vh}
-  #agent{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;max-width:240px}
-  #agentinfo{color:var(--mut);font-size:12px;padding:6px 16px;border-bottom:1px solid var(--line);display:none}
-  .sys{color:var(--mut);font-size:12px;text-align:center;margin:12px 0}
-  .empty h2{color:var(--ink);font-weight:600} .chip{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:5px 11px;margin:4px;cursor:pointer;font-size:12.5px}
-</style>
-<header><span style="font-size:18px">✨</span><div><b>Assistant</b> <span class="sub">· your personal AI on AirawatOS</span></div>
-  <select id="agent" title="Choose who you are talking to" hidden><option value="">Assistant (all skills)</option></select><span id="who"></span></header>
-<div id="agentinfo"></div>
-<div id="log"><div class="empty" id="empty"><h2>How can I help?</h2><div style="color:var(--mut);margin:6px 0 14px">I work across your installed apps — I plan, read your data, and act with your confirmation.</div>
-  <span class="chip">How many documents do I have?</span>
-  <span class="chip">Draft a doc titled “Status” with 3 bullet points about my week</span>
-  <span class="chip">Summarise my most recent document</span></div></div>
-<footer><textarea id="q" rows="1" placeholder="Ask your assistant…"></textarea><button class="btn" id="send">Send</button></footer>
+  /* App-specific only — tokens from aos.css, the frame from workspace.css (same frame as Files, Data, Docs, Sheets) */
+  .titlein{flex:1;min-width:120px;background:transparent;border:1px solid transparent;color:var(--ink);font:600 16px/1.4 var(--sans);padding:4px 8px;border-radius:8px}
+  .titlein:hover,.titlein:focus{background:var(--panel2);border-color:var(--line);outline:none}
+  .status{font-size:12px;color:var(--dim);white-space:nowrap} .status.err{color:var(--danger)}
+  .agentsel{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;max-width:230px}
+  .chatwrap{flex:1;overflow:auto;background:var(--bg)}
+  .chat{max-width:820px;margin:0 auto;padding:18px 20px 8px}
+  .m{margin:14px 0} .m .who{font-size:12px;color:var(--dim);margin-bottom:4px}
+  .m.user{display:flex;justify-content:flex-end} .m.user .bub{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 12px;max-width:80%;white-space:pre-wrap;overflow-wrap:anywhere}
+  .m.note{text-align:center;color:var(--dim);font-size:12px}
+  .m.ai .body{line-height:1.6;overflow-wrap:anywhere}
+  .m.ai .body p{margin:0 0 8px} .m.ai .body ul,.m.ai .body ol{margin:4px 0 10px;padding-left:22px} .m.ai .body li{margin:3px 0}
+  .m.ai .body h4{margin:12px 0 6px;font-size:14px}
+  .m.ai .body code{font:12px ui-monospace,Menlo,monospace;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:0 4px}
+  .m.ai .body table{border-collapse:collapse;margin:6px 0 10px;font-size:13px} .m.ai .body th,.m.ai .body td{border:1px solid var(--line);padding:4px 9px;text-align:left}
+  .m.ai .body th{background:var(--panel2)}
+  .m.ai.err .body{color:var(--danger)}
+  .src{display:inline-block;font-size:11px;line-height:1.5;padding:0 7px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);vertical-align:1px}
+  .used{font-size:11.5px;color:var(--dim);margin-top:4px}
+  .prop{margin:8px 0 2px;border:1px solid var(--good);border-radius:10px;padding:10px 12px;background:var(--panel)}
+  .prop .lbl{font-size:12px;color:var(--dim)} .prop .args{margin:6px 0 8px;font:12px ui-monospace,Menlo,monospace;color:var(--dim);overflow-wrap:anywhere}
+  .prop input{width:100%;box-sizing:border-box;padding:7px 9px;margin-bottom:8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink)}
+  .welcome{text-align:center;color:var(--dim);padding:9vh 10px 10px} .welcome h2{color:var(--ink);font-weight:600;margin:0 0 6px}
+  .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:14px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 12px;cursor:pointer;font-size:13px;color:var(--ink)} .chip:hover{border-color:var(--accent)}
+  .agentinfo{font-size:12px;color:var(--dim);margin-top:10px}
+  .composer{border-top:1px solid var(--line);background:var(--panel);padding:10px 16px}
+  .composer .in{max-width:820px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+  #q{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit;resize:none;max-height:180px}
+  .thinking{color:var(--dim);font-size:13px} .dots::after{content:"…";animation:d 1.2s steps(3) infinite}
+  @keyframes d{0%{content:"."}33%{content:".."}66%{content:"..."}}
+  .grp{padding:10px 16px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+</style></head>
+<body class="ws">
+<nav class="ws-top" id="ws-top" aria-label="Location"></nav>
+<div class="ws-app">
+  <aside class="ws-left" id="ws-left" aria-label="Chats">
+    <div class="ws-left-top">
+      <input id="ws-search" type="search" placeholder="Search chats…" autocomplete="off" aria-label="Search chats">
+      <button class="ws-ib" id="ws-collapse" title="Hide this pane">«</button>
+    </div>
+    <button class="btn pri ws-new" id="newBtn">＋ New chat</button>
+    <div class="ws-nav">
+      <button class="ws-nav-item on" data-v="all"><span class="ic">💬</span>My chats<span class="ct" id="ct"></span></button>
+    </div>
+    <div class="ws-scroll" id="ws-list"></div>
+    <div class="ws-railbox"><button class="ws-ib" id="ws-expand" title="Show this pane">»</button><div class="ws-railname" id="ws-railname">Assistant</div></div>
+  </aside>
+
+  <main class="ws-main" id="ws-main">
+    <div class="ws-toolbar">
+      <input class="titlein" id="title" placeholder="New chat" autocomplete="off" aria-label="Chat title">
+      <span class="status" id="status"></span>
+      <select class="agentsel" id="agent" title="Who you are talking to" hidden></select>
+      <button class="ws-ib" id="infoBtn" title="Details and history">ⓘ</button>
+      <button class="ws-ib" id="delBtn" title="Move this chat to trash">🗑</button>
+    </div>
+    <div class="chatwrap" id="chatwrap"><div class="chat" id="log"></div></div>
+    <div class="composer"><div class="in">
+      <textarea id="q" rows="1" placeholder="Ask your assistant…" aria-label="Message"></textarea>
+      <button class="btn pri" id="send">Send</button></div></div>
+  </main>
+
+  <aside class="ws-right" id="ws-right" aria-label="Details">
+    <div class="ws-right-head"><span class="t"></span><button class="ws-ib" id="ws-rclose" title="Close (Esc)">✕</button></div>
+    <div class="ws-right-sub"></div>
+    <div class="ws-tabs"><button class="ws-tab on" data-t="info">Info</button><button class="ws-tab" data-t="hist">History</button></div>
+    <div class="ws-right-body" id="ws-rbody"></div>
+  </aside>
+</div>
+<script src="/shared/workspace.js"></script>
 <script>
-const $=id=>document.getElementById(id); let HIST=[]; let BUSY=false;
-fetch('/session').then(r=>r.json()).then(s=>{$('who').textContent=s.authenticated?('● '+(s.sub||'').split('/').pop()):'';}).catch(()=>{});
-function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function bubble(role,html){const L=$('log');const e=$('empty');if(e)e.remove();
-  const wrap=document.createElement('div');wrap.className='msg '+(role==='user'?'me':'ai');
-  wrap.innerHTML=`<div class="av">${role==='user'?'🙂':'✨'}</div><div style="min-width:0"><div class="bub">${html}</div></div>`;
-  L.appendChild(wrap);L.scrollTop=L.scrollHeight;return wrap.querySelector('div[style]');}
-async function agent(payload){return fetch('/bridge/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());}
-// AGENT PICKER: the organisation's active agents (made in Agent Studio) that this person may use. "Assistant (all
-// skills)" uses every active skill they may use; an agent uses only its own skills, with its persona. The choice is
-// remembered per browser. Switching starts a fresh conversation (a plan never carries over to another agent).
-let AGENT='',AGENTS=[];
+// THE PERSONAL ASSISTANT. Same frame as Files, Data, Docs and Sheets: saved chats on the left (platform.agent_chat,
+// owned by the user — the app is personal, so reads are owner-scoped, and the schema is x-ownership "user"), the chat in
+// the middle, details on the right. Answers render as light, SAFE markdown (escaped first). Talk to the Assistant (all
+// active skills) or to one Agent Studio agent. Reads run automatically; every write is shown here to confirm first, and
+// a secret is typed straight into Vault (never stored in the chat or sent to the assistant).
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function mdInline(t){
+  return t.replace(/`([^`\n]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*\n]+?)\*\*/g,'<b>$1</b>').replace(/__([^_\n]+?)__/g,'<b>$1</b>')
+    .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,;:!?]|$)/g,'$1<i>$2</i>')
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g,(m,a,u)=>'<a href="'+u+'" target="_top" rel="noopener">'+a+'</a>')
+    .replace(/\[([a-z][a-z _-]{1,24})\](?!\()/gi,'<span class="src">$1</span>');}
+function md(s){
+  const lines=esc(s).replace(/\r/g,'').split('\n'),out=[];let list=null,para=[];
+  const flushP=()=>{if(para.length){out.push('<p>'+mdInline(para.join('<br>'))+'</p>');para=[];}};
+  const flushL=()=>{if(list){out.push('<'+list.t+'>'+list.items.map(x=>'<li>'+mdInline(x)+'</li>').join('')+'</'+list.t+'>');list=null;}};
+  for(let i=0;i<lines.length;i++){const l=lines[i];let m;
+    if(!l.trim()){flushP();flushL();continue;}
+    if((m=l.match(/^\s*(#{1,4})\s+(.*)$/))){flushP();flushL();out.push('<h4>'+mdInline(m[2])+'</h4>');continue;}
+    if(/^\s*\|.*\|\s*$/.test(l)&&i+1<lines.length&&/^\s*\|?\s*:?-{2,}/.test(lines[i+1])){flushP();flushL();
+      const row=x=>x.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+      const hd=row(l);i++;const body=[];while(i+1<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i+1])){i++;body.push(row(lines[i]));}
+      out.push('<table><thead><tr>'+hd.map(c=>'<th>'+mdInline(c)+'</th>').join('')+'</tr></thead><tbody>'+body.map(r=>'<tr>'+r.map(c=>'<td>'+mdInline(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table>');continue;}
+    if((m=l.match(/^\s*[-*•]\s+(.*)$/))){flushP();if(!list||list.t!=='ul'){flushL();list={t:'ul',items:[]};}list.items.push(m[1]);continue;}
+    if((m=l.match(/^\s*\d+[.)]\s+(.*)$/))){flushP();if(!list||list.t!=='ol'){flushL();list={t:'ol',items:[]};}list.items.push(m[1]);continue;}
+    if(list&&/^\s{2,}\S/.test(l)){list.items[list.items.length-1]+=' '+l.trim();continue;}
+    flushL();para.push(l);}
+  flushP();flushL();return out.join('');}
+
+let APPID='personal-assistant',TENANT='',ME='',CHATS=[],CUR=null,AGENTS=[],BUSY=false,RTAB='info';
 const AKEY='assistant.agent';
-function agentInfo(){const a=AGENTS.find(x=>x.name===AGENT),I=$('agentinfo');
-  if(!a){I.style.display='none';return;}
-  I.style.display='block';
-  I.innerHTML='<b style="color:var(--ink)">'+esc(a.title)+'</b>'+(a.description?' · '+esc(a.description):'')+
-    (a.skills.length?' · skills: '+esc(a.skills.join(', ')):' · <i>no active skills yet</i>')+
-    (a.examples.length?'<div style="margin-top:4px">'+a.examples.map(e=>'<span class="chip">'+esc(e)+'</span>').join('')+'</div>':'');}
-async function loadAgents(){
-  try{const r=await agent({list_agents:true});AGENTS=Array.isArray(r.agents)?r.agents:[];}catch(e){AGENTS=[];}
+const TOOL_NAMES={use_skill:'skill',summarize_data:'totals',query_data:'data',list_data:'data catalogue',evaluate_rules:'rules',
+  list_documents:'documents',read_document:'a document',list_tasks:'tasks',list_mail:'mail',list_civic_issues:'civic issues',
+  list_updates:'updates',city_status:'city status',component_status:'components',marketplace_search:'marketplace'};
+async function api(path,body){const r=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  return r.json().catch(()=>({error:'HTTP '+r.status}));}
+const agentReq=payload=>api('/bridge/agent',payload);
+const now=()=>new Date().toISOString();
+function status(t,err){const s=$('status');s.textContent=t||'';s.className='status'+(err?' err':'');}
+
+// ---------------- chats (left) ----------------
+async function loadChats(){const out=[];let cursor=null;
+  for(let i=0;i<10;i++){const r=await api('/bridge/query',{app_id:APPID,schema:'platform.agent_chat',paginate:true,limit:200,cursor});
+    if(r.error&&!r.results)break;out.push(...(r.results||[]).map(x=>x.object||x));cursor=r.next_cursor;if(!cursor)break;}
+  CHATS=out.filter(c=>!c.archived).sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));}
+function bucket(s){const d=new Date(s||0),t=new Date();t.setHours(0,0,0,0);const diff=(t-d)/864e5;
+  return d>=t?'Today':diff<1?'Yesterday':diff<7?'Previous 7 days':diff<30?'Previous 30 days':'Older';}
+function renderList(){
+  const q=$('ws-search').value.trim().toLowerCase(),L=$('ws-list');
+  const list=CHATS.filter(c=>!q||((c.title||'')+' '+(c.agent_title||'')+' '+(c.messages||[]).map(m=>m.content).join(' ')).toLowerCase().includes(q));
+  $('ct').textContent=CHATS.length||'';
+  if(!list.length){L.innerHTML='<div class="muted" style="padding:12px 16px">'+(q?'No chat matches “'+esc(q)+'”.':'Your chats will appear here.')+'</div>';return;}
+  let last='';L.innerHTML=list.map(c=>{const g=q?'':bucket(c.updated_at);const head=g!==last?'<div class="grp">'+g+'</div>':'';last=g;
+    return head+'<div class="ws-item'+(CUR&&CUR.id===c.id?' sel':'')+'" data-id="'+esc(c.id)+'" title="'+esc(c.title)+'"><span class="nm">'+WS.hl(c.title||'Untitled chat',q)+
+      '</span><span class="ct">'+(c.agent_title?'🧠':'')+'</span></div>';}).join('');
+  L.querySelectorAll('.ws-item').forEach(el=>el.onclick=()=>openChat(el.dataset.id));}
+function openChat(id){const c=CHATS.find(x=>x.id===id);if(!c||BUSY)return;CUR=c;setAgentSel(c.agent||'');render();renderList();if(WS.isRightOpen())renderRight();
+  try{localStorage.setItem('assistant.last',id);}catch(e){}}
+function newChat(agent){if(BUSY)return;CUR={schema:'platform.agent_chat',id:'',tenant:TENANT,title:'',agent:agent==null?$('agent').value:agent,agent_title:'',messages:[]};
+  const a=AGENTS.find(x=>x.name===CUR.agent);CUR.agent_title=a?a.title:'';render();renderList();$('q').focus();}
+async function save(){if(!CUR||!CUR.messages.length)return;
+  if(!CUR.id){CUR.id='ds:'+TENANT+':platform/agent_chat/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);CUR.created_at=now();CHATS.unshift(CUR);}
+  if(!CUR.title){const f=CUR.messages.find(m=>m.role==='user');CUR.title=f?f.content.replace(/\s+/g,' ').slice(0,60):'Chat';}
+  CUR.updated_at=now();CUR.messages=CUR.messages.slice(-200);
+  const r=await api('/bridge/save',{app_id:APPID,object:CUR});
+  if(!r.saved)status('not saved: '+(r.detail||r.error||'?'),true);else status('');
+  CHATS.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));renderList();}
+
+// ---------------- agents ----------------
+async function loadAgents(){try{const r=await agentReq({list_agents:true});AGENTS=Array.isArray(r.agents)?r.agents:[];}catch(e){AGENTS=[];}
   const sel=$('agent');if(!AGENTS.length){sel.hidden=true;return;}
-  sel.innerHTML='<option value="">Assistant (all skills)</option>'+AGENTS.map(a=>'<option value="'+esc(a.name)+'">'+esc(a.title)+'</option>').join('');
-  let saved='';try{saved=localStorage.getItem(AKEY)||'';}catch(e){}
-  AGENT=AGENTS.some(a=>a.name===saved)?saved:'';sel.value=AGENT;sel.hidden=false;agentInfo();
-  sel.onchange=()=>{AGENT=sel.value;try{localStorage.setItem(AKEY,AGENT);}catch(e){}
-    HIST=[];const n=document.createElement('div');n.className='sys';
-    n.textContent='— now talking to '+(AGENT?(AGENTS.find(a=>a.name===AGENT)||{}).title:'the Assistant (all skills)')+'; a new conversation starts —';
-    $('log').appendChild(n);$('log').scrollTop=$('log').scrollHeight;agentInfo();$('q').focus();};}
-loadAgents();
-function renderReply(slot,j){
-  slot.querySelector('.bub').innerHTML=esc(j.reply||'').replace(/\n/g,'<br>')+(j.link?` &nbsp;<a href="${esc(j.link)}" target="_top">Open ↗</a>`:'');
-  if(Array.isArray(j.steps)&&j.steps.length){const t=document.createElement('div');t.className='tools';t.textContent='· used: '+j.steps.map(s=>s.tool).join(', ');slot.appendChild(t);}
-  if(j.propose){const p=document.createElement('div');p.className='propose';const pr=j.propose;
-    if(pr.kind==='secret'){
-      // SECRET STEP — the value is entered HERE and posted STRAIGHT to Vault (/bridge/secret). It never goes to
-      // the assistant, the plan, or the chat transcript. The agent is told only that the secret was set.
-      const comp=(pr.args&&(pr.args.component||pr.args.id))||'';const fld=(pr.args&&pr.args.name)||'key';
-      p.innerHTML=`<div class="lbl">🔒 Secret for <b>${esc(comp.split('/').pop()||comp)}</b> — <b>${esc(fld)}</b></div>
-        <div style="margin:4px 0 8px;font-size:12px;color:var(--mut)">Stored directly in Vault. The assistant never sees this value.</div>`;
-      const inp=document.createElement('input');inp.type='password';inp.autocomplete='new-password';inp.placeholder='paste the value';
-      inp.style.cssText='width:100%;box-sizing:border-box;padding:7px 9px;margin-bottom:8px;border:1px solid #2b6;border-radius:7px;background:#0b140d;color:inherit';
-      const ok=document.createElement('button');ok.className='btn';ok.textContent='Save to Vault';
-      const no=document.createElement('button');no.className='btn ghost';no.textContent='Cancel';no.style.marginLeft='8px';
-      ok.onclick=async()=>{const v=inp.value;if(!v){inp.focus();return;}ok.disabled=true;ok.textContent='…';
-        try{const sv=await fetch('/bridge/secret',{method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({action:'set',component:comp,name:fld,value:v})}).then(r=>r.json());
-          inp.value='';                                          // drop the value from memory immediately
-          if(sv&&sv.error){p.innerHTML='<span style="color:#f88;font-size:12px">✗ '+esc(sv.error)+'</span>';return;}
-          const r=await agent({confirm:{name:pr.name,args:{component:comp,name:fld}}});   // resume — NO value sent
-          p.innerHTML='';renderReply(slot,r);HIST.push({role:'assistant',content:r.reply||''});
-        }catch(e){p.innerHTML='<span style="color:#f88;font-size:12px">✗ '+esc(e)+'</span>';}};
-      no.onclick=()=>{inp.value='';p.innerHTML='<span style="color:var(--mut);font-size:12px">Cancelled.</span>';};
-      p.appendChild(inp);p.appendChild(ok);p.appendChild(no);slot.appendChild(p);
-    }else{
-    p.innerHTML=`<div class="lbl">Proposed action — <b>${esc(pr.app)}</b> · ${esc(pr.label)}</div>
-      <div style="margin:6px 0 8px;font-size:12.5px;color:var(--mut)">${esc(JSON.stringify(pr.args))}</div>`;
-    const ok=document.createElement('button');ok.className='btn';ok.textContent='Confirm';
-    const no=document.createElement('button');no.className='btn ghost';no.textContent='Cancel';no.style.marginLeft='8px';
-    ok.onclick=async()=>{ok.disabled=true;ok.textContent='…';const r=await agent({confirm:{name:pr.name,args:pr.args}});
-      p.innerHTML='';renderReply(slot,r);HIST.push({role:'assistant',content:r.reply||''});};
-    no.onclick=()=>{p.innerHTML='<span style="color:var(--mut);font-size:12px">Cancelled.</span>';};
-    p.appendChild(ok);p.appendChild(no);slot.appendChild(p);}}
-  $('log').scrollTop=$('log').scrollHeight;
-}
-async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(!q)return;$('q').value='';
-  bubble('user',esc(q));HIST.push({role:'user',content:q});BUSY=true;
-  const slot=bubble('ai','<span style="color:var(--mut)">thinking…</span>');
-  try{const j=await agent(Object.assign({message:q,history:HIST.slice(0,-1)},AGENT?{agent:AGENT}:{}));renderReply(slot,j);HIST.push({role:'assistant',content:j.reply||''});}
-  catch(e){slot.querySelector('.bub').textContent='✗ '+e;}BUSY=false;$('q').focus();
-}
-$('send').onclick=()=>send();
+  sel.innerHTML='<option value="">Assistant (all skills)</option>'+AGENTS.map(a=>'<option value="'+esc(a.name)+'">'+esc(a.title)+'</option>').join('');sel.hidden=false;}
+function setAgentSel(v){const sel=$('agent');sel.value=AGENTS.some(a=>a.name===v)?v:'';}
+$('agent').onchange=()=>{const v=$('agent').value;try{localStorage.setItem(AKEY,v);}catch(e){}
+  if(CUR&&CUR.messages.length)newChat(v);else if(CUR){CUR.agent=v;const a=AGENTS.find(x=>x.name===v);CUR.agent_title=a?a.title:'';render();}};
+
+// ---------------- the chat (middle) ----------------
+function crumbs(){WS.crumbs([{label:'Assistant',onClick:()=>newChat()},{label:CUR&&CUR.title?CUR.title:'New chat'}]);}
+function render(){
+  crumbs();$('title').value=CUR?CUR.title||'':'';$('delBtn').disabled=!(CUR&&CUR.id);
+  const L=$('log'),msgs=CUR?CUR.messages:[];
+  if(!msgs.length){const a=AGENTS.find(x=>x.name===(CUR&&CUR.agent));
+    const chips=(a&&a.examples.length?a.examples:['What needs my attention today?','How many documents do I have?','Which ward has the highest sanctioned amount?']).slice(0,5);
+    L.innerHTML='<div class="welcome"><h2>'+(a?esc(a.title):'How can I help?')+'</h2><div>'+(a?esc(a.description||'')+(a.skills.length?'<div class="agentinfo">Skills: '+esc(a.skills.join(', '))+'</div>':''):'I work across your installed apps: I read your data, plan, and act with your confirmation.')+'</div>'+
+      '<div class="chips"><span class="chip" data-brief="1">☀️ Brief me on what needs my attention</span>'+chips.map(c=>'<span class="chip">'+esc(c)+'</span>').join('')+'</div></div>';
+    L.querySelectorAll('.chip').forEach(c=>c.onclick=()=>c.dataset.brief?brief():send(c.textContent));return;}
+  L.innerHTML=msgs.map((m,i)=>msgHTML(m,i)).join('')+(BUSY?'<div class="m ai"><div class="who">Assistant</div><div class="thinking">Thinking<span class="dots"></span></div></div>':'');
+  L.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>confirmProp(+b.dataset.confirm));
+  L.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>cancelProp(+b.dataset.cancel));
+  L.querySelectorAll('[data-secret]').forEach(b=>b.onclick=()=>saveSecret(+b.dataset.secret));
+  L.querySelectorAll('[data-retry]').forEach(b=>b.onclick=()=>{CUR.messages.pop();CUR.messages.pop();brief();});
+  $('chatwrap').scrollTop=$('chatwrap').scrollHeight;}
+function msgHTML(m,i){
+  if(m.role==='user')return '<div class="m user"><div class="bub">'+esc(m.content)+'</div></div>';
+  if(m.role==='note')return '<div class="m note">'+esc(m.content)+'</div>';
+  const used=(m.steps||[]).length?'<div class="used">Used: '+[...new Set(m.steps.map(s=>TOOL_NAMES[s]||s.replace(/_/g,' ')))].map(esc).join(', ')+'</div>':'';
+  const link=m.link?' <a href="'+esc(m.link)+'" target="_top">Open ↗</a>':'';
+  const retry=m.retry&&i===CUR.messages.length-1?' <button class="btn sm" data-retry="'+esc(m.retry)+'">Try again</button>':'';
+  return '<div class="m ai'+(m.error?' err':'')+'"><div class="who">'+esc(m.who||(CUR&&CUR.agent_title)||'Assistant')+'</div><div class="body">'+md(m.content)+link+retry+'</div>'+used+propHTML(m.proposal,i)+'</div>';}
+function propHTML(p,i){if(!p)return '';
+  if(p.done)return '<div class="used">'+(p.done==='confirmed'?'✓ Confirmed: ':'Cancelled: ')+esc(p.label||p.name)+'</div>';
+  if(p.kind==='secret'){const comp=(p.args&&(p.args.component||p.args.id))||'',fld=(p.args&&p.args.name)||'key';
+    return '<div class="prop"><div class="lbl">🔒 Secret for <b>'+esc(comp.split('/').pop()||comp)+'</b>: <b>'+esc(fld)+'</b></div><div class="args">Stored directly in Vault. The assistant never sees this value, and it is not saved in this chat.</div>'+
+      '<input type="password" autocomplete="new-password" placeholder="paste the value" id="sec-'+i+'"><button class="btn pri sm" data-secret="'+i+'">Save to Vault</button> <button class="btn sm" data-cancel="'+i+'">Cancel</button></div>';}
+  return '<div class="prop"><div class="lbl">Proposed action: <b>'+esc(p.app||'')+'</b> · '+esc(p.label||p.name)+'</div><div class="args">'+esc(JSON.stringify(p.args||{}))+'</div>'+
+    '<button class="btn pri sm" data-confirm="'+i+'">Confirm</button> <button class="btn sm" data-cancel="'+i+'">Cancel</button></div>';}
+function addReply(j){const m={role:'assistant',content:j.reply||j.error||'(no answer)',at:now(),steps:(j.steps||[]).map(s=>s.tool),link:j.link||null,error:!!(j.error&&!j.reply)};
+  if(j.propose)m.proposal={name:j.propose.name,args:j.propose.args,label:j.propose.label,app:j.propose.app,kind:j.propose.kind};
+  CUR.messages.push(m);}
+function history(){return CUR.messages.filter(m=>m.role!=='note'&&!m.error).slice(-8).map(m=>({role:m.role==='user'?'user':'assistant',content:m.content}));}
+async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(!q)return;$('q').value='';autosize();
+  if(!CUR)newChat();const hist=history();CUR.messages.push({role:'user',content:q,at:now()});BUSY=true;render();
+  let j;try{j=await agentReq(Object.assign({message:q,history:hist},CUR.agent?{agent:CUR.agent}:{}));}catch(e){j={error:String(e)};}
+  BUSY=false;addReply(j);render();await save();$('q').focus();}
+async function brief(){if(BUSY)return;if(!CUR)newChat();CUR.messages.push({role:'user',content:'Brief me on what needs my attention',at:now()});BUSY=true;render();
+  let r;try{r=await api('/bridge/agent-brief',{});}catch(e){r={error:String(e)};}
+  // an empty briefing is a failed one (the model ran out of room), never "nothing urgent"
+  BUSY=false;CUR.messages.push(r.reply?{role:'assistant',who:'Briefing',content:r.reply,at:now(),steps:['briefing']}
+    :{role:'assistant',who:'Briefing',content:'The briefing did not come back this time'+(r.error?' ('+r.error+')':'')+'. Try again.',at:now(),error:true,retry:'brief'});
+  if(!CUR.title)CUR.title='Briefing — '+new Date().toLocaleDateString([],{day:'numeric',month:'short'});render();await save();}
+async function confirmProp(i){const m=CUR.messages[i],p=m&&m.proposal;if(!p||BUSY)return;BUSY=true;p.done='confirmed';render();
+  let j;try{j=await agentReq({confirm:{name:p.name,args:p.args}});}catch(e){j={error:String(e)};}
+  BUSY=false;addReply(j);render();await save();}
+async function cancelProp(i){const p=CUR.messages[i]&&CUR.messages[i].proposal;if(!p)return;p.done='cancelled';render();await save();}
+async function saveSecret(i){const m=CUR.messages[i],p=m&&m.proposal,inp=$('sec-'+i);if(!p||!inp)return;const v=inp.value;if(!v){inp.focus();return;}
+  const comp=(p.args&&(p.args.component||p.args.id))||'',fld=(p.args&&p.args.name)||'key';BUSY=true;render();
+  try{const sv=await api('/bridge/secret',{action:'set',component:comp,name:fld,value:v});
+    if(sv&&sv.error){BUSY=false;CUR.messages.push({role:'note',content:'The secret was not saved: '+sv.error,at:now()});render();return;}
+    p.done='confirmed';const j=await agentReq({confirm:{name:p.name,args:{component:comp,name:fld}}});BUSY=false;addReply(j);}
+  catch(e){BUSY=false;CUR.messages.push({role:'note',content:'The secret was not saved: '+e,at:now()});}
+  render();await save();}
+
+// ---------------- details (right) ----------------
+function renderRight(){if(!CUR)return;WS.openRight(CUR.title||'New chat',CUR.agent_title?'with '+CUR.agent_title:'with the Assistant');WS.tab(RTAB);const B=$('ws-rbody');
+  if(RTAB==='hist'){if(!CUR.id){B.innerHTML='<div class="muted">History starts with the first message.</div>';return;}
+    return WS.history(B,APPID,CUR.id,(o,old)=>o.title!==old.title?'Renamed from “'+(old.title||'Untitled')+'”':((o.messages||[]).length>(old.messages||[]).length?'New messages':'Edited'));}
+  const ms=CUR.messages,steps=[...new Set(ms.flatMap(m=>m.steps||[]))];
+  WS.info(B,[['Title',CUR.title||'New chat'],['Talking to',CUR.agent_title||'Assistant (all skills)'],['Messages',ms.filter(m=>m.role!=='note').length],
+    ['Tools used',steps.map(s=>TOOL_NAMES[s]||s).join(', ')],['Started',WS.when(CUR.created_at)],['Last message',WS.when(CUR.updated_at)],['Owner',String(CUR.owner||ME).split('/').pop()]]);}
+
+// ---------------- wiring ----------------
+function autosize(){const q=$('q');q.style.height='auto';q.style.height=Math.min(180,q.scrollHeight)+'px';}
+$('q').addEventListener('input',autosize);
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
-document.addEventListener('click',e=>{if(e.target.classList.contains('chip'))send(e.target.textContent);});
-// PROACTIVE: on open, greet with a briefing of what needs the user's attention (civic issues + news + tasks).
-(async function brief(){
-  const slot=bubble('ai','<span style="color:var(--mut)">Preparing your briefing…</span>');
-  try{
-    const r=await fetch('/bridge/agent-brief',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(x=>x.json());
-    slot.querySelector('.bub').innerHTML=esc(r.reply||'Nothing urgent right now — ask me anything.').replace(/\n/g,'<br>');
-    if(r&&r.reply)HIST.push({role:'assistant',content:r.reply});
-  }catch(e){ slot.querySelector('.bub').innerHTML='Hi — how can I help? Try “what needs my attention?”'; }
-  $('log').scrollTop=$('log').scrollHeight;
+$('send').onclick=()=>send();$('newBtn').onclick=()=>newChat();
+$('ws-search').oninput=renderList;
+$('title').onchange=async()=>{if(!CUR)return;CUR.title=$('title').value.trim();crumbs();if(CUR.id)await save();else renderList();};
+$('infoBtn').onclick=()=>{if(WS.isRightOpen())WS.closeRight();else renderRight();};
+$('delBtn').onclick=async()=>{if(!CUR||!CUR.id)return;if(!confirm('Move “'+(CUR.title||'this chat')+'” to trash?'))return;
+  CUR.archived=true;CUR.updated_at=now();const r=await api('/bridge/save',{app_id:APPID,object:CUR});
+  if(!r.saved){CUR.archived=false;status('not moved to trash: '+(r.detail||r.error||'?'),true);return;}
+  CHATS=CHATS.filter(c=>c.id!==CUR.id);WS.closeRight();newChat();};
+WS.init({onTab:t=>{RTAB=t;renderRight();}});
+(async function boot(){
+  try{APPID=(await fetch('./config.json').then(r=>r.json())).app_id||APPID;}catch(e){}
+  const s=await fetch('/session',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  TENANT=s.tenant||String(s.sub||'').split('/')[2]||'';ME=s.sub||'';
+  if(!s.authenticated){$('log').innerHTML='<div class="welcome">Sign in to use your assistant.</div>';return;}
+  await Promise.all([loadChats(),loadAgents()]);
+  let saved='';try{saved=localStorage.getItem(AKEY)||'';}catch(e){}
+  setAgentSel(saved);newChat($('agent').value);renderList();
 })();
 </script>
+</body></html>
