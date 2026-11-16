@@ -28,6 +28,7 @@
   td.st-corrected{background:rgba(59,130,246,.16)} td.st-check{background:rgba(245,158,11,.24)}
   td.st-ledger{background:rgba(239,68,68,.20)} td.st-note{color:var(--dim);font-style:italic}
   td.st-confirmed{box-shadow:inset 3px 0 0 var(--good)}
+  table.imp{width:max-content} table.imp th{width:112px;min-width:112px;max-width:112px} table.imp th.corner{width:40px;min-width:40px} table.imp th:nth-child(2){width:200px;min-width:200px;max-width:200px} table.imp td{max-width:none}
   .legend{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--dim);padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
   .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px;border:1px solid var(--line)}
   .legend .grow{flex:1}
@@ -190,7 +191,7 @@ async function trash(){if(!CUR)return;if(!confirm('Trash "'+(CUR.title||'Untitle
 
 // ---- grid ----
 function renderGrid(){
-  let h='<table><tr><th class="corner"></th>'+COLS.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+  let h='<table'+(IMP?' class="imp"':'')+'><tr><th class="corner"></th>'+COLS.map(c=>`<th>${c}</th>`).join('')+'</tr>';
   for(let r=1;r<=NR;r++){h+=`<tr><td class="rownum">${r}</td>`;
     for(const c of COLS){const ref=c+r;const disp=compute(ref);const num=isNumeric(disp);const st=stateOf(ref);
       h+=`<td data-ref="${ref}" class="${ref===sel?'sel':''} ${num?'num':''} ${st?'st-'+st:''}"${st&&st!=='ok'?` title="${esc(STATE[st]||'')}"`:''}>${esc(disp)}</td>`;}
@@ -306,8 +307,8 @@ function renderReview(B){if(!IMP){B.innerHTML='<div class="sub">This spreadsheet
     ${ci.suggest!=null&&ci.suggest!==''?`<div>Suggested</div><div><b>${esc(ci.suggest)}</b></div>`:''}
     ${ci.rule?`<div>Why</div><div>${esc(ci.rule)}${ci.how?` <span class="sub">(${esc(ci.how)})</span>`:''}</div>`:''}
     ${ci.confirmed?`<div>Checked</div><div>${esc(ci.confirmed.value)} by ${esc(String(ci.confirmed.by||'').split('/').pop())}, ${esc(WS.when(ci.confirmed.at))}</div>`:''}</div>
-    <div class="rv-actions">${!ci.confirmed&&ci.suggest!=null&&ci.suggest!==''?`<button class="btn sm pri" id="rvAccept">Accept ${esc(ci.suggest)}</button>`:''}
-    ${!ci.confirmed&&readVal(ci)!=null&&String(readVal(ci))!==String(ci.suggest)?`<button class="btn sm${ci.suggest==null?' pri':''}" id="rvKeep">${ci.state==='ledger'?'Keep as written':'Use the reading'} (${esc(readVal(ci))})</button>`:''}
+    <div class="rv-actions">${!ci.confirmed&&ci.suggest!=null&&ci.suggest!==''?`<button class="btn sm${ci.state==='ledger'?'':' pri'}" id="rvAccept">${ci.state==='ledger'?'Change to':'Accept'} ${esc(ci.suggest)}</button>`:''}
+    ${!ci.confirmed&&readVal(ci)!=null&&String(readVal(ci))!==String(ci.suggest)?`<button class="btn sm${ci.suggest==null||ci.state==='ledger'?' pri':''}" id="rvKeep">${ci.state==='ledger'?'Keep as written':'Use the reading'} (${esc(readVal(ci))})</button>`:''}
     ${!ci.confirmed?`<button class="btn sm" id="rvType">Type the value…</button>`:`<button class="btn sm" id="rvUndo">Undo check</button>`}
     <button class="btn sm" id="rvPage">Open page ${ci.page}</button></div>
     <div class="sub">${ci.state==='ledger'?'The figures as written do not add up even when read correctly — this may be an error in the register itself. Check with whoever keeps it.':ci.state==='corrected'?'The value in the cell is the suggestion; the reading did not fit the ledger’s sums.':'Compare with the scan, then accept or type the right value.'}</div>`;}
@@ -348,7 +349,7 @@ function scanDialog(){
     m.q('#go').disabled=true;const bar=m.q('#pg');bar.hidden=false;const fill=bar.querySelector('i');
     try{
       const src=[];for(const f of files){S.innerHTML='<span class="spin"></span> Uploading '+esc(f.name)+'…';
-        const r=await fetch('/bridge/file-upload?name='+encodeURIComponent(f.name)+'&type='+encodeURIComponent(f.type||'application/octet-stream'),{method:'POST',body:f}).then(x=>x.json());
+        const r=await uploadChunked(f,p=>{S.innerHTML='<span class="spin"></span> Uploading '+esc(f.name)+'… '+Math.round(p*100)+'%';});
         if(!r.file_id)throw new Error(r.error||'upload failed');src.push({file_id:r.file_id,name:f.name,type:f.type||''});}
       const now=new Date().toISOString(),id='ds:'+TENANT+':doc/sheet_import/'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
       const rec={schema:'doc.sheet_import',id,owner:ME,tenant:TENANT,title:(m.q('#nm').value||'').trim()||'Imported register',form,status:'pending',
@@ -368,6 +369,13 @@ function scanDialog(){
         if(sec>1200)throw new Error('the reader is taking too long — it will appear here when it finishes');}
     }catch(e){S.textContent='⚠ '+e.message;m.q('#go').disabled=false;}};
 }
+// Upload in pieces under the front proxy's 1 MB request limit; the host assembles them and returns the file id.
+async function uploadChunked(file,onp){const CH=900*1024,up=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  for(let off=0;;off+=CH){const part=file.slice(off,off+CH),fin=off+CH>=file.size;
+    const r=await fetch('/bridge/upload-chunk?up='+up+(fin?'&fin=1':''),{method:'POST',body:part});
+    const j=await r.json().catch(()=>({error:'upload refused ('+r.status+')'}));
+    if(!r.ok||j.error)return{error:j.error||('upload refused ('+r.status+')')};
+    if(onp)onp(Math.min(1,(off+CH)/file.size));if(fin)return j;}}
 async function buildFromImport(rec){
   const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),now=new Date().toISOString();
   const c=Object.assign({},rec.cells||{}),rows=Math.max(50,maxRow(c)+5);
