@@ -4,7 +4,8 @@
 component_id: ds:airawatdeveloper:app/personal-assistant
 kind: app
 name: Assistant
-version: 0.3.1   # 0.3.1: an empty briefing says it failed (with Try again) instead of 'Nothing urgent'
+version: 0.3.2   # 0.3.2: sends its chat id (conversation) so the sensitive-data rule applies per chat (host patch 4)
+# 0.3.1: 0.3.1: an empty briefing says it failed (with Try again) instead of 'Nothing urgent'
 # 0.3.0: 0.3.0: workspace look (same frame as Files/Data/Docs/Sheets) — saved chats in the left pane (platform.agent_chat), answers rendered as safe markdown, briefing on request
 # 0.2.0: agent picker — talk to the Assistant (all active skills) or to one Agent Studio agent (its skills + persona)
 provider: ds:airawatdeveloper:developer

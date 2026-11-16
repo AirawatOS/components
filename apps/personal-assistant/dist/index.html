@@ -135,9 +135,13 @@ function renderList(){
 function openChat(id){const c=CHATS.find(x=>x.id===id);if(!c||BUSY)return;CUR=c;setAgentSel(c.agent||'');render();renderList();if(WS.isRightOpen())renderRight();
   try{localStorage.setItem('assistant.last',id);}catch(e){}}
 function newChat(agent){if(BUSY)return;CUR={schema:'platform.agent_chat',id:'',tenant:TENANT,title:'',agent:agent==null?$('agent').value:agent,agent_title:'',messages:[]};
+  // the chat's id exists from the first message (not saved as a field): the host keys "has this chat read
+  // sensitive data?" by it, so one chat that read tasks or mail does not keep every other chat in-house
+  Object.defineProperty(CUR,'cid',{value:'ds:'+TENANT+':platform/agent_chat/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),enumerable:false});
   const a=AGENTS.find(x=>x.name===CUR.agent);CUR.agent_title=a?a.title:'';render();renderList();$('q').focus();}
+const convId=()=>CUR?(CUR.id||CUR.cid||''):'';
 async function save(){if(!CUR||!CUR.messages.length)return;
-  if(!CUR.id){CUR.id='ds:'+TENANT+':platform/agent_chat/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);CUR.created_at=now();CHATS.unshift(CUR);}
+  if(!CUR.id){CUR.id=CUR.cid||('ds:'+TENANT+':platform/agent_chat/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7));CUR.created_at=now();CHATS.unshift(CUR);}
   if(!CUR.title){const f=CUR.messages.find(m=>m.role==='user');CUR.title=f?f.content.replace(/\s+/g,' ').slice(0,60):'Chat';}
   CUR.updated_at=now();CUR.messages=CUR.messages.slice(-200);
   const r=await api('/bridge/save',{app_id:APPID,object:CUR});
@@ -188,7 +192,7 @@ function addReply(j){const m={role:'assistant',content:j.reply||j.error||'(no an
 function history(){return CUR.messages.filter(m=>m.role!=='note'&&!m.error).slice(-8).map(m=>({role:m.role==='user'?'user':'assistant',content:m.content}));}
 async function send(text){if(BUSY)return;const q=(text||$('q').value).trim();if(!q)return;$('q').value='';autosize();
   if(!CUR)newChat();const hist=history();CUR.messages.push({role:'user',content:q,at:now()});BUSY=true;render();
-  let j;try{j=await agentReq(Object.assign({message:q,history:hist},CUR.agent?{agent:CUR.agent}:{}));}catch(e){j={error:String(e)};}
+  let j;try{j=await agentReq(Object.assign({message:q,history:hist,conversation:convId()},CUR.agent?{agent:CUR.agent}:{}));}catch(e){j={error:String(e)};}
   BUSY=false;addReply(j);render();await save();$('q').focus();}
 async function brief(){if(BUSY)return;if(!CUR)newChat();CUR.messages.push({role:'user',content:'Brief me on what needs my attention',at:now()});BUSY=true;render();
   let r;try{r=await api('/bridge/agent-brief',{});}catch(e){r={error:String(e)};}
@@ -197,14 +201,14 @@ async function brief(){if(BUSY)return;if(!CUR)newChat();CUR.messages.push({role:
     :{role:'assistant',who:'Briefing',content:'The briefing did not come back this time'+(r.error?' ('+r.error+')':'')+'. Try again.',at:now(),error:true,retry:'brief'});
   if(!CUR.title)CUR.title='Briefing — '+new Date().toLocaleDateString([],{day:'numeric',month:'short'});render();await save();}
 async function confirmProp(i){const m=CUR.messages[i],p=m&&m.proposal;if(!p||BUSY)return;BUSY=true;p.done='confirmed';render();
-  let j;try{j=await agentReq({confirm:{name:p.name,args:p.args}});}catch(e){j={error:String(e)};}
+  let j;try{j=await agentReq({confirm:{name:p.name,args:p.args},conversation:convId()});}catch(e){j={error:String(e)};}
   BUSY=false;addReply(j);render();await save();}
 async function cancelProp(i){const p=CUR.messages[i]&&CUR.messages[i].proposal;if(!p)return;p.done='cancelled';render();await save();}
 async function saveSecret(i){const m=CUR.messages[i],p=m&&m.proposal,inp=$('sec-'+i);if(!p||!inp)return;const v=inp.value;if(!v){inp.focus();return;}
   const comp=(p.args&&(p.args.component||p.args.id))||'',fld=(p.args&&p.args.name)||'key';BUSY=true;render();
   try{const sv=await api('/bridge/secret',{action:'set',component:comp,name:fld,value:v});
     if(sv&&sv.error){BUSY=false;CUR.messages.push({role:'note',content:'The secret was not saved: '+sv.error,at:now()});render();return;}
-    p.done='confirmed';const j=await agentReq({confirm:{name:p.name,args:{component:comp,name:fld}}});BUSY=false;addReply(j);}
+    p.done='confirmed';const j=await agentReq({confirm:{name:p.name,args:{component:comp,name:fld}},conversation:convId()});BUSY=false;addReply(j);}
   catch(e){BUSY=false;CUR.messages.push({role:'note',content:'The secret was not saved: '+e,at:now()});}
   render();await save();}
 
