@@ -4,7 +4,7 @@
 # renders those credits inline where the data is shown — discharging the licence/attribution obligation
 # in context (the platform decides what to credit; the app cannot omit it). It declares required_schemas
 # (its DATA allow-list) — the datasets it may browse.
-component_id: ds:airawat:app/data
+component_id: ds:airawatdeveloper:app/data   # the Store lists it under the developer participant (ADR-0094)
 kind: app
 version: 0.4.0   # 0.4.0: NEW REGISTRY FROM A FILE — CSV / TSV / JSON (incl. GeoJSON points) / Excel .xlsx, from this computer or
 #        My files. Read in the browser; each column's field is GUESSED (type, required, list of values, date order, key,
@@ -33,7 +33,7 @@ version: 0.4.0   # 0.4.0: NEW REGISTRY FROM A FILE — CSV / TSV / JSON (incl. G
 #        which excludes sensitivity=sensitive), grouped by domain, instead of a hardcoded 5-dataset list. The
 #        `data_browser` flag relaxes the app-level read allow-list to any governed schema; the REAL gate is
 #        unchanged — the kernel tenant-scopes + RBAC-gates every read under the user's token.
-provider: ds:airawat:developer
+provider: ds:airawatdeveloper:developer
 display_name: Data
 icon: 🧭
 entrypoint: index.html
