@@ -11,7 +11,7 @@ profile:        paddleocr
 analytics_tier: descriptive                 # turns text in images into text
 display_name:   PaddleOCR (PP-OCRv5, CPU)
 image:          manishsv/airawatos-runtime-paddleocr:0.1.0
-image_digest:   PENDING   # the CERTIFIED image content id (launcher runs only this) — set after build
+image_digest:   sha256:e5bf896c3641b535d6d428f19f6939b88775679e564eece0ee6f7a1e18c2c7ec   # the CERTIFIED image content id (launcher runs only this) — set after build
 provides:       [paddlepaddle-3.0.0-cpu, paddleocr-3.0.0, pp-ocrv5-server, pp-ocrv5-mobile, doc-orientation, textline-orientation]   # no Devanagari: PaddleOCR 3.0 has no PP-OCRv5 Devanagari recogniser (lang=hi falls back silently)
 models:
   - id: PP-OCRv5_server_det / PP-OCRv5_server_rec
