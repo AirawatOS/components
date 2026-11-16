@@ -77,6 +77,9 @@
   td{padding:5px 8px;border-bottom:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;word-break:break-word}
   .ok2{color:var(--ok)} .bad{color:var(--danger)} .warn2{color:var(--warn)} .m2{color:var(--muted)}
   .keyrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+  .aicard{padding:16px 18px} .aicard .lbl b{display:block;font-weight:600} .aicard .lbl small{color:var(--muted)}
+  .aictl{display:flex;gap:8px;align-items:center;margin-top:12px} .aictl select{flex:1;min-width:0;width:100%}
+  .ainote{margin-top:8px;font-size:13px} .ainote.w{color:var(--warn)}
   .src{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 12px;background:var(--bg)}
   a{color:var(--accent)}
 </style>
@@ -262,20 +265,23 @@ async function loadAI(){
 }
 function aiDefault(task){ const p=AI.options.find(o=>o['default_'+task]&&o.hosting==='in_house')||AI.options.find(o=>o.hosting==='in_house');
   const m=p&&(p.models.find(m=>m.task===task)||p.models.find(m=>m.task==='chat')); return p&&m?{provider_id:p.provider_id,model:m.name,title:p.title}:null; }
+const provShort=t=>String(t||'').replace(/\s*[—–-]\s*evaluation only.*$/i,'').replace(/\s*\(.*\)\s*$/,'').trim();
+const provNote=o=>{ const t=String(o&&o.title||''); const m=t.match(/evaluation only.*$/i); return m?m[0].replace(/[()]/g,''):''; };
 function renderAI(){
   const B=$('#ai-body');
-  const opts=task=>{ const groups=[['in_house','Hosted by Airawat'],['external','Outside Airawat (your organisation’s key)']];
-    return groups.map(([h,label])=>{ const ps=AI.options.filter(o=>o.hosting===h); if(!ps.length) return '';
-      return '<optgroup label="'+esc(label)+'">'+ps.map(o=>o.models.filter(m=>m.task===task||m.task==='eval').map(m=>{ const v=o.provider_id+'|'+m.name, off=h==='external'&&!o.key_set;
-        return '<option value="'+esc(v)+'"'+(aiKey(AI.pick[task])===v?' selected':'')+(off?' disabled':'')+'>'+esc(m.name)+' — '+esc(o.title)+(m.task==='eval'?' (evaluation model)':'')+(off?' — key not set':'')+'</option>'; }).join('')).join('')+'</optgroup>'; }).join(''); };
+  const opts=task=>['in_house','external'].map(h=>AI.options.filter(o=>o.hosting===h).map(o=>{ const off=h==='external'&&!o.key_set;
+      const ms=o.models.filter(m=>m.task===task||m.task==='eval'); if(!ms.length) return '';
+      return '<optgroup label="'+esc(provShort(o.title)+' · '+(h==='in_house'?'hosted by Airawat':'outside Airawat')+(provNote(o)?' · '+provNote(o):'')+(off?' · key not set':''))+'">'+
+        ms.map(m=>{ const v=o.provider_id+'|'+m.name; return '<option value="'+esc(v)+'"'+(aiKey(AI.pick[task])===v?' selected':'')+(off?' disabled':'')+'>'+esc(m.name)+'</option>'; }).join('')+'</optgroup>'; }).join('')).join('');
   B.innerHTML=AI_TASKS.map(([task,title,help])=>{ const d=aiDefault(task), cur=AI.pick[task], prov=cur&&AI.options.find(o=>o.provider_id===cur.provider_id);
-    return `<div class="card"><div class="row" style="align-items:flex-start"><div class="lbl"><b>${esc(title)}</b><small>${esc(help)}</small></div>
-      <div style="display:flex;flex-direction:column;gap:6px;min-width:300px">
-        <select data-task="${task}"><option value=""${cur?'':' selected'}>Platform default${d?' — '+esc(d.model)+' (Airawat-hosted)':''}</option>${opts(task)}</select>
-        <div class="keyrow"><span class="m2">${cur?(prov&&prov.hosting==='external'?'⚠ Outside Airawat: requests with sensitive data still go to the Airawat-hosted model.':'✓ Hosted by Airawat.'):'✓ Hosted by Airawat.'}</span>
-          <button class="act" data-test="${task}">Test</button></div>
-        <div class="m2" id="ai-test-${task}"></div></div></div></div>`; }).join('')+
-    `<div class="card"><div class="lbl"><b>What may leave Airawat</b><small>Whatever you choose, these always use the Airawat-hosted model:
+    const ext=prov&&prov.hosting==='external', note=prov&&provNote(prov);
+    return `<div class="card aicard"><div class="lbl"><b>${esc(title)}</b><small>${esc(help)}</small></div>
+      <div class="aictl"><select data-task="${task}"><option value=""${cur?'':' selected'}>Platform default${d?' — '+esc(d.model)+' (hosted by Airawat)':''}</option>${opts(task)}</select>
+        <button class="act" data-test="${task}">Test</button></div>
+      <div class="ainote${ext?' w':''}">${ext?'⚠ '+esc(provShort(prov.title))+' is outside Airawat. Requests that may carry sensitive data still go to the Airawat-hosted model.':'✓ Hosted by Airawat: nothing leaves the platform.'}</div>
+      ${note?`<div class="ainote w">⚠ This provider is marked “${esc(note)}”. Check with whoever set it up before using it for everyday work.</div>`:''}
+      <div class="ainote m2" id="ai-test-${task}"></div></div>`; }).join('')+
+    `<div class="card aicard"><div class="lbl"><b>What may leave Airawat</b><small>Whatever you choose, these always use the Airawat-hosted model:
       the assistant once it has read documents, mail, tasks, civic issues or a registry marked sensitive (for the rest of that session);
       the assistant's daily briefing; and the AI in Docs, Sheets, Slides, Mail, Data and Agent Studio, which work on your organisation's own content.
       Everything else goes to the model chosen above. If the chosen model fails, the Airawat-hosted model answers instead.</small></div></div>
