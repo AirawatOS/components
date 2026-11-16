@@ -23,7 +23,7 @@
 </style></head>
 <body>
 <header>
-  <div class="tabs"><button class="tab on" data-t="suites">Suites</button><button class="tab" data-t="cases">Cases</button><button class="tab" data-t="models">Models</button><button class="tab" data-t="runs">Runs</button><button class="tab" data-t="results">Results</button></div>
+  <div class="tabs"><button class="tab on" data-t="suites">Suites</button><button class="tab" data-t="cases">Cases</button><button class="tab" data-t="models">Models</button><button class="tab" data-t="runs">Runs</button><button class="tab" data-t="results">Results</button><button class="tab" data-t="pick">Pick</button></div>
 </header>
 <main id="main"><p class="msg">Loading…</p></main>
 <script>
@@ -56,6 +56,7 @@ function render(){ const el=$("main");
   if(TAB==="cases") return renderCases(el);
   if(TAB==="models") return renderModels(el);
   if(TAB==="runs") return renderRuns(el);
+  if(TAB==="pick") return renderPick(el);
   return renderResults(el); }
 
 function renderSuites(el){ const ss=suites();
@@ -271,6 +272,61 @@ function renderRuns(el){ const ss=suites();
       await runEngine(Object.keys(env).length?env:undefined); $("rmsg").textContent="Started — results fill in as each model answers."; await reload(); render(); }
     catch(e){ $("rmsg").innerHTML='<span class="err">'+esc(e.message)+"</span>"; } finally{ $("rgo").disabled=false; } }; }
 
+// ---- PICK (ADR-0134): for each test, the cheapest candidate that meets the accuracy bar ------------------------------
+// Scores are each candidate's latest scored answer per labelled case (any run). Candidates are compared on the cases
+// they ALL answered ("shared"), so nobody is ranked on an easier set. Cost order: classical CV and detectors on our CPU,
+// then in-house vision-language models (GPU), then hosted models; within a tier, the faster wins.
+const PICKBAR_KEY="modellab.pick.bars";
+function pickBars(){ try{ return JSON.parse(localStorage.getItem(PICKBAR_KEY)||"{}"); }catch(e){ return {}; } }
+function setPickBar(t,v){ const b=pickBars(); b[t]=v; try{ localStorage.setItem(PICKBAR_KEY,JSON.stringify(b)); }catch(e){} }
+function candKind(m){ m=String(m); if(/image-quality/.test(m)) return "classical CV"; if(/rtdetr|detect/.test(m)) return "detector"; if(m.startsWith("component:")) return "component"; return "vision-language model"; }
+function median(a){ if(!a.length) return null; const b=a.slice().sort((x,y)=>x-y), i=b.length>>1; return b.length%2?b[i]:(b[i-1]+b[i])/2; }
+function fmtMs(ms){ return ms==null?"—":ms<1000?Math.round(ms)+" ms":(ms/1000).toFixed(ms<10000?1:0)+" s"; }
+async function renderPick(el){
+  const img=suites().filter(s=>CASES.some(c=>c.suite===s.name&&(c.inputs||[]).length));
+  SUITE=img.some(s=>s.name===SUITE)?SUITE:(img[0]||{}).name;
+  if(!SUITE){ el.innerHTML='<p class="msg">No image suite yet.</p>'; return; }
+  el.innerHTML='<p class="msg">Comparing candidates…</p>';
+  const res=await q("intelligence.eval_result");
+  const cs=CASES.filter(c=>c.suite===SUITE&&c.status==="active"); const byId={}; cs.forEach(c=>byId[c.id]=c);
+  const tests=[...new Set(cs.map(c=>c.test_id))].filter(Boolean).sort();
+  const inHouse={};                              // a model that answered a private image case is in-house (the privacy guard refuses others)
+  const latest={};                               // model → case → latest result
+  for(const r of res){ const c=byId[r.case_ref]; if(!c) continue;
+    if(!r.error&&(c.visibility||"private")==="private"&&(c.inputs||[]).length) inHouse[r.model]=true;
+    const k=r.model+"|"+r.case_ref; if(!latest[k]||String(r.at)>String(latest[k].at)) latest[k]=r; }
+  const MINN=+($("pminn")&&$("pminn").value||5), bars=pickBars();
+  const rows=tests.map(t=>{
+    const lab=cs.filter(c=>c.test_id===t&&c.labelled), cand={};
+    for(const c of lab) for(const k in latest){ const r=latest[k]; if(r.case_ref!==c.id||r.score==null) continue; (cand[r.model]=cand[r.model]||[]).push(r); }
+    const models=Object.keys(cand).filter(m=>cand[m].length>=MINN);
+    let shared=null; for(const m of models){ const ids=new Set(cand[m].map(r=>r.case_ref)); shared=shared?new Set([...shared].filter(x=>ids.has(x))):ids; }
+    const list=Object.keys(cand).map(m=>{ const rs=cand[m], sh=shared&&models.includes(m)?rs.filter(r=>shared.has(r.case_ref)):[];
+      const tier=m.startsWith("component:")?0:inHouse[m]?1:2;
+      const toks=rs.map(r=>{ const u=r.usage||{}; return u.total_tokens||((u.prompt_tokens||0)+(u.completion_tokens||0))||null; }).filter(x=>x);
+      return {m, n:rs.length, err:rs.filter(r=>r.error).length, score:rs.reduce((a,r)=>a+r.score,0)/rs.length,
+        shared:sh.length?sh.reduce((a,r)=>a+r.score,0)/sh.length:null, nshared:sh.length, ms:median(rs.map(r=>r.latency_ms).filter(x=>x!=null)),
+        toks:toks.length?Math.round(toks.reduce((a,b)=>a+b,0)/toks.length):null, tier, kind:candKind(m), enough:rs.length>=MINN}; });
+    const bar=bars[t]!=null?bars[t]:0.85;
+    const ok=list.filter(x=>x.enough&&(x.shared!=null&&models.length>1?x.shared:x.score)>=bar).sort((a,b)=>a.tier-b.tier||(a.ms||0)-(b.ms||0));
+    const best=list.filter(x=>x.enough).sort((a,b)=>(b.shared??b.score)-(a.shared??a.score))[0];
+    return {t, title:((((cs.find(c=>c.test_id===t)||{}).label_form||[])[0]||{}).label)||t, nlab:lab.length, list:list.sort((a,b)=>a.tier-b.tier||(b.score-a.score)), bar, pick:ok[0], best, nshared:shared?shared.size:0, multi:models.length>1};
+  });
+  const where=x=>x.tier===0?"in-house · CPU":x.tier===1?"in-house · GPU":"hosted";
+  el.innerHTML=`<div class="row"><label>Suite</label><select id="psuite">${img.map(s=>`<option ${s.name===SUITE?"selected":""}>${esc(s.name)}</option>`).join("")}</select>
+      <label>Fewest labelled cases to count</label><input id="pminn" type="number" min="1" value="${MINN}" style="width:64px">
+      <span class="msg">The pick is the cheapest candidate whose score meets the bar — CPU before in-house GPU before hosted, then the faster. Scores compare candidates on the labelled cases they all answered.</span></div>
+    ${rows.map(r=>`<div class="card"><div class="row" style="justify-content:space-between"><div><b>${esc(r.t)}</b> ${esc(r.title)} <span class="muted small">· ${r.nlab} labelled${r.multi?" · "+r.nshared+" answered by all":""}</span></div>
+        <div class="row"><label>Bar</label><input type="number" step="0.05" min="0" max="1" value="${r.bar}" data-bar="${esc(r.t)}" style="width:70px">
+        ${r.pick?`<span class="pill good">Pick: ${esc(r.pick.m.replace("component:",""))}</span>`:r.best?`<span class="pill warn">None meets the bar · best ${esc(r.best.m.replace("component:",""))}</span>`:'<span class="pill">Not enough labels yet</span>'}</div></div>
+      ${r.list.length?`<table><tr><th>Candidate</th><th>Kind</th><th>Runs on</th><th class="n">Score</th>${r.multi?'<th class="n">On shared cases</th>':""}<th class="n">Scored</th><th class="n">Errors</th><th class="n">Median time</th><th class="n">Tokens / case</th></tr>
+        ${r.list.map(x=>`<tr style="${r.pick&&r.pick.m===x.m?"background:#10283a":""}"><td>${esc(x.m.replace("component:",""))}${x.enough?"":' <span class="muted small">(too few)</span>'}</td><td>${esc(x.kind)}</td><td>${where(x)}</td>
+          <td class="n">${scorePill(x.score)}</td>${r.multi?`<td class="n">${x.shared==null?"—":scorePill(x.shared)}</td>`:""}<td class="n">${x.n}</td><td class="n">${x.err||""}</td><td class="n">${fmtMs(x.ms)}</td><td class="n">${x.toks==null?"—":x.toks.toLocaleString()}</td></tr>`).join("")}</table>`
+        :'<p class="msg">No scored answers on labelled cases yet.</p>'}</div>`).join("")}`;
+  $("psuite").onchange=e=>{ SUITE=e.target.value; renderPick(el); };
+  $("pminn").onchange=()=>renderPick(el);
+  el.querySelectorAll("[data-bar]").forEach(i=>i.onchange=()=>{ setPickBar(i.dataset.bar,Math.max(0,Math.min(1,+i.value||0))); renderPick(el); });
+}
 async function renderResults(el){ const runs=RUNS.slice().sort((a,b)=>String(b.requested_at).localeCompare(String(a.requested_at)));
   RUN=RUN||runs[0]; if(!RUN){ el.innerHTML='<p class="msg">No runs yet.</p>'; return; }
   el.innerHTML='<p class="msg">Loading results…</p>';
