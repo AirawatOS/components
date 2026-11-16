@@ -88,6 +88,7 @@
     <button class="navbtn on" data-tab="personal" title="Personal"><span class="ic">👤</span><span class="txt">Personal</span></button>
     <button class="navbtn" data-tab="admin" title="Components"><span class="ic">🛠️</span><span class="txt">Components</span></button>
     <button class="navbtn" data-tab="supply" title="Supply chain"><span class="ic">🛡️</span><span class="txt">Supply chain</span></button>
+    <button class="navbtn" data-tab="ai" title="AI model"><span class="ic">✨</span><span class="txt">AI model</span></button>
     <button class="navbtn" data-tab="networks" title="Networks"><span class="ic">🌐</span><span class="txt">Networks</span></button>
   </nav>
   <main>
@@ -108,6 +109,12 @@
       <div id="miss-banner"></div>
       <input id="filter" placeholder="Filter components…" style="width:100%;margin-bottom:16px" oninput="resetAndRender()">
       <div id="admin-body"><div class="empty">Loading…</div></div>
+    </section>
+
+    <section id="ai" hidden>
+      <h2>AI model</h2>
+      <p class="sub">Which AI model your organisation's assistant and apps use. Models hosted by Airawat keep everything on the platform; a model outside Airawat uses your organisation's own key and is sent only requests without sensitive data.</p>
+      <div id="ai-body"><div class="empty">Loading…</div></div>
     </section>
 
     <section id="supply" hidden>
@@ -178,9 +185,11 @@ document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
   $('#personal').hidden = b.dataset.tab!=='personal';
   $('#admin').hidden = b.dataset.tab!=='admin';
   $('#supply').hidden = b.dataset.tab!=='supply';
+  $('#ai').hidden = b.dataset.tab!=='ai';
   $('#networks').hidden = b.dataset.tab!=='networks';
   if(b.dataset.tab==='admin') loadAdmin();
   if(b.dataset.tab==='supply') loadSupply();
+  if(b.dataset.tab==='ai') loadAI();
   if(b.dataset.tab==='networks') loadNetworks();
 });
 
@@ -238,6 +247,46 @@ async function loadNetworks(){
     else { toast((r&&r.error)||'Offer failed',true); }
     offBtn.disabled=false;
   };
+}
+
+// --- AI model (per-tenant choice; the host's /bridge/ai-models and /bridge/ai-test, tenant administrators only) ---
+const AI_TASKS=[['chat','Assistant and writing help','The personal assistant, Agent Studio, and AI help in Docs, Sheets, Slides and Mail.'],
+                ['code','Code and schema authoring','Studio: drafting components, schemas and specs.']];
+let AI={options:[],choice:null,pick:{}};
+const aiKey=x=>x?x.provider_id+'|'+x.model:'';
+async function loadAI(){
+  const B=$('#ai-body'); B.innerHTML='<div class="empty">Loading…</div>';
+  let r; try{ r=await API('ai-models',{}); }catch(e){ r={error:String(e)}; }
+  if(!r||r.error||!r.options){ B.innerHTML='<div class="empty">'+esc((r&&r.error)||'Could not load the models.')+'</div>'; return; }
+  AI.options=r.options; AI.choice=r.choice; AI.pick={chat:(r.choice||{}).chat||null, code:(r.choice||{}).code||null}; renderAI();
+}
+function aiDefault(task){ const p=AI.options.find(o=>o['default_'+task]&&o.hosting==='in_house')||AI.options.find(o=>o.hosting==='in_house');
+  const m=p&&(p.models.find(m=>m.task===task)||p.models.find(m=>m.task==='chat')); return p&&m?{provider_id:p.provider_id,model:m.name,title:p.title}:null; }
+function renderAI(){
+  const B=$('#ai-body');
+  const opts=task=>{ const groups=[['in_house','Hosted by Airawat'],['external','Outside Airawat (your organisation’s key)']];
+    return groups.map(([h,label])=>{ const ps=AI.options.filter(o=>o.hosting===h); if(!ps.length) return '';
+      return '<optgroup label="'+esc(label)+'">'+ps.map(o=>o.models.filter(m=>m.task===task||m.task==='eval').map(m=>{ const v=o.provider_id+'|'+m.name, off=h==='external'&&!o.key_set;
+        return '<option value="'+esc(v)+'"'+(aiKey(AI.pick[task])===v?' selected':'')+(off?' disabled':'')+'>'+esc(m.name)+' — '+esc(o.title)+(m.task==='eval'?' (evaluation model)':'')+(off?' — key not set':'')+'</option>'; }).join('')).join('')+'</optgroup>'; }).join(''); };
+  B.innerHTML=AI_TASKS.map(([task,title,help])=>{ const d=aiDefault(task), cur=AI.pick[task], prov=cur&&AI.options.find(o=>o.provider_id===cur.provider_id);
+    return `<div class="card"><div class="row" style="align-items:flex-start"><div class="lbl"><b>${esc(title)}</b><small>${esc(help)}</small></div>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:300px">
+        <select data-task="${task}"><option value=""${cur?'':' selected'}>Platform default${d?' — '+esc(d.model)+' (Airawat-hosted)':''}</option>${opts(task)}</select>
+        <div class="keyrow"><span class="m2">${cur?(prov&&prov.hosting==='external'?'⚠ Outside Airawat: requests with sensitive data still go to the Airawat-hosted model.':'✓ Hosted by Airawat.'):'✓ Hosted by Airawat.'}</span>
+          <button class="act" data-test="${task}">Test</button></div>
+        <div class="m2" id="ai-test-${task}"></div></div></div></div>`; }).join('')+
+    `<div class="card"><div class="lbl"><b>What may leave Airawat</b><small>Whatever you choose, these always use the Airawat-hosted model:
+      the assistant once it has read documents, mail, tasks, civic issues or a registry marked sensitive (for the rest of that session);
+      the assistant's daily briefing; and the AI in Docs, Sheets, Slides, Mail, Data and Agent Studio, which work on your organisation's own content.
+      Everything else goes to the model chosen above. If the chosen model fails, the Airawat-hosted model answers instead.</small></div></div>
+     <div class="keyrow"><button class="act" id="ai-save">Save</button><span class="m2" id="ai-saved">${AI.choice&&AI.choice.updated_at?'Last changed '+tidy(AI.choice.updated_at)+(AI.choice.updated_by?' by '+esc(String(AI.choice.updated_by).split('/').pop()):''):'Using the platform default.'}</span></div>`;
+  B.querySelectorAll('select[data-task]').forEach(sel=>sel.onchange=()=>{ const v=sel.value; AI.pick[sel.dataset.task]=v?{provider_id:v.split('|')[0],model:v.split('|').slice(1).join('|')}:null; renderAI(); });
+  B.querySelectorAll('[data-test]').forEach(b=>b.onclick=async()=>{ const task=b.dataset.test, cur=AI.pick[task]||aiDefault(task), out=$('#ai-test-'+task);
+    if(!cur){ out.textContent='No model to test.'; return; } b.disabled=true; out.textContent='Asking '+cur.model+'…';
+    const r=await API('ai-test',{provider_id:cur.provider_id,model:cur.model,task}); b.disabled=false;
+    out.innerHTML=r.ok?('✓ '+esc(r.model)+' ('+(r.hosting==='in_house'?'Airawat-hosted':'outside Airawat')+', '+r.seconds+' s): “'+esc(r.content||'')+'”'):('✗ '+esc(r.error||'no answer')); });
+  $('#ai-save').onclick=async()=>{ const r=await API('ai-models',{action:'set',chat:AI.pick.chat,code:AI.pick.code});
+    if(r&&r.options){ AI.options=r.options; AI.choice=r.choice; toast('AI model saved'); renderAI(); } else toast((r&&r.error)||'Not saved',true); };
 }
 
 // --- Personal ---
