@@ -4,7 +4,9 @@
 # Reads are host-mediated under the signed-in user; search + citation-verify go through the app-host bridges.
 component_id: ds:airawatdeveloper:app/knowledge   # the Store lists it under the developer participant (ADR-0094)
 kind: app
-version: 0.2.0   # 0.2.0: rule review — values shown right ([x] = one threshold, [min,max] = between; a one-item list printed "0 and undefined"); Edit, Reject (with a reason), Re-read section (AI re-extracts; nothing saved until chosen), Restore; Approve all skips rules whose value needs fixing
+version: 0.2.2   # 0.2.2: keeps acronyms (PM2.5) intact in 'When …'
+# 0.2.1: 0.2.1: rules phrased by type (threshold = 'When … is above …'; requirement = '… should be between …'; prohibition / permission), naming the measured quantity
+# 0.2.0: 0.2.0: rule review — values shown right ([x] = one threshold, [min,max] = between; a one-item list printed "0 and undefined"); Edit, Reject (with a reason), Re-read section (AI re-extracts; nothing saved until chosen), Restore; Approve all skips rules whose value needs fixing
 provider: ds:airawatdeveloper:developer
 display_name: Knowledge
 icon: 📚

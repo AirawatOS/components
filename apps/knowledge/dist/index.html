@@ -89,13 +89,25 @@ function ruleLabel(r){return `<span class="pill">${esc(RTYPE[r.rule_type]||'Rule
 const OPW={'>':'above','>=':'at or above','<':'below','<=':'at or below','==':'equal to','!=':'not equal to','between':'between'};
 function valueOk(r){const v=r.value,op=r.operator;if(!r.metric||!OPW[op]||!Array.isArray(v)||!v.every(x=>typeof x==='number'&&isFinite(x)))return false;
   return op==='between'?v.length===2&&v[0]<=v[1]:v.length===1;}
+// Phrase a measurable rule by its TYPE, naming the measured quantity (metric) rather than the thing regulated:
+// a THRESHOLD is an alert ("When PM2.5 is above 120 µg/m³"); a REQUIREMENT a norm ("… should be between 125 and
+// 175 persons per hectare"); a PROHIBITION ("… must not be above …"); a PERMISSION ("… may be up to …").
 function ruleTrigger(r){
-  if(r.operator&&r.value!=null){                       // quantitative → machine-readable trigger
-    const subj=String(r.subject||r.metric||'value').replace(/_/g,' ').replace(/\bpm25\b/i,'PM2.5');
-    const v=Array.isArray(r.value)?(r.operator==='between'&&r.value.length===2?`${r.value[0]} and ${r.value[1]}`:r.value.length===1?r.value[0]:r.value.join(', ')):r.value;
-    return `When ${esc(subj)} is ${OPW[r.operator]||esc(r.operator)} ${esc(v)} ${esc(r.unit||'')}`.replace(/\s+/g,' ').trim();
+  if(r.operator&&r.value!=null){
+    const what=String(r.metric||r.subject||'value').replace(/_/g,' ').replace(/\bpm25\b/i,'PM2.5').replace(/^./,c=>c.toUpperCase());
+    const v=Array.isArray(r.value)?r.value:[r.value],u=r.unit?' '+r.unit:'',op=r.operator;
+    const amt=op==='between'&&v.length===2?`${v[0]} and ${v[1]}${u}`:`${v.length===1?v[0]:v.join(', ')}${u}`;
+    const t=r.rule_type;
+    if(t==='threshold'){const w={'>':'above','>=':'at or above','<':'below','<=':'at or below','==':'','!=':'not','between':'between'}[op];
+      return esc(`When ${/^[A-Z][A-Z0-9]/.test(what)?what:what.replace(/^./,c=>c.toLowerCase())} is ${w===''?'':w+' '}${amt}`.replace(/\s+/g,' ').trim());}
+    if(t==='prohibition'){const w={'>':'must not be above','>=':'must stay below','<':'must not be below','<=':'must stay above','==':'must not be','!=':'must be','between':'must not be between'}[op];
+      return esc(`${what} ${w} ${amt}`);}
+    if(t==='permission'){const w={'>':'may be above','>=':'may be','<':'may be below','<=':'may be up to','==':'may be','!=':'may differ from','between':'may be between'}[op];
+      return esc(`${what} ${w} ${amt}`);}
+    const w={'>':'should be above','>=':'should be at least','<':'should be below','<=':'should be at most','==':'should be','!=':'should not be','between':'should be between'}[op];
+    return esc(`${what} ${w||esc(op)} ${amt}`);
   }
-  return esc(r.statement||r.title||'');                 // qualitative → the rule statement itself
+  return esc(r.statement||r.title||'');
 }
 
 async function boot(){
