@@ -1,0 +1,26 @@
+# A UI app (kind=app). AGENT STUDIO — where an organisation writes the SKILLS its personal assistant follows, and
+# composes AGENTS (a persona + a set of skills + who it is for). A skill is a playbook: when to use it, its steps,
+# the registries it reads (picked from the tenant's registries, with their fields), the rule sets it applies, how to
+# answer, and example questions. Skills start as drafts; an administrator TRIES one (the assistant runs it and every
+# step it took is shown) and then makes it active. Only active skills reach the personal assistant, which still reads
+# only what the asking user may read: the app-host serves three read tools for that (use_skill, summarize_data over
+# the kernel's aggregate, evaluate_rules through the rule engine) — see the staging patch notes.
+component_id: ds:airawatdeveloper:app/agent-studio
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Agent Studio
+icon: 🧠
+entrypoint: index.html
+bundle: dist
+sandboxed: true
+summary: Write the skills your personal assistant follows, try them on your own data, and make them active.
+data_browser: true          # to show each registry's fields when a skill picks it (reads stay tenant-scoped, user token)
+required_schemas: [platform.agent_skill, platform.agent_profile, governance.ruleset, governance.policy_rule]
+writes: [platform.agent_skill, platform.agent_profile]
+# skill text goes into the assistant's prompt: only administrators write skills and agents (admins bypass the check;
+# everyone else is refused — no ordinary role is listed).
+write_roles:
+  platform.agent_skill: [platform.tenant-admin]
+  platform.agent_profile: [platform.tenant-admin]
+roles: [platform.tenant-admin]

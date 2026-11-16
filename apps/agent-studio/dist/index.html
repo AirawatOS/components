@@ -1,0 +1,244 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Studio</title>
+<style>
+  :root{--bg:#0d1117;--panel:#0f141b;--card:#161b22;--line:#21262d;--soft:#1a1f27;--ink:#e6edf3;--dim:#8b949e;--faint:#5f6b78;
+        --accent:#3b82f6;--sel:#1b2530;--good:#3fb950;--bad:#f85149;--warn:#d29922;--mono:ui-monospace,Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  button{font:inherit;color:inherit}
+  input,select,textarea{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 8px;font:inherit;font-size:13px;width:100%}
+  textarea{resize:vertical;line-height:1.45}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  .crumbs{height:44px;display:flex;align-items:center;gap:6px;padding:0 320px 0 150px;border-bottom:1px solid var(--line);color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden}
+  .crumbs b{color:var(--ink);font-weight:600}
+  .app{display:flex;height:calc(100vh - 44px);overflow:hidden}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px;white-space:nowrap}
+  .btn:hover{border-color:#30363d} .btn.p{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+  .btn.g{border-color:var(--good);color:var(--good)} .btn.d{border-color:var(--bad);color:var(--bad)} .btn:disabled{opacity:.45;cursor:default}
+  .muted{color:var(--dim);font-size:12px} .mono{font-family:var(--mono)} .small{font-size:11px}
+  .empty{color:var(--dim);text-align:center;padding:40px 16px}
+  #left{width:260px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+  .ltabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--line)}
+  .lt{flex:1;background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:7px 6px;cursor:pointer}
+  .lt.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  #list{flex:1;overflow:auto;padding:6px 0}
+  .it{padding:8px 14px;cursor:pointer;border-left:2px solid transparent}
+  .it:hover{background:var(--card)} .it.sel{background:var(--sel);border-left-color:var(--accent)}
+  .it .t{font-size:13px;display:flex;gap:6px;align-items:center} .it .s{color:var(--faint);font-size:11px;font-family:var(--mono)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--faint)} .dot.active{background:var(--good)} .dot.draft{background:var(--warn)}
+  #left .foot{border-top:1px solid var(--line);padding:8px}
+  #mid{flex:1;min-width:0;overflow:auto;padding:16px 20px}
+  .card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px 16px;margin:0 0 14px}
+  .card h3{margin:0 0 4px;font-size:14px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim);margin-top:10px}
+  label.f input,label.f textarea,label.f select{color:var(--ink)}
+  .hint{color:var(--faint);font-size:11px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:1px 10px;font-size:12px;background:var(--bg)}
+  .status{font-size:11px;border-radius:999px;padding:1px 8px;border:1px solid var(--line)}
+  .status.active{color:var(--good);border-color:var(--good)} .status.draft{color:var(--warn);border-color:var(--warn)} .status.retired{color:var(--faint)}
+  .reg{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;background:var(--panel)}
+  .reg .fl{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px}
+  .reg .fl label{font-size:12px;display:flex;gap:4px;align-items:center;color:var(--ink)} .reg .fl input{width:auto}
+  .pick{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+  .pick label{display:flex;gap:8px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--soft);font-size:13px;cursor:pointer}
+  .pick label:hover{background:var(--panel)} .pick input{width:auto}
+  #right{width:400px;flex:none;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+  #right .hd{padding:12px 14px 8px;border-bottom:1px solid var(--line)}
+  #tbody{flex:1;overflow:auto;padding:10px 14px}
+  .msg{border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .msg.q{background:var(--sel)} .msg.a{background:var(--card);border:1px solid var(--line)}
+  .step{font:11px/1.5 var(--mono);color:var(--dim);border-left:2px solid var(--line);padding:2px 8px;margin:4px 0;overflow-wrap:anywhere}
+  .step b{color:var(--ink)}
+  .prop{border:1px solid var(--warn);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12px}
+  .ex{cursor:pointer} .ex:hover{border-color:var(--accent)}
+  .note{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--dim)}
+  .err{color:var(--bad)} .ok{color:var(--good)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (max-width:1100px){ #right{width:340px} }
+  @media (max-width:820px){ .app{flex-direction:column;height:auto} #left,#right{width:auto} .grid2{grid-template-columns:1fr} }
+</style>
+<nav class="crumbs" id="crumbs"><b>Agent Studio</b></nav>
+<div class="app">
+  <aside id="left">
+    <div class="ltabs"><button class="lt on" data-k="skill">Skills</button><button class="lt" data-k="agent">Agents</button></div>
+    <div id="list"><div class="empty">Loading…</div></div>
+    <div class="foot"><button class="btn p" id="new" style="width:100%">+ New skill</button></div>
+  </aside>
+  <main id="mid"><div class="empty">Loading…</div></main>
+  <aside id="right">
+    <div class="hd"><b>Try it</b> <span class="muted" id="tryon"></span>
+      <div class="muted">Ask the assistant a question using only this skill (or agent). Drafts can be tried here before they are active. Every step it takes is shown.</div></div>
+    <div id="tbody"></div>
+    <div style="padding:10px 14px;border-top:1px solid var(--line)">
+      <div class="row" id="exs" style="margin-bottom:6px"></div>
+      <div class="row"><input id="q" placeholder="Ask a question…" style="flex:1"><button class="btn p" id="ask">Ask</button></div>
+    </div>
+  </aside>
+</div>
+<script>
+// AGENT STUDIO. Skills (platform.agent_skill) and agents (platform.agent_profile) are governed records written through
+// /bridge/save (administrators only: the app declares write_roles). "Try it" posts to /bridge/agent with {skill|agent,
+// try:true}: the app-host runs the personal assistant restricted to that skill or agent (an admin may try a draft) and
+// returns the reply plus the steps it took. Only ACTIVE skills reach the personal assistant otherwise.
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function jpost(p,b){const r=await fetch(p,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  return {ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))};}
+const APP='agent-studio';let TENANT='',ME='',ADMIN=false;
+const S={kind:'skill',skills:[],agents:[],cur:null,dirty:false,regs:[],fields:{},rulesets:[],chat:[],busy:false,msg:''};
+const snake=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').replace(/^([0-9])/,'s_$1').slice(0,47);
+const SCH={skill:'platform.agent_skill',agent:'platform.agent_profile'};
+const idFor=(k,name)=>'ds:'+TENANT+':platform/'+(k==='skill'?'agent_skill':'agent_profile')+'/'+name;
+const subj=s=>(s.split('.').slice(1).join('.')||s).replace(/_/g,' ');
+
+async function readAll(schema){const out=[];let cursor=null;
+  for(let i=0;i<10;i++){const r=await jpost('/bridge/query',{app_id:APP,schema,paginate:true,limit:200,cursor});
+    if(!r.ok)break;out.push(...(r.j.results||[]).map(x=>x.object||x));cursor=r.j.next_cursor;if(!cursor)break;}
+  return out.filter(o=>!o.archived);}
+async function loadAll(){
+  [S.skills,S.agents]=await Promise.all([readAll(SCH.skill),readAll(SCH.agent)]);
+  S.skills.sort((a,b)=>(a.title||'').localeCompare(b.title||''));S.agents.sort((a,b)=>(a.title||'').localeCompare(b.title||''));}
+async function loadCatalog(){
+  const d=await jpost('/bridge/data-schemas',{});S.regs=(d.ok&&d.j.schemas)?d.j.schemas.map(x=>x.schema):[];
+  const [rs,pr]=await Promise.all([readAll('governance.ruleset'),readAll('governance.policy_rule')]);
+  const m=new Map();rs.forEach(r=>r.ruleset&&m.set(r.ruleset,{name:r.ruleset,title:r.title||r.description||'',n:0}));
+  pr.forEach(p=>{if(!p.ruleset)return;const e=m.get(p.ruleset)||{name:p.ruleset,title:'',n:0};e.n++;m.set(p.ruleset,e);});
+  S.rulesets=[...m.values()].sort((a,b)=>a.name.localeCompare(b.name));}
+async function fieldsOf(schema){if(S.fields[schema])return S.fields[schema];
+  const r=await jpost('/bridge/query',{app_id:APP,schema,limit:30});const f=new Set();
+  ((r.ok&&r.j.results)||[]).map(x=>x.object||x).forEach(o=>Object.keys(o).forEach(k=>{if(!['schema','id','tenant','owner','prov','conforms_to','kind','_rev'].includes(k))f.add(k);}));
+  return S.fields[schema]=[...f].sort();}
+
+// ---------------- left ----------------
+function renderList(){
+  const L=S.kind==='skill'?S.skills:S.agents;
+  $('list').innerHTML=L.length?L.map(o=>`<div class="it${S.cur&&S.cur.id===o.id?' sel':''}" data-id="${esc(o.id)}"><div class="t"><span class="dot ${esc(o.status)}"></span>${esc(o.title||o.name)}</div><div class="s">${esc(o.name)} · ${esc(o.status)}</div></div>`).join('')
+    :`<div class="empty">No ${S.kind==='skill'?'skills':'agents'} yet.${ADMIN?' Make the first one below.':''}</div>`;
+  $('list').querySelectorAll('.it').forEach(el=>el.onclick=()=>open(S.kind,el.dataset.id));
+  $('new').textContent=S.kind==='skill'?'+ New skill':'+ New agent';$('new').disabled=!ADMIN;
+  document.querySelectorAll('.lt').forEach(b=>b.classList.toggle('on',b.dataset.k===S.kind));}
+function open(kind,id){if(S.dirty&&!confirm('Discard unsaved changes?'))return;
+  const o=(kind==='skill'?S.skills:S.agents).find(x=>x.id===id);S.kind=kind;S.cur=o?JSON.parse(JSON.stringify(o)):null;S.dirty=false;S.msg='';S.chat=[];
+  renderList();renderEditor();renderTry();}
+function blank(kind){const now=new Date().toISOString();
+  return kind==='skill'?{schema:SCH.skill,id:'',tenant:TENANT,name:'',title:'',status:'draft',when_to_use:'',steps:'',registries:[],rulesets:[],answer_format:'',examples:[],audience_roles:[],version:0,created_at:now,_new:true}
+    :{schema:SCH.agent,id:'',tenant:TENANT,name:'',title:'',status:'draft',persona:'',skills:[],audience_roles:[],description:'',created_at:now,_new:true};}
+
+// ---------------- editor ----------------
+function renderEditor(){
+  const M=$('mid'),o=S.cur;$('crumbs').innerHTML='<b>Agent Studio</b>'+(o?`<span>›</span><span>${S.kind==='skill'?'Skills':'Agents'}</span><span>›</span><b>${esc(o.title||'New')}</b>`:'');
+  if(!o){M.innerHTML=`<div class="card"><h3>Skills your assistant follows</h3>
+      <p class="muted" style="margin:6px 0 0">A <b>skill</b> is a playbook: when to use it, the steps, which of your registries it reads, which approved rule sets it applies, and how to answer. The personal assistant uses every <b>active</b> skill the person asking may use, and still reads only what that person may read.</p>
+      <p class="muted">An <b>agent</b> is a persona with a chosen set of skills, for a group of people.</p>
+      <p class="muted">Write a skill, try it on your own data on the right, then make it active.${ADMIN?'':' <span class="err">Only administrators can write or activate skills.</span>'}</p></div>`;return;}
+  const ro=!ADMIN;
+  const common=`<div class="grid2">
+      <label class="f">Name<input id="e-title" value="${esc(o.title)}" placeholder="${S.kind==='skill'?'e.g. Ward works spending':'e.g. Ward finance officer'}"${ro?' disabled':''}></label>
+      <label class="f">Code<input id="e-name" class="mono" value="${esc(o.name)}" placeholder="from the name"${o._new&&!ro?'':' disabled'}><span class="hint">Lower case, a–z 0–9 _. Fixed once saved.</span></label></div>
+    <label class="f">Who may use it <span class="hint">Roles, separated by commas. Empty = everyone in your organisation.</span><input id="e-roles" value="${esc((o.audience_roles||[]).join(', '))}" placeholder="e.g. finance.officer, platform.tenant-admin"${ro?' disabled':''}></label>`;
+  const head=`<div class="row" style="margin-bottom:10px"><h2 style="margin:0;font-size:17px">${esc(o.title||'New '+S.kind)}</h2><span class="status ${esc(o.status)}">${esc(o.status)}</span>
+      ${o.version?`<span class="muted">version ${o.version}${o.updated_by?' · '+esc(String(o.updated_by).split('/').pop()):''}${o.updated_at?' · '+esc(o.updated_at.slice(0,16).replace('T',' ')):''}</span>`:''}</div>`;
+  if(S.kind==='skill'){
+    const regRows=(o.registries||[]).map((r,i)=>`<div class="reg"><div class="row"><b>${esc(subj(r.schema))}</b><span class="muted mono">${esc(r.schema)}</span><span style="margin-left:auto"></span>${ro?'':`<button class="btn d" data-rmreg="${i}">Remove</button>`}</div>
+        <div class="fl" id="fl-${i}"><span class="muted">Loading fields…</span></div>
+        <input data-regnote="${i}" value="${esc(r.note||'')}" placeholder="What this registry is used for (optional)" style="margin-top:6px"${ro?' disabled':''}></div>`).join('');
+    M.innerHTML=head+`<div class="card"><h3>The skill</h3>${common}
+      <label class="f">When to use it <span class="hint">The assistant reads this to decide whether the question matches.</span><textarea id="e-when" rows="2"${ro?' disabled':''}>${esc(o.when_to_use)}</textarea></label>
+      <label class="f">Steps <span class="hint">What to do, in order. Name the registries, fields and rule sets to use.</span><textarea id="e-steps" rows="7"${ro?' disabled':''}>${esc(o.steps)}</textarea></label>
+      <label class="f">How to answer<textarea id="e-fmt" rows="2" placeholder="e.g. A short table by ward, then one sentence on what stands out. Say which records it is based on."${ro?' disabled':''}>${esc(o.answer_format)}</textarea></label>
+      <label class="f">Example questions <span class="hint">One per line. They show up in Try it.</span><textarea id="e-ex" rows="3"${ro?' disabled':''}>${esc((o.examples||[]).join('\n'))}</textarea></label></div>
+    <div class="card"><h3>Registries it reads</h3><div class="muted">Tick the fields that matter; the assistant is told about them.</div>${regRows||'<div class="muted" style="margin-top:6px">None yet.</div>'}
+      ${ro?'':`<div class="row" style="margin-top:8px"><select id="addreg" style="flex:1"><option value="">Add a registry…</option>${S.regs.filter(s=>!(o.registries||[]).some(r=>r.schema===s)).map(s=>`<option value="${esc(s)}">${esc(subj(s))} — ${esc(s)}</option>`).join('')}</select></div>`}</div>
+    <div class="card"><h3>Rule sets it applies</h3><div class="muted">Approved rules the assistant may apply to facts or to every record of a registry.</div>
+      <div class="pick">${S.rulesets.length?S.rulesets.map(r=>`<label><input type="checkbox" data-rs="${esc(r.name)}"${(o.rulesets||[]).includes(r.name)?' checked':''}${ro?' disabled':''}><span class="mono">${esc(r.name)}</span><span class="muted">${esc(r.title)}${r.n?' · '+r.n+' rules':''}</span></label>`).join(''):'<div class="muted" style="padding:8px">No rule sets you can read.</div>'}</div></div>`+actions(o);
+    (o.registries||[]).forEach(async(r,i)=>{const f=await fieldsOf(r.schema),box=$('fl-'+i);if(!box)return;
+      box.innerHTML=f.length?f.map(k=>`<label><input type="checkbox" data-fld="${i}" value="${esc(k)}"${(r.fields||[]).includes(k)?' checked':''}${ro?' disabled':''}>${esc(k)}</label>`).join(''):'<span class="muted">No records yet, so no fields to show.</span>';
+      box.querySelectorAll('[data-fld]').forEach(cb=>cb.onchange=()=>{const set=new Set(r.fields||[]);cb.checked?set.add(cb.value):set.delete(cb.value);r.fields=[...set];dirty();});});
+  } else {
+    M.innerHTML=head+`<div class="card"><h3>The agent</h3>${common}
+      <label class="f">Persona <span class="hint">Who the agent is and how it speaks. Goes before the assistant's instructions.</span><textarea id="e-persona" rows="4"${ro?' disabled':''}>${esc(o.persona)}</textarea></label>
+      <label class="f">Description<input id="e-desc" value="${esc(o.description||'')}"${ro?' disabled':''}></label></div>
+    <div class="card"><h3>Skills</h3><div class="muted">The agent uses only these. Draft skills are used only in Try it.</div>
+      <div class="pick">${S.skills.length?S.skills.map(s=>`<label><input type="checkbox" data-sk="${esc(s.name)}"${(o.skills||[]).includes(s.name)?' checked':''}${ro?' disabled':''}><span>${esc(s.title)}</span><span class="status ${esc(s.status)}">${esc(s.status)}</span></label>`).join(''):'<div class="muted" style="padding:8px">No skills yet.</div>'}</div></div>`+actions(o);
+  }
+  wire();}
+function actions(o){if(!ADMIN)return '';
+  return `<div class="row" style="margin-top:4px"><button class="btn p" id="save">${o._new?'Save as draft':'Save'}</button>
+    ${o.status!=='active'&&!o._new?'<button class="btn g" id="activate">Make active</button>':''}
+    ${o.status==='active'?'<button class="btn" id="deactivate">Back to draft</button>':''}
+    ${!o._new?'<button class="btn d" id="retire">Retire</button>':''}
+    <span class="muted" id="emsg">${S.msg}</span></div>`;}
+function dirty(){S.dirty=true;const m=$('emsg');if(m)m.innerHTML='<span class="muted">Unsaved changes</span>';}
+function wire(){const o=S.cur,v=id=>$(id)?$(id).value:'';
+  const bind=(id,fn)=>{const el=$(id);if(el)el.oninput=()=>{fn(el.value);dirty();};};
+  bind('e-title',x=>{o.title=x;if(o._new&&!S.nameEdited){o.name=snake(x);$('e-name').value=o.name;}});
+  bind('e-name',x=>{o.name=snake(x);S.nameEdited=true;});
+  bind('e-roles',x=>o.audience_roles=x.split(',').map(s=>s.trim()).filter(Boolean));
+  bind('e-when',x=>o.when_to_use=x);bind('e-steps',x=>o.steps=x);bind('e-fmt',x=>o.answer_format=x);
+  bind('e-ex',x=>o.examples=x.split('\n').map(s=>s.trim()).filter(Boolean));
+  bind('e-persona',x=>o.persona=x);bind('e-desc',x=>o.description=x);
+  document.querySelectorAll('[data-regnote]').forEach(el=>el.oninput=()=>{o.registries[+el.dataset.regnote].note=el.value;dirty();});
+  document.querySelectorAll('[data-rmreg]').forEach(b=>b.onclick=()=>{o.registries.splice(+b.dataset.rmreg,1);dirty();renderEditor();});
+  if($('addreg'))$('addreg').onchange=e=>{if(!e.target.value)return;o.registries.push({schema:e.target.value,fields:[],note:''});dirty();renderEditor();};
+  document.querySelectorAll('[data-rs]').forEach(cb=>cb.onchange=()=>{const s=new Set(o.rulesets||[]);cb.checked?s.add(cb.dataset.rs):s.delete(cb.dataset.rs);o.rulesets=[...s];dirty();});
+  document.querySelectorAll('[data-sk]').forEach(cb=>cb.onchange=()=>{const s=new Set(o.skills||[]);cb.checked?s.add(cb.dataset.sk):s.delete(cb.dataset.sk);o.skills=[...s];dirty();});
+  if($('save'))$('save').onclick=()=>save();
+  if($('activate'))$('activate').onclick=()=>save({status:'active'});
+  if($('deactivate'))$('deactivate').onclick=()=>save({status:'draft'});
+  if($('retire'))$('retire').onclick=()=>{if(confirm('Retire this '+S.kind+'? The assistant stops using it.'))save({status:'retired'});};}
+function problems(o){const p=[];
+  if(!o.title.trim())p.push('a name');if(!/^[a-z][a-z0-9_]{1,46}$/.test(o.name||''))p.push('a code (2–47 characters, a–z 0–9 _)');
+  if(S.kind==='skill'){if(!o.when_to_use.trim())p.push('when to use it');if(!o.steps.trim())p.push('the steps');}
+  const list=S.kind==='skill'?S.skills:S.agents;if(o._new&&list.some(x=>x.name===o.name))p.push('a code not already used');
+  return p;}
+async function save(patch){const o=S.cur,p=problems(o);
+  if(p.length){S.msg='<span class="err">Add '+esc(p.join(', '))+'.</span>';$('emsg').innerHTML=S.msg;return false;}
+  const now=new Date().toISOString(),obj=Object.assign({},o,patch||{});delete obj._new;
+  obj.id=obj.id||idFor(S.kind,obj.name);obj.tenant=TENANT;obj.updated_at=now;obj.updated_by=ME;
+  if(S.kind==='skill')obj.version=(o.version||0)+1;
+  if(patch&&patch.status==='active'){obj.activated_by=ME;obj.activated_at=now;}
+  const r=await jpost('/bridge/save',{app_id:APP,object:obj});
+  if(!r.ok||!r.j.saved){S.msg='<span class="err">Not saved: '+esc((r.j&&(r.j.detail||r.j.error))||('HTTP '+r.status))+'</span>';$('emsg').innerHTML=S.msg;return false;}
+  S.cur=obj;S.dirty=false;S.nameEdited=false;
+  const list=S.kind==='skill'?S.skills:S.agents,i=list.findIndex(x=>x.id===obj.id);if(i>=0)list[i]=obj;else list.push(obj);
+  S.msg='<span class="ok">Saved'+(patch&&patch.status?' — now '+patch.status:'')+'.</span>';renderList();renderEditor();renderTry();return true;}
+
+// ---------------- try it ----------------
+function renderTry(){const o=S.cur;
+  $('tryon').textContent=o?'— '+(o.title||'new '+S.kind):'';
+  const B=$('tbody');
+  if(!o){B.innerHTML='<div class="muted">Open a skill or an agent to try it.</div>';$('exs').innerHTML='';return;}
+  const ex=S.kind==='skill'?(o.examples||[]):S.skills.filter(s=>(o.skills||[]).includes(s.name)).flatMap(s=>(s.examples||[]).slice(0,1));
+  $('exs').innerHTML=ex.slice(0,4).map((e,i)=>`<span class="chip ex" data-e="${i}">${esc(e.length>48?e.slice(0,46)+'…':e)}</span>`).join('');
+  $('exs').querySelectorAll('[data-e]').forEach(c=>c.onclick=()=>{$('q').value=ex[+c.dataset.e];ask();});
+  B.innerHTML=S.chat.length?S.chat.map(m=>m.q?`<div class="msg q">${esc(m.q)}</div>`:
+      `${(m.steps||[]).map(s=>`<div class="step"><b>${esc(s.tool)}</b> ${esc(JSON.stringify(s.args||{}))}</div>`).join('')}
+       <div class="msg a${m.err?' err':''}">${esc(m.a)}</div>
+       ${m.propose?`<div class="prop">The assistant would now ask the person to confirm: <b>${esc(m.propose.label||m.propose.name)}</b> <span class="mono small">${esc(JSON.stringify(m.propose.args||{}))}</span><div class="muted">Writes are never carried out from Try it.</div></div>`:''}`).join('')
+    +(S.busy?'<div class="muted"><span class="spin"></span> Thinking…</div>':'')
+    :`<div class="muted">${o._new?'Save the '+S.kind+' first, then ask it a question.':'Ask a question below'+(ex.length?' or pick an example':'')+'.'}</div>`;
+  B.scrollTop=B.scrollHeight;$('ask').disabled=S.busy||o._new||!ADMIN;}
+async function ask(){const o=S.cur,q=$('q').value.trim();if(!o||!q||S.busy)return;
+  if(S.dirty&&!(await save()))return;
+  S.chat.push({q});S.busy=true;$('q').value='';renderTry();
+  const hist=S.chat.filter(m=>!m.err).slice(-7,-1).map(m=>m.q?{role:'user',content:m.q}:{role:'assistant',content:m.a});
+  const body={message:q,history:hist,try:true};body[S.kind==='skill'?'skill':'agent']=o.name;
+  const r=await jpost('/bridge/agent',body);S.busy=false;
+  if(!r.ok)S.chat.push({a:'The assistant could not answer ('+r.status+'): '+((r.j&&r.j.error)||''),err:true});
+  else S.chat.push({a:r.j.reply||'(no answer)',steps:r.j.steps||[],propose:r.j.propose});
+  renderTry();}
+
+// ---------------- wiring ----------------
+document.querySelectorAll('.lt').forEach(b=>b.onclick=()=>{if(S.dirty&&!confirm('Discard unsaved changes?'))return;S.kind=b.dataset.k;S.cur=null;S.dirty=false;S.chat=[];renderList();renderEditor();renderTry();});
+$('new').onclick=()=>{if(S.dirty&&!confirm('Discard unsaved changes?'))return;S.cur=blank(S.kind);S.dirty=false;S.nameEdited=false;S.msg='';S.chat=[];renderList();renderEditor();renderTry();$('e-title').focus();};
+$('ask').onclick=ask;$('q').onkeydown=e=>{if(e.key==='Enter')ask();};
+window.addEventListener('beforeunload',e=>{if(S.dirty){e.preventDefault();e.returnValue='';}});
+(async function boot(){
+  const s=await fetch('/session',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  TENANT=s.tenant||String(s.sub||'').split('/')[2]||'';ME=s.sub||'';ADMIN=(s.roles||[]).some(r=>/(^|\.)(tenant-)?admin$/.test(r));
+  if(!s.authenticated){$('mid').innerHTML='<div class="empty">Sign in to use Agent Studio.</div>';return;}
+  await Promise.all([loadAll(),loadCatalog()]);renderList();renderEditor();renderTry();
+})();
+</script>
