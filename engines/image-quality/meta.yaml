@@ -1,0 +1,24 @@
+# IMAGE-QUALITY-CV — a classical computer-vision candidate in Model Lab (ADR-0134; ADR-0132 "component subject").
+# A run lists it among its models as `component:image-quality-cv`; this engine answers A01 (image quality), A02 (lighting
+# and visibility) and A03 (blur) for every active image case by measuring the pixels (sharpness, exposure, colour, glare,
+# haze, blank frames) — no model, milliseconds per image, in the vision runtime. Images are read through the broker and
+# never leave the platform, so private camera cases are allowed. Each answer is written as an eval_result in the same JSON
+# form a model gives, with every measure kept; engine/model-eval then scores the run (RESCORE_RUN).
+component_id: ds:airawatdeveloper:engine/image-quality
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Image Quality (classical CV, in-house)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: vision                    # numpy, Pillow and scipy are in the vision runtime; no new packages
+reads: [intelligence.eval_case, intelligence.eval_run]
+writes: [intelligence.eval_run, intelligence.eval_result]
+config: [IQ_RUN, IQ_SHARP, IQ_BLURRED, IQ_NIGHT_Y, IQ_IR_SAT, IQ_IR_Y, IQ_LOW_Y, IQ_GLARE_BLOB, IQ_HAZE_DARK, IQ_HAZE_STD, IQ_BLANK_STD]
+files: [get]                         # the case images, read through the broker
+scopes:
+  - { verb: read,  scope: intelligence.eval_case }
+  - { verb: read,  scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_result }
