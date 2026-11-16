@@ -6,7 +6,7 @@
 # form a model gives, with every measure kept; engine/model-eval then scores the run (RESCORE_RUN).
 component_id: ds:airawatdeveloper:engine/image-quality
 kind: engine
-version: 0.1.0
+version: 0.1.1   # 0.1.1: republished with its source (0.1.0 was approved from a request filed without one); code unchanged. 0.1.0: first version.
 provider: ds:airawatdeveloper:developer
 display_name: Image Quality (classical CV, in-house)
 entrypoint: run.py
