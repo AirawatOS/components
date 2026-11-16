@@ -1,0 +1,28 @@
+# The PADDLEOCR runtime: scene-text and document OCR on the platform's own hardware (ADR-0134) — camera overlays (C05),
+# scanned municipal registers, handwriting. Private frames and documents never leave for OCR. A component declares
+# `runtime: { profile: paddleocr }`.
+component_id:   ds:airawatdeveloper:runtime/paddleocr
+kind:           runtime
+version:        0.1.0
+provider:       ds:airawatdeveloper:developer
+implements:     platform.runtime_invoke@0.1.0
+runtime_id:     paddleocr
+profile:        paddleocr
+analytics_tier: descriptive                 # turns text in images into text
+display_name:   PaddleOCR (PP-OCRv5, CPU)
+image:          manishsv/airawatos-runtime-paddleocr:0.1.0
+image_digest:   PENDING   # the CERTIFIED image content id (launcher runs only this) — set after build
+provides:       [paddlepaddle-3.0.0-cpu, paddleocr-3.0.0, pp-ocrv5-server, pp-ocrv5-mobile, doc-orientation, textline-orientation]   # no Devanagari: PaddleOCR 3.0 has no PP-OCRv5 Devanagari recogniser (lang=hi falls back silently)
+models:
+  - id: PP-OCRv5_server_det / PP-OCRv5_server_rec
+    source: PaddleOCR 3.0 official models (downloaded at build into /opt/paddlex)
+    licence: Apache-2.0
+  - id: PP-OCRv5_mobile_det / PP-OCRv5_mobile_rec
+    source: PaddleOCR 3.0 official models
+    licence: Apache-2.0
+  - id: PP-LCNet_x1_0_doc_ori / PP-LCNet_x0_25_textline_ori (page and text-line orientation)
+    source: PaddleOCR 3.0 official models
+    licence: Apache-2.0
+isolation:      shared
+confidential:   false
+level:          L2

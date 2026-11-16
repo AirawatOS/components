@@ -1,0 +1,5 @@
+# The paddleocr profile's library set (CPU). PaddleOCR 3.0 pulls PaddleX (its pipeline runtime) and OpenCV.
+paddlepaddle==3.0.0
+paddleocr==3.0.0
+numpy<2.1
+pillow==11.0.0

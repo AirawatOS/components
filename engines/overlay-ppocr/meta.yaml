@@ -1,0 +1,23 @@
+# OVERLAY-PPOCR — PP-OCRv5 as a Model Lab candidate for C05, on-screen text (ADR-0134; ADR-0132 "component subject").
+# A run lists it as `component:overlay-ppocrv5`; this engine reads each frame's overlay strips (date-time stamp, camera
+# name) with PaddleOCR's PP-OCRv5 server models in the `paddleocr` runtime. Frames are read through the broker and never
+# leave the platform, so private camera cases are allowed. Timestamp and name use the same rules as engine/overlay-ocr,
+# so the two OCR candidates differ only in how they read. engine/model-eval scores the run (RESCORE_RUN).
+component_id: ds:airawatdeveloper:engine/overlay-ppocr
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Overlay OCR (PP-OCRv5, in-house)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: paddleocr                 # PaddlePaddle 3.0 + PaddleOCR 3.0 + PP-OCRv5 models, baked in
+reads: [intelligence.eval_case, intelligence.eval_run]
+writes: [intelligence.eval_run, intelligence.eval_result]
+config: [OCR_RUN, OCR_BAND, OCR_MIN_CONF, OCR_NAME_CONF, PPOCR_DET, PPOCR_REC]
+files: [get]
+scopes:
+  - { verb: read,  scope: intelligence.eval_case }
+  - { verb: read,  scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_result }
