@@ -7,7 +7,7 @@
 # the kernel's aggregate, evaluate_rules through the rule engine) — see the staging patch notes.
 component_id: ds:airawatdeveloper:app/agent-studio
 kind: app
-version: 0.1.0
+version: 0.1.1   # 0.1.1: Try it shows the answer's **bold** and `code` instead of the raw marks
 provider: ds:airawatdeveloper:developer
 display_name: Agent Studio
 icon: 🧠

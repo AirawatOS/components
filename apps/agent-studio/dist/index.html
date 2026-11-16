@@ -91,6 +91,8 @@ const S={kind:'skill',skills:[],agents:[],cur:null,dirty:false,regs:[],fields:{}
 const snake=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').replace(/^([0-9])/,'s_$1').slice(0,47);
 const SCH={skill:'platform.agent_skill',agent:'platform.agent_profile'};
 const idFor=(k,name)=>'ds:'+TENANT+':platform/'+(k==='skill'?'agent_skill':'agent_profile')+'/'+name;
+// the assistant answers in light markdown: **bold** and `code` (everything escaped first)
+const md=s=>esc(s).replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>').replace(/`([^`\n]+)`/g,'<span class="mono">$1</span>');
 const subj=s=>(s.split('.').slice(1).join('.')||s).replace(/_/g,' ');
 
 async function readAll(schema){const out=[];let cursor=null;
@@ -215,7 +217,7 @@ function renderTry(){const o=S.cur;
   $('exs').querySelectorAll('[data-e]').forEach(c=>c.onclick=()=>{$('q').value=ex[+c.dataset.e];ask();});
   B.innerHTML=S.chat.length?S.chat.map(m=>m.q?`<div class="msg q">${esc(m.q)}</div>`:
       `${(m.steps||[]).map(s=>`<div class="step"><b>${esc(s.tool)}</b> ${esc(JSON.stringify(s.args||{}))}</div>`).join('')}
-       <div class="msg a${m.err?' err':''}">${esc(m.a)}</div>
+       <div class="msg a${m.err?' err':''}">${md(m.a)}</div>
        ${m.propose?`<div class="prop">The assistant would now ask the person to confirm: <b>${esc(m.propose.label||m.propose.name)}</b> <span class="mono small">${esc(JSON.stringify(m.propose.args||{}))}</span><div class="muted">Writes are never carried out from Try it.</div></div>`:''}`).join('')
     +(S.busy?'<div class="muted"><span class="spin"></span> Thinking…</div>':'')
     :`<div class="muted">${o._new?'Save the '+S.kind+' first, then ask it a question.':'Ask a question below'+(ex.length?' or pick an example':'')+'.'}</div>`;
