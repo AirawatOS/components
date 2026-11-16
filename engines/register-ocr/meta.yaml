@@ -1,0 +1,22 @@
+# REGISTER-OCR — import a scanned paper register into a Workspace sheet (Sheets "Import from scan").
+# Sheets files a doc.sheet_import (the scan's file ids, the register type, status "pending", owner = the user) and runs
+# this engine with IMPORT_ID. It reads the scan through the broker, turns pages upright, reads the register with the
+# form's knowledge (grid, cell-by-cell PP-OCRv5, domain priors, the ledger's arithmetic) and writes the sheet's cells,
+# per-cell review states with their source boxes, and reduced page images back into the same record. In-house only:
+# registers hold personal pay data, so nothing leaves the platform. Form types: pf1 (P.F.-1 Provident Fund Ledger).
+component_id: ds:airawatdeveloper:engine/register-ocr
+kind: engine
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Register OCR (scanned registers → Sheets)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: paddleocr                 # PaddlePaddle 3.0 + PaddleOCR 3.0 + PP-OCRv5 + doc-orientation models, baked in
+reads: [doc.sheet_import]
+writes: [doc.sheet_import]
+config: [IMPORT_ID]
+files: [get, put]                    # the scan in; the reduced page images (for review) out
+scopes:
+  - { verb: read,  scope: doc.sheet_import }
+  - { verb: write, scope: doc.sheet_import }
