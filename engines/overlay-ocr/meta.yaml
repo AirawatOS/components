@@ -1,0 +1,24 @@
+# OVERLAY-OCR — an in-house OCR candidate in Model Lab (ADR-0134; ADR-0132 "component subject").
+# A run lists it among its models as `component:overlay-ocr`; this engine answers C05 (on-screen text: the camera's
+# date-time stamp and its name) for every active image case by reading the frame's top and bottom overlay strips with
+# Tesseract in the `ocr` runtime. Frames are read through the broker and never leave the platform, so private camera
+# cases are allowed. Each answer is written as an eval_result in the same JSON form a model gives, with every recognised
+# line kept; engine/model-eval then scores the run (RESCORE_RUN) with the text scorer.
+component_id: ds:airawatdeveloper:engine/overlay-ocr
+kind: engine
+version: 0.1.1   # 0.1.1: each strip read three ways (greyscale, white text at 200 and 160) in block and sparse modes, sparse words rebuilt into lines by position (stamps were split into pieces); timestamp pieces and a bare "From" are not names. 0.1.0: first version.
+provider: ds:airawatdeveloper:developer
+display_name: Overlay OCR (Tesseract, in-house)
+entrypoint: run.py
+confinement_min: L1
+runtime:
+  profile: ocr                       # Tesseract 5 + Pillow + numpy
+reads: [intelligence.eval_case, intelligence.eval_run]
+writes: [intelligence.eval_run, intelligence.eval_result]
+config: [OCR_RUN, OCR_BAND, OCR_MIN_CONF, OCR_NAME_CONF]
+files: [get]                         # the case images, read through the broker
+scopes:
+  - { verb: read,  scope: intelligence.eval_case }
+  - { verb: read,  scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_run }
+  - { verb: write, scope: intelligence.eval_result }

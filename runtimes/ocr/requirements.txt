@@ -1,0 +1,4 @@
+# The ocr profile's library set: Tesseract is a system package (see the Dockerfile); these prepare images and call it.
+pillow==11.0.0
+numpy==2.1.3
+pytesseract==0.3.13

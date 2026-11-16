@@ -1,0 +1,22 @@
+# The OCR runtime: reading text in images on the platform's own hardware, so private camera frames and documents never
+# leave for OCR (ADR-0134). First user: overlay-ocr (camera timestamps and names, test C05). A component declares
+# `runtime: { profile: ocr }`.
+component_id:   ds:airawatdeveloper:runtime/ocr
+kind:           runtime
+version:        0.1.0
+provider:       ds:airawatdeveloper:developer
+implements:     platform.runtime_invoke@0.1.0
+runtime_id:     ocr
+profile:        ocr
+analytics_tier: descriptive                 # turns text in images into text
+display_name:   OCR (Tesseract, CPU)
+image:          manishsv/airawatos-runtime-ocr:0.1.0
+image_digest:   sha256:b0e99ae325073cd94ace3f2c7ad5a2c94af6ab64a5d4a9c9cd82d56cff8e54b0   # the CERTIFIED image content id (launcher runs only this)
+provides:       [tesseract-5-eng, pillow, numpy]
+models:
+  - id: tesseract-eng
+    source: Debian package tesseract-ocr-eng (tessdata, LSTM English model)
+    licence: Apache-2.0
+isolation:      shared
+confidential:   false
+level:          L2
