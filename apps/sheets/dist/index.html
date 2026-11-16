@@ -24,6 +24,26 @@
   .in{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;margin-top:6px} textarea.in{resize:vertical;min-height:70px}
   .sub{color:var(--dim);font-size:12px} .spin{display:inline-block;width:12px;height:12px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
+  /* Import from scan — review states of imported cells */
+  td.st-corrected{background:rgba(59,130,246,.16)} td.st-check{background:rgba(245,158,11,.24)}
+  td.st-ledger{background:rgba(239,68,68,.20)} td.st-note{color:var(--dim);font-style:italic}
+  td.st-confirmed{box-shadow:inset 3px 0 0 var(--good)}
+  .legend{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--dim);padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px;border:1px solid var(--line)}
+  .legend .grow{flex:1}
+  .crop{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#fff;margin:6px 0 10px}
+  .crop img{position:absolute;max-width:none;user-select:none;pointer-events:none}
+  .crop .hit,.pagebox .hit{position:absolute;border:2px solid #e11d48;border-radius:3px;box-shadow:0 0 0 2000px rgba(0,0,0,.18)}
+  .pagebox{position:relative;display:inline-block}
+  .pagebox img{display:block;max-width:100%}
+  .rv-state{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;margin-bottom:6px}
+  .rv-state.corrected{background:rgba(59,130,246,.16)} .rv-state.check{background:rgba(245,158,11,.24)} .rv-state.ledger{background:rgba(239,68,68,.20)}
+  .rv-state.note,.rv-state.ok{background:var(--panel2)} .rv-state.confirmed{background:rgba(34,197,94,.18)}
+  .rv-actions{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+  .rv-nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .kv2{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:13px} .kv2 div:nth-child(odd){color:var(--dim)}
+  .prog{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden;margin:10px 0} .prog i{display:block;height:100%;background:var(--accent);width:0;transition:width .6s}
+  .bigmodal .sheet{width:min(1100px,96vw);max-height:92vh;overflow:auto}
 </style></head>
 <body class="ws">
 <nav class="ws-top" id="ws-top" aria-label="Location"></nav>
@@ -47,6 +67,7 @@
     <div class="ws-toolbar">
       <input class="titlein" id="title" placeholder="Untitled spreadsheet" autocomplete="off" aria-label="Spreadsheet title">
       <span class="status" id="status"></span>
+      <button class="btn sm" id="scanBtn" title="Import a scanned paper register (e.g. a PF ledger) into a new spreadsheet">📷 Import from scan</button>
       <button class="btn sm" id="aiBtn" title="Generate a table with AI">✨ AI</button>
       <button class="ws-ib" id="infoBtn" title="Details and history">ⓘ</button>
       <button class="ws-ib" id="delBtn" title="Move to trash">🗑</button>
@@ -55,6 +76,7 @@
       <span class="cellref" id="cellref">A1</span>
       <input class="fx" id="fx" placeholder="Value or =SUM(A1:A5)" aria-label="Cell value or formula">
     </div>
+    <div class="legend" id="legend" hidden></div>
     <div class="gridwrap" id="gridwrap"><div class="welcome" id="welcome">Create a spreadsheet with ＋ New spreadsheet</div></div>
     <div class="ws-foot" id="foot"></div>
   </main>
@@ -62,7 +84,7 @@
   <aside class="ws-right" id="ws-right" aria-label="Details">
     <div class="ws-right-head"><span class="t"></span><button class="ws-ib" id="ws-rclose" title="Close (Esc)">✕</button></div>
     <div class="ws-right-sub"></div>
-    <div class="ws-tabs"><button class="ws-tab on" data-t="info">Info</button><button class="ws-tab" data-t="hist">History</button></div>
+    <div class="ws-tabs"><button class="ws-tab" data-t="review" id="reviewTab" hidden>Review</button><button class="ws-tab on" data-t="info">Info</button><button class="ws-tab" data-t="hist">History</button></div>
     <div class="ws-right-body" id="ws-rbody"></div>
   </aside>
 </div>
@@ -70,8 +92,8 @@
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const NC=12, NR=50, COLS=Array.from({length:NC},(_,i)=>String.fromCharCode(65+i));
-let ME='',TENANT='',SHEETS=[],CUR=null,cells={},sel='A1',editing=false,savet=null,RTAB='info',LIST=null;
+const NC=12, COLS=Array.from({length:NC},(_,i)=>String.fromCharCode(65+i));
+let NR=50, IMPORTS=[], IMP=null, ME='',TENANT='',SHEETS=[],CUR=null,cells={},sel='A1',editing=false,savet=null,RTAB='info',LIST=null;
 async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
 // ---- formula engine ----
@@ -133,24 +155,30 @@ async function boot(){
   $('infoBtn').onclick=()=>{RTAB='info';WS.openRight(CUR&&CUR.title||'Untitled spreadsheet','Spreadsheet');WS.tab('info');renderRight();};
   $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();crumbs();}};
   $('fx').onchange=()=>{setCell(sel,$('fx').value);}; $('fx').onkeydown=e=>{if(e.key==='Enter'){setCell(sel,$('fx').value);move(1,0);}};
-  $('aiBtn').onclick=aiFill;
+  $('aiBtn').onclick=aiFill; $('scanBtn').onclick=scanDialog;
+  resumeImports();
   if(SHEETS.length)open(SHEETS.slice().sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''))[0].id); else newSheet();
 }
 function crumbs(){WS.crumbs([{label:'My spreadsheets'},{label:(CUR&&CUR.title)||'Untitled spreadsheet'}]);}
 function renderRight(){if(!CUR||!WS.isRightOpen())return;const B=$('ws-rbody');
   const h=document.querySelector('#ws-right .ws-right-head .t');if(h)h.textContent=CUR.title||'Untitled spreadsheet';
+  if(RTAB==='review')return renderReview(B);
   if(RTAB==='hist')return WS.history(B,'sheets',CUR.id,(o,old)=>o.title!==old.title?'Renamed from “'+(old.title||'Untitled')+'”':'Edited cells');
   WS.info(B,[['Title',CUR.title||'Untitled spreadsheet'],['Filled cells',Object.keys(cells).length],['Size',NR+' rows × '+NC+' columns'],
     ['Created',WS.when(CUR.created_at)],['Last edited',WS.when(CUR.updated_at)],['Owner',String(CUR.owner||'').split('/').pop()]]);}
 async function load(){const r=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet'});
   SHEETS=(r.results||[]).map(x=>x.object||x).filter(s=>!s.archived);
-  SHEETS.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));renderList();}
+  SHEETS.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));renderList();
+  const q=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet_import'}).catch(()=>({}));
+  IMPORTS=(q.results||[]).map(x=>x.object||x).filter(x=>!x.archived);}
 function renderList(){if(LIST)LIST.render();$('foot').textContent=CUR?Object.keys(cells).length+' filled cells':'';}
-function newSheet(){const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function newSheet(){NR=50;IMP=null;const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   const now=new Date().toISOString();CUR={schema:'doc.sheet',id,title:'',owner:ME,cells:{},rows:NR,cols:NC,created_at:now,updated_at:now};
   SHEETS.unshift(CUR);cells={};sel='A1';paint();renderList();setTimeout(()=>$('title').focus(),30);}
-function open(id){const s=SHEETS.find(x=>x.id===id);if(!s)return;CUR=s;cells=Object.assign({},s.cells||{});sel='A1';paint();renderList();}
-function paint(){$('title').value=CUR.title||'';renderGrid();setStatus(CUR._saved?'saved':'');crumbs();renderRight();renderList();}
+function maxRow(c){let m=0;for(const k in c){const r=+((k.match(/\d+$/)||[0])[0]);if(r>m)m=r;}return m;}
+function open(id){const s=SHEETS.find(x=>x.id===id);if(!s)return;CUR=s;cells=Object.assign({},s.cells||{});
+  NR=Math.max(50,s.rows||0,maxRow(cells)+5);IMP=IMPORTS.find(x=>x.sheet_ref===id)||null;sel='A1';paint();renderList();}
+function paint(){$('title').value=CUR.title||'';renderLegend();renderGrid();setStatus(CUR._saved?'saved':'');crumbs();renderRight();renderList();}
 function setStatus(s,msg){const el=$('status');el.className='status'+(s?' '+s:'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved':s==='err'?'⚠ '+msg:'';}
 function schedule(){setStatus('saving');clearTimeout(savet);savet=setTimeout(save,900);}
 async function save(){if(!CUR)return;CUR.cells=cells;CUR.title=$('title').value;CUR.updated_at=new Date().toISOString();
@@ -164,8 +192,8 @@ async function trash(){if(!CUR)return;if(!confirm('Trash "'+(CUR.title||'Untitle
 function renderGrid(){
   let h='<table><tr><th class="corner"></th>'+COLS.map(c=>`<th>${c}</th>`).join('')+'</tr>';
   for(let r=1;r<=NR;r++){h+=`<tr><td class="rownum">${r}</td>`;
-    for(const c of COLS){const ref=c+r;const disp=compute(ref);const num=isNumeric(disp);
-      h+=`<td data-ref="${ref}" class="${ref===sel?'sel':''} ${num?'num':''}">${esc(disp)}</td>`;}
+    for(const c of COLS){const ref=c+r;const disp=compute(ref);const num=isNumeric(disp);const st=stateOf(ref);
+      h+=`<td data-ref="${ref}" class="${ref===sel?'sel':''} ${num?'num':''} ${st?'st-'+st:''}"${st&&st!=='ok'?` title="${esc(STATE[st]||'')}"`:''}>${esc(disp)}</td>`;}
     h+='</tr>';}
   h+='</table>';
   const g=$('gridwrap');g.innerHTML=h;
@@ -176,7 +204,8 @@ function renderGrid(){
 }
 function select(ref){sel=ref;editing=false;$('cellref').textContent=ref;$('fx').value=rawOf(ref);
   $('gridwrap').querySelectorAll('td.sel').forEach(t=>t.classList.remove('sel'));
-  const td=cell(ref);if(td){td.classList.add('sel');td.scrollIntoView({block:'nearest',inline:'nearest'});}}
+  const td=cell(ref);if(td){td.classList.add('sel');td.scrollIntoView({block:'nearest',inline:'nearest'});}
+  if(IMP&&RTAB==='review'&&WS.isRightOpen())renderRight();}
 function cell(ref){return $('gridwrap').querySelector('td[data-ref="'+ref+'"]');}
 function edit(ref,initial){select(ref);editing=true;const td=cell(ref);if(!td)return;
   td.innerHTML='<input>';const inp=td.querySelector('input');inp.value=initial!=null?initial:rawOf(ref);inp.focus();
@@ -189,6 +218,7 @@ function edit(ref,initial){select(ref);editing=true;const td=cell(ref);if(!td)re
 function commit(ref,val){editing=false;setCell(ref,val,true);}
 function setCell(ref,val,fromGrid){val=(val==null?'':String(val));
   if(val==='')delete cells[ref];else cells[ref]=val;
+  if(IMP&&IMP.cell_info&&IMP.cell_info[ref]&&(fromGrid||document.activeElement===$('fx')))confirmCell(ref,val,'typed');
   schedule();renderGrid();select(ref);renderList();}
 function move(dr,dc){const m=sel.match(/^([A-Z]+)(\d+)$/);let c=colNum(m[1])+dc,r=+m[2]+dr;
   if(c<1)c=1;if(c>NC)c=NC;if(r<1)r=1;if(r>NR)r=NR;select(numCol(c)+r);}
@@ -225,6 +255,130 @@ function parseCSVLine(line){const out=[];let cur='',q=false;
     if(q){if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
     else{if(ch==='"')q=true;else if(ch===','){out.push(cur.trim());cur='';}else cur+=ch;}}
   out.push(cur.trim());return out;}
+// ---- Import from scan: a paper register → a reviewed spreadsheet (engine/register-ocr, in-house) ----
+const ENGINE='ds:airawatdeveloper:engine/register-ocr';
+const FORMS=[{id:'pf1',name:'P.F.-1 Provident Fund Ledger',ok:true},{id:'g2',name:'G-2 Cash Book (coming soon)'},
+  {id:'g3',name:'G-3 Classified Abstract of receipts (coming soon)'},{id:'g14',name:'G-14 Establishment Check Register (coming soon)'}];
+const STATE={ok:'Read clearly',corrected:'Corrected by the ledger’s rules — please glance and accept',check:'Not sure — please check against the scan',
+  ledger:'The reading looks clear but the register’s own sums disagree',note:'A note, not an amount',confirmed:'Checked by a person'};
+function stateOf(ref){const ci=IMP&&IMP.cell_info&&IMP.cell_info[ref];if(!ci)return'';return ci.confirmed?'confirmed':ci.state;}
+const NEEDS=['check','ledger','corrected'];
+function todo(){if(!IMP||!IMP.cell_info)return[];const key=r=>{const m=r.match(/^([A-Z]+)(\d+)$/);return(+m[2])*100+colNum(m[1]);};
+  return Object.keys(IMP.cell_info).filter(r=>{const ci=IMP.cell_info[r];return !ci.confirmed&&NEEDS.includes(ci.state);}).sort((a,b)=>key(a)-key(b));}
+function renderLegend(){const L=$('legend'),tab=$('reviewTab');
+  if(!IMP){L.hidden=true;tab.hidden=true;if(RTAB==='review'){RTAB='info';WS.tab('info');}return;}
+  tab.hidden=false;const n=todo().length,cnt=s=>Object.values(IMP.cell_info||{}).filter(ci=>!ci.confirmed&&ci.state===s).length;
+  L.hidden=false;L.innerHTML=`<span>📷 Imported from scan</span>
+    <span><i class="sw" style="background:rgba(59,130,246,.16)"></i>corrected ${cnt('corrected')}</span>
+    <span><i class="sw" style="background:rgba(245,158,11,.24)"></i>to check ${cnt('check')}</span>
+    <span><i class="sw" style="background:rgba(239,68,68,.20)"></i>sums disagree ${cnt('ledger')}</span>
+    <span><i class="sw" style="box-shadow:inset 3px 0 0 var(--good)"></i>checked ${Object.values(IMP.cell_info||{}).filter(ci=>ci.confirmed).length}</span>
+    <span class="grow"></span><button class="btn sm${n?' pri':''}" id="rvGo">${n?'Review '+n+' cell'+(n===1?'':'s'):'✓ All reviewed'}</button>`;
+  $('rvGo').onclick=()=>{const t=todo();if(t.length)select(t[0]);openReview();};}
+function openReview(){RTAB='review';WS.openRight(CUR.title||'Untitled spreadsheet','Review against the scan');WS.tab('review');renderRight();}
+function fileUrl(fid){return '/bridge/file?id='+encodeURIComponent(fid)+'&inline=1&type=image/jpeg&name=page.jpg';}
+function pageOf(n){return (IMP.pages||[]).find(p=>p.page===n);}
+function cropHtml(ci,W){const pg=pageOf(ci.page);if(!pg||!ci.box)return'<div class="sub">No page image for this cell.</div>';
+  const [x0,y0,x1,y1]=ci.box,padX=Math.max(90,(x1-x0)*1.2),padY=Math.max(40,(y1-y0)*1.5);
+  const rx0=Math.max(0,x0-padX),rx1=Math.min(pg.width,x1+padX),ry0=Math.max(0,y0-padY),ry1=Math.min(pg.height,y1+padY),k=W/(rx1-rx0);
+  return `<div class="crop" style="width:${W}px;height:${Math.round((ry1-ry0)*k)}px"><img alt="The cell on the scanned page" src="${fileUrl(pg.file_id)}"
+    style="left:${-rx0*k}px;top:${-ry0*k}px;width:${pg.width*k}px"><div class="hit" style="left:${(x0-rx0)*k-2}px;top:${(y0-ry0)*k-2}px;width:${(x1-x0)*k+4}px;height:${(y1-y0)*k+4}px"></div></div>`;}
+function showPage(n,ci){const pg=pageOf(n);if(!pg)return;const W=Math.min(1040,pg.width),k=W/pg.width;
+  const hit=ci&&ci.box?`<div class="hit" style="left:${ci.box[0]*k-3}px;top:${ci.box[1]*k-3}px;width:${(ci.box[2]-ci.box[0])*k+6}px;height:${(ci.box[3]-ci.box[1])*k+6}px"></div>`:'';
+  const m=modal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b>Scanned page ${n}</b><span class="sub">${esc(pg.source||'')}</span><span style="flex:1"></span>
+    ${(IMP.pages||[]).map(p=>`<button class="btn sm" data-pg="${p.page}">${p.page}</button>`).join('')}<button class="btn sm" id="x">Close</button></div>
+    <div class="pagebox" style="width:${W}px"><img alt="Scanned page ${n}" src="${fileUrl(pg.file_id)}" style="width:${W}px">${hit}</div>`);
+  m.q('.sheet').parentNode.classList.add('bigmodal');m.q('#x').onclick=m.close;
+  m.q('.sheet').querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{m.close();showPage(+b.dataset.pg,null);});}
+function renderReview(B){if(!IMP){B.innerHTML='<div class="sub">This spreadsheet was not imported from a scan.</div>';return;}
+  const t=todo(),i=t.indexOf(sel),ci=(IMP.cell_info||{})[sel],sm=IMP.summary||{};
+  let h=`<div class="rv-nav"><button class="btn sm" id="rvPrev" ${t.length?'':'disabled'}>◀</button><span class="sub" style="flex:1;text-align:center">${t.length?(i>=0?(i+1)+' of '+t.length+' to review':t.length+' cells to review'):'All flagged cells reviewed'}</span><button class="btn sm" id="rvNext" ${t.length?'':'disabled'}>▶</button></div>`;
+  if(!ci){h+=`<div class="sub" style="margin:6px 0 10px">Cell ${esc(sel)} was not read from the scan.</div>
+    <div class="kv2"><div>Register</div><div>${esc((FORMS.find(f=>f.id===IMP.form)||{}).name||IMP.form)}</div><div>Pages</div><div>${sm.pages||0}</div>
+    <div>Ledgers found</div><div>${sm.blocks||0}</div><div>Rules passing</div><div>${sm.rules_ok_as_read||0} as read → ${sm.rules_ok_after||0} of ${sm.rules||0} after corrections</div>
+    <div>Imported</div><div>${esc(WS.when(IMP.finished_at))}</div></div>
+    <div class="rv-actions">${(IMP.pages||[]).map(p=>`<button class="btn sm" data-pg="${p.page}">Open page ${p.page}</button>`).join('')}</div>
+    <div class="sub">Coloured cells came from the scan. Blue: corrected by the ledger’s rules. Amber: not sure. Red: the register’s own sums disagree. Read and correct on Airawat’s own servers — the scan is never sent to an outside AI.</div>`;}
+  else{const st=ci.confirmed?'confirmed':ci.state,W=Math.min(360,(B.clientWidth||340)-8);
+    h+=`<div class="rv-state ${st}">${esc(STATE[st]||st)}</div>${cropHtml(ci,W)}
+    <div class="kv2"><div>Cell</div><div>${esc(sel)} — ${esc(rawOf('A'+sel.replace(/^[A-Z]+/,'')))}</div>
+    <div>Read as</div><div>“${esc(ci.read)}” <span class="sub">(${Math.round((ci.conf||0)*100)}% sure)</span></div>
+    ${ci.suggest!=null&&ci.suggest!==''?`<div>Suggested</div><div><b>${esc(ci.suggest)}</b></div>`:''}
+    ${ci.rule?`<div>Why</div><div>${esc(ci.rule)}${ci.how?` <span class="sub">(${esc(ci.how)})</span>`:''}</div>`:''}
+    ${ci.confirmed?`<div>Checked</div><div>${esc(ci.confirmed.value)} by ${esc(String(ci.confirmed.by||'').split('/').pop())}, ${esc(WS.when(ci.confirmed.at))}</div>`:''}</div>
+    <div class="rv-actions">${!ci.confirmed&&ci.suggest!=null&&ci.suggest!==''?`<button class="btn sm pri" id="rvAccept">Accept ${esc(ci.suggest)}</button>`:''}
+    ${!ci.confirmed&&readVal(ci)!=null&&String(readVal(ci))!==String(ci.suggest)?`<button class="btn sm${ci.suggest==null?' pri':''}" id="rvKeep">${ci.state==='ledger'?'Keep as written':'Use the reading'} (${esc(readVal(ci))})</button>`:''}
+    ${!ci.confirmed?`<button class="btn sm" id="rvType">Type the value…</button>`:`<button class="btn sm" id="rvUndo">Undo check</button>`}
+    <button class="btn sm" id="rvPage">Open page ${ci.page}</button></div>
+    <div class="sub">${ci.state==='ledger'?'The figures as written do not add up even when read correctly — this may be an error in the register itself. Check with whoever keeps it.':ci.state==='corrected'?'The value in the cell is the suggestion; the reading did not fit the ledger’s sums.':'Compare with the scan, then accept or type the right value.'}</div>`;}
+  B.innerHTML=h;
+  const go=d=>{const t2=todo();if(!t2.length)return;let j=t2.indexOf(sel);j=j<0?(d>0?0:t2.length-1):(j+d+t2.length)%t2.length;select(t2[j]);};
+  $('rvPrev').onclick=()=>go(-1);$('rvNext').onclick=()=>go(1);
+  B.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>showPage(+b.dataset.pg,null));
+  if(!ci)return;
+  const q=id=>document.getElementById(id);
+  if(q('rvAccept'))q('rvAccept').onclick=()=>{confirmCell(sel,String(ci.suggest),'accepted');go(1);};
+  if(q('rvKeep'))q('rvKeep').onclick=()=>{confirmCell(sel,String(readVal(ci)),'kept as read');go(1);};
+  if(q('rvType'))q('rvType').onclick=()=>edit(sel);
+  if(q('rvUndo'))q('rvUndo').onclick=()=>{delete ci.confirmed;saveImport();renderLegend();renderGrid();select(sel);};
+  q('rvPage').onclick=()=>showPage(ci.page,ci);}
+function readVal(ci){const t=String(ci.read||'').replace(/[\s,]/g,'').replace(/^[-—~=<>.]+|[-—~=<>.✓→]+$/g,'');return /^\d+$/.test(t)?t:null;}
+function confirmCell(ref,val,how){const ci=IMP&&IMP.cell_info&&IMP.cell_info[ref];if(!ci)return;
+  ci.confirmed={value:val,how:how,by:ME,at:new Date().toISOString()};
+  if(val===''||val==null)delete cells[ref];else cells[ref]=val;
+  schedule();saveImport();renderLegend();renderGrid();select(ref);}
+let impT=null;function saveImport(){clearTimeout(impT);impT=setTimeout(async()=>{if(!IMP)return;IMP.updated_at=new Date().toISOString();
+  const r=await api('/bridge/save',{app_id:'sheets',object:IMP});if(!r.saved)setStatus('err','review not saved: '+(r.error||'?'));},700);}
+
+function scanDialog(){
+  const m=modal(`<h3>📷 Import from scan</h3>
+    <div class="sub">Turn photos or a PDF of a paper register into a spreadsheet. Each figure is read, checked against the register’s own sums, and flagged where a person should look. Everything is read on Airawat’s own servers — the scan never goes to an outside AI.</div>
+    <label class="sub" style="display:block;margin-top:12px">What kind of register is this?</label>
+    <select class="in" id="form">${FORMS.map(f=>`<option value="${f.id}"${f.ok?'':' disabled'}>${esc(f.name)}</option>`).join('')}</select>
+    <label class="sub" style="display:block;margin-top:10px">Scanned pages (PDF, JPG or PNG — whole pages, flat and in focus)</label>
+    <input class="in" id="files" type="file" multiple accept=".pdf,application/pdf,image/jpeg,image/png">
+    <label class="sub" style="display:block;margin-top:10px">Spreadsheet name</label>
+    <input class="in" id="nm" placeholder="e.g. PF Ledger — Accounts — 2025-26">
+    <div class="prog" id="pg" hidden><i></i></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px"><span class="sub" id="s" style="flex:1"></span><button class="btn" id="x">Close</button><button class="btn primary" id="go">Import</button></div>`);
+  m.q('#x').onclick=m.close;
+  m.q('#files').onchange=()=>{const f=m.q('#files').files[0];if(f&&!m.q('#nm').value)m.q('#nm').value='PF Ledger — '+f.name.replace(/\.[a-z]+$/i,'');};
+  m.q('#go').onclick=async()=>{const files=[...m.q('#files').files],form=m.q('#form').value,S=m.q('#s');
+    if(!files.length){S.textContent='Choose the scanned pages first.';return;}
+    m.q('#go').disabled=true;const bar=m.q('#pg');bar.hidden=false;const fill=bar.querySelector('i');
+    try{
+      const src=[];for(const f of files){S.innerHTML='<span class="spin"></span> Uploading '+esc(f.name)+'…';
+        const r=await fetch('/bridge/file-upload?name='+encodeURIComponent(f.name)+'&type='+encodeURIComponent(f.type||'application/octet-stream'),{method:'POST',body:f}).then(x=>x.json());
+        if(!r.file_id)throw new Error(r.error||'upload failed');src.push({file_id:r.file_id,name:f.name,type:f.type||''});}
+      const now=new Date().toISOString(),id='ds:'+TENANT+':doc/sheet_import/'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+      const rec={schema:'doc.sheet_import',id,owner:ME,tenant:TENANT,title:(m.q('#nm').value||'').trim()||'Imported register',form,status:'pending',
+        source_files:src,requested_at:now,created_at:now,updated_at:now};
+      const sv=await api('/bridge/save',{app_id:'sheets',object:rec});if(!sv.saved)throw new Error(sv.error||'could not file the import');
+      IMPORTS.push(rec);S.innerHTML='<span class="spin"></span> Starting the reader…';
+      const run=await fetch('/bridge/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:ENGINE,env:{IMPORT_ID:id}})});
+      const rj=await run.json().catch(()=>({}));
+      if(!run.ok)throw new Error(run.status===403?'Starting the reader needs a tenant administrator for now (this import is saved — an administrator can start it).':(rj.error||'the reader did not start'));
+      const t0=Date.now(),est=45000*Math.max(2,files.length);
+      while(true){await new Promise(r=>setTimeout(r,4000));
+        const q=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet_import',id});const cur=((q.results||[])[0]||{});const o=cur.object||cur;
+        const sec=Math.round((Date.now()-t0)/1000);fill.style.width=Math.min(92,100*(Date.now()-t0)/est)+'%';
+        if(o.status==='done'){fill.style.width='100%';S.textContent='Building the spreadsheet…';const sid=await buildFromImport(o);m.close();if(sid)openReview();return;}
+        if(o.status==='failed')throw new Error(o.error||'the reader failed');
+        S.innerHTML='<span class="spin"></span> '+(o.status==='running'?'Reading the register':'Waiting for the reader')+'… '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' <span class="sub">(about 45 s a page)</span>';
+        if(sec>1200)throw new Error('the reader is taking too long — it will appear here when it finishes');}
+    }catch(e){S.textContent='⚠ '+e.message;m.q('#go').disabled=false;}};
+}
+async function buildFromImport(rec){
+  const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),now=new Date().toISOString();
+  const c=Object.assign({},rec.cells||{}),rows=Math.max(50,maxRow(c)+5);
+  const sh={schema:'doc.sheet',id,title:rec.title||'Imported register',owner:ME,cells:c,rows,cols:NC,created_at:now,updated_at:now};
+  const r=await api('/bridge/save',{app_id:'sheets',object:sh});if(!r.saved){setStatus('err',r.error||'save failed');return null;}
+  sh._saved=true;SHEETS.unshift(sh);
+  rec.sheet_ref=id;rec.updated_at=now;const i=IMPORTS.findIndex(x=>x.id===rec.id);if(i>=0)IMPORTS[i]=rec;else IMPORTS.push(rec);
+  await api('/bridge/save',{app_id:'sheets',object:rec});
+  open(id);return id;}
+async function resumeImports(){for(const rec of IMPORTS.filter(x=>x.status==='done'&&!x.sheet_ref))await buildFromImport(rec);}
+
 function modal(html){const w=document.createElement('div');w.className='modal';w.innerHTML=`<div class="sheet">${html}</div>`;document.body.appendChild(w);w.onclick=e=>{if(e.target===w)w.remove();};return{q:s=>w.querySelector(s),close:()=>w.remove()};}
 boot();
 </script>

@@ -5,7 +5,7 @@
 # shared /bridge/ai-assist (Kimi K3). `personal: true` = self-service + owner-scoped (see app_host workspace runtime).
 component_id: ds:airawatdeveloper:app/sheets
 kind: app
-version: 0.2.0   # 0.2.0: the shared workspace layout (/shared/workspace.css + .js, same frame as Files and Data): left — search, ＋ New, My … / Recent, the list; main — title, save status, actions, the editor; right — Info and History (Docs: also the AI assistant); breadcrumb under the shell's controls; the old header (with a wrong 'not signed in' badge) removed. Was 0.1.0.
+version: 0.3.0   # 0.3.0: Import from scan — a scanned paper register (P.F.-1 PF Ledger first) becomes a spreadsheet: engine/register-ocr reads it in-house, cells are coloured by how sure the reading is (corrected / to check / sums disagree), and a Review tab shows each flagged cell cropped from the scan with the reading, the suggestion and the rule, to accept or type; every import is a doc.sheet_import kept with the sheet. Was 0.2.0: 0.2.0: the shared workspace layout (/shared/workspace.css + .js, same frame as Files and Data): left — search, ＋ New, My … / Recent, the list; main — title, save status, actions, the editor; right — Info and History (Docs: also the AI assistant); breadcrumb under the shell's controls; the old header (with a wrong 'not signed in' badge) removed. Was 0.1.0.
 provider: ds:airawatdeveloper:developer
 display_name: Sheets
 icon: 📊
@@ -13,8 +13,8 @@ entrypoint: index.html
 bundle: dist
 sandboxed: true
 personal: true
-required_schemas: [doc.sheet]
-writes: [doc.sheet]
+required_schemas: [doc.sheet, doc.sheet_import]
+writes: [doc.sheet, doc.sheet_import]
 roles: []
 
 default_install: true   # part of the base-OS default suite every tenant receives
