@@ -68,7 +68,7 @@
     <div class="ws-toolbar">
       <input class="titlein" id="title" placeholder="Untitled spreadsheet" autocomplete="off" aria-label="Spreadsheet title">
       <span class="status" id="status"></span>
-      <button class="btn sm" id="scanBtn" title="Import a scanned paper register (e.g. a PF ledger) into a new spreadsheet">📷 Import from scan</button>
+      <button class="btn sm" id="scanBtn" title="Import a CSV, TSV or Excel file, or a scanned paper register — from this computer or My files">⤓ Import</button>
       <button class="btn sm" id="aiBtn" title="Generate a table with AI">✨ AI</button>
       <button class="ws-ib" id="infoBtn" title="Details and history">ⓘ</button>
       <button class="ws-ib" id="delBtn" title="Move to trash">🗑</button>
@@ -93,7 +93,8 @@
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const NC=12, COLS=Array.from({length:NC},(_,i)=>String.fromCharCode(65+i));
+let NC=12, COLS=[];
+function setDims(nc,nr){NC=Math.max(12,Math.min(52,nc));NR=Math.max(50,nr);COLS=Array.from({length:NC},(_,i)=>numCol(i+1));}
 let NR=50, IMPORTS=[], IMP=null, ME='',TENANT='',SHEETS=[],CUR=null,cells={},sel='A1',editing=false,savet=null,RTAB='info',LIST=null;
 async function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
 
@@ -156,7 +157,7 @@ async function boot(){
   $('infoBtn').onclick=()=>{RTAB='info';WS.openRight(CUR&&CUR.title||'Untitled spreadsheet','Spreadsheet');WS.tab('info');renderRight();};
   $('title').oninput=()=>{if(CUR){CUR.title=$('title').value;schedule();renderList();crumbs();}};
   $('fx').onchange=()=>{setCell(sel,$('fx').value);}; $('fx').onkeydown=e=>{if(e.key==='Enter'){setCell(sel,$('fx').value);move(1,0);}};
-  $('aiBtn').onclick=aiFill; $('scanBtn').onclick=scanDialog;
+  $('aiBtn').onclick=aiFill; $('scanBtn').onclick=importDialog;
   resumeImports();
   if(SHEETS.length)open(SHEETS.slice().sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''))[0].id); else newSheet();
 }
@@ -173,12 +174,13 @@ async function load(){const r=await api('/bridge/query',{app_id:'sheets',schema:
   const q=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet_import'}).catch(()=>({}));
   IMPORTS=(q.results||[]).map(x=>x.object||x).filter(x=>!x.archived);}
 function renderList(){if(LIST)LIST.render();$('foot').textContent=CUR?Object.keys(cells).length+' filled cells':'';}
-function newSheet(){NR=50;IMP=null;const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function newSheet(){setDims(12,50);IMP=null;const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   const now=new Date().toISOString();CUR={schema:'doc.sheet',id,title:'',owner:ME,cells:{},rows:NR,cols:NC,created_at:now,updated_at:now};
   SHEETS.unshift(CUR);cells={};sel='A1';paint();renderList();setTimeout(()=>$('title').focus(),30);}
+function maxCol(c){let m=0;for(const k in c){const mm=k.match(/^([A-Z]+)/);if(mm){const n=colNum(mm[1]);if(n>m)m=n;}}return m;}
 function maxRow(c){let m=0;for(const k in c){const r=+((k.match(/\d+$/)||[0])[0]);if(r>m)m=r;}return m;}
 function open(id){const s=SHEETS.find(x=>x.id===id);if(!s)return;CUR=s;cells=Object.assign({},s.cells||{});
-  NR=Math.max(50,s.rows||0,maxRow(cells)+5);IMP=IMPORTS.find(x=>x.sheet_ref===id)||null;sel='A1';paint();renderList();}
+  setDims(Math.max(s.cols||0,maxCol(cells)),Math.max(s.rows||0,maxRow(cells)+5));IMP=IMPORTS.find(x=>x.sheet_ref===id)||null;sel='A1';paint();renderList();}
 function paint(){$('title').value=CUR.title||'';renderLegend();renderGrid();setStatus(CUR._saved?'saved':'');crumbs();renderRight();renderList();}
 function setStatus(s,msg){const el=$('status');el.className='status'+(s?' '+s:'');el.textContent=s==='saving'?'Saving…':s==='saved'?'Saved':s==='err'?'⚠ '+msg:'';}
 function schedule(){setStatus('saving');clearTimeout(savet);savet=setTimeout(save,900);}
@@ -331,44 +333,131 @@ function confirmCell(ref,val,how){const ci=IMP&&IMP.cell_info&&IMP.cell_info[ref
 let impT=null;function saveImport(){clearTimeout(impT);impT=setTimeout(async()=>{if(!IMP)return;IMP.updated_at=new Date().toISOString();
   const r=await api('/bridge/save',{app_id:'sheets',object:IMP});if(!r.saved)setStatus('err','review not saved: '+(r.error||'?'));},700);}
 
-function scanDialog(){
-  const m=modal(`<h3>📷 Import from scan</h3>
-    <div class="sub">Turn photos or a PDF of a paper register into a spreadsheet. Each figure is read, checked against the register’s own sums, and flagged where a person should look. Everything is read on Airawat’s own servers — the scan never goes to an outside AI.</div>
-    <label class="sub" style="display:block;margin-top:12px">What kind of register is this?</label>
-    <select class="in" id="form">${FORMS.map(f=>`<option value="${f.id}"${f.ok?'':' disabled'}>${esc(f.name)}</option>`).join('')}</select>
-    <label class="sub" style="display:block;margin-top:10px">Scanned pages (PDF, JPG or PNG — whole pages, flat and in focus)</label>
-    <input class="in" id="files" type="file" multiple accept=".pdf,application/pdf,image/jpeg,image/png">
-    <label class="sub" style="display:block;margin-top:10px">Spreadsheet name</label>
-    <input class="in" id="nm" placeholder="e.g. PF Ledger — Accounts — 2025-26">
+// ---- Import: scans, CSV/TSV and Excel files, from this computer or from My files ----
+const SCAN_RE=/\.(pdf|jpe?g|png)$/i, TABLE_RE=/\.(csv|tsv|txt|xlsx)$/i, MAX_ROWS=5000, MAX_COLS=52;
+function kindOf(name){return SCAN_RE.test(name)?'scan':TABLE_RE.test(name)?'table':'other';}
+function importDialog(){
+  let tab='local',cwd='/',picked=new Map();   // picked: key → {src:'local'|'files', name, file?, path?, file_id?, size}
+  const m=modal(`<h3>⤓ Import</h3>
+    <div class="sub">Bring a table or a scanned register into Sheets. CSV, TSV and Excel (.xlsx) files become a table; scans (PDF, JPG, PNG) of a paper register are read and checked on Airawat’s own servers — never sent to an outside AI.</div>
+    <div class="ws-tabs" style="margin-top:10px"><button class="ws-tab on" data-src="local">This computer</button><button class="ws-tab" data-src="files">My files</button></div>
+    <div id="srcLocal" style="margin-top:8px"><input class="in" id="files" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.pdf,image/jpeg,image/png,text/csv"></div>
+    <div id="srcFiles" hidden style="margin-top:8px"><div class="sub" id="fpath" style="margin-bottom:4px"></div>
+      <div id="flist" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px"></div></div>
+    <div class="sub" id="chosen" style="margin-top:8px"></div>
+    <div id="scanOpts" hidden><label class="sub" style="display:block;margin-top:10px">What kind of register is in the scan?</label>
+      <select class="in" id="form">${FORMS.map(f=>`<option value="${f.id}"${f.ok?'':' disabled'}>${esc(f.name)}</option>`).join('')}</select></div>
+    <div id="tableOpts" hidden><label class="sub" style="display:block;margin-top:10px">Put the table</label>
+      <select class="in" id="dest"><option value="new">in a new spreadsheet</option>${CUR?`<option value="here">in this spreadsheet, from cell ${esc(sel)}</option>`:''}</select>
+      <label class="sub" style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" id="numfix" checked> Read 1,48,41,881-style numbers as numbers</label></div>
+    <label class="sub" style="display:block;margin-top:10px">Spreadsheet name (for a new spreadsheet)</label>
+    <input class="in" id="nm" placeholder="Taken from the file name">
     <div class="prog" id="pg" hidden><i></i></div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:12px"><span class="sub" id="s" style="flex:1"></span><button class="btn" id="x">Close</button><button class="btn primary" id="go">Import</button></div>`);
-  m.q('#x').onclick=m.close;
-  m.q('#files').onchange=()=>{const f=m.q('#files').files[0];if(f&&!m.q('#nm').value)m.q('#nm').value='PF Ledger — '+f.name.replace(/\.[a-z]+$/i,'');};
-  m.q('#go').onclick=async()=>{const files=[...m.q('#files').files],form=m.q('#form').value,S=m.q('#s');
-    if(!files.length){S.textContent='Choose the scanned pages first.';return;}
-    m.q('#go').disabled=true;const bar=m.q('#pg');bar.hidden=false;const fill=bar.querySelector('i');
+  const S=m.q('#s');
+  function refresh(){const list=[...picked.values()],sc=list.filter(p=>kindOf(p.name)==='scan'),tb=list.filter(p=>kindOf(p.name)==='table'),ot=list.filter(p=>kindOf(p.name)==='other');
+    m.q('#chosen').innerHTML=list.length?`Chosen: ${list.map(p=>esc(p.name)).join(', ')}${ot.length?` — <b>${ot.length} not supported</b> (use CSV, TSV, XLSX, PDF, JPG or PNG)`:''}`:'Nothing chosen yet.';
+    m.q('#scanOpts').hidden=!sc.length;m.q('#tableOpts').hidden=!tb.length;
+    if(!m.q('#nm').value&&list.length)m.q('#nm').placeholder=(sc.length?'Register — ':'')+list[0].name.replace(/\.[a-z0-9]+$/i,'');}
+  m.q('.sheet').querySelectorAll('[data-src]').forEach(b=>b.onclick=()=>{tab=b.dataset.src;
+    m.q('.sheet').querySelectorAll('[data-src]').forEach(x=>x.classList.toggle('on',x===b));
+    m.q('#srcLocal').hidden=tab!=='local';m.q('#srcFiles').hidden=tab!=='files';if(tab==='files')browse(cwd);});
+  m.q('#files').onchange=()=>{for(const k of [...picked.keys()])if(k.startsWith('L:'))picked.delete(k);
+    [...m.q('#files').files].forEach(f=>picked.set('L:'+f.name+f.size,{src:'local',name:f.name,file:f,size:f.size}));refresh();};
+  async function browse(path){cwd=path;m.q('#fpath').textContent='My files '+(path==='/'?'':path);const L=m.q('#flist');L.innerHTML='<div class="sub" style="padding:8px">Loading…</div>';
+    let r={};try{r=await fetch('/bridge/vfs?action=list&path='+encodeURIComponent(path)).then(x=>x.json());}catch(e){}
+    const ents=(r.entries||[]).filter(e=>!(path==='/'&&e.path==='/projects'));
+    const up=path!=='/'?`<div class="ws-item" data-up="1"><span class="nm">⬆ Up</span></div>`:'';
+    L.innerHTML=up+(ents.length?ents.map((e,i)=>e.node_type==='folder'?`<div class="ws-item" data-dir="${esc(e.path)}"><span class="nm">📁 ${esc(e.name)}</span></div>`
+      :`<label class="ws-item" style="gap:8px"><input type="checkbox" data-i="${i}"${picked.has('F:'+e.path)?' checked':''}${kindOf(e.name)==='other'?' disabled':''}><span class="nm">${kindOf(e.name)==='scan'?'🖼':kindOf(e.name)==='table'?'📄':'·'} ${esc(e.name)}</span><span class="ct">${e.size_bytes?Math.max(1,Math.round(e.size_bytes/1024))+' KB':''}</span></label>`).join('')
+      :'<div class="sub" style="padding:8px">This folder is empty.</div>');
+    L.querySelectorAll('[data-dir]').forEach(d=>d.onclick=()=>browse(d.dataset.dir));
+    const u=L.querySelector('[data-up]');if(u)u.onclick=()=>browse(path.replace(/\/[^/]+$/,'')||'/');
+    L.querySelectorAll('input[data-i]').forEach(cb=>cb.onchange=()=>{const e=ents[+cb.dataset.i];
+      if(cb.checked)picked.set('F:'+e.path,{src:'files',name:e.name,path:e.path,file_id:e.file_id,size:e.size_bytes});else picked.delete('F:'+e.path);refresh();});}
+  refresh();m.q('#x').onclick=m.close;
+  m.q('#go').onclick=async()=>{const list=[...picked.values()],sc=list.filter(p=>kindOf(p.name)==='scan'),tb=list.filter(p=>kindOf(p.name)==='table');
+    if(!sc.length&&!tb.length){S.textContent='Choose a CSV, TSV, Excel or scan file first.';return;}
+    const go=m.q('#go');go.disabled=true;
     try{
-      const src=[];for(const f of files){S.innerHTML='<span class="spin"></span> Uploading '+esc(f.name)+'…';
-        const r=await uploadChunked(f,p=>{S.innerHTML='<span class="spin"></span> Uploading '+esc(f.name)+'… '+Math.round(p*100)+'%';});
-        if(!r.file_id)throw new Error(r.error||'upload failed');src.push({file_id:r.file_id,name:f.name,type:f.type||''});}
-      const now=new Date().toISOString(),id='ds:'+TENANT+':doc/sheet_import/'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-      const rec={schema:'doc.sheet_import',id,owner:ME,tenant:TENANT,title:(m.q('#nm').value||'').trim()||'Imported register',form,status:'pending',
-        source_files:src,requested_at:now,created_at:now,updated_at:now};
-      const sv=await api('/bridge/save',{app_id:'sheets',object:rec});if(!sv.saved)throw new Error(sv.error||'could not file the import');
-      IMPORTS.push(rec);S.innerHTML='<span class="spin"></span> Starting the reader…';
-      const run=await fetch('/bridge/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:ENGINE,env:{IMPORT_ID:id}})});
-      const rj=await run.json().catch(()=>({}));
-      if(!run.ok)throw new Error(run.status===403?'Starting the reader needs a tenant administrator for now (this import is saved — an administrator can start it).':(rj.error||'the reader did not start'));
-      const t0=Date.now(),est=45000*Math.max(2,files.length);
-      while(true){await new Promise(r=>setTimeout(r,4000));
-        const q=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet_import',id});const cur=((q.results||[])[0]||{});const o=cur.object||cur;
-        const sec=Math.round((Date.now()-t0)/1000);fill.style.width=Math.min(92,100*(Date.now()-t0)/est)+'%';
-        if(o.status==='done'){fill.style.width='100%';S.textContent='Building the spreadsheet…';const sid=await buildFromImport(o);m.close();if(sid)openReview();return;}
-        if(o.status==='failed')throw new Error(o.error||'the reader failed');
-        S.innerHTML='<span class="spin"></span> '+(o.status==='running'?'Reading the register':'Waiting for the reader')+'… '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' <span class="sub">(about 45 s a page)</span>';
-        if(sec>1200)throw new Error('the reader is taking too long — it will appear here when it finishes');}
-    }catch(e){S.textContent='⚠ '+e.message;m.q('#go').disabled=false;}};
+      for(const p of tb){S.innerHTML='<span class="spin"></span> Reading '+esc(p.name)+'…';
+        const buf=p.src==='local'?await p.file.arrayBuffer():await fetch('/bridge/vfs?action=read&path='+encodeURIComponent(p.path)).then(r=>{if(!r.ok)throw new Error('could not read '+p.name);return r.arrayBuffer();});
+        const rows=/\.xlsx$/i.test(p.name)?await readXlsx(buf):parseDelimited(decodeText(buf),/\.tsv$/i.test(p.name)?'\t':null);
+        const note=placeTable(rows,{dest:m.q('#dest').value,numfix:m.q('#numfix').checked,title:(m.q('#nm').value||'').trim()||p.name.replace(/\.[a-z0-9]+$/i,'')});
+        S.textContent=note;}
+      if(sc.length){const bar=m.q('#pg');bar.hidden=false;
+        const src=[];for(const p of sc){if(p.src==='files'){src.push({file_id:p.file_id,name:p.name,type:''});continue;}
+          const r=await uploadChunked(p.file,f=>{S.innerHTML='<span class="spin"></span> Uploading '+esc(p.name)+'… '+Math.round(f*100)+'%';});
+          if(!r.file_id)throw new Error(r.error||'upload failed');src.push({file_id:r.file_id,name:p.name,type:p.file.type||''});}
+        const title=(m.q('#nm').value||'').trim()||'Register — '+sc[0].name.replace(/\.[a-z0-9]+$/i,'');
+        await runScanImport(src,m.q('#form').value,title,S,bar.querySelector('i'));m.close();openReview();return;}
+      setTimeout(m.close,900);
+    }catch(e){S.textContent='⚠ '+e.message;go.disabled=false;}};
 }
+function decodeText(buf){let t=new TextDecoder('utf-8',{fatal:false}).decode(buf);if(t.charCodeAt(0)===0xFEFF)t=t.slice(1);return t;}
+function parseDelimited(text,delim){const first=text.split(/\r?\n/,1)[0]||'';
+  if(!delim){const c={',':0,'\t':0,';':0};for(const ch of first)if(ch in c)c[ch]++;delim=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];if(!c[delim])delim=',';}
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;continue;}
+    if(ch==='"'&&cur==='')q=true;else if(ch===delim){row.push(cur);cur='';}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cur);rows.push(row);row=[];cur='';}else cur+=ch;}
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows.filter(r=>r.some(v=>String(v).trim()!==''));}
+// .xlsx = a zip of XML parts: read the first worksheet's values (cached values for formula cells), with the browser's
+// own DecompressionStream — no outside library.
+async function readXlsx(buf){const dv=new DataView(buf),u8=new Uint8Array(buf);let e=-1;
+  for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-70000);i--)if(dv.getUint32(i,true)===0x06054b50){e=i;break;}
+  if(e<0)throw new Error('not a valid .xlsx file');
+  const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const files={};
+  for(let k=0;k<n;k++){const meth=dv.getUint16(p+10,true),csz=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true);
+    files[new TextDecoder().decode(u8.subarray(p+46,p+46+nl))]={meth,csz,off};p+=46+nl+xl+cl;}
+  async function part(name){const f=files[name];if(!f)return null;const ln=dv.getUint16(f.off+26,true),le=dv.getUint16(f.off+28,true);
+    const data=u8.subarray(f.off+30+ln+le,f.off+30+ln+le+f.csz);
+    if(f.meth===0)return new TextDecoder().decode(data);
+    return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();}
+  const X=s=>new DOMParser().parseFromString(s,'application/xml');
+  let sheetPath='xl/worksheets/sheet1.xml';
+  try{const wb=X(await part('xl/workbook.xml')),rels=X(await part('xl/_rels/workbook.xml.rels'));const s0=wb.getElementsByTagName('sheet')[0];
+    const rid=s0&&(s0.getAttribute('r:id')||s0.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'));
+    const rel=[...rels.getElementsByTagName('Relationship')].find(r=>r.getAttribute('Id')===rid);
+    if(rel){const t=rel.getAttribute('Target').replace(/^\//,'');sheetPath=t.startsWith('xl/')?t:'xl/'+t;}}catch(err){}
+  const ssx=await part('xl/sharedStrings.xml');const ss=ssx?[...X(ssx).getElementsByTagName('si')].map(si=>[...si.getElementsByTagName('t')].map(t=>t.textContent).join('')):[];
+  const shx=await part(sheetPath);if(!shx)throw new Error('the workbook has no readable first sheet');
+  const rows=[];for(const c of X(shx).getElementsByTagName('c')){const ref=c.getAttribute('r')||'';const mm=ref.match(/^([A-Z]+)(\d+)$/);if(!mm)continue;
+    const t=c.getAttribute('t'),v=(c.getElementsByTagName('v')[0]||{}).textContent;let val;
+    if(t==='s')val=ss[+v]||'';else if(t==='inlineStr')val=[...c.getElementsByTagName('t')].map(x=>x.textContent).join('');
+    else if(t==='b')val=v==='1'?'TRUE':'FALSE';else val=v==null?'':v;
+    const fx=c.getElementsByTagName('f')[0];if(val===''&&fx&&fx.textContent)val='='+fx.textContent;   // a formula with no stored result: keep the formula
+    const r=+mm[2]-1,ci=colNum(mm[1])-1;(rows[r]=rows[r]||[])[ci]=val;}
+  return Array.from(rows,r=>Array.from(r||[],v=>v==null?'':v));}
+function placeTable(rows,o){const nrow=Math.min(rows.length,MAX_ROWS),ncol=Math.min(MAX_COLS,Math.max(0,...rows.map(r=>r.length)));
+  const cut=rows.length>MAX_ROWS||rows.some(r=>r.length>MAX_COLS);
+  const at1=!(o.dest==='here'&&CUR&&sel!=='A1');let dropped=0;
+  const fix=v=>{v=String(v==null?'':v).trim();if(v[0]==='='&&!at1){dropped++;return'';}if(o.numfix&&/^-?\d{1,3}(,\d{2,3})+(\.\d+)?$/.test(v))return v.replace(/,/g,'');return v;};
+  let r0=1,c0=1,target=cells;
+  if(o.dest==='here'&&CUR){const mm=sel.match(/^([A-Z]+)(\d+)$/);c0=colNum(mm[1]);r0=+mm[2];}
+  else{newSheet();CUR.title=o.title;$('title').value=o.title;target=cells;}
+  for(let r=0;r<nrow;r++)for(let c=0;c<ncol;c++){const v=fix((rows[r]||[])[c]);if(v!=='')target[numCol(c0+c)+(r0+r)]=v;}
+  setDims(Math.max(NC,c0+ncol-1),Math.max(NR,r0+nrow+5));CUR.rows=NR;CUR.cols=NC;
+  schedule();renderGrid();select(numCol(c0)+r0);renderList();crumbs();
+  return 'Imported '+nrow+' rows × '+ncol+' columns'+(cut?' (cut to '+MAX_ROWS+' rows and '+MAX_COLS+' columns)':'')+(dropped?' — '+dropped+' formula cells left empty (formulas keep their meaning only when the table starts at A1)':'')+'.';}
+async function runScanImport(src,form,title,S,fill){
+  const now=new Date().toISOString(),id='ds:'+TENANT+':doc/sheet_import/'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const rec={schema:'doc.sheet_import',id,owner:ME,tenant:TENANT,title,form,status:'pending',source_files:src,requested_at:now,created_at:now,updated_at:now};
+  const sv=await api('/bridge/save',{app_id:'sheets',object:rec});if(!sv.saved)throw new Error(sv.error||'could not file the import');
+  IMPORTS.push(rec);S.innerHTML='<span class="spin"></span> Starting the reader…';
+  const run=await fetch('/bridge/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:ENGINE,env:{IMPORT_ID:id}})});
+  const rj=await run.json().catch(()=>({}));
+  if(!run.ok)throw new Error(run.status===403?'Starting the reader needs a tenant administrator for now (this import is saved — an administrator can start it).':(rj.error||'the reader did not start'));
+  const t0=Date.now(),est=45000*Math.max(2,src.length);
+  while(true){await new Promise(r=>setTimeout(r,4000));
+    const q=await api('/bridge/query',{app_id:'sheets',schema:'doc.sheet_import',id});const cur=((q.results||[])[0]||{});const o=cur.object||cur;
+    const sec=Math.round((Date.now()-t0)/1000);fill.style.width=Math.min(92,100*(Date.now()-t0)/est)+'%';
+    if(o.status==='done'){fill.style.width='100%';S.textContent='Building the spreadsheet…';await buildFromImport(o);return;}
+    if(o.status==='failed')throw new Error(o.error||'the reader failed');
+    S.innerHTML='<span class="spin"></span> '+(o.status==='running'?'Reading the register':'Waiting for the reader')+'… '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' <span class="sub">(about 45 s a page)</span>';
+    if(sec>1200)throw new Error('the reader is taking too long — it will appear here when it finishes');}}
 // Upload in pieces under the front proxy's 1 MB request limit; the host assembles them and returns the file id.
 async function uploadChunked(file,onp){const CH=900*1024,up=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   for(let off=0;;off+=CH){const part=file.slice(off,off+CH),fin=off+CH>=file.size;
@@ -379,7 +468,7 @@ async function uploadChunked(file,onp){const CH=900*1024,up=Date.now().toString(
 async function buildFromImport(rec){
   const id='ds:'+TENANT+':doc/sheet/'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),now=new Date().toISOString();
   const c=Object.assign({},rec.cells||{}),rows=Math.max(50,maxRow(c)+5);
-  const sh={schema:'doc.sheet',id,title:rec.title||'Imported register',owner:ME,cells:c,rows,cols:NC,created_at:now,updated_at:now};
+  const sh={schema:'doc.sheet',id,title:rec.title||'Imported register',owner:ME,cells:c,rows,cols:Math.max(12,maxCol(c)),created_at:now,updated_at:now};
   const r=await api('/bridge/save',{app_id:'sheets',object:sh});if(!r.saved){setStatus('err',r.error||'save failed');return null;}
   sh._saved=true;SHEETS.unshift(sh);
   rec.sheet_ref=id;rec.updated_at=now;const i=IMPORTS.findIndex(x=>x.id===rec.id);if(i>=0)IMPORTS[i]=rec;else IMPORTS.push(rec);
