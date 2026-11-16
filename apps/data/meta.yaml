@@ -6,7 +6,13 @@
 # (its DATA allow-list) — the datasets it may browse.
 component_id: ds:airawat:app/data
 kind: app
-version: 0.3.0   # 0.3.0: REDESIGN — three panes: registries (left; filter box, collapsible domain groups; folds to a rail once
+version: 0.4.0   # 0.4.0: NEW REGISTRY FROM A FILE — CSV / TSV / JSON (incl. GeoJSON points) / Excel .xlsx, from this computer or
+#        My files. Read in the browser; each column's field is GUESSED (type, required, list of values, date order, key,
+#        personal data) and the person CHECKS and corrects it; rows that don't fit are listed (downloadable) and left out.
+#        Create = /bridge/schema-define (tenant-LOCAL schema, development tenants only; the kernel refuses to shadow a
+#        governed noun) + one /bridge/save per row (the kernel validates strictly against that schema). Sensitive
+#        registries are refused (they need the steward); personal columns in an Internal/Public one need a confirmation.
+# 0.3.0: REDESIGN — three panes: registries (left; filter box, collapsible domain groups; folds to a rail once
 #        one is picked) · records (middle; search over loaded records, "field is value" filters over the whole registry
 #        with a matching count, paging) · one record (right; Fields / JSON / History, ↑↓ to step, Esc to close). No inner
 #        title or user line (the run shell has them; a 44px breadcrumb band sits under the shell's controls). Sharing

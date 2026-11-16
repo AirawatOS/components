@@ -88,6 +88,27 @@
   .off{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--panel)}
   .row2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
 
+  /* ---- new registry from a file ---- */
+  #imp{flex:1;overflow:auto;padding:16px 20px;display:none}
+  .ih{margin:0 0 4px;font-size:16px}
+  .card.wide{max-width:none}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+  .grid2 label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)} .grid2 label input,.grid2 label select{color:var(--ink)}
+  .rad{flex-direction:row!important;align-items:center;gap:5px!important;color:var(--ink)!important}
+  .flist{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .fi{display:flex;gap:8px;padding:6px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--soft)} .fi:hover{background:var(--panel)}
+  .fi.on{background:var(--sel)} .fi.dis{opacity:.45;cursor:default}
+  table.ftab td{font-family:inherit;max-width:none;overflow:visible;cursor:default} table.ftab tbody tr{cursor:default} table.ftab tbody tr:hover{background:none}
+  table.ftab input:not([type]),table.ftab input[type=text]{width:100%;min-width:110px} table.ftab tr.off td{opacity:.45}
+  .small{font-size:11px} select.mini{font-size:11px;padding:1px 4px}
+  .warn{margin-top:10px;border:1px solid #9e6a03;background:#2a1f0a;border-radius:8px;padding:8px 10px;font-size:13px}
+  .bad{margin-top:10px;border:1px solid var(--bad);background:#2a0f12;border-radius:8px;padding:8px 10px;font-size:13px}
+  .note{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px;margin:0 0 10px;font-size:13px}
+  .errt{color:var(--bad)} .warnt{color:#d29922} .lk{color:var(--accent);cursor:pointer}
+  ul.blk{margin:10px 0 0;padding-left:18px;color:#d29922;font-size:13px}
+  .prog{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:4px;margin-top:8px;overflow:hidden} .prog i{display:block;height:100%;background:var(--accent);transition:width .2s}
+  @media (max-width:700px){ .grid2{grid-template-columns:1fr} }
+
   @media (max-width:900px){ #right{position:fixed;right:0;top:0;bottom:0;width:min(420px,100vw);z-index:5;box-shadow:-8px 0 24px #0008} }
 </style>
 <nav class="crumbs" id="crumbs"></nav>
@@ -100,7 +121,7 @@
       </div>
       <div class="muted" id="regcount" style="padding:0 12px 4px"></div>
       <div id="reglist"><div class="empty">Finding registries…</div></div>
-      <div class="foot"><button class="nav" id="nav-net" title="Offer data to other organisations, request theirs, decide requests">🔗 Shared with organisations</button></div>
+      <div class="foot"><button class="nav" id="nav-imp" title="Make a new registry from a CSV, JSON or Excel file — you check the fields first">⤓ New registry from a file</button><button class="nav" id="nav-net" title="Offer data to other organisations, request theirs, decide requests">🔗 Shared with organisations</button></div>
     </div>
     <div class="railonly railbox">
       <button class="ib" id="expand" title="Show the registry list">»</button>
@@ -113,6 +134,7 @@
       <div class="empty" style="margin:auto">Pick a registry on the left to see its records.</div>
     </div>
     <div id="net"></div>
+    <div id="imp"></div>
   </main>
 
   <aside id="right">
@@ -177,6 +199,7 @@ function renderRegs(){
 }
 function crumbs(){ const C=$('crumbs');
   if(S.view==='net'){ C.innerHTML='<b>Shared with organisations</b>'; return; }
+  if(S.view==='imp'){ C.innerHTML='<b>New registry from a file</b>'; return; }
   if(!S.sel){ C.innerHTML=''; return; }
   C.innerHTML=`<a id="cr-dom">${esc(domLabel(S.sel.domain||S.sel.schema.split('.')[0]))}</a><span>›</span><b>${esc(subject(S.sel.schema))}</b>`+
     (S.rec>=0&&S.rows[S.rec]?`<span>›</span><span>${esc(recTitle(S.rows[S.rec]))}</span>`:'');
@@ -329,7 +352,10 @@ async function renderHistory(id){
 
 // ---------------- sharing with other organisations (ADR-0087 Data Exchange, via the generic /bridge/gov) -------
 function setView(v){ S.view=v; $('browse').style.display=v==='browse'?'flex':'none'; $('net').style.display=v==='net'?'block':'none';
-  $('nav-net').classList.toggle('on',v==='net'); crumbs(); if(v==='net'){ closeRecord(); setRail(false); renderNet(); } }
+  $('imp').style.display=v==='imp'?'block':'none';
+  $('nav-net').classList.toggle('on',v==='net'); $('nav-imp').classList.toggle('on',v==='imp'); crumbs();
+  if(v==='net'){ closeRecord(); setRail(false); renderNet(); }
+  if(v==='imp'){ closeRecord(); setRail(true); renderImp(); } }
 async function gov(op,payload){ const r=await jpost('/bridge/gov',{interface:'network.data_exchange@0.1.0',op,app_id:APPID,payload:payload||{}});
   return r.ok?(r.j.result||r.j||{}):{__err:(r.j&&r.j.error)||('HTTP '+r.status)}; }
 const offSlug=s=>(s||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
@@ -377,11 +403,451 @@ async function peek(schema,tenant,title){
     <div style="overflow:auto;margin-top:6px"><table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(o=>`<tr>${cols.map(c=>`<td>${esc(cell(o[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
 }
 
+// ==== IMPORT CORE (pure functions: no DOM, no network) — new registry from a CSV / TSV / JSON / Excel file ====
+// Read a file into a table, guess each column's type and rules, convert every row against the (person-checked)
+// columns, and build the JSON-Schema definition the kernel validates each record against.
+const IMP_MAX_ROWS=10000;
+const ENVELOPE=new Set(['schema','id','tenant','owner','conforms_to','valid_time','recorded_at','prov','kind','_rev']);
+const TYPES=[['text','Text'],['integer','Whole number'],['number','Number'],['boolean','Yes / no'],['date','Date'],
+  ['datetime','Date and time'],['choice','One of a list'],['email','Email'],['phone','Phone (India)'],['pincode','PIN code'],
+  ['latitude','Latitude'],['longitude','Longitude']];
+const KINDS=[['record','An entry or document (a bill, an application, a register line)'],['entity','A thing that lasts (a ward, an asset, a school)'],
+  ['event','Something that happened (an inspection, a complaint, a payment)']];
+
+function decodeText(buf){let t=new TextDecoder('utf-8',{fatal:false}).decode(buf);if(t.charCodeAt(0)===0xFEFF)t=t.slice(1);return t;}
+function parseDelimited(text,delim){const first=text.split(/\r?\n/,1)[0]||'';
+  if(!delim){const c={',':0,'\t':0,';':0};for(const ch of first)if(ch in c)c[ch]++;delim=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];if(!c[delim])delim=',';}
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;continue;}
+    if(ch==='"'&&cur==='')q=true;else if(ch===delim){row.push(cur);cur='';}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cur);rows.push(row);row=[];cur='';}else cur+=ch;}
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows.filter(r=>r.some(v=>String(v).trim()!==''));}
+
+// grid (array of arrays) → {headers, rows}; every value a trimmed string
+function tableFromGrid(grid,hasHeader){
+  const w=Math.max(0,...grid.map(r=>r.length));
+  const hdr=hasHeader?(grid[0]||[]).map(h=>String(h==null?'':h).trim()):[];
+  for(let i=0;i<w;i++) if(!hdr[i]) hdr[i]='Column '+(i+1);
+  const rows=(hasHeader?grid.slice(1):grid).map(r=>Array.from({length:w},(_,i)=>r[i]==null?'':String(r[i]).trim()));
+  return {headers:hdr.slice(0,w),rows};}
+// JSON → {headers, rows}: an array of objects, or {rows|data|records|items|results:[…]}, or a GeoJSON FeatureCollection.
+// Nested objects flatten to parent.child (3 levels); arrays and deeper objects are kept as JSON text.
+function tableFromJSON(j){
+  let arr=null,note='';
+  if(Array.isArray(j)) arr=j;
+  else if(j&&typeof j==='object'){
+    if(j.type==='FeatureCollection'&&Array.isArray(j.features)){
+      let other=0;
+      arr=j.features.map(f=>{const o=Object.assign({},f.properties||{});const g=f.geometry||{};
+        if(g.type==='Point'&&Array.isArray(g.coordinates)){o.longitude=g.coordinates[0];o.latitude=g.coordinates[1];}else if(g.type)other++;return o;});
+      if(other) note=other+' shapes other than points were left out (only their properties were read).';}
+    else for(const k of ['rows','data','records','items','results']) if(Array.isArray(j[k])){arr=j[k];break;}
+    if(!arr) arr=[j];}
+  else throw new Error('the JSON holds no rows');
+  const flat=(o,pre,d,out)=>{for(const [k,v] of Object.entries(o)){const key=pre?pre+'.'+k:k;
+      if(v&&typeof v==='object'&&!Array.isArray(v)&&d<3) flat(v,key,d+1,out); else out[key]=v;} return out;};
+  const objs=arr.map(x=>x&&typeof x==='object'&&!Array.isArray(x)?flat(x,'',1,{}):{value:x});
+  const headers=[];for(const o of objs) for(const k of Object.keys(o)) if(!headers.includes(k)) headers.push(k);
+  const str=v=>v==null?'':typeof v==='object'?JSON.stringify(v):String(v).trim();
+  return {headers,rows:objs.map(o=>headers.map(h=>str(o[h]))),note};}
+
+function snake(s){let t=String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  if(!t) t='field'; if(/^[0-9]/.test(t)) t='f_'+t; return t.slice(0,48);}
+function fieldNamesFor(headers){const used=new Set();return headers.map((h,i)=>{let n=snake(h||('column_'+(i+1)));
+  if(n==='id') n='source_id'; else if(ENVELOPE.has(n)) n=n+'_value';
+  let k=n,j=2;while(used.has(k)) k=n+'_'+(j++);used.add(k);return k;});}
+function labelFor(h){const t=String(h||'').replace(/[_.]+/g,' ').replace(/\s+/g,' ').trim();return t?t[0].toUpperCase()+t.slice(1):'Field';}
+
+// ---- value readers ----
+function parseNum(s){let t=String(s).replace(/[\s ₹]/g,'').replace(/^(rs\.?|inr)/i,'');
+  if(/^\(.*\)$/.test(t)) t='-'+t.slice(1,-1);
+  if(/^[-+]?\d{1,3}(,\d{2,3})+(\.\d+)?$/.test(t)||/^[-+]?\d+(\.\d+)?$/.test(t)||/^[-+]?\.\d+$/.test(t)) return Number(t.replace(/,/g,''));
+  return null;}
+const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+const yr=y=>y.length===2?(+y<50?2000+(+y):1900+(+y)):+y;
+function mkDate(y,m,d){if(!(m>=1&&m<=12&&d>=1&&d<=31&&y>=1800&&y<=2200)) return null;const dt=new Date(Date.UTC(y,m-1,d));
+  if(dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d) return null;return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
+const DMY=/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4}|\d{2})$/;
+function parseDate(s,order){s=String(s).trim();let m;
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return mkDate(+m[1],+m[2],+m[3]);
+  if((m=s.match(DMY))) return order==='mdy'?mkDate(yr(m[3]),+m[1],+m[2]):mkDate(yr(m[3]),+m[2],+m[1]);
+  if((m=s.match(/^(\d{1,2})[\s-]+([A-Za-z]{3,9})\.?[\s,-]+(\d{4}|\d{2})$/))){const mo=MON[m[2].slice(0,3).toLowerCase()];return mo?mkDate(yr(m[3]),mo,+m[1]):null;}
+  if((m=s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/))){const mo=MON[m[1].slice(0,3).toLowerCase()];return mo?mkDate(+m[3],mo,+m[2]):null;}
+  return null;}
+// date + time → ISO 8601 with an offset (India time assumed when the file gives none)
+function parseDateTime(s,order){const m=String(s).trim().match(/^(.+?)[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*([ap]\.?m\.?)?\s*(Z|[+-]\d{2}:?\d{2})?$/i);
+  if(!m) return null;const d=parseDate(m[1],order);if(!d) return null;let h=+m[2];
+  if(m[5]){const pm=/^p/i.test(m[5]);if(h<1||h>12) return null;h=h%12+(pm?12:0);}
+  if(h>23||+m[3]>59||(m[4]&&+m[4]>59)) return null;
+  let tz=m[6]||'+05:30';if(tz!=='Z'&&!tz.includes(':')) tz=tz.slice(0,3)+':'+tz.slice(3);
+  return d+'T'+String(h).padStart(2,'0')+':'+m[3]+':'+(m[4]||'00')+tz;}
+// day/month order of a column's dd/mm/yyyy-style values: 'dmy' | 'mdy' | false (contradictory); assumed = no value decides it
+function dateOrder(vals){let dm=false,md=false,any=false;
+  for(const v of vals){const m=String(v).trim().split(/[T\s]/)[0].match(DMY);if(!m) continue;any=true;if(+m[1]>12) dm=true;if(+m[2]>12) md=true;}
+  if(dm&&md) return {order:false};return {order:md?'mdy':'dmy',assumed:any&&!dm&&!md};}
+const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const normPhone=v=>{const d=String(v).replace(/[\s().-]/g,'');const m=d.match(/^(?:\+?91|0)?([6-9]\d{9})$/);return m?m[1]:null;};
+
+// ---- personal data: a column name that suggests a person's details ----
+const NOT_PERSON=/bank|ward|scheme|zone|road|street|place|village|department|dept|office|project|company|firm|org|district|city|state|area|locality|vendor|contractor|item|asset|facility|school|hospital|bank_name|branch|file|layer|category|type|status|source/;
+function personalReason(h,type){
+  if(type==='email') return 'email address';
+  if(type==='phone') return 'phone number';
+  const n=h.toLowerCase().replace(/[^a-z0-9]+/g,'_');
+  if(/aadha?ar|\bpan\b|(^|_)pan(_|$)|voter|epic|passport|driving|ration_card/.test(n)) return 'identity number';
+  if(/(^|_)(dob|date_of_birth|birth_date|age|gender|sex|caste|religion|disability)(_|$)/.test(n)) return 'personal attribute';
+  if(/(^|_)(account_no|account_number|acc_no|ifsc|upi|uan|pf_no|esic|salary|income|wage)(_|$)/.test(n)) return 'financial detail of a person';
+  if(/(^|_)(address|house_no|door_no)(_|$)/.test(n)&&!NOT_PERSON.test(n)) return 'address';
+  if(/(^|_)(father|mother|husband|spouse|guardian)/.test(n)) return 'family member';
+  if(/(^|_)(mobile|phone|contact_no|whatsapp)(_|$)/.test(n)) return 'phone number';
+  if(/(^|_)(email|e_mail)(_|$)/.test(n)) return 'email address';
+  if(/(^|_)(name|full_name|first_name|last_name|surname)$/.test(n)&&!NOT_PERSON.test(n.replace(/_?name$/,''))) return 'a person’s name';
+  if(/(applicant|beneficiary|employee|patient|citizen|complainant|student|subscriber|member|person|owner)/.test(n)&&!NOT_PERSON.test(n)) return 'about a person';
+  return '';}
+
+// ---- guess one column ----
+function inferColumn(header,vals){
+  const ne=vals.filter(v=>v!==''),n=ne.length,h=String(header).toLowerCase();
+  const distinct=new Set(ne);
+  const c={required:n>0&&n===vals.length,empty:vals.length-n,unique:n>0&&n===vals.length&&distinct.size===n,
+    samples:[...distinct].slice(0,4),distinct:distinct.size,type:'text'};
+  if(!n){c.personal=personalReason(h,'text');return c;}
+  // a type is suggested when it fits (nearly) every value: all of them under 5 values, else all but 1 or 10% —
+  // the few that don't fit are then listed as problems on the check screen instead of turning the column into text
+  const fits=p=>{let k=0;for(const v of ne)if(p(v))k++;return k>0&&k>=n-(n<5?0:Math.max(1,Math.floor(0.1*n)));};
+  const isNum=v=>!/^[-+]?0\d/.test(v)&&parseNum(v)!==null, okNums=ne.filter(isNum).map(parseNum);
+  if(fits(v=>/^(true|false|yes|no)$/i.test(v))) c.type='boolean';
+  else if(fits(isNum)&&!ne.every(v=>/^[-+]?0\d/.test(v))){
+    if(/(^|[^a-z])(lat|latitude)$/.test(h)&&okNums.every(x=>x>=-90&&x<=90)) c.type='latitude';
+    else if(/(^|[^a-z])(lon|lng|long|longitude)$/.test(h)&&okNums.every(x=>x>=-180&&x<=180)) c.type='longitude';
+    else if(/pin|postal|zip/.test(h)&&fits(v=>/^[1-9]\d{5}$/.test(v))) c.type='pincode';
+    else if(/phone|mobile|contact|whatsapp/.test(h)&&fits(v=>normPhone(v))) c.type='phone';
+    else c.type=okNums.every(Number.isInteger)?'integer':'number';}
+  else if(fits(v=>/[\s+-]/.test(v)||/phone|mobile|contact/.test(h))&&fits(v=>normPhone(v))) c.type='phone';
+  else if(fits(v=>EMAIL.test(v))) c.type='email';
+  else {const o=dateOrder(ne);
+    if(o.order&&fits(v=>parseDate(v,o.order))){c.type='date';c.dateOrder=o.order;c.dateAssumed=o.assumed;}
+    else if(o.order&&fits(v=>parseDateTime(v,o.order))){c.type='datetime';c.dateOrder=o.order;c.dateAssumed=o.assumed;}
+    else if(distinct.size<=12&&n>=Math.max(6,3*distinct.size)&&[...distinct].every(v=>v.length<=40)){c.type='choice';c.choices=[...distinct].sort();}}
+  c.personal=personalReason(h,c.type);
+  return c;}
+function inferTable(t){
+  const names=fieldNamesFor(t.headers);
+  const cols=t.headers.map((h,i)=>{const g=inferColumn(h,t.rows.map(r=>r[i]));
+    return Object.assign({src:i,header:h,name:names[i],label:labelFor(h),include:true,guess:g.type},g);});
+  const keyish=/(^|[^a-z])(id|code|no|number|key|ref|sl)$/;
+  // a key: every row has a value and (nearly) every value differs — repeats are then listed as problems
+  cols.forEach(c=>{const ki=keyish.test(c.header.toLowerCase().replace(/[\s.]+$/,''));
+    c.keyable=c.required&&['text','integer','pincode','email','phone'].includes(c.type)&&(c.unique||(ki&&c.distinct>=0.8*t.rows.length));c.keyish=ki;});
+  const key=cols.find(c=>c.keyable&&c.keyish)||null;
+  return {cols,key:key?key.name:''};}
+
+// ---- convert one value against its (checked) column ----
+function convertValue(v,c){
+  if(v==='') return {empty:true};
+  switch(c.type){
+    case 'text': return {v};
+    case 'integer':{const x=parseNum(v);return x!==null&&Number.isInteger(x)?{v:x}:{err:'not a whole number'};}
+    case 'number':{const x=parseNum(v);return x!==null?{v:x}:{err:'not a number'};}
+    case 'latitude':{const x=parseNum(v);return x!==null&&x>=-90&&x<=90?{v:x}:{err:'not a latitude (−90 to 90)'};}
+    case 'longitude':{const x=parseNum(v);return x!==null&&x>=-180&&x<=180?{v:x}:{err:'not a longitude (−180 to 180)'};}
+    case 'boolean': return /^(true|yes|y)$/i.test(v)?{v:true}:/^(false|no|n)$/i.test(v)?{v:false}:{err:'not yes or no'};
+    case 'date':{const d=parseDate(v,c.dateOrder||'dmy');return d?{v:d}:{err:'not a date'};}
+    case 'datetime':{const d=parseDateTime(v,c.dateOrder||'dmy');return d?{v:d}:{err:'not a date and time'};}
+    case 'choice': return (c.choices||[]).includes(v)?{v}:{err:'not one of the listed values'};
+    case 'email': return EMAIL.test(v)?{v:v.toLowerCase()}:{err:'not an email address'};
+    case 'phone':{const p=normPhone(v);return p?{v:p}:{err:'not a 10-digit Indian mobile number'};}
+    case 'pincode': return /^[1-9]\d{5}$/.test(v)?{v}:{err:'not a 6-digit PIN code'};
+  }
+  return {v};}
+const keySlug=v=>String(v).trim().replace(/[^A-Za-z0-9_.~@+-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,120)||'blank';
+// every row → a record, or the reasons it can't be one
+function buildRecords(t,cols,o){
+  const inc=cols.filter(c=>c.include),key=inc.find(c=>c.name===o.key);
+  const recs=[],problems=[],seen=new Map(),off=o.lineOffset||0;   // off: rows are numbered as lines in the file
+  t.rows.forEach((r,ri)=>{const obj={schema:o.schema},errs=[];
+    for(const c of inc){const raw=r[c.src],x=convertValue(raw,c);
+      if(x.empty){if(c.required||c===key) errs.push({field:c.label,value:'',msg:'is empty'});continue;}
+      if(x.err){errs.push({field:c.label,value:raw,msg:x.err});continue;}
+      obj[c.name]=x.v;}
+    let kid='row-'+(ri+1);
+    if(key&&obj[key.name]!==undefined){kid=keySlug(obj[key.name]);
+      if(seen.has(kid)) errs.push({field:key.label,value:r[key.src],msg:'repeats row '+(seen.get(kid)+1+off)+' (the key must be unique)'});else seen.set(kid,ri);}
+    if(errs.length){errs.forEach(e=>problems.push(Object.assign({row:ri+1+off},e)));return;}
+    obj.id='ds:'+o.tenant+':'+o.schema.replace('.','/')+'/'+kid;obj.tenant=o.tenant;
+    recs.push({row:ri+1+off,obj});});
+  return {recs,problems,badRows:new Set(problems.map(p=>p.row)).size};}
+
+// ---- the JSON-Schema definition (what the kernel validates every record against) ----
+function fieldSchema(c){const f={title:c.label};
+  switch(c.type){
+    case 'integer': f.type='integer';break; case 'number': f.type='number';break; case 'boolean': f.type='boolean';break;
+    case 'latitude': Object.assign(f,{type:'number',minimum:-90,maximum:90});break;
+    case 'longitude': Object.assign(f,{type:'number',minimum:-180,maximum:180});break;
+    case 'date': Object.assign(f,{type:'string',format:'date',pattern:'^\\d{4}-\\d{2}-\\d{2}$'});break;
+    case 'datetime': Object.assign(f,{type:'string',format:'date-time'});break;
+    case 'choice': Object.assign(f,{type:'string',enum:(c.choices||[]).slice()});break;
+    case 'email': Object.assign(f,{type:'string',format:'email'});break;
+    case 'phone': Object.assign(f,{type:'string',pattern:'^[6-9]\\d{9}$'});break;
+    case 'pincode': Object.assign(f,{type:'string',pattern:'^[1-9]\\d{5}$'});break;
+    default: f.type='string';}
+  if(c.personal) f['x-personal']=true;
+  return f;}
+function schemaDefinition(cols,o){
+  const inc=cols.filter(c=>c.include),props={schema:{type:'string',const:o.schema},id:{type:'string'},tenant:{type:'string'}};
+  inc.forEach(c=>props[c.name]=fieldSchema(c));
+  const req=['schema','id',...inc.filter(c=>c.required||c.name===o.key).map(c=>c.name)];
+  return {type:'object',title:o.title,description:o.description||'','x-kind':o.kind,'x-sensitivity':o.sensitivity,
+    'x-key':o.key||null,'x-personal-fields':inc.filter(c=>c.personal).map(c=>c.name),
+    'x-source':{file:o.file,imported_by:o.by,imported_at:o.at,rows_in_file:o.rowsInFile},
+    additionalProperties:false,required:[...new Set(req)],properties:props};}
+// ==== IMPORT CORE END ====
+
+// ---------------- new registry from a file (view 'imp') ----------------
+// Everything up to "Create" happens in this browser: the file is read here, each column's field is guessed here, and
+// the person checks and corrects them. Create then (1) installs the checked schema as a tenant-LOCAL schema in this
+// development tenant (/bridge/schema-define; the kernel refuses to shadow a network-governed noun) and (2) saves each
+// row through /bridge/save, where the kernel validates it against that schema (strict) and attributes the write.
+const IM={step:'pick',tab:'local',cwd:'/',pick:null,hasHeader:true,table:null,cols:[],key:'',title:'',subject:'',subjEdited:false,
+  domain:'dataset',kind:'record',sens:'internal',desc:'',ack:false,msg:'',busy:false,result:null};
+const TABLE_FILE=/\.(csv|tsv|txt|json|geojson|xlsx)$/i;
+// .xlsx = a zip of XML parts: read the FIRST worksheet's values with the browser's own DecompressionStream. Cells whose
+// number format is a date come back as YYYY-MM-DD (or YYYY-MM-DD HH:MM:SS), not as Excel day numbers.
+async function readXlsx(buf){const dv=new DataView(buf),u8=new Uint8Array(buf);let e=-1;
+  for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-70000);i--)if(dv.getUint32(i,true)===0x06054b50){e=i;break;}
+  if(e<0)throw new Error('this is not a valid .xlsx file');
+  const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const files={};
+  for(let k=0;k<n;k++){const meth=dv.getUint16(p+10,true),csz=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true);
+    files[new TextDecoder().decode(u8.subarray(p+46,p+46+nl))]={meth,csz,off};p+=46+nl+xl+cl;}
+  async function part(name){const f=files[name];if(!f)return null;const ln=dv.getUint16(f.off+26,true),le=dv.getUint16(f.off+28,true);
+    const data=u8.subarray(f.off+30+ln+le,f.off+30+ln+le+f.csz);
+    if(f.meth===0)return new TextDecoder().decode(data);
+    return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();}
+  const X=s=>new DOMParser().parseFromString(s,'application/xml');
+  let sheetPath='xl/worksheets/sheet1.xml';
+  try{const wb=X(await part('xl/workbook.xml')),rels=X(await part('xl/_rels/workbook.xml.rels'));const s0=wb.getElementsByTagName('sheet')[0];
+    const rid=s0&&(s0.getAttribute('r:id')||s0.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'));
+    const rel=[...rels.getElementsByTagName('Relationship')].find(r=>r.getAttribute('Id')===rid);
+    if(rel){const t=rel.getAttribute('Target').replace(/^\//,'');sheetPath=t.startsWith('xl/')?t:'xl/'+t;}}catch(err){}
+  const ssx=await part('xl/sharedStrings.xml');const ss=ssx?[...X(ssx).getElementsByTagName('si')].map(si=>[...si.getElementsByTagName('t')].map(t=>t.textContent).join('')):[];
+  // which cell styles are dates: built-in formats 14–22 and 45–47, or a custom format code with d / y in it
+  let dateStyle=[];
+  try{const st=X(await part('xl/styles.xml')),custom={};
+    for(const f of st.getElementsByTagName('numFmt')) custom[f.getAttribute('numFmtId')]=f.getAttribute('formatCode')||'';
+    const xfs=st.getElementsByTagName('cellXfs')[0];
+    dateStyle=xfs?[...xfs.getElementsByTagName('xf')].map(x=>{const id=+x.getAttribute('numFmtId');
+      if((id>=14&&id<=22)||(id>=45&&id<=47)) return true;
+      const code=(custom[id]||'').replace(/"[^"]*"|\[[^\]]*\]|\\./g,'');return /[dy]/i.test(code);}):[];}catch(err){}
+  const serial=v=>{const x=+v;const ms=Math.round((x-25569)*86400000);const d=new Date(ms),iso=d.toISOString();
+    return (x%1)?iso.slice(0,10)+' '+iso.slice(11,19):iso.slice(0,10);};
+  const shx=await part(sheetPath);if(!shx)throw new Error('the workbook has no readable first sheet');
+  const rows=[];const colNum=s=>[...s].reduce((a,ch)=>a*26+ch.charCodeAt(0)-64,0);
+  for(const c of X(shx).getElementsByTagName('c')){const mm=(c.getAttribute('r')||'').match(/^([A-Z]+)(\d+)$/);if(!mm)continue;
+    const t=c.getAttribute('t'),v=(c.getElementsByTagName('v')[0]||{}).textContent;let val;
+    if(t==='s')val=ss[+v]||'';else if(t==='inlineStr')val=[...c.getElementsByTagName('t')].map(x=>x.textContent).join('');
+    else if(t==='b')val=v==='1'?'TRUE':'FALSE';else if(v!=null&&v!==''&&(!t||t==='n')&&dateStyle[+(c.getAttribute('s')||0)]&&isFinite(+v))val=serial(v);
+    else val=v==null?'':v;
+    (rows[+mm[2]-1]=rows[+mm[2]-1]||[])[colNum(mm[1])-1]=val;}
+  return Array.from(rows,r=>Array.from(r||[],v=>v==null?'':v));}
+
+async function readPicked(){
+  const p=IM.pick;
+  const buf=p.src==='local'?await p.file.arrayBuffer()
+    :await fetch('/bridge/vfs?action=read&path='+encodeURIComponent(p.path),{credentials:'same-origin'}).then(r=>{if(!r.ok)throw new Error('could not read '+p.name+' from My files ('+r.status+')');return r.arrayBuffer();});
+  let t;
+  if(/\.xlsx$/i.test(p.name)) t=tableFromGrid(await readXlsx(buf),IM.hasHeader);
+  else if(/\.(geo)?json$/i.test(p.name)){let j;try{j=JSON.parse(decodeText(buf));}catch(e){throw new Error('this is not valid JSON: '+e.message);} t=tableFromJSON(j);}
+  else t=tableFromGrid(parseDelimited(decodeText(buf),/\.tsv$/i.test(p.name)?'\t':null),IM.hasHeader);
+  if(!t.rows.length) throw new Error('no rows found in '+p.name);
+  if(t.rows.length>IMP_MAX_ROWS){t.note=((t.note||'')+' Only the first '+fmtN(IMP_MAX_ROWS)+' of '+fmtN(t.rows.length)+' rows are imported.').trim();t.rowsInFile=t.rows.length;t.rows=t.rows.slice(0,IMP_MAX_ROWS);}
+  else t.rowsInFile=t.rows.length;
+  return t;}
+
+function impOpen(){ Object.assign(IM,{step:'pick',pick:null,table:null,msg:'',busy:false,result:null}); setView('imp');
+  if(!TENANT) fetch('/session',{credentials:'same-origin'}).then(r=>r.json()).then(s=>{ TENANT=s.tenant||String(s.sub||'').split('/')[2]||''; if(S.view==='imp') renderImp(); }).catch(()=>{}); }
+const subjOf=s=>snake(s).replace(/^f_/,'').slice(0,40);
+function impSchema(){ return IM.domain+'.'+IM.subject; }
+function impPersonal(){ return IM.cols.filter(c=>c.include&&c.personal); }
+const impOff=()=>IM.hasHeader&&!/\.(geo)?json$/i.test(IM.pick.name)?1:0;
+function impBuild(){ return buildRecords(IM.table,IM.cols,{schema:impSchema(),tenant:TENANT,key:IM.key,lineOffset:impOff()}); }
+function impBlockers(){
+  const out=[],inc=IM.cols.filter(c=>c.include);
+  if(!IM.title.trim()) out.push('Give the registry a name.');
+  if(!/^[a-z][a-z0-9_]*$/.test(IM.subject)) out.push('The code after “'+IM.domain+'.” must start with a letter and use only a–z, 0–9 and _.');
+  if(S.schemas.some(d=>d.schema===impSchema())) out.push('You already have a registry called '+impSchema()+'. Choose another code.');
+  if(!inc.length) out.push('Include at least one column.');
+  const names=inc.map(c=>c.name),bad=inc.filter(c=>!/^[a-z][a-z0-9_]*$/.test(c.name)||ENVELOPE.has(c.name));
+  if(bad.length) out.push('Field names must start with a letter, use a–z, 0–9 and _, and not be one of the reserved names: '+bad.map(c=>c.name).join(', ')+'.');
+  const dup=names.filter((n,i)=>names.indexOf(n)!==i); if(dup.length) out.push('Two columns have the same field name: '+[...new Set(dup)].join(', ')+'.');
+  inc.filter(c=>c.type==='choice'&&!(c.choices||[]).length).forEach(c=>out.push('“'+c.label+'” is “One of a list” but has no values.'));
+  if(IM.sens==='sensitive') out.push('Registries marked Sensitive need the data steward’s approval and access rules, which this import can’t set up yet.');
+  if(IM.sens!=='sensitive'&&impPersonal().length&&!IM.ack) out.push('Confirm the personal-data columns below, or untick them.');
+  return out;}
+
+function renderImp(){
+  const P=$('imp'); crumbs();
+  if(IM.step==='pick') return renderImpPick(P);
+  if(IM.step==='review') return renderImpReview(P);
+  return renderImpRun(P);}
+function renderImpPick(P){
+  const p=IM.pick;
+  P.innerHTML=`<h2 class="ih">New registry from a file</h2>
+    <p class="muted" style="max-width:760px;margin:0 0 14px">Pick a CSV, TSV, JSON or Excel (.xlsx) file. It is read here in your browser: Airawat suggests a field for each column, and you check the fields before anything is created.</p>
+    <div class="card">
+      <div class="tabs" style="padding:0;margin-bottom:10px"><button class="tab${IM.tab==='local'?' on':''}" data-src="local">This computer</button><button class="tab${IM.tab==='files'?' on':''}" data-src="files">My files</button></div>
+      <div id="imp-local"${IM.tab==='local'?'':' hidden'}><input type="file" id="imp-file" accept=".csv,.tsv,.txt,.json,.geojson,.xlsx,text/csv,application/json"></div>
+      <div id="imp-files"${IM.tab==='files'?'':' hidden'}><div class="muted" id="imp-path" style="margin-bottom:4px"></div><div id="imp-flist" class="flist"></div></div>
+      <div class="row2" style="margin-top:10px"><label class="muted" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="imp-hdr"${IM.hasHeader?' checked':''}> The first row holds the column names (CSV and Excel)</label></div>
+      <div class="row2" style="margin-top:10px"><span class="muted" style="flex:1">${p?'Chosen: <b>'+esc(p.name)+'</b>'+(p.size?' · '+Math.max(1,Math.round(p.size/1024))+' KB':''):'Nothing chosen yet.'}${IM.msg?' <span class="errt">'+esc(IM.msg)+'</span>':''}</span>
+        <button class="btn" id="imp-cancel">Cancel</button><button class="btn p" id="imp-next"${p&&!IM.busy?'':' disabled'}>${IM.busy?'Reading…':'Next: check the fields'}</button></div>
+    </div>`;
+  P.querySelectorAll('[data-src]').forEach(b=>b.onclick=()=>{IM.tab=b.dataset.src;renderImp();});
+  $('imp-file').onchange=e=>{const f=e.target.files[0];if(!f)return;IM.msg='';
+    if(!TABLE_FILE.test(f.name)){IM.pick=null;IM.msg='Use a CSV, TSV, JSON or .xlsx file.';}else IM.pick={src:'local',name:f.name,file:f,size:f.size};renderImp();};
+  $('imp-hdr').onchange=e=>{IM.hasHeader=e.target.checked;};
+  $('imp-cancel').onclick=()=>setView('browse');
+  $('imp-next').onclick=async()=>{IM.busy=true;IM.msg='';renderImp();
+    try{const t=await readPicked();const g=inferTable(t);
+      Object.assign(IM,{table:t,cols:g.cols,key:g.key,title:p.name.replace(/\.[a-z0-9]+$/i,'').replace(/[_-]+/g,' ').trim(),subjEdited:false,
+        kind:'record',desc:'',ack:false,step:'review'});
+      IM.title=IM.title?IM.title[0].toUpperCase()+IM.title.slice(1):'Imported data';IM.subject=subjOf(IM.title);
+      IM.sens=impPersonal().length?'sensitive':'internal';}
+    catch(e){IM.msg=e.message;}
+    IM.busy=false;renderImp();};
+  if(IM.tab==='files') impBrowse(IM.cwd);}
+async function impBrowse(path){
+  IM.cwd=path;const L=$('imp-flist');if(!L)return;$('imp-path').textContent='My files'+(path==='/'?'':' '+path);L.innerHTML='<div class="muted" style="padding:8px">Loading…</div>';
+  let r={};try{r=await fetch('/bridge/vfs?action=list&path='+encodeURIComponent(path),{credentials:'same-origin'}).then(x=>x.json());}catch(e){}
+  if(IM.step!=='pick'||IM.tab!=='files'||!$('imp-flist'))return;
+  const ents=(r.entries||[]).filter(e=>!(path==='/'&&e.path==='/projects'));
+  L.innerHTML=(path!=='/'?'<div class="fi" data-up="1">⬆ Up</div>':'')+(ents.length?ents.map((e,i)=>e.node_type==='folder'
+      ?`<div class="fi" data-dir="${esc(e.path)}">📁 ${esc(e.name)}</div>`
+      :`<div class="fi${TABLE_FILE.test(e.name)?'':' dis'}${IM.pick&&IM.pick.path===e.path?' on':''}" data-i="${i}">📄 ${esc(e.name)}<span class="muted" style="margin-left:auto">${e.size_bytes?Math.max(1,Math.round(e.size_bytes/1024))+' KB':''}</span></div>`).join('')
+    :'<div class="muted" style="padding:8px">This folder is empty.</div>');
+  L.querySelectorAll('[data-dir]').forEach(d=>d.onclick=()=>impBrowse(d.dataset.dir));
+  const u=L.querySelector('[data-up]');if(u)u.onclick=()=>impBrowse(path.replace(/\/[^/]+$/,'')||'/');
+  L.querySelectorAll('.fi[data-i]:not(.dis)').forEach(el=>el.onclick=()=>{const e=ents[+el.dataset.i];IM.msg='';IM.pick={src:'files',name:e.name,path:e.path,size:e.size_bytes};renderImp();});}
+
+function renderImpReview(P){
+  const t=IM.table,b=impBuild(),block=impBlockers(),pers=impPersonal(),inc=IM.cols.filter(c=>c.include);
+  const keyOpts=IM.cols.filter(c=>c.include&&c.keyable);
+  const domains=[...new Set(['dataset',...Object.keys(DOMAIN_LABEL).filter(d=>!['cell','platform','prov','governance','viz','metering','credential'].includes(d))])];
+  const typeSel=c=>`<select data-c="${c.src}" data-k="type">${TYPES.map(([v,l])=>`<option value="${v}"${c.type===v?' selected':''}>${l}${c.guess===v?' ✓':''}</option>`).join('')}</select>`;
+  const extra=c=>c.type==='choice'?`<div class="muted small">${esc((c.choices||[]).join(' · ')||'no values')} <a class="lk" data-c="${c.src}" data-k="choices">edit</a></div>`
+    :(c.type==='date'||c.type==='datetime')?`<div class="muted small"><select data-c="${c.src}" data-k="dateOrder" class="mini"><option value="dmy"${c.dateOrder!=='mdy'?' selected':''}>day/month/year</option><option value="mdy"${c.dateOrder==='mdy'?' selected':''}>month/day/year</option></select>${c.dateAssumed?' <span class="warnt">no value shows the order — please check</span>':''}</div>`:'';
+  const probBy={};b.problems.forEach(p=>probBy[p.field]=(probBy[p.field]||0)+1);
+  P.innerHTML=`<div class="row2" style="margin:0 0 6px"><h2 class="ih" style="margin:0">Check the fields</h2><span class="muted">${esc(IM.pick.name)} · ${fmtN(t.rows.length)} rows · ${t.headers.length} columns</span>
+      <span style="margin-left:auto"></span><button class="btn" id="imp-back">← Choose another file</button></div>
+    ${t.note?`<div class="note">${esc(t.note)}</div>`:''}
+    <div class="card"><h3>The registry</h3>
+      <div class="grid2">
+        <label>Name<input id="im-title" value="${esc(IM.title)}" placeholder="e.g. Ward works 2025-26"></label>
+        <label>Code <span class="muted">— how records and apps refer to it</span><span class="row2" style="margin:0;gap:4px"><select id="im-dom">${domains.map(d=>`<option value="${d}"${IM.domain===d?' selected':''}>${d}</option>`).join('')}</select><span>.</span><input id="im-subj" value="${esc(IM.subject)}" style="flex:1" class="mono"></span></label>
+        <label>Each row is<select id="im-kind">${KINDS.map(([v,l])=>`<option value="${v}"${IM.kind===v?' selected':''}>${l}</option>`).join('')}</select></label>
+        <label>Each record is identified by<select id="im-key"><option value="">its row number in this file</option>${keyOpts.map(c=>`<option value="${c.name}"${IM.key===c.name?' selected':''}>${esc(c.label)} (${c.unique?'every value is different':'some values repeat: those rows are listed below'})</option>`).join('')}</select></label>
+        <label style="grid-column:1/-1">Description <span class="muted">(optional)</span><input id="im-desc" value="${esc(IM.desc)}" placeholder="What this registry holds and where it comes from"></label>
+        <label style="grid-column:1/-1">Who may see it
+          <span class="row2" style="margin:2px 0 0;gap:14px">${[['public','Public — anyone, also outside your organisation'],['internal','Internal — people in your organisation'],['sensitive','Sensitive — personal or restricted data']].map(([v,l])=>`<label class="rad"><input type="radio" name="im-sens" value="${v}"${IM.sens===v?' checked':''}> ${l}</label>`).join('')}</span></label>
+      </div>
+      ${pers.length?`<div class="${IM.sens==='sensitive'?'bad':'warn'}"><b>${pers.length} column${pers.length>1?'s look':' looks'} like personal data:</b> ${pers.map(c=>esc(c.label)+' <span class="muted">('+esc(c.personal)+')</span>').join(', ')}.
+        ${IM.sens==='sensitive'?'<div style="margin-top:4px">A registry with personal data needs the data steward’s approval and access rules, which this import can’t set up yet. Untick these columns to leave them out — or, if they are not about private persons (an office phone, a contractor firm), untick <i>Personal</i> and choose Internal.</div>'
+          :`<label style="display:flex;gap:6px;margin-top:6px"><input type="checkbox" id="im-ack"${IM.ack?' checked':''}> I confirm these columns may be seen by everyone in ${esc(TENANT||'your organisation')} who can open this registry.</label>`}</div>`:''}
+    </div>
+    <div class="card wide"><h3>Fields <span class="muted" style="font-weight:400">— one per column. ✓ marks the suggested type.</span></h3>
+      <div style="overflow:auto"><table class="ftab"><thead><tr><th>Use</th><th>Column in the file</th><th>Label</th><th>Field name</th><th>Type</th><th>Required</th><th>Personal</th><th>Examples</th><th>Problems</th></tr></thead><tbody>
+      ${IM.cols.map(c=>`<tr class="${c.include?'':'off'}"><td><input type="checkbox" data-c="${c.src}" data-k="include"${c.include?' checked':''}></td>
+        <td title="${esc(c.header)}">${esc(c.header)}${c.empty?`<div class="muted small">${fmtN(c.empty)} empty</div>`:''}</td>
+        <td><input data-c="${c.src}" data-k="label" value="${esc(c.label)}"></td>
+        <td><input data-c="${c.src}" data-k="name" value="${esc(c.name)}" class="mono"></td>
+        <td>${typeSel(c)}${extra(c)}</td>
+        <td><input type="checkbox" data-c="${c.src}" data-k="required"${c.required?' checked':''}></td>
+        <td><input type="checkbox" data-c="${c.src}" data-k="personal"${c.personal?' checked':''}></td>
+        <td class="mono small" title="${esc(c.samples.join(' | '))}">${esc(c.samples.slice(0,3).join(' · '))}</td>
+        <td>${c.include&&probBy[c.label]?`<span class="errt">${fmtN(probBy[c.label])}</span>`:'<span class="muted">—</span>'}</td></tr>`).join('')}
+      </tbody></table></div></div>
+    <div class="card wide"><h3>Ready to create</h3>
+      <div><b>${fmtN(b.recs.length)}</b> of ${fmtN(t.rows.length)} rows are ready.${b.badRows?` <span class="errt">${fmtN(b.badRows)} row${b.badRows>1?'s have':' has'} problems and will be left out</span> <a class="lk" id="im-dl">download them as CSV</a>`:''}</div>
+      ${b.problems.length?`<div style="max-height:220px;overflow:auto;margin-top:8px"><table class="ftab"><thead><tr><th>Row</th><th>Field</th><th>Value</th><th>Problem</th></tr></thead><tbody>${b.problems.slice(0,200).map(p=>`<tr><td>${p.row}</td><td>${esc(p.field)}</td><td class="mono">${esc(p.value)}</td><td>${esc(p.msg)}</td></tr>`).join('')}</tbody></table>${b.problems.length>200?'<div class="muted">First 200 problems shown.</div>':''}</div>`:''}
+      ${b.recs.length?`<details style="margin-top:8px"><summary class="muted">See the first record as it will be saved</summary><pre class="json">${esc(JSON.stringify(b.recs[0].obj,null,2))}</pre></details>`:''}
+      ${block.length?`<ul class="blk">${block.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+      <div class="row2" style="margin-top:10px"><span class="muted" style="flex:1">Creates <span class="mono">${esc(impSchema())}</span> in ${esc(TENANT||'your organisation')} as a development registry (not yet in the shared catalogue). Every record is checked against these fields when it is saved.</span>
+        <button class="btn" id="imp-cancel">Cancel</button><button class="btn p" id="imp-go"${block.length||!b.recs.length?' disabled':''}>Create registry with ${fmtN(b.recs.length)} records</button></div>
+    </div>`;
+  const re=()=>renderImp();
+  $('imp-back').onclick=()=>{IM.step='pick';re();}; $('imp-cancel').onclick=()=>setView('browse');
+  $('im-title').onchange=e=>{IM.title=e.target.value;if(!IM.subjEdited)IM.subject=subjOf(IM.title);re();};
+  $('im-subj').onchange=e=>{IM.subject=e.target.value.trim().toLowerCase();IM.subjEdited=true;re();};
+  $('im-dom').onchange=e=>{IM.domain=e.target.value;re();};
+  $('im-kind').onchange=e=>{IM.kind=e.target.value;};
+  $('im-key').onchange=e=>{IM.key=e.target.value;re();};
+  $('im-desc').onchange=e=>{IM.desc=e.target.value;};
+  P.querySelectorAll('input[name="im-sens"]').forEach(r=>r.onchange=()=>{IM.sens=r.value;re();});
+  if($('im-ack')) $('im-ack').onchange=e=>{IM.ack=e.target.checked;re();};
+  P.querySelectorAll('[data-c][data-k]').forEach(el=>{const c=IM.cols.find(x=>x.src===+el.dataset.c),k=el.dataset.k;
+    if(k==='choices'){el.onclick=()=>{const v=prompt('The allowed values, separated by commas:',(c.choices||[]).join(', '));if(v===null)return;
+      c.choices=[...new Set(v.split(',').map(s=>s.trim()).filter(Boolean))];re();};return;}
+    el.onchange=()=>{
+      if(k==='include'||k==='required'){c[k]=el.checked;if(k==='include'&&!c.include&&IM.key===c.name)IM.key='';}
+      else if(k==='personal'){c.personal=el.checked?(c.personal||'marked by you'):'';IM.ack=false;if(!impPersonal().length&&IM.sens==='sensitive')IM.sens='internal';}
+      else if(k==='type'){c.type=el.value;if(c.type==='choice'&&!c.choices){c.choices=[...new Set(IM.table.rows.map(r=>r[c.src]).filter(v=>v!==''))].slice(0,50).sort();}
+        if((c.type==='date'||c.type==='datetime')&&!c.dateOrder){const o=dateOrder(IM.table.rows.map(r=>r[c.src]).filter(Boolean));c.dateOrder=o.order||'dmy';c.dateAssumed=o.assumed;}
+        if(['email','phone'].includes(c.type)&&!c.personal){c.personal=c.type==='email'?'email address':'phone number';IM.ack=false;}}
+      else if(k==='name'){const old=c.name;c.name=el.value.trim();if(IM.key===old)IM.key=c.name;}
+      else c[k]=el.value.trim();
+      re();};});
+  if($('im-dl')) $('im-dl').onclick=()=>{const bad=new Set(b.problems.map(p=>p.row)),q=v=>/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+    const lines=[[...t.headers,'problem'].map(q).join(',')];
+    const off=impOff();t.rows.forEach((r,i)=>{if(bad.has(i+1+off))lines.push([...r,b.problems.filter(p=>p.row===i+1+off).map(p=>p.field+' '+p.msg).join('; ')].map(x=>q(String(x))).join(','));});
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
+    a.download=IM.pick.name.replace(/\.[a-z0-9]+$/i,'')+'-problem-rows.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);};
+  $('imp-go').onclick=()=>impCreate(b);}
+
+async function impCreate(b){            // b: the checked rows (rebuilt below if the tenant was not known yet)
+  const sid=impSchema();
+  const me=await fetch('/session',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  if(!me.authenticated){ IM.msg=''; alert('Your sign-in has expired. Sign in again, then press Create — your choices on this page are kept.'); return; }
+  const tn=me.tenant||String(me.sub||'').split('/')[2]||'';
+  if(!tn){ alert('Could not tell which organisation you are signed in to — nothing was created.'); return; }
+  if(tn!==TENANT){ TENANT=tn; b=impBuild(); }                 // record ids carry the tenant: rebuild them with the real one
+  const def=schemaDefinition(IM.cols,{schema:sid,title:IM.title.trim(),description:IM.desc,kind:IM.kind,sensitivity:IM.sens,key:IM.key,
+    file:IM.pick.name,by:me.sub||'',at:new Date().toISOString(),rowsInFile:IM.table.rowsInFile});
+  IM.step='run';IM.result={sid,total:b.recs.length,done:0,ok:0,fail:[],left:b.badRows,phase:'schema'};renderImp();
+  const d=await jpost('/bridge/schema-define',{schema_id:sid,version:'0.1.0',definition:def});
+  if(!d.ok){IM.result.phase='error';IM.result.error=d.status===409?sid+' is already a governed registry in the shared catalogue — choose another code.'
+      :d.status===403?'Creating a registry needs an administrator or a Studio builder in a development organisation. '+((d.j&&d.j.error)||''):
+      'The registry could not be created ('+d.status+'): '+((d.j&&(d.j.detail||d.j.error))||'');renderImp();return;}
+  IM.result.phase='rows';renderImp();
+  const queue=b.recs.slice();let last=0;
+  async function worker(){while(queue.length){const r=queue.shift();
+    const s=await jpost('/bridge/save',{app_id:APPID,object:r.obj});
+    IM.result.done++;if(s.ok&&s.j.saved)IM.result.ok++;else IM.result.fail.push({row:r.row,msg:(s.j&&(s.j.detail||s.j.error))||('HTTP '+s.status)});
+    if(Date.now()-last>250){last=Date.now();renderImp();}}}
+  await Promise.all(Array.from({length:6},worker));
+  IM.result.phase='done';
+  if(IM.result.ok&&!S.schemas.some(x=>x.schema===sid)) S.schemas.push({schema:sid,domain:IM.domain,local:true,count:IM.result.ok});
+  renderRegs();renderImp();}
+function renderImpRun(P){const r=IM.result,pct=r.total?Math.round(100*r.done/r.total):0;
+  P.innerHTML=`<h2 class="ih">${r.phase==='done'?'Registry created':r.phase==='error'?'Could not create the registry':'Creating '+esc(r.sid)+'…'}</h2>
+    <div class="card">
+      ${r.phase==='error'?`<div class="errt">${esc(r.error)}</div><div class="row2" style="margin-top:10px"><button class="btn" id="imp-back">← Back to the fields</button></div>`
+      :`<div class="muted">${r.phase==='schema'?'Creating the registry…':`Saving records: ${fmtN(r.done)} of ${fmtN(r.total)}`}</div>
+        <div class="prog"><i style="width:${r.phase==='schema'?3:pct}%"></i></div>
+        ${r.phase==='done'?`<div style="margin-top:8px"><b>${fmtN(r.ok)}</b> record${r.ok===1?'':'s'} saved in <span class="mono">${esc(r.sid)}</span>.${r.left?' '+fmtN(r.left)+' rows with problems were left out.':''}${r.fail.length?` <span class="errt">${fmtN(r.fail.length)} could not be saved.</span>`:''}</div>
+          ${r.fail.length?`<div style="max-height:200px;overflow:auto;margin-top:6px"><table class="ftab"><thead><tr><th>Row</th><th>Why</th></tr></thead><tbody>${r.fail.slice(0,100).map(f=>`<tr><td>${f.row}</td><td>${esc(f.msg)}</td></tr>`).join('')}</tbody></table></div>`:''}
+          <div class="row2" style="margin-top:10px"><button class="btn" id="imp-again">Import another file</button>${r.ok?'<button class="btn p" id="imp-open">Open the registry</button>':''}</div>`:''}`}
+    </div>`;
+  if($('imp-back')) $('imp-back').onclick=()=>{IM.step='review';renderImp();};
+  if($('imp-again')) $('imp-again').onclick=impOpen;
+  if($('imp-open')) $('imp-open').onclick=()=>pickRegistry(r.sid);}
+
 // ---------------- wiring ----------------
 $('regq').oninput=renderRegs;
 $('regq').onkeydown=e=>{ if(e.key==='Enter'){ const f=$('reglist').querySelector('.it'); if(f) pickRegistry(f.dataset.s); } if(e.key==='Escape'){ $('regq').value=''; renderRegs(); } };
 $('collapse').onclick=()=>setRail(true);
 $('expand').onclick=$('railname').onclick=()=>{ setRail(false); $('regq').focus(); };
+$('nav-imp').onclick=()=>{ if(S.view==='imp') setView('browse'); else impOpen(); };
 $('nav-net').onclick=()=>setView(S.view==='net'?'browse':'net');
 $('rclose').onclick=closeRecord; $('rprev').onclick=()=>step(-1); $('rnext').onclick=()=>step(1);
 document.querySelectorAll('#right .tab').forEach(t=>t.onclick=()=>{ S.tab=t.dataset.t; renderRecord(); });
