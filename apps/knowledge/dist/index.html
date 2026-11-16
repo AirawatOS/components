@@ -84,12 +84,16 @@ function forcePill(f){return `<span class="pill force-${esc(f)}">${esc(FORCE[f]|
 function docStatus(d){const s=d.status; if(s==='processing')return '<span class="st-processing">● Processing…</span>'; if(s==='failed')return '<span class="st-failed" title="'+esc(d.error||'processing failed')+'">● Failed</span>'; return '<span class="st-active">● Active</span>';}
 const RTYPE={threshold:'Threshold',requirement:'Requirement',prohibition:'Prohibition',permission:'Permission'};
 function ruleLabel(r){return `<span class="pill">${esc(RTYPE[r.rule_type]||'Rule')}</span>`;}
+// governance.rule `value` is a LIST: [x] for a threshold, [min,max] for "between" (a one-item list used to print
+// "0 and undefined"). valueOk mirrors the host's approve check.
+const OPW={'>':'above','>=':'at or above','<':'below','<=':'at or below','==':'equal to','!=':'not equal to','between':'between'};
+function valueOk(r){const v=r.value,op=r.operator;if(!r.metric||!OPW[op]||!Array.isArray(v)||!v.every(x=>typeof x==='number'&&isFinite(x)))return false;
+  return op==='between'?v.length===2&&v[0]<=v[1]:v.length===1;}
 function ruleTrigger(r){
   if(r.operator&&r.value!=null){                       // quantitative → machine-readable trigger
     const subj=String(r.subject||r.metric||'value').replace(/_/g,' ').replace(/\bpm25\b/i,'PM2.5');
-    const v=Array.isArray(r.value)?`${r.value[0]} and ${r.value[1]}`:r.value;
-    const op={'>':'above','>=':'at or above','<':'below','<=':'at or below','==':'is','!=':'is not','between':'between'}[r.operator]||r.operator;
-    return `When ${esc(subj)} is ${op} ${esc(v)} ${esc(r.unit||'')}`.replace(/\s+/g,' ').trim();
+    const v=Array.isArray(r.value)?(r.operator==='between'&&r.value.length===2?`${r.value[0]} and ${r.value[1]}`:r.value.length===1?r.value[0]:r.value.join(', ')):r.value;
+    return `When ${esc(subj)} is ${OPW[r.operator]||esc(r.operator)} ${esc(v)} ${esc(r.unit||'')}`.replace(/\s+/g,' ').trim();
   }
   return esc(r.statement||r.title||'');                 // qualitative → the rule statement itself
 }
@@ -243,25 +247,74 @@ async function renderRulesTab(d){
   const all=await query('governance.rule');
   const rules=all.filter(r=>r.source&&r.source.doc===d.id);
   if(!rules.length){B.innerHTML=`<div class="empty">${d.status==='processing'?'Rules are being extracted from this document…':'No rules derived from this document.'}</div>`;return;}
-  const draft=rules.filter(r=>r.status==='proposed'),live=rules.filter(r=>r.status!=='proposed');
-  const card=r=>`<div class="rule">
-    <div>${forcePill(r.binding)} ${ruleLabel(r)} ${r.status==='proposed'?'<span class="pill" style="color:#e3a008;border-color:#7a5306">Draft — needs approval</span>':'<span class="pill" style="color:#3fb950;border-color:#238636">Active</span>'}${r.produced_by&&r.produced_by.model?' <span class="pill">AI-suggested</span>':''}</div>
+  const draft=rules.filter(r=>r.status==='proposed'),live=rules.filter(r=>r.status==='live'||(!r.status)),rej=rules.filter(r=>r.status==='rejected');
+  const nOk=draft.filter(valueOk).length;
+  const who=s=>esc(String(s||'').split('/').pop());
+  const card=r=>`<div class="rule" id="rc-${esc(r.rule_id)}">
+    <div>${forcePill(r.binding)} ${ruleLabel(r)} ${r.status==='proposed'?'<span class="pill" style="color:#e3a008;border-color:#7a5306">Draft — needs approval</span>':r.status==='rejected'?'<span class="pill" style="color:#f85149;border-color:#8e1519">Rejected</span>':'<span class="pill" style="color:#3fb950;border-color:#238636">Active</span>'}${r.produced_by&&r.produced_by.model?' <span class="pill">AI-suggested</span>':''}${r.edited_by?' <span class="pill">edited by '+who(r.edited_by)+'</span>':''}${r.status==='proposed'&&!valueOk(r)?' <span class="pill" style="color:#f85149;border-color:#8e1519">⚠ value needs fixing</span>':''}</div>
     <div class="trigger">${ruleTrigger(r)}</div>
+    ${r.operator&&r.statement?`<div class="sub" style="margin:2px 0 4px">${esc(r.statement)}</div>`:''}
     ${r.condition?`<div class="sub" style="margin:2px 0 4px">Applies to: ${esc(r.condition)}</div>`:''}
     ${r.proposed_action?`<div class="action">→ ${esc(r.proposed_action)}</div>`:''}
-    <div class="src">${r.source&&r.source.citation?'Source: '+esc(r.source.citation):''}${r.approved_by?' · approved by '+esc(r.approved_by.split('/').pop()):''}
+    ${r.status==='rejected'&&r.review_note?`<div class="sub" style="margin-top:4px;color:#f0a0a0">Rejected by ${who(r.reviewed_by)}: ${esc(r.review_note)}</div>`:''}
+    <div class="src">${r.source&&r.source.citation?'Source: '+esc(r.source.citation):''}${r.approved_by?' · approved by '+who(r.approved_by):''}
       ${r.source&&r.source.chunk_hash?`<button class="btn" data-src="${esc(r.source.chunk_hash)}" data-id="${esc(r.rule_id)}">View source</button> <span id="s-${esc(r.rule_id)}"></span>`:''}
-      ${r.status==='proposed'?`<button class="btn good" data-appr="${esc(r.id)}">Approve</button>`:''}</div></div>`;
-  B.innerHTML=(draft.length?`<div class="meta" style="display:flex;align-items:center;gap:10px"><b>Awaiting approval</b> <span class="sub">— the AI suggested these from the document; approve to make them active.</span><button class="btn good" id="appr-all" style="margin-left:auto">Approve all (${draft.length})</button></div>${draft.map(card).join('')}`:'')
-    +(live.length?`<div class="meta" style="margin-top:14px"><b>Active rules</b></div>${live.map(card).join('')}`:'');
-  const aa=document.getElementById('appr-all'); if(aa)aa.onclick=async()=>{aa.disabled=true;aa.textContent='Approving all…';
-    const v=await post('/bridge/approve-rules',{doc:d.id}); if(v.approved!==undefined)renderRulesTab(d); else{aa.disabled=false;aa.textContent='Approve all ('+draft.length+')';aa.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}};
+      ${r.status==='proposed'?`<button class="btn good" data-appr="${esc(r.id)}"${valueOk(r)?'':' disabled title="Fix the value first (Edit)"'}>Approve</button>`:''}
+      ${r.status!=='rejected'?`<button class="btn" data-edit="${esc(r.id)}">Edit</button><button class="btn" data-rex="${esc(r.id)}" title="Have the AI read the cited section again">Re-read section</button><button class="btn" data-rej="${esc(r.id)}" style="color:#f85149">Reject</button>`
+        :`<button class="btn" data-restore="${esc(r.id)}">Restore as draft</button>`}</div>
+    <div id="x-${esc(r.rule_id)}"></div></div>`;
+  B.innerHTML=(draft.length?`<div class="meta" style="display:flex;align-items:center;gap:10px"><b>Awaiting approval</b> <span class="sub">— the AI suggested these from the document; check each against its source, then approve, edit or reject.</span><button class="btn good" id="appr-all" style="margin-left:auto"${nOk?'':' disabled'}>Approve all${nOk<draft.length?' valid':''} (${nOk})</button></div>${draft.map(card).join('')}`:'')
+    +(live.length?`<div class="meta" style="margin-top:14px"><b>Active rules</b> <span class="sub">— the assistant and the rules engines use these.</span></div>${live.map(card).join('')}`:'')
+    +(rej.length?`<details style="margin-top:14px"><summary class="meta"><b>Rejected (${rej.length})</b></summary>${rej.map(card).join('')}</details>`:'');
+  const byId=id=>rules.find(r=>r.id===id);
+  const aa=document.getElementById('appr-all'); if(aa)aa.onclick=async()=>{aa.disabled=true;aa.textContent='Approving…';
+    const v=await post('/bridge/approve-rules',{doc:d.id}); if(v.approved!==undefined)renderRulesTab(d); else{aa.disabled=false;aa.textContent='Approve all ('+nOk+')';aa.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}};
   B.querySelectorAll('[data-src]').forEach(b=>b.onclick=async()=>{const v=await post('/bridge/resolve-citation',{chunk_hash:b.dataset.src});
     document.getElementById('s-'+b.dataset.id).innerHTML=v.verified?`<span class="ok">✓ confirmed</span>`:'<span class="badc">✗ not found</span>';
     if(v.verified){b.insertAdjacentHTML('afterend','<pre class="q">'+esc(v.text)+'</pre>');b.style.display='none';}});
   B.querySelectorAll('[data-appr]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='Approving…';
     const v=await post('/bridge/approve-rule',{id:b.dataset.appr}); if(v.approved)renderRulesTab(d); else{b.disabled=false;b.textContent='Approve';b.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}});
+  B.querySelectorAll('[data-rej]').forEach(b=>b.onclick=async()=>{const reason=prompt('Why reject this rule? (kept with the rule)','');if(reason===null)return;
+    if(!reason.trim()){alert('Please give a reason.');return;}b.disabled=true;
+    const v=await post('/bridge/rule-reject',{id:b.dataset.rej,reason:reason.trim()});if(v.rejected)renderRulesTab(d);else{b.disabled=false;b.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}});
+  B.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{b.disabled=true;
+    const v=await post('/bridge/rule-edit',{id:b.dataset.restore,changes:{},note:'restored as a draft'});if(v.saved)renderRulesTab(d);else{b.disabled=false;b.insertAdjacentHTML('afterend',' <span class="badc">'+esc(v.error||'failed')+'</span>');}});
+  B.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editForm(d,byId(b.dataset.edit)));
+  B.querySelectorAll('[data-rex]').forEach(b=>b.onclick=()=>reextract(d,byId(b.dataset.rex),b));
 }
+function ruleFields(r,pre){const ops=Object.keys(OPW),v=Array.isArray(r.value)?r.value:[r.value];
+  return `<div class="rowe"><div><label>Rule (one clear sentence)</label><textarea class="in" id="${pre}st" style="min-height:60px;font-family:inherit">${esc(r.statement||'')}</textarea></div></div>
+    <div class="rowe"><div><label>Type</label><select class="in" id="${pre}ty">${Object.entries(RTYPE).map(([k,l])=>`<option value="${k}"${r.rule_type===k?' selected':''}>${l}</option>`).join('')}</select></div>
+      <div><label>What is measured (metric)</label><input class="in" id="${pre}me" value="${esc(r.metric||'')}" placeholder="e.g. landfill_disposal"></div></div>
+    <div class="rowe"><div><label>Comparison</label><select class="in" id="${pre}op">${ops.map(o=>`<option value="${esc(o)}"${r.operator===o?' selected':''}>${esc(OPW[o])}</option>`).join('')}</select></div>
+      <div><label>Value <span class="sub">(two numbers for “between”)</span></label><div style="display:flex;gap:6px"><input class="in" id="${pre}v1" value="${esc(v[0]??'')}"><input class="in" id="${pre}v2" value="${esc(v[1]??'')}" placeholder="to"></div></div>
+      <div><label>Unit</label><input class="in" id="${pre}un" value="${esc(r.unit||'')}"></div></div>
+    <div class="rowe"><div><label>Applies to (optional)</label><input class="in" id="${pre}co" value="${esc(r.condition||'')}"></div>
+      <div><label>Action (optional)</label><input class="in" id="${pre}ac" value="${esc(r.proposed_action||'')}"></div></div>`;}
+function readFields(pre){const g=k=>document.getElementById(pre+k).value.trim(),op=g('op');
+  return {statement:g('st'),rule_type:g('ty'),metric:g('me'),operator:op,value:op==='between'?[g('v1'),g('v2')]:[g('v1')],unit:g('un'),condition:g('co')||null,proposed_action:g('ac')};}
+function editForm(d,r){const X=document.getElementById('x-'+r.rule_id);if(X.innerHTML){X.innerHTML='';return;}
+  X.innerHTML=`<div class="rule" style="margin-top:10px;background:#0f1420">${ruleFields(r,'e-'+r.rule_id+'-')}
+    <div class="src"><button class="btn primary" id="sv-${esc(r.rule_id)}">Save (back to draft)</button><button class="btn" id="cx-${esc(r.rule_id)}">Cancel</button><span id="em-${esc(r.rule_id)}"></span></div></div>`;
+  document.getElementById('cx-'+r.rule_id).onclick=()=>X.innerHTML='';
+  document.getElementById('sv-'+r.rule_id).onclick=async()=>{const v=await post('/bridge/rule-edit',{id:r.id,changes:readFields('e-'+r.rule_id+'-')});
+    if(v.saved)renderRulesTab(d);else document.getElementById('em-'+r.rule_id).innerHTML='<span class="badc">'+esc(v.error||'not saved')+'</span>';};}
+async function reextract(d,r,btn){const X=document.getElementById('x-'+r.rule_id);btn.disabled=true;
+  X.innerHTML='<div class="sub" style="margin-top:8px">Reading the cited section again… (about a minute)</div>';
+  const v=await post('/bridge/rule-reextract',{id:r.id});btn.disabled=false;
+  if(v.error){X.innerHTML='<div class="badc" style="margin-top:8px">'+esc(v.error)+'</div>';return;}
+  const C=v.candidates||[];
+  if(!C.length){X.innerHTML='<div class="sub" style="margin-top:8px">'+(v.empty?'The AI did not answer this time (it ran out of room). Try again.':'Read again, the AI found no measurable rule in this section. If the rule is wrong, reject it.')+'</div>';return;}
+  X.innerHTML='<div class="meta" style="margin-top:10px"><b>Read again ('+esc(v.model||'AI')+')</b> <span class="sub">— nothing is saved until you choose.</span></div>'+C.map((c,i)=>`<div class="rule" style="background:#0f1420">
+      <div class="trigger">${c.valid?ruleTrigger(c):esc(c.statement)}</div>${c.valid?`<div class="sub">${esc(c.statement)}</div>`:'<div class="sub badc">Not a measurable rule — cannot replace this one.</div>'}
+      ${c.condition?`<div class="sub">Applies to: ${esc(c.condition)}</div>`:''}
+      ${c.valid?`<div class="src"><button class="btn primary" data-use="${i}">Replace this rule</button><button class="btn" data-add="${i}">Add as a new draft</button><span id="cm-${i}-${esc(r.rule_id)}"></span></div>`:''}</div>`).join('');
+  const go=async(i,isNew)=>{const c=C[i];const ch={statement:c.statement,rule_type:c.rule_type,subject:c.subject,applies_to:c.applies_to,condition:c.condition,proposed_action:c.proposed_action,metric:c.metric,operator:c.operator,value:c.value,unit:c.unit};
+    Object.keys(ch).forEach(k=>{if(ch[k]==null)delete ch[k];});
+    const res=await post('/bridge/rule-edit',{id:r.id,changes:ch,new:isNew,note:'from re-reading the section'});
+    if(res.saved)renderRulesTab(d);else document.getElementById('cm-'+i+'-'+r.rule_id).innerHTML='<span class="badc">'+esc(res.error||'not saved')+'</span>';};
+  X.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>go(+b.dataset.use,false));
+  X.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>go(+b.dataset.add,true));}
 function renderSearch(){
   const W=document.getElementById('wrap');
   W.innerHTML=`<div class="meta"><b>Ask the library</b> — search across all documents; each answer shows its source, which you can confirm against the original.</div>

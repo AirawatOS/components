@@ -7,7 +7,8 @@
 # the kernel's aggregate, evaluate_rules through the rule engine) — see the staging patch notes.
 component_id: ds:airawatdeveloper:app/agent-studio
 kind: app
-version: 0.2.2   # 0.2.2: up to two retries; repairs raw line breaks inside the model's JSON
+version: 0.3.0   # 0.3.0: a skill names the Knowledge documents (and topic) it draws on — the assistant uses find_rules / search_knowledge for them; AI drafting offers them
+# 0.2.2: 0.2.2: up to two retries; repairs raw line breaks inside the model's JSON
 # 0.2.1: 0.2.1: shorter AI instructions + one retry (Kimi returned nothing when it spent its answer budget reasoning)
 # 0.2.0: ✨ Draft a skill or an agent with AI (Kimi-K3 via /bridge/ai-assist), and improve a skill from a Try it answer
 # 0.1.1: Try it shows the answer's **bold** and `code` instead of the raw marks
@@ -19,7 +20,7 @@ bundle: dist
 sandboxed: true
 summary: Write the skills your personal assistant follows, try them on your own data, and make them active.
 data_browser: true          # to show each registry's fields when a skill picks it (reads stay tenant-scoped, user token)
-required_schemas: [platform.agent_skill, platform.agent_profile, governance.ruleset, governance.policy_rule]
+required_schemas: [platform.agent_skill, platform.agent_profile, governance.ruleset, governance.policy_rule, knowledge.document]
 writes: [platform.agent_skill, platform.agent_profile]
 # skill text goes into the assistant's prompt: only administrators write skills and agents (admins bypass the check;
 # everyone else is refused — no ordinary role is listed).

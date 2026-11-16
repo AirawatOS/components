@@ -105,7 +105,8 @@ async function loadAll(){
   S.skills.sort((a,b)=>(a.title||'').localeCompare(b.title||''));S.agents.sort((a,b)=>(a.title||'').localeCompare(b.title||''));}
 async function loadCatalog(){
   const d=await jpost('/bridge/data-schemas',{});S.regs=(d.ok&&d.j.schemas)?d.j.schemas.map(x=>x.schema):[];
-  const [rs,pr]=await Promise.all([readAll('governance.ruleset'),readAll('governance.policy_rule')]);
+  const [rs,pr,kd]=await Promise.all([readAll('governance.ruleset'),readAll('governance.policy_rule'),readAll('knowledge.document')]);
+  S.docs=kd.map(x=>({id:x.id,title:x.title||x.id,force:x.legal_force||'',issuer:x.issuer||''})).sort((a,b)=>a.title.localeCompare(b.title));
   const m=new Map();rs.forEach(r=>r.ruleset&&m.set(r.ruleset,{name:r.ruleset,title:r.title||r.description||'',n:0}));
   pr.forEach(p=>{if(!p.ruleset)return;const e=m.get(p.ruleset)||{name:p.ruleset,title:'',n:0};e.n++;m.set(p.ruleset,e);});
   S.rulesets=[...m.values()].sort((a,b)=>a.name.localeCompare(b.name));}
@@ -126,7 +127,7 @@ function open(kind,id){if(S.dirty&&!confirm('Discard unsaved changes?'))return;
   const o=(kind==='skill'?S.skills:S.agents).find(x=>x.id===id);S.kind=kind;S.cur=o?JSON.parse(JSON.stringify(o)):null;S.dirty=false;S.msg='';S.chat=[];
   renderList();renderEditor();renderTry();}
 function blank(kind){const now=new Date().toISOString();
-  return kind==='skill'?{schema:SCH.skill,id:'',tenant:TENANT,name:'',title:'',status:'draft',when_to_use:'',steps:'',registries:[],rulesets:[],answer_format:'',examples:[],audience_roles:[],version:0,created_at:now,_new:true}
+  return kind==='skill'?{schema:SCH.skill,id:'',tenant:TENANT,name:'',title:'',status:'draft',when_to_use:'',steps:'',registries:[],rulesets:[],knowledge:[],answer_format:'',examples:[],audience_roles:[],version:0,created_at:now,_new:true}
     :{schema:SCH.agent,id:'',tenant:TENANT,name:'',title:'',status:'draft',persona:'',skills:[],audience_roles:[],description:'',created_at:now,_new:true};}
 
 // ---------------- editor ----------------
@@ -155,7 +156,10 @@ function renderEditor(){
     <div class="card"><h3>Registries it reads</h3><div class="muted">Tick the fields that matter; the assistant is told about them.</div>${regRows||'<div class="muted" style="margin-top:6px">None yet.</div>'}
       ${ro?'':`<div class="row" style="margin-top:8px"><select id="addreg" style="flex:1"><option value="">Add a registry…</option>${S.regs.filter(s=>!(o.registries||[]).some(r=>r.schema===s)).map(s=>`<option value="${esc(s)}">${esc(subj(s))} — ${esc(s)}</option>`).join('')}</select></div>`}</div>
     <div class="card"><h3>Rule sets it applies</h3><div class="muted">Approved rules the assistant may apply to facts or to every record of a registry.</div>
-      <div class="pick">${S.rulesets.length?S.rulesets.map(r=>`<label><input type="checkbox" data-rs="${esc(r.name)}"${(o.rulesets||[]).includes(r.name)?' checked':''}${ro?' disabled':''}><span class="mono">${esc(r.name)}</span><span class="muted">${esc(r.title)}${r.n?' · '+r.n+' rules':''}</span></label>`).join(''):'<div class="muted" style="padding:8px">No rule sets you can read.</div>'}</div></div>`+actions(o);
+      <div class="pick">${S.rulesets.length?S.rulesets.map(r=>`<label><input type="checkbox" data-rs="${esc(r.name)}"${(o.rulesets||[]).includes(r.name)?' checked':''}${ro?' disabled':''}><span class="mono">${esc(r.name)}</span><span class="muted">${esc(r.title)}${r.n?' · '+r.n+' rules':''}</span></label>`).join(''):'<div class="muted" style="padding:8px">No rule sets you can read.</div>'}</div></div>
+    <div class="card"><h3>Knowledge it uses</h3><div class="muted">Laws, guidelines and standards from the Knowledge library. The assistant looks up their APPROVED rules (find_rules) and searches their text (search_knowledge), citing the source. A topic narrows the lookup, e.g. “solid waste”.</div>
+      <div class="pick">${(S.docs||[]).length?S.docs.map(dc=>{const k=(o.knowledge||[]).find(x=>x.doc===dc.id);return `<label style="flex-wrap:wrap"><input type="checkbox" data-kd="${esc(dc.id)}"${k?' checked':''}${ro?' disabled':''}><span>${esc(dc.title)}</span><span class="muted">${esc(dc.issuer)}${dc.force?' · '+esc(dc.force):''}</span>
+        ${k?`<input data-kt="${esc(dc.id)}" value="${esc(k.topic||'')}" placeholder="topic (optional)" style="width:180px;margin-left:auto"${ro?' disabled':''}>`:''}</label>`;}).join(''):'<div class="muted" style="padding:8px">No documents in the Knowledge library yet.</div>'}</div></div>`+actions(o);
     (o.registries||[]).forEach(async(r,i)=>{const f=await fieldsOf(r.schema),box=$('fl-'+i);if(!box)return;
       box.innerHTML=f.length?f.map(k=>`<label><input type="checkbox" data-fld="${i}" value="${esc(k)}"${(r.fields||[]).includes(k)?' checked':''}${ro?' disabled':''}>${esc(k)}</label>`).join(''):'<span class="muted">No records yet, so no fields to show.</span>';
       box.querySelectorAll('[data-fld]').forEach(cb=>cb.onchange=()=>{const set=new Set(r.fields||[]);cb.checked?set.add(cb.value):set.delete(cb.value);r.fields=[...set];dirty();});});
@@ -187,6 +191,9 @@ function wire(){const o=S.cur,v=id=>$(id)?$(id).value:'';
   document.querySelectorAll('[data-rmreg]').forEach(b=>b.onclick=()=>{o.registries.splice(+b.dataset.rmreg,1);dirty();renderEditor();});
   if($('addreg'))$('addreg').onchange=e=>{if(!e.target.value)return;o.registries.push({schema:e.target.value,fields:[],note:''});dirty();renderEditor();};
   document.querySelectorAll('[data-rs]').forEach(cb=>cb.onchange=()=>{const s=new Set(o.rulesets||[]);cb.checked?s.add(cb.dataset.rs):s.delete(cb.dataset.rs);o.rulesets=[...s];dirty();});
+  document.querySelectorAll('[data-kd]').forEach(cb=>cb.onchange=()=>{const id=cb.dataset.kd,dc=(S.docs||[]).find(x=>x.id===id);o.knowledge=(o.knowledge||[]).filter(x=>x.doc!==id);
+    if(cb.checked)o.knowledge.push({doc:id,title:dc?dc.title:id,topic:''});dirty();renderEditor();});
+  document.querySelectorAll('[data-kt]').forEach(inp=>inp.oninput=()=>{const k=(o.knowledge||[]).find(x=>x.doc===inp.dataset.kt);if(k){k.topic=inp.value;dirty();}});
   document.querySelectorAll('[data-sk]').forEach(cb=>cb.onchange=()=>{const s=new Set(o.skills||[]);cb.checked?s.add(cb.dataset.sk):s.delete(cb.dataset.sk);o.skills=[...s];dirty();});
   if($('save'))$('save').onclick=()=>save();
   if($('activate'))$('activate').onclick=()=>save({status:'active'});
@@ -248,8 +255,8 @@ async function ask(){const o=S.cur,q=$('q').value.trim();if(!o||!q||S.busy)retur
 // model names that does not exist (a registry, a field, a rule set, a skill) is dropped and reported.
 // Kept SHORT on purpose: /bridge/ai-assist gives the model a fixed answer budget, and a long instruction makes Kimi-K3
 // spend it reasoning and return nothing. aiJSON retries once, asking for the JSON straight away.
-const toolsNote=()=>'Assistant tools: summarize_data(schema, group_by, metric count|sum|avg|min|max, field, filter {field: value}) gives totals and counts; query_data(schema) gives a count and examples'+(S.rulesets.length?'; evaluate_rules(ruleset, facts or schema) applies an approved rule set':'')+'.';
-const SKILL_KEYS='{"title":"","name":"snake_case","when_to_use":"","steps":"numbered, one per line","registries":[{"schema":"","fields":[],"note":""}],"rulesets":[],"answer_format":"","examples":["",""]}';
+const toolsNote=()=>'Assistant tools: summarize_data(schema, group_by, metric count|sum|avg|min|max, field, filter {field: value}) gives totals and counts; query_data(schema) gives a count and examples'+(S.rulesets.length?'; evaluate_rules(ruleset, facts or schema) applies an approved rule set':'')+((S.docs||[]).length?'; find_rules(topic, document) gives APPROVED rules from the Knowledge library with citations; search_knowledge(query) gives cited passages':'')+'.';
+const SKILL_KEYS='{"title":"","name":"snake_case","when_to_use":"","steps":"numbered, one per line","registries":[{"schema":"","fields":[],"note":""}],"rulesets":[],"knowledge":[{"doc":"exact document id","topic":""}],"answer_format":"","examples":["",""]}';
 const SYS_PICK='Choose the registries (at most 4) from the DATA that the described skill needs. Reply ONLY a JSON array of exact ids, or [].';
 const sysSkill=()=>'Write a SKILL (a playbook for an AI assistant) as JSON. '+toolsNote()+' Use only registries, fields and rule sets from the DATA; steps name exact ids, fields and tool arguments; totals always come from summarize_data, never mental arithmetic; say which field holds what when names are ambiguous. Reply ONLY this JSON: '+SKILL_KEYS;
 const sysImprove=()=>'Revise a SKILL (a playbook for an AI assistant) so the TRY question in the DATA is answered correctly and directly; keep what works. '+toolsNote()+' Use only registries, fields and rule sets from the DATA. Reply ONLY this JSON: {"skill":'+SKILL_KEYS+',"changes":"one sentence"}';
@@ -299,6 +306,9 @@ function applySkill(o,d,knownRegs){const dropped=[];
       fl.filter(f=>!names.has(f)).forEach(f=>dropped.push('field '+sc+'.'+f));
       regs.push({schema:sc,fields:fl.filter(f=>names.has(f)),note:String(r.note||'')});}
     if(regs.length||!o.registries.length)o.registries=regs;}
+  if(Array.isArray(d.knowledge)){const ok=new Map((S.docs||[]).map(x=>[x.id,x]));const kn=[];
+    for(const k of d.knowledge){const id=k&&(k.doc||k.id);if(!id)continue;if(!ok.has(id)){dropped.push('document '+id);continue;}kn.push({doc:id,title:ok.get(id).title,topic:String(k.topic||'')});}
+    if(kn.length||!(o.knowledge||[]).length)o.knowledge=kn;}
   if(Array.isArray(d.rulesets)){const ok=new Set(S.rulesets.map(r=>r.name));
     d.rulesets.map(String).filter(x=>!ok.has(x)).forEach(x=>dropped.push('rule set '+x));o.rulesets=d.rulesets.map(String).filter(x=>ok.has(x));}
   return dropped;}
@@ -311,6 +321,7 @@ async function draftSkill(){const o=S.cur,desc=(S.aiDesc||'').trim();if(!desc){$
     const infos=await Promise.all(picks.map(regInfo)),known={};picks.forEach((s,i)=>known[s]=infos[i]);
     const ctx='REGISTRIES:\n'+(picks.map((s,i)=>regLine(s,infos[i])).join('\n')||'(none)')+
       '\nRULE SETS:\n'+(S.rulesets.map(r=>'- '+r.name+(r.title?': '+r.title:'')).join('\n')||'(none)')+
+      '\nKNOWLEDGE DOCUMENTS (laws, guidelines; id: title):\n'+((S.docs||[]).map(x=>'- '+x.id+': '+x.title).join('\n')||'(none)')+
       '\nEXISTING SKILLS (do not reuse these names): '+(S.skills.map(x=>x.name).join(', ')||'none');
     aiBusy(true,'Writing the skill…');
     const d=await aiJSON(sysSkill(),desc,ctx);
@@ -322,7 +333,7 @@ async function improveSkill(){const o=S.cur;let qi=-1;for(let i=S.chat.length-1;
   const q=S.chat[qi],a=S.chat[qi+1];if(!q||!a)return;
   try{aiBusy(true,'Reading the skill’s registries…','imp');
     const regs=(o.registries||[]).map(r=>r.schema),infos=await Promise.all(regs.map(regInfo)),known={};regs.forEach((s,i)=>known[s]=infos[i]);
-    const cur={title:o.title,name:o.name,when_to_use:o.when_to_use,steps:o.steps,registries:o.registries,rulesets:o.rulesets,answer_format:o.answer_format,examples:o.examples};
+    const cur={title:o.title,name:o.name,when_to_use:o.when_to_use,steps:o.steps,registries:o.registries,rulesets:o.rulesets,knowledge:o.knowledge||[],answer_format:o.answer_format,examples:o.examples};
     const ctx='CURRENT SKILL:\n'+JSON.stringify(cur)+'\nREGISTRY FIELDS:\n'+(regs.map((s,i)=>regLine(s,infos[i])).join('\n')||'(none)')+
       '\nRULE SETS:\n'+(S.rulesets.map(r=>'- '+r.name).join('\n')||'(none)')+
       '\nTRY:\nQuestion: '+q.q+'\nTool calls: '+((a.steps||[]).map(s=>s.tool+' '+JSON.stringify(s.args||{})).join(' | ')||'none')+'\nAnswer: '+String(a.a).slice(0,1500);
