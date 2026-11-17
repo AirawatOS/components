@@ -187,9 +187,10 @@ async function boot(){
   try{ UNITS=((await get('/bridge/catalog?kind=org_units')).org_units||[]); }catch(e){}
   try{ DOCTYPES=((await api('/bridge/query',{app_id:APP,schema:'urban.document_type'})).results||[]).map(x=>x.object||x).sort((a,b)=>String(a.name).localeCompare(b.name)); }catch(e){}
   await loadFees();
-  AJUR = CITIES.find(j=>j.tenant===ME.tenant) || CITIES.find(j=>j.code===ME.tenant) || null;
+  // where this department may offer services: ITS OWN jurisdiction (the network tenant record) and the places within it
+  AJUR = CITIES.find(j=>j.code===ME.tenant_jurisdiction) || CITIES.find(j=>j.tenant===ME.tenant) || null;
   const inScope=j=>{ let c=j, seen=new Set(); while(c && !seen.has(c.code)){ if(AJUR && c.code===AJUR.code) return true; seen.add(c.code); c=CITIES.find(x=>x.code===c.parent); } return false; };
-  ALLOWED = AJUR ? CITIES.filter(inScope) : CITIES.filter(c=>c.kind!=='nation');
+  ALLOWED = AJUR ? CITIES.filter(inScope).sort((x,y)=>(x.code===AJUR.code?-1:0)-(y.code===AJUR.code?-1:0)) : [];
   await loadNav(); newSvc();
 }
 async function loadFees(){ try{ FEEROWS=((await api('/bridge/query',{app_id:APP,schema:'urban.fee_schedule'})).results||[]).map(x=>x.object||x); }catch(e){ FEEROWS=[]; } }
@@ -200,7 +201,7 @@ async function loadNav(){
        <div class="s">${esc(o.status||'')} · ${((o.fulfillment||{}).workflow||[]).length} steps${o.fee_ref?' · fee':''}</div></div>`).join('')
     : '<div class="muted" style="padding:10px">No services yet.</div>';
 }
-function newSvc(){ SEL=null; ORIG=null; const st=blankState(); st.B.jurisdiction=AJUR?AJUR.code:(ALLOWED[0]||{}).code||'';
+function newSvc(){ SEL=null; ORIG=null; const st=blankState(); st.B.jurisdiction=AJUR?AJUR.code:'';
   st.B.domain=DOMAINS.includes('urban')?'urban':(DOMAINS[0]||'urban'); st.STEPS[0].role=ROLES.find(r=>r.startsWith('urban.'))||ROLES[0]||'';
   applyState(st); TAB='basics'; renderEditor(); loadNav(); }
 function loadSvc(i){ const o=SVCS[i]; SEL=o.service_id; ORIG=o; applyState(parseOffering(o)); TAB='basics'; renderEditor(); loadNav(); }
@@ -228,7 +229,11 @@ function paneBasics(){
         ${taken?'<div class="hint warn">⚠ another department already uses this id — choose another</div>':''}</div></div>
     <label>What it is, in one or two sentences</label><textarea rows="3" oninput="B.description=this.value">${esc(B.description)}</textarea>
     <div class="grid"><div><label>Who can apply <span class="muted">(governed role)</span></label><select onchange="B.audience=this.value">${opt(ROLES,B.audience)}</select></div>
-      <div><label>Where it is offered</label><select onchange="B.jurisdiction=this.value">${opt(ALLOWED.map(j=>[j.code,j.name+' ('+j.kind+')']),B.jurisdiction)}</select></div></div>
+      <div><label>Where it is offered</label>${!ALLOWED.length
+          ? '<div class="hint warn" style="padding:8px 0">⚠ Your department has no jurisdiction on the network — ask the network steward to set it.</div>'
+          : ALLOWED.length===1 ? `<div style="padding:8px 0">📍 <b>${esc(ALLOWED[0].name)}</b> <span class="muted">— your department's jurisdiction</span></div>`
+          : `<select onchange="B.jurisdiction=this.value">${opt(ALLOWED.map(j=>[j.code,j.name+(j.code===AJUR.code?' — all of it':' only')]),B.jurisdiction)}</select>
+             <div class="hint">Your department serves ${esc(AJUR.name)}; you can offer a service there or in one place within it.</div>`}</div></div>
     <div class="grid"><div><label>Domain</label><select onchange="B.domain=this.value">${opt(DOMAINS.length?DOMAINS:['urban'],B.domain)}</select></div><div></div></div></div>`;
 }
 function paneForm(){
@@ -354,6 +359,7 @@ function paneWf(){
 function checks(){ const b=buildBody(), out=[];
   const add=(ok,msg)=>out.push([ok,msg]);
   add(!!b.title,'Title'); add(!!b.service_id && !ALLSVCS.some(o=>o.service_id===b.service_id && o.tenant!==ME.tenant),'Service id is set and not used by another department');
+  add(ALLOWED.some(j=>j.code===b.jurisdiction),'Offered within your department’s jurisdiction');
   add(Object.keys(b.request_schema.properties).length>0,'The form has at least one field');
   add(b.fulfillment.workflow.length>0,'The workflow has at least one step with a role');
   if(B.fees_on) add(myFeeRows().length>0,'Fee rules exist for code “'+feeCode()+'”');
