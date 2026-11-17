@@ -24,6 +24,23 @@ def _read1(ctx, oid):
         return None
 
 
+def _first_json(content):
+    """The FIRST complete JSON object in a model's answer (tolerates fences, prose before it, and trailing junk such as
+    an extra closing brace — seen from gemma-4-31b, which made a correct proposal unreadable). None if there is none."""
+    content = _re.sub(r"```(?:json)?", "", content or "")
+    dec = _json.JSONDecoder()
+    i = content.find("{")
+    while i != -1:
+        try:
+            obj, _ = dec.raw_decode(content[i:])
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+        i = content.find("{", i + 1)
+    return None
+
+
 def _complete(ctx, messages, max_tokens=900, task=None):
     body = {"messages": messages, "max_tokens": max_tokens}
     if task:
@@ -228,11 +245,7 @@ def h_service_expert(ctx):
     content = res.get("content") or ""
     content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.S)
     content = _re.sub(r"<think>.*$", "", content, flags=_re.S)
-    m = _re.search(r"```(?:json)?\s*(\{.*\})\s*```", content, _re.S) or _re.search(r"(\{.*\})", content, _re.S)
-    out = None
-    if m:
-        try: out = _json.loads(m.group(1))
-        except Exception: out = None
+    out = _first_json(content)
     if not isinstance(out, dict) or not (out.get("spec") or out.get("reply")):
         return {"reply": "I couldn't structure that into a service yet — try one or two sentences: what the citizen applies for, "
                          "which property or record it concerns, who checks and who approves, whether there is a fee, and what is issued.",
