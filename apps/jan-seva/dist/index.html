@@ -64,12 +64,12 @@
   .track li.done{color:#3fb950;border-color:#238636}.track li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}
   @media (max-width:520px){ main{padding:10px} .svc{flex-direction:column;align-items:flex-start} .stepper li,.track li{font-size:11px} }
 </style>
-<header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· <span data-i18n="js.tagline">Citizen Services</span></span>
+<header><b>🏛️ My Services</b> <span class="muted" style="font-weight:400">· <span data-i18n="js.tagline">Citizen Services</span></span>
   <span id="who" class="who"></span></header>
 <main>
   <div id="gate"></div>
   <div id="app" style="display:none">
-    <nav class="tabs"><button data-tab="svc" class="on">Services</button><button data-tab="req">My requests <span id="reqN" class="badge" hidden></span></button><button data-tab="acct">My account <span id="acctN" class="badge" hidden></span></button></nav>
+    <nav class="tabs"><button data-tab="svc" class="on">Services</button><button data-tab="req">My applications <span id="reqN" class="badge" hidden></span></button></nav>
     <section id="tab-svc">
       <div id="banner"></div>
       <div class="card" id="svcList">
@@ -79,8 +79,7 @@
       </div>
       <div id="detail"></div>
     </section>
-    <section id="tab-req" hidden><div class="row" style="margin:12px 0 0"><b>My requests</b><button class="btn ghost sm" id="refresh">Refresh</button></div><div id="txns"></div></section>
-    <section id="tab-acct" hidden><div class="card" id="acct"><span class="muted">Loading your account…</span></div></section>
+    <section id="tab-req" hidden><div class="row" style="margin:12px 0 0"><b>My applications</b><button class="btn ghost sm" id="refresh">Refresh</button></div><div id="txns"></div></section>
   </div>
 </main>
 <script src="/shared/i18n.js"></script>
@@ -219,62 +218,11 @@ const ISSUER = {'city-da':'City Development Authority','city-mc':'City Municipal
   'dlb':'Directorate of Local Bodies','uidai':'UIDAI (simulated eKYC)','digilocker-sandbox':'DigiLocker (sandbox)'};
 const issuerName = t => ISSUER[t] || t;
 async function loadWallet(){ try{ WALLET = await api('/bridge/my-credentials', {}); }catch(e){ WALLET = {offers:[], held:[]}; } WALLET.held = WALLET.held||[]; WALLET.offers = WALLET.offers||[]; }
-async function renderAccount(){
-  const box = document.getElementById('acct'); if(!box) return;
+async function renderAccount(){          // My Account and My Documents are their own apps now — keep only the state this app needs
   try{ DLSTAT = await api('/bridge/digilocker', {action:'status'}); }catch(e){ DLSTAT = {}; }
-  await loadWallet();
-  const props = WALLET.held.filter(h=>h.type==='credential.urban_property_holding');
-  const docs = WALLET.held.filter(h=>h.type!=='credential.urban_property_holding' && h.type!=='credential.identity_verified');
-  const idHtml = DLSTAT.verified
-    ? `<div class="cred ok">✓ Identity verified — <b>${esc(DLSTAT.name)}</b> <span style="opacity:.7">(eKYC, simulated)</span></div>`
-    : `<div class="muted">Verify your identity once — departments use it to link your existing records, and your DigiLocker opens with it.</div>
-       <div class="grid2"><div><label>Full name as on Aadhaar</label><input id="kn" value="${esc((PROFILE&&PROFILE.name)||'')}"></div>
-       <div><label>Date of birth</label><input id="kd" type="date"></div></div>
-       <button class="btn" onclick="verifyId()">Verify identity (eKYC — simulated)</button> <span id="kout" class="muted"></span>`;
-  const propHtml = props.length ? props.map(h=>{ const c=h.claims||{}; return `<div class="cred" style="background:#161f2c;color:#c9d1d9">🏠 <b>${esc(c.property_id)}</b> · ${esc(c.address||'')} · ${esc(titleCase(c.relation||''))}${c.share_pct!=null&&c.share_pct<100?' ('+esc(c.share_pct)+'%)':''} <span class="muted">— ${esc(issuerName(h.issuer_tenant))}</span></div>`; }).join('')
-    : '<div class="muted">No linked records yet. Open a property service, look up your property and choose “link it to my account”.</div>';
-  const pushable = h => h.issuer_tenant && !['digilocker-sandbox','uidai'].includes(h.issuer_tenant);
-  const docHtml = docs.length ? docs.map(h=>`<div class="row cred" style="background:#161f2c;color:#c9d1d9"><span>📄 ${esc(h.title||titleCase((h.type||'').split('.').pop()))} <span class="muted">— ${esc((h.claims||{}).issuer_name||issuerName(h.issuer_tenant))}</span></span>
-      ${pushable(h)?`<button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="pushDL('${esc(h.vc&&h.vc.id||'')}',this)">Save to DigiLocker</button>`:''}</div>`).join('')
-    : '<div class="muted">Your wallet is empty.</div>';
-  const offHtml = WALLET.offers.length ? `<label>Waiting for you to accept</label>` + WALLET.offers.map(o=>`<div class="row cred" style="background:#2a2410;color:#e3b341"><span>✉️ ${esc(o.title||o.type)} — ${esc(issuerName(o.issuer_tenant))}</span><button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="acceptOffer('${esc(o.id)}')">Accept</button></div>`).join('') : '';
-  updateBadges();
-  box.innerHTML = `<div class="muted" style="font-size:13px">One account for every department in the network.</div>
-    <div class="sec">Identity</div>${idHtml}
-    <div class="sec">My properties (linked department records)</div>${propHtml}
-    <div class="sec">My wallet</div>${offHtml}${docHtml}
-    <div class="sec">DigiLocker <span class="pill">sandbox</span></div>
-    ${DLSTAT.verified ? `<button class="btn ghost" onclick="openDL()">Open my DigiLocker</button> <span class="muted" style="font-size:12px">Simulated locker — the real DigiLocker plugs in here once the deployment is onboarded as a partner.</span><div id="dl"></div>`
-                      : '<div class="muted">Verify your identity to open your DigiLocker.</div>'}`;
+  await loadWallet(); updateBadges();
 }
-async function verifyId(){
-  const out=document.getElementById('kout'); out.textContent=' Verifying…';
-  const r = await api('/bridge/citizen-ekyc', {name: document.getElementById('kn').value, dob: document.getElementById('kd').value});
-  if(!r.verified){ out.innerHTML=' <span class="err">✗ '+esc(r.error||'could not verify')+'</span>'; return; }
-  if(r.credential && r.credential.id && !r.already) await accept(r.credential.id);
-  renderAccount();
-}
-async function acceptOffer(id){ await accept(id); renderAccount(); }
-async function openDL(){
-  const el=document.getElementById('dl'); el.innerHTML='<span class="muted">Opening your locker…</span>';
-  const r = await api('/bridge/digilocker', {action:'list'});
-  if(!r.documents){ el.innerHTML='<span class="err">✗ '+esc(r.error||'locker unavailable')+'</span>'; return; }
-  el.innerHTML = r.documents.length ? r.documents.map(d=>`<div class="row cred" style="background:#10202a;color:#c9d1d9"><span>🗂️ <b>${esc(d.title)}</b><br><span class="muted">${esc(d.issuer_name)} · ${esc(d.doc_no||'')} · ${esc(d.issued_on||'')}</span></span>
-      ${d.pushed?'<span class="muted">from your wallet</span>':d.in_wallet?'<span class="ok">✓ in wallet</span>':`<button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="fetchDL('${esc(d.uri)}',this)">Fetch to wallet</button>`}</div>`).join('')
-    : '<div class="muted">No documents in your locker.</div>';
-}
-async function fetchDL(uri, btn){
-  btn.disabled=true; btn.textContent='Fetching…';
-  const r = await api('/bridge/digilocker', {action:'fetch', uri});
-  if(!r.fetched){ btn.textContent='✗ '+(r.error||'failed'); return; }
-  if(r.credential && r.credential.id && !r.already) await accept(r.credential.id);
-  await renderAccount(); openDL();
-}
-async function pushDL(vcid, btn){
-  btn.disabled=true; btn.textContent='Saving…';
-  const r = await api('/bridge/digilocker', {action:'push', credential_id: vcid});
-  btn.textContent = r.pushed ? '✓ In DigiLocker' : '✗ '+(r.error||'failed');
-}
+function openApp(id){ try{ if(parent && parent.open_){ parent.open_(id); return; } }catch(e){} top.location = '/run?app=' + id; }
 /* ===== 🎤 Voice intake — speak your complaint in any language; transcribed via the gateway (Bodhan STT).
    Records in-frame → 16kHz WAV → chunk-upload to filestore → transcribe by file_id → into the field. ===== */
 function _toWav(buf){ const sr=buf.sampleRate,len=buf.length,nch=buf.numberOfChannels,mono=new Float32Array(len);
@@ -375,9 +323,9 @@ let TAB = 'svc', TXNS = [];
 function showTab(t){
   TAB = t;
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
-  ['svc','req','acct'].forEach(x=>{ document.getElementById('tab-'+x).hidden = (x!==t); });
+  ['svc','req'].forEach(x=>{ document.getElementById('tab-'+x).hidden = (x!==t); });
   if(t==='req') track();
-  if(t==='acct') renderAccount();
+  if(t==='acct'){ openApp('my-account'); return; }
   window.scrollTo(0,0);
 }
 function renderApp(){
@@ -391,12 +339,11 @@ function renderApp(){
 }
 function updateBadges(){
   const n = (WALLET.offers||[]).length + (DLSTAT.verified ? 0 : 1);
-  const a = document.getElementById('acctN'); a.textContent = n ? n : ''; a.hidden = !n;
   const open = TXNS.filter(t=>['received','in_progress','open','confirmed','returned'].includes(t.status)).length;
   const r = document.getElementById('reqN'); r.textContent = open ? open : ''; r.hidden = !open;
   const ban = document.getElementById('banner');
   if(ban) ban.innerHTML = DLSTAT.verified ? '' : `<div class="note">🪪 <b>Verify your identity once</b> — most services need it, and it lets departments find your records.
-     <a onclick="showTab('acct')">Verify now →</a></div>`;
+     <a onclick="openApp('my-account')">Open My Account →</a></div>`;
 }
 
 // ---- Services: search as you type, grouped by department ----
@@ -504,7 +451,7 @@ async function renderDocs(){
       if(h){ CREDMATCH[t]=h.vc; return `<div class="doc ok"><span>✓ <b>${esc(h.title||titleCase(t.split('.').pop()))}</b></span><span class="muted">in your wallet · will be attached</span></div>`; }
       blocked = true;
       return `<div class="doc err"><span>✗ <b>${t==='credential.identity_verified'?'Verified identity':esc(titleCase(t.split('.').pop()))}</b> — required</span>
-        ${t==='credential.identity_verified'?`<button class="btn sm" onclick="showTab('acct')">Verify in My account</button>`:''}</div>`; });
+        ${t==='credential.identity_verified'?`<button class="btn sm" onclick="openApp('my-account')">Verify in My Account</button>`:''}</div>`; });
   const docs = need.map(d=>{ const name = DOCNAME[d.type]||titleCase(d.type); const h = inWallet(d.type);
       if(h){ DOCREFS[d.type]={vc:h.vc, title:h.title}; return `<div class="doc ok"><span>✓ <b>${esc(name)}</b><br><span class="muted">${esc(h.title)} · from DigiLocker</span></span><span class="muted">will be attached</span></div>`; }
       const l = inLocker(d.type);

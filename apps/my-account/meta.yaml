@@ -1,0 +1,15 @@
+# My Account (kind=app) — the citizen's ONE account across every department of the network (Unified Experience):
+# verified identity (eKYC), the department records linked to it (account aggregation — each link is a credential the
+# department issues after matching the verified name against its own record), and their profile / city. Every
+# bridge self-gates on the citizen's session; the departments decide what to link.
+component_id: ds:airawatdeveloper:app/my-account
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: My Account
+icon: 👤
+entrypoint: index.html
+required_schemas: [civic.profile, civic.credential]
+writes: [civic.profile, civic.credential]
+sandboxed: true
+roles: [civic.resident]

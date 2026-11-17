@@ -1,0 +1,159 @@
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
+  header{padding:14px 20px;background:#161b22;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:8px}
+  header b{font-size:17px}
+  .who{margin-left:auto;font-size:13px;color:#8b949e;text-align:right;line-height:1.35}
+  .who a{color:#58a6ff;cursor:pointer;text-decoration:none}
+  main{max-width:660px;margin:0 auto;padding:18px}
+  .card{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:16px;margin:12px 0}
+  .btn{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:9px 15px;cursor:pointer;font-size:14px;font-weight:500}
+  .btn:disabled{opacity:.5}
+  .btn.ghost{background:#21262d;color:#e6edf3}
+  input,textarea,select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:10px;margin:6px 0;font:inherit}
+  label{font-size:13px;color:#8b949e;display:block;margin-top:8px}
+  .muted{color:#8b949e;font-size:13px}
+  .pill{display:inline-block;background:#21262d;border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
+  .svc{border-top:1px solid #21262d;padding:12px 0}.svc:first-child{border-top:0}
+  .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .ok{color:#3fb950}.err{color:#f85149}
+  .cred{border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
+  .cred.ok{background:#12331f;color:#3fb950}.cred.err{background:#3a1518;color:#f85149}
+  h3{margin:.2em 0}
+  .sec{margin:16px 0 2px;font-weight:600;font-size:14px;border-bottom:1px solid #21262d;padding-bottom:4px}
+  /* 0.4.0 — tabs, service cards, 3-step application, progress */
+  .tabs{display:flex;gap:4px;position:sticky;top:0;z-index:5;background:#0d1117;padding:10px 0 6px;border-bottom:1px solid #21262d}
+  .tabs button{flex:1;background:none;border:0;color:#8b949e;font:inherit;font-weight:600;padding:9px 6px;border-radius:8px;cursor:pointer}
+  .tabs button.on{background:#161b22;color:#e6edf3;box-shadow:inset 0 -2px 0 #3b82f6}
+  .badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:999px;background:#d29922;color:#0d1117;font-size:11px;line-height:18px;margin-left:4px}
+  .badge[hidden]{display:none}
+  .gw{border:1px solid #30363d;border-radius:10px;padding:12px;background:#0d1117}
+  .search{font-size:16px;padding:12px 14px}
+  .dept{margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b949e}
+  .svc{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px;border:1px solid #21262d;border-radius:10px;margin:6px 0;cursor:pointer}
+  .svc:hover{border-color:#3b82f6;background:#131a24}.svc .muted{margin-top:2px}
+  .go{color:#58a6ff;font-weight:600;white-space:nowrap;font-size:14px}
+  .note{background:#2a2410;border:1px solid #4d3d12;color:#e3b341;border-radius:10px;padding:10px 12px;margin:12px 0;font-size:14px}
+  .note a,.back,a{color:#58a6ff;cursor:pointer}
+  .back{font-size:13px;display:inline-block;margin-bottom:6px}
+  h2{margin:.1em 0 .2em;font-size:20px}
+  .desc{color:#c9d1d9;font-size:14px;margin:8px 0}
+  .flow{font-size:12px;color:#8b949e;background:#0d1117;border-radius:8px;padding:6px 10px}
+  .stepper{display:flex;list-style:none;padding:0;margin:16px 0 8px;gap:6px;counter-reset:st}
+  .stepper li{flex:1;font-size:13px;color:#8b949e;padding:8px 6px;border-top:3px solid #30363d;counter-increment:st}
+  .stepper li::before{content:counter(st)". "}
+  .stepper li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}.stepper li.done{color:#3fb950;border-color:#238636}
+  .help{font-size:12px;color:#8b949e;margin-top:2px}.req{color:#f85149}
+  .fld{margin-bottom:4px}
+  .nav{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+  .btn.sm{padding:5px 10px;font-size:13px}
+  .doc{display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid #21262d;border-radius:8px;padding:10px 12px;margin:6px 0;font-size:14px}
+  .doc.ok{border-color:#238636;background:#0f2417}.doc.err{border-color:#da3633;background:#2a1215}
+  table.rv{width:100%;border-collapse:collapse;font-size:14px}table.rv td{padding:6px 4px;border-bottom:1px solid #21262d;vertical-align:top}
+  table.rv td:first-child{color:#8b949e;width:42%}
+  .amt{font-size:18px}
+  .consent{display:flex;gap:8px;align-items:flex-start;margin-top:14px;color:#c9d1d9;font-size:14px}.consent input{width:auto;margin-top:3px}
+  .card.done{text-align:center}.card.done .big{font-size:40px;color:#3fb950}.ref{font-size:18px;letter-spacing:.03em}
+  .chip{font-size:12px;border-radius:999px;padding:3px 10px;white-space:nowrap}
+  .chip.b{background:#0c2d6b;color:#79c0ff}.chip.g{background:#0f3d1e;color:#3fb950}.chip.r{background:#4a1416;color:#ff7b72}
+  .chip.y{background:#3d2e00;color:#e3b341}.chip.m{background:#21262d;color:#8b949e}
+  .track{display:flex;list-style:none;padding:0;margin:12px 0 0;gap:4px}
+  .track li{flex:1;font-size:12px;color:#8b949e;padding-top:6px;border-top:3px solid #30363d}
+  .track li.done{color:#3fb950;border-color:#238636}.track li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}
+  @media (max-width:520px){ main{padding:10px} .svc{flex-direction:column;align-items:flex-start} .stepper li,.track li{font-size:11px} }
+</style><header><b>👤 My Account</b> <span class="muted" style="font-weight:400">· one account for every department</span><span id="who" class="who"></span></header>
+<main>
+  <div id="gate"></div>
+  <div id="app" style="display:none">
+    <div class="card" id="idc"></div>
+    <div class="card" id="linked"></div>
+    <div class="card" id="prof"></div>
+  </div>
+</main>
+<script>
+const api = (p, b) => fetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const titleCase = s => String(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const accept = id => id ? api('/bridge/credential-accept', {credential_id:id}) : Promise.resolve({});
+const DEPT = {'city-da':'City Development Authority','city-mc':'City Municipal Corporation','uit':'Urban Improvement Trust',
+  'housing-board':'State Housing Board','sidc':'Industrial Development Corporation','state-udd':'Urban Development Department',
+  'dlb':'Directorate of Local Bodies','uidai':'UIDAI (simulated eKYC)','digilocker-sandbox':'DigiLocker (sandbox)'};
+const LINKABLE = ['city-da','city-mc','uit','housing-board','sidc'];      // departments holding property records
+const deptName = t => DEPT[t] || titleCase(t);
+function openApp(id){ try{ if(parent && parent.open_){ parent.open_(id); return; } }catch(e){} top.location = '/run?app=' + id; }
+let ME = {}, PROFILE = null, DL = {}, W = {offers:[], held:[]}, CITIES = [];
+
+async function boot(){
+  try{ ME = await (await fetch('/session')).json(); }catch(e){ ME = {}; }
+  if(!ME.sub){ document.getElementById('gate').innerHTML = '<div class="card">Please <a href="/" target="_top">sign in</a> to see your account.</div>'; return; }
+  document.getElementById('app').style.display = '';
+  try{ PROFILE = (await api('/bridge/profile-get',{})).profile; }catch(e){}
+  try{ CITIES = ((await api('/bridge/jurisdictions',{})).jurisdictions||[]).filter(j=>j.kind==='city'); }catch(e){}
+  render();
+}
+async function render(){
+  try{ DL = await api('/bridge/digilocker', {action:'status'}); }catch(e){ DL = {}; }
+  try{ W = await api('/bridge/my-credentials', {}); }catch(e){ W = {}; } W.held = W.held||[]; W.offers = W.offers||[];
+  // auto-accept pending identity / linked-record credentials: they belong to the account itself
+  const mine = W.offers.filter(o=>['credential.identity_verified','credential.urban_property_holding'].includes(o.type));
+  if(mine.length){ for(const o of mine) await accept(o.id); try{ W = await api('/bridge/my-credentials', {}); }catch(e){} W.held = W.held||[]; }
+  const city = (CITIES.find(c=>c.code===(PROFILE&&PROFILE.primary))||{}).name || (PROFILE&&PROFILE.primary) || '—';
+  document.getElementById('who').textContent = ((PROFILE&&PROFILE.name) || ME.sub.split('/').pop()) + ' · 📍 ' + city;
+
+  document.getElementById('idc').innerHTML = `<b>Identity</b>` + (DL.verified
+    ? `<div class="doc ok" style="margin-top:8px"><span>✓ Verified — <b>${esc(DL.name)}</b></span><span class="muted">eKYC (simulated)</span></div>
+       <div class="help">Departments match this name against their own records when you link them.</div>`
+    : `<div class="muted" style="margin-top:4px">Verify once. Departments use it to find your records, and your DigiLocker opens with it.</div>
+       <div class="grid2"><div><label>Full name as on Aadhaar</label><input id="kn" value="${esc((PROFILE&&PROFILE.name)||'')}"></div>
+       <div><label>Date of birth</label><input id="kd" type="date"></div></div>
+       <button class="btn" onclick="verifyId()">Verify identity (eKYC — simulated)</button> <span id="kout" class="muted"></span>`);
+
+  const links = W.held.filter(h=>h.type==='credential.urban_property_holding');
+  document.getElementById('linked').innerHTML = `<div class="row"><b>Linked department records</b><span class="muted" style="font-size:12px">${links.length} linked</span></div>
+    <div class="help">Your existing records at each department, brought into one account. A department links a record only when it matches your verified name.</div>
+    ${links.length ? links.map(h=>{ const c=h.claims||{}; return `<div class="doc"><span>🏠 <b>${esc(c.property_id)}</b> · ${esc(c.address||'')}<br>
+        <span class="muted">${esc(deptName(h.issuer_tenant))} · ${esc(titleCase(c.relation||''))}${c.share_pct!=null&&c.share_pct<100?' ('+esc(c.share_pct)+'%)':''}${c.area_sqm?' · '+esc(c.area_sqm)+' sq m':''}</span></span></div>`; }).join('')
+      : '<div class="muted" style="margin:8px 0">No records linked yet.</div>'}
+    ${DL.verified ? `<div class="sec">Link a record</div>
+      <div class="grid2"><div><label>Department</label><select id="ld">${LINKABLE.map(t=>`<option value="${t}">${esc(deptName(t))}</option>`).join('')}</select></div>
+      <div><label>Property ID</label><input id="lp" placeholder="e.g. UP-CDA-000123" style="text-transform:uppercase"></div></div>
+      <button class="btn" onclick="link()">Find and link</button> <span id="lout" class="muted"></span>`
+      : '<div class="note">Verify your identity first — then you can link your records.</div>'}`;
+
+  document.getElementById('prof').innerHTML = `<b>Profile</b>
+    <div class="grid2"><div><label>Name</label><input id="pn" value="${esc((PROFILE&&PROFILE.name)||'')}"></div>
+    <div><label>I live in</label><select id="pc">${CITIES.map(c=>`<option value="${esc(c.code)}"${c.code===(PROFILE&&PROFILE.primary)?' selected':''}>${esc(c.name)}</option>`).join('')}</select></div></div>
+    <button class="btn ghost" onclick="saveProfile()">Save</button> <span id="pout" class="muted"></span>
+    <div class="help" style="margin-top:6px">Your city decides which services you see. Your applications and documents stay when you move.</div>
+    <div class="sec">Also on your home screen</div>
+    <div class="row"><button class="btn ghost sm" onclick="openApp('jan-seva')">🏛️ My Services</button><button class="btn ghost sm" onclick="openApp('my-documents')">🪪 My Documents</button></div>`;
+}
+async function verifyId(){
+  const out=document.getElementById('kout'); out.textContent=' Verifying…';
+  const r = await api('/bridge/citizen-ekyc', {name: document.getElementById('kn').value, dob: document.getElementById('kd').value});
+  if(!r.verified){ out.innerHTML=' <span class="err">✗ '+esc(r.error||'could not verify')+'</span>'; return; }
+  if(r.credential && r.credential.id && !r.already) await accept(r.credential.id);
+  render();
+}
+async function link(){
+  const t = document.getElementById('ld').value, id = document.getElementById('lp').value.trim().toUpperCase(), out = document.getElementById('lout');
+  if(!id){ out.innerHTML = ' <span class="err">Enter the property ID.</span>'; return; }
+  out.textContent = ' Looking it up at the ' + deptName(t) + '…';
+  const f = await api('/bridge/urban-property', {authority: t, property_id: id});
+  if(!f.property){ out.innerHTML = ' <span class="err">✗ ' + esc(f.error||'not found') + '</span>'; return; }
+  out.textContent = ' Found ' + (f.property.address||id) + ' — checking with the department…';
+  const r = await api('/bridge/urban-link', {authority: t, property_id: id});
+  if(!r.linked){ out.innerHTML = ' <span class="err">✗ ' + esc(r.error||'could not link') + '</span>'; return; }
+  if(r.credential && r.credential.id && !r.already) await accept(r.credential.id);
+  render();
+}
+async function saveProfile(){
+  const out = document.getElementById('pout'); out.textContent = ' Saving…';
+  const city = document.getElementById('pc').value;
+  const r = await api('/bridge/profile-save', {app_id:'my-account', name: document.getElementById('pn').value.trim(), residence:[city], property:(PROFILE&&PROFILE.property)||[]});
+  if(r.profile){ PROFILE = r.profile; out.innerHTML = ' <span class="ok">✓ Saved</span>'; render(); } else out.innerHTML = ' <span class="err">✗ ' + esc(r.error||'failed') + '</span>';
+}
+boot();
+</script>

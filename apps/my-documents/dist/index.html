@@ -2,68 +2,149 @@
   :root{color-scheme:light dark}
   *{box-sizing:border-box}
   body{font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
-  header{padding:16px 20px;background:#161b22;border-bottom:1px solid #21262d;font-weight:600;font-size:17px}
-  main{max-width:680px;margin:0 auto;padding:18px}
-  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;margin:20px 4px 8px}
-  .vc{background:linear-gradient(135deg,#12233b,#161b22);border:1px solid #23406a;border-radius:14px;padding:16px;margin:10px 0}
-  .vc.offer{border-style:dashed;border-color:#d29922;background:linear-gradient(135deg,#2a2410,#161b22)}
-  .vc .top{display:flex;align-items:center;gap:10px}
-  .vc .ico{font-size:26px}.vc .t{font-weight:650;font-size:16px}
-  .vc .iss{margin-left:auto;font-size:12px;color:#8b949e;text-align:right}
-  .claims{margin-top:10px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
-  .claims .k{color:#8b949e}
-  .foot{display:flex;align-items:center;gap:8px;margin-top:12px}
-  .badge{font-size:12px;border-radius:999px;padding:2px 10px}
-  .valid{background:#12331f;color:#3fb950}.bad{background:#3a1518;color:#f85149}.unk{background:#21262d;color:#8b949e}
-  .btn{background:#21262d;color:#e6edf3;border:0;border-radius:8px;padding:6px 11px;cursor:pointer;font-size:12px}
-  .btn.accept{background:#3fb950;color:#04260f;font-weight:600}
-  .muted{color:#8b949e;font-size:13px;padding:16px}
-</style>
-<header>🪪 My Documents <span class="muted" style="font-weight:400;font-size:13px">· your verifiable credentials</span></header>
+  header{padding:14px 20px;background:#161b22;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:8px}
+  header b{font-size:17px}
+  .who{margin-left:auto;font-size:13px;color:#8b949e;text-align:right;line-height:1.35}
+  .who a{color:#58a6ff;cursor:pointer;text-decoration:none}
+  main{max-width:660px;margin:0 auto;padding:18px}
+  .card{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:16px;margin:12px 0}
+  .btn{background:#3b82f6;color:#fff;border:0;border-radius:8px;padding:9px 15px;cursor:pointer;font-size:14px;font-weight:500}
+  .btn:disabled{opacity:.5}
+  .btn.ghost{background:#21262d;color:#e6edf3}
+  input,textarea,select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:8px;padding:10px;margin:6px 0;font:inherit}
+  label{font-size:13px;color:#8b949e;display:block;margin-top:8px}
+  .muted{color:#8b949e;font-size:13px}
+  .pill{display:inline-block;background:#21262d;border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
+  .svc{border-top:1px solid #21262d;padding:12px 0}.svc:first-child{border-top:0}
+  .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .ok{color:#3fb950}.err{color:#f85149}
+  .cred{border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
+  .cred.ok{background:#12331f;color:#3fb950}.cred.err{background:#3a1518;color:#f85149}
+  h3{margin:.2em 0}
+  .sec{margin:16px 0 2px;font-weight:600;font-size:14px;border-bottom:1px solid #21262d;padding-bottom:4px}
+  /* 0.4.0 — tabs, service cards, 3-step application, progress */
+  .tabs{display:flex;gap:4px;position:sticky;top:0;z-index:5;background:#0d1117;padding:10px 0 6px;border-bottom:1px solid #21262d}
+  .tabs button{flex:1;background:none;border:0;color:#8b949e;font:inherit;font-weight:600;padding:9px 6px;border-radius:8px;cursor:pointer}
+  .tabs button.on{background:#161b22;color:#e6edf3;box-shadow:inset 0 -2px 0 #3b82f6}
+  .badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:999px;background:#d29922;color:#0d1117;font-size:11px;line-height:18px;margin-left:4px}
+  .badge[hidden]{display:none}
+  .gw{border:1px solid #30363d;border-radius:10px;padding:12px;background:#0d1117}
+  .search{font-size:16px;padding:12px 14px}
+  .dept{margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b949e}
+  .svc{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px;border:1px solid #21262d;border-radius:10px;margin:6px 0;cursor:pointer}
+  .svc:hover{border-color:#3b82f6;background:#131a24}.svc .muted{margin-top:2px}
+  .go{color:#58a6ff;font-weight:600;white-space:nowrap;font-size:14px}
+  .note{background:#2a2410;border:1px solid #4d3d12;color:#e3b341;border-radius:10px;padding:10px 12px;margin:12px 0;font-size:14px}
+  .note a,.back,a{color:#58a6ff;cursor:pointer}
+  .back{font-size:13px;display:inline-block;margin-bottom:6px}
+  h2{margin:.1em 0 .2em;font-size:20px}
+  .desc{color:#c9d1d9;font-size:14px;margin:8px 0}
+  .flow{font-size:12px;color:#8b949e;background:#0d1117;border-radius:8px;padding:6px 10px}
+  .stepper{display:flex;list-style:none;padding:0;margin:16px 0 8px;gap:6px;counter-reset:st}
+  .stepper li{flex:1;font-size:13px;color:#8b949e;padding:8px 6px;border-top:3px solid #30363d;counter-increment:st}
+  .stepper li::before{content:counter(st)". "}
+  .stepper li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}.stepper li.done{color:#3fb950;border-color:#238636}
+  .help{font-size:12px;color:#8b949e;margin-top:2px}.req{color:#f85149}
+  .fld{margin-bottom:4px}
+  .nav{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+  .btn.sm{padding:5px 10px;font-size:13px}
+  .doc{display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid #21262d;border-radius:8px;padding:10px 12px;margin:6px 0;font-size:14px}
+  .doc.ok{border-color:#238636;background:#0f2417}.doc.err{border-color:#da3633;background:#2a1215}
+  table.rv{width:100%;border-collapse:collapse;font-size:14px}table.rv td{padding:6px 4px;border-bottom:1px solid #21262d;vertical-align:top}
+  table.rv td:first-child{color:#8b949e;width:42%}
+  .amt{font-size:18px}
+  .consent{display:flex;gap:8px;align-items:flex-start;margin-top:14px;color:#c9d1d9;font-size:14px}.consent input{width:auto;margin-top:3px}
+  .card.done{text-align:center}.card.done .big{font-size:40px;color:#3fb950}.ref{font-size:18px;letter-spacing:.03em}
+  .chip{font-size:12px;border-radius:999px;padding:3px 10px;white-space:nowrap}
+  .chip.b{background:#0c2d6b;color:#79c0ff}.chip.g{background:#0f3d1e;color:#3fb950}.chip.r{background:#4a1416;color:#ff7b72}
+  .chip.y{background:#3d2e00;color:#e3b341}.chip.m{background:#21262d;color:#8b949e}
+  .track{display:flex;list-style:none;padding:0;margin:12px 0 0;gap:4px}
+  .track li{flex:1;font-size:12px;color:#8b949e;padding-top:6px;border-top:3px solid #30363d}
+  .track li.done{color:#3fb950;border-color:#238636}.track li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}
+  @media (max-width:520px){ main{padding:10px} .svc{flex-direction:column;align-items:flex-start} .stepper li,.track li{font-size:11px} }
+</style><header><b>🪪 My Documents</b> <span class="muted" style="font-weight:400">· your wallet</span><span id="who" class="who"></span></header>
 <main>
-  <div style="display:flex;justify-content:flex-end"><button class="btn" onclick="load()">Refresh</button></div>
-  <div id="offers"></div>
-  <div id="list"><div class="muted">Loading…</div></div>
+  <div id="gate"></div>
+  <div id="app" style="display:none">
+    <div id="offers"></div>
+    <div id="groups"></div>
+    <div class="card" id="dl"></div>
+  </div>
 </main>
 <script>
-const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const titl=s=>String(s||'').replace(/^credential\./,'').replace(/[-_.]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-const ICON={'birth_certificate':'👶','property_tax':'🏠','passport':'🛂','trade_licence':'🏪'};
-const ico=t=>ICON[String(t||'').replace(/^credential\./,'')]||'🎫';
-let HELD=[];
+const api = (p, b) => fetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const titleCase = s => String(s||'').replace(/^credential\./,'').replace(/[-_.]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const DEPT = {'city-da':'City Development Authority','city-mc':'City Municipal Corporation','uit':'Urban Improvement Trust',
+  'housing-board':'State Housing Board','sidc':'Industrial Development Corporation','state-udd':'Urban Development Department',
+  'dlb':'Directorate of Local Bodies','uidai':'UIDAI (simulated eKYC)','digilocker-sandbox':'DigiLocker (sandbox)'};
+const issuer = h => (h.claims||{}).issuer_name || DEPT[h.issuer_tenant] || titleCase(h.issuer_tenant);
+const GROUPS = [
+  ['Orders & certificates', h => !['credential.urban_fee_receipt','credential.digilocker_document','credential.identity_verified','credential.urban_property_holding'].includes(h.type), '📜'],
+  ['Payment receipts', h => h.type==='credential.urban_fee_receipt', '🧾'],
+  ['From your DigiLocker', h => h.type==='credential.digilocker_document', '🗂️'],
+  ['Identity & linked records', h => ['credential.identity_verified','credential.urban_property_holding'].includes(h.type), '👤'],
+];
+let HELD = [], DL = {};
+const fmtDate = s => { try{ return new Date(s).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return s||''; } };
+const SKIP = new Set(['uri','source','holder_name','gateway']);
+const claimRows = c => Object.entries(c||{}).filter(([k,v])=>!SKIP.has(k) && v!=null && typeof v!=='object' && !String(v).startsWith('ds:')).map(([k,v])=>`<tr><td>${esc(titleCase(k))}</td><td>${esc(v)}</td></tr>`).join('');
+
+async function boot(){
+  let me = {}; try{ me = await (await fetch('/session')).json(); }catch(e){}
+  if(!me.sub){ document.getElementById('gate').innerHTML = '<div class="card">Please <a href="/" target="_top">sign in</a> to see your documents.</div>'; return; }
+  document.getElementById('app').style.display = ''; document.getElementById('who').textContent = me.sub.split('/').pop();
+  load();
+}
 async function load(){
-  let d={}; try{ d=await api('/bridge/my-credentials',{}); }catch(e){ document.getElementById('list').innerHTML='<div class="muted">Could not load.</div>'; return; }
-  const offers=d.offers||[]; HELD=d.held||[];
-  document.getElementById('offers').innerHTML = offers.length
-    ? '<h2>Offered to you — accept to add to your wallet</h2>' + offers.map(o=>offerCard(o)).join('') : '';
-  document.getElementById('list').innerHTML = '<h2>My credentials</h2>' + (HELD.length ? HELD.map((h,i)=>heldCard(h,i)).join('')
-    : '<div class="muted">No credentials held yet. Complete a service (e.g. Birth Certificate) and accept the offer above.</div>');
+  let d = {}; try{ d = await api('/bridge/my-credentials', {}); }catch(e){}
+  const offers = d.offers || []; HELD = d.held || [];
+  try{ DL = await api('/bridge/digilocker', {action:'status'}); }catch(e){ DL = {}; }
+  document.getElementById('offers').innerHTML = offers.length ? `<div class="card" style="border-color:#4d3d12"><b>New — accept to add to your wallet</b>` + offers.map(o=>
+      `<div class="doc"><span>✉️ <b>${esc(o.title||titleCase(o.type))}</b><br><span class="muted">from ${esc(DEPT[o.issuer_tenant]||o.issuer_tenant)} · ${esc(fmtDate(o.issued_at))}</span></span>
+       <button class="btn sm" onclick="acceptOne('${esc(o.id)}',this)">Accept</button></div>`).join('') + `</div>` : '';
+  document.getElementById('groups').innerHTML = HELD.length ? GROUPS.map(([name, test, ic])=>{ const list = HELD.map((h,i)=>[h,i]).filter(([h])=>test(h)); if(!list.length) return '';
+      return `<div class="card"><b>${ic} ${esc(name)}</b>` + list.map(([h,i])=>`<div class="doc" style="display:block">
+          <div class="row"><span><b>${esc(h.title||titleCase(h.type))}</b><br><span class="muted">${esc(issuer(h))} · ${esc(fmtDate(h.issued_at||h.held_at))}</span></span>
+            <span><button class="btn ghost sm" onclick="tog(${i})">Details</button>
+            ${h.type!=='credential.digilocker_document' && h.type!=='credential.identity_verified' && DL.verified ? `<button class="btn ghost sm" onclick="push(${i},this)">Save to DigiLocker</button>` : ''}</span></div>
+          <div id="d${i}" hidden><table class="rv" style="margin-top:8px">${claimRows(h.claims)}</table>
+            <button class="btn ghost sm" style="margin-top:6px" onclick="verify(${i})">Check signature</button> <span id="v${i}" class="muted"></span></div></div>`).join('') + `</div>`; }).join('')
+    : '<div class="card muted">Your wallet is empty. Documents you receive from departments — and ones you fetch from DigiLocker — appear here.</div>';
+  document.getElementById('dl').innerHTML = `<div class="row"><b>DigiLocker</b><span class="pill">sandbox</span></div>` + (DL.verified
+      ? `<div class="help">Documents other issuers have issued to you. Fetch one to use it in any application — it arrives signed.</div>
+         <button class="btn ghost" onclick="openDL()">Open my DigiLocker</button><div id="dll"></div>
+         <div class="help" style="margin-top:6px">Simulated locker — the real DigiLocker plugs in here once the deployment is onboarded as a partner.</div>`
+      : `<div class="muted">Verify your identity in <a onclick="openApp('my-account')">My Account</a> to open your DigiLocker.</div>`);
 }
-function claimRows(claims){claims=claims||{};const ks=Object.keys(claims);return ks.length?ks.map(k=>`<div class="k">${esc(titl(k))}</div><div>${esc(claims[k])}</div>`).join(''):'<div class="muted" style="padding:0">—</div>';}
-function offerCard(o){
-  return `<div class="vc offer"><div class="top"><span class="ico">${ico(o.type)}</span>
-      <span class="t">${esc(o.title||titl(o.type))}</span>
-      <span class="iss">offered by<br><b>${esc((o.issuer_tenant||'').toUpperCase())}</b></span></div>
-    <div class="claims">${claimRows(o.claims)}</div>
-    <div class="foot"><span class="badge unk">pending your acceptance</span>
-      <button class="btn accept" onclick="accept('${esc(o.id)}')">Accept into my wallet</button></div></div>`;
-}
-function heldCard(h,i){
-  return `<div class="vc"><div class="top"><span class="ico">${ico(h.type)}</span>
-      <span class="t">${esc(h.title||titl(h.type))}</span>
-      <span class="iss">issued by<br><b>${esc((h.issuer_tenant||'').toUpperCase())}</b></span></div>
-    <div class="claims">${claimRows(h.claims)}</div>
-    <div class="foot"><span id="v${i}" class="badge unk">held in your wallet</span>
-      <button class="btn" onclick="verify(${i})">Verify</button>
-      <span class="muted" style="padding:0;margin-left:auto;font-size:11px">${esc((h.id||'').split('/').pop())}</span></div></div>`;
-}
-async function accept(cid){ await api('/bridge/credential-accept',{credential_id:cid}); load(); }
+function openApp(id){ try{ if(parent && parent.open_){ parent.open_(id); return; } }catch(e){} top.location = '/run?app=' + id; }
+function tog(i){ const d = document.getElementById('d'+i); d.hidden = !d.hidden; }
+async function acceptOne(id, btn){ btn.disabled = true; btn.textContent = 'Adding…'; await api('/bridge/credential-accept', {credential_id:id}); load(); }
 async function verify(i){
-  const el=document.getElementById('v'+i); el.textContent='Checking…'; el.className='badge unk';
-  const r=await api('/bridge/credential-verify',{credential:HELD[i].vc||HELD[i]});
-  if(r.verified){ el.textContent='✓ Verified ('+esc(r.key_source||'')+' key)'; el.className='badge valid'; }
-  else { el.textContent='✗ Invalid'; el.className='badge bad'; }
+  const el = document.getElementById('v'+i); el.textContent = 'Checking…';
+  const r = await api('/bridge/credential-verify', {credential: HELD[i].vc || HELD[i]});
+  el.innerHTML = r.verified ? '<span class="ok">✓ Genuine — signed by the issuer</span>' : '<span class="err">✗ Signature does not check out</span>';
 }
-load();
+async function push(i, btn){
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const r = await api('/bridge/digilocker', {action:'push', credential_id: (HELD[i].vc||{}).id});
+  btn.textContent = r.pushed ? '✓ In DigiLocker' : '✗ ' + (r.error||'failed');
+}
+async function openDL(){
+  const el = document.getElementById('dll'); el.innerHTML = '<span class="muted">Opening your locker…</span>';
+  const r = await api('/bridge/digilocker', {action:'list'});
+  if(!r.documents){ el.innerHTML = '<span class="err">✗ ' + esc(r.error||'locker unavailable') + '</span>'; return; }
+  el.innerHTML = r.documents.length ? r.documents.map(d=>`<div class="doc"><span>🗂️ <b>${esc(d.title)}</b><br><span class="muted">${esc(d.issuer_name)} · ${esc(d.doc_no||'')} · ${esc(d.issued_on||'')}</span></span>
+      ${d.pushed ? '<span class="muted">from your wallet</span>' : d.in_wallet ? '<span class="ok">✓ in wallet</span>' : `<button class="btn sm" onclick="fetchDL('${esc(d.uri)}',this)">Fetch to wallet</button>`}</div>`).join('')
+    : '<div class="muted">No documents in your locker.</div>';
+}
+async function fetchDL(uri, btn){
+  btn.disabled = true; btn.textContent = 'Fetching…';
+  const r = await api('/bridge/digilocker', {action:'fetch', uri});
+  if(!r.fetched){ btn.textContent = '✗ ' + (r.error||'failed'); return; }
+  if(r.credential && r.credential.id && !r.already) await api('/bridge/credential-accept', {credential_id: r.credential.id});
+  await load(); openDL();
+}
+boot();
 </script>

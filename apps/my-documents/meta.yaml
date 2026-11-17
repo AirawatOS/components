@@ -2,9 +2,11 @@
 # (e.g. a Birth Certificate issued when that service completed), each signed by the issuing agency's steward key
 # and verifiable OFFLINE against its published directory key. Read-only holder view; a citizen can re-verify any
 # credential. These VCs can later be presented when applying for other services (reuse, no re-collection).
+# 0.2.0: grouped wallet (orders & certificates, receipts, documents from DigiLocker, identity & records), accept,
+# verify, details, Save to DigiLocker, and the DigiLocker panel (sandbox adapter) to fetch issued documents.
 component_id: ds:airawatdeveloper:app/my-documents
 kind: app
-version: 0.1.1
+version: 0.2.0
 provider: ds:airawatdeveloper:developer
 display_name: My Documents
 icon: 🪪
