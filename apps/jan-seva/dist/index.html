@@ -29,6 +29,7 @@
   .tabs button.on{background:#161b22;color:#e6edf3;box-shadow:inset 0 -2px 0 #3b82f6}
   .badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:999px;background:#d29922;color:#0d1117;font-size:11px;line-height:18px;margin-left:4px}
   .badge[hidden]{display:none}
+  .gw{border:1px solid #30363d;border-radius:10px;padding:12px;background:#0d1117}
   .search{font-size:16px;padding:12px 14px}
   .dept{margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b949e}
   .svc{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px;border:1px solid #21262d;border-radius:10px;margin:6px 0;cursor:pointer}
@@ -416,7 +417,7 @@ function orderedKeys(rs){
   return ord.filter(k=>k in props).concat(Object.keys(props).filter(k=>!ord.includes(k)));
 }
 async function pick(i){
-  SEL = CATALOG[i]; LOOKUP = {}; DOCREFS = {}; CREDMATCH = {}; STEP = 1;
+  SEL = CATALOG[i]; LOOKUP = {}; DOCREFS = {}; CREDMATCH = {}; STEP = 1; FEE = 0; PAYREF = null;
   const rs = SEL.request_schema || {}; const props = rs.properties || {}; const req = rs.required || [];
   const keys = orderedKeys(rs); let lastSec = null;
   const form = keys.length ? keys.map(k=>{
@@ -534,16 +535,42 @@ async function renderReview(){
       <div class="sec">Fee</div><div id="fee" class="muted">Calculating…</div>
       <label class="consent"><input type="checkbox" id="agree"> I agree that the <b>${esc(deptName(SEL.tenant))}</b> may process this application and see the documents attached.</label>`;
   document.getElementById('nextB').disabled = true;
-  document.getElementById('agree').onchange = e => { document.getElementById('nextB').disabled = !e.target.checked; };
+  document.getElementById('agree').onchange = canSubmit;
   if((SEL.interaction||[]).includes('select')){
     try{ const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id, message:{form}});
       const q = (r.message||{}).quote;
-      document.getElementById('fee').innerHTML = q && q.amount
-        ? `<b class="amt">₹${q.amount.toLocaleString('en-IN')}</b> ` + q.breakdown.map(b=>esc(b.item)+(b.basis&&b.basis!=='flat'?' ('+esc(b.basis)+')':'')).join(', ')
-          + `<div class="help">Pay at the office or online when the office asks — you will be told before any payment is due.</div>`
+      FEE = q && q.amount ? q.amount : 0;
+      const payNow = FEE && (SEL.fulfillment||{}).payment==='before_submit';
+      document.getElementById('fee').innerHTML = FEE
+        ? `<b class="amt">₹${FEE.toLocaleString('en-IN')}</b> ` + q.breakdown.map(b=>esc(b.item)+(b.basis&&b.basis!=='flat'?' ('+esc(b.basis)+')':'')).join(', ')
+          + (payNow ? `<div id="pay" style="margin-top:8px">${PAYREF ? payDone() : `<button class="btn" onclick="openPay()">Pay ₹${FEE.toLocaleString('en-IN')}</button> <span class="help">The fee is paid before the application is submitted.</span>`}</div>`
+                    : `<div class="help">Pay at the office when it asks — you will be told before any payment is due.</div>`)
         : 'No fee.';
+      canSubmit();
     }catch(e){ document.getElementById('fee').textContent = 'The office will tell you the fee.'; }
   } else document.getElementById('fee').textContent = 'No fee.';
+}
+let FEE = 0, PAYREF = null;
+function needPay(){ return FEE > 0 && (SEL.fulfillment||{}).payment==='before_submit'; }
+function canSubmit(){ const ag = document.getElementById('agree'); const nb = document.getElementById('nextB');
+  if(nb && STEP===3) nb.disabled = !(ag && ag.checked) || (needPay() && !PAYREF); }
+const payDone = () => `<div class="doc ok"><span>✓ <b>Fee paid</b> — receipt ${esc(PAYREF.receipt_no)}</span><span class="muted">in your wallet · will be attached</span></div>`;
+function openPay(){
+  document.getElementById('pay').innerHTML = `<div class="gw"><div class="row"><b>Payment gateway</b><span class="pill" style="background:#3d2e00;color:#e3b341">TEST · no real money</span></div>
+      <div class="muted" style="margin:4px 0 8px">Paying <b>₹${FEE.toLocaleString('en-IN')}</b> to the ${esc(deptName(SEL.tenant))}</div>
+      ${[['upi','UPI'],['card','Debit / credit card'],['netbanking','Net banking']].map(([v,l],i)=>`<label class="consent" style="margin:4px 0"><input type="radio" name="pm" value="${v}"${i?'':' checked'}> ${l}</label>`).join('')}
+      <div class="nav"><button class="btn ghost" onclick="renderReview()">Cancel</button><button class="btn" id="payB" onclick="doPay()">Pay ₹${FEE.toLocaleString('en-IN')}</button></div></div>`;
+}
+async function doPay(){
+  const b = document.getElementById('payB'); b.disabled = true; b.textContent = 'Processing…';
+  const method = (document.querySelector('input[name=pm]:checked')||{}).value || 'upi';
+  const r = await api('/bridge/urban-pay', {service_id: SEL.service_id, form: formValues(), method});
+  if(!r.paid){ b.disabled = false; b.textContent = 'Retry'; document.getElementById('out').innerHTML = '<span class="err">✗ '+esc(r.error||'payment failed')+'</span>'; return; }
+  if(r.credential && r.credential.id) await accept(r.credential.id);
+  await loadWallet();
+  const h = (WALLET.held||[]).find(c=>c.type==='credential.urban_fee_receipt' && (c.claims||{}).receipt_no===r.receipt_no);
+  PAYREF = {receipt_no: r.receipt_no, vc: h && h.vc};
+  document.getElementById('pay').innerHTML = payDone(); canSubmit(); renderAccount();
 }
 async function fileIt(){
   const out = document.getElementById('out'), btn = document.getElementById('nextB');
@@ -552,8 +579,8 @@ async function fileIt(){
   const legacy = document.getElementById('msg');
   const description = legacy ? legacy.value : Object.entries(form).filter(([k])=>!(props[k]||{})['x-from']).map(([k,v])=>((props[k]&&props[k].title)||k)+': '+(LOOKUP[k]?LOOKUP[k].property_id:v)).join(' · ');
   const docs = Object.values(DOCREFS);
-  const credential_refs = Object.values(CREDMATCH).concat(docs.map(d=>d.vc).filter(Boolean));
-  const fullDesc = (docs.length ? 'Documents (verified): ' + docs.map(d=>d.title).join(', ') + ' · ' : '') + description;
+  const credential_refs = Object.values(CREDMATCH).concat(docs.map(d=>d.vc).filter(Boolean)).concat(PAYREF&&PAYREF.vc?[PAYREF.vc]:[]);
+  const fullDesc = (PAYREF ? 'Fee paid: ₹'+FEE.toLocaleString('en-IN')+' (receipt '+PAYREF.receipt_no+') · ' : '') + (docs.length ? 'Documents (verified): ' + docs.map(d=>d.title).join(', ') + ' · ' : '') + description;
   await api('/bridge/service-consent', {app_id:APP, service_id:SEL.service_id, provider:SEL.tenant, expires_at:'2027-01-01T00:00:00Z'});
   const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{form, description: fullDesc, credential_refs}});
   const m = r.message || {};

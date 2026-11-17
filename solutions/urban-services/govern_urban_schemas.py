@@ -101,6 +101,17 @@ SCHEMAS = [
            "max_area_sqm": {"type": ["number", "null"]}}},
        "effective_from": DATE, "effective_to": DATE, "statutory_ref": S("the order / notification")}),
   "internal"),
+ (obj("urban.payment", "record", "service fee payment", "A fee paid for a service application: amount and breakdown "
+      "(computed by the department from its fee rules), the payer, the gateway reference, and the application it paid for.",
+      ["receipt_no", "service", "amount", "status"],
+      {"receipt_no": {"type": "string"}, "service": {"type": "string"}, "authority": S(), "case": REF,
+       "amount": {"type": "number"}, "currency": S(), "breakdown": {"type": ["array", "null"], "items": {"type": "object",
+       "additionalProperties": False, "properties": {"item": {"type": "string"}, "amount": {"type": "number"},
+       "basis": {"type": ["string", "null"]}, "statutory_ref": {"type": ["string", "null"]}}}},
+       "payer_ref": S("user:// of the payer"), "property": REF, "method": E("upi", "card", "netbanking", "counter"),
+       "gateway": S("payment gateway (sandbox on staging)"), "gateway_ref": S(), "status": {"enum": ["paid", "refunded", "failed"]},
+       "paid_at": S()}),
+  "internal"),
  (obj("urban.document_type", "entity", "service document type", "A kind of supporting document a service may ask for "
       "(the checklist vocabulary): accepted formats, size limit, who issues it, and how it can be verified.",
       ["code", "name"],
@@ -125,6 +136,10 @@ CREDENTIALS = [
        ["property_id", "authority", "relation"],
        {"property_id": TXT, "authority": TXT, "relation": TXT, "holder_name": TXT, "address": TXT, "land_use": TXT,
         "area_sqm": {"type": "number"}, "share_pct": {"type": "number"}, "since": TXT}), "internal"),
+ (cred("credential.urban_fee_receipt", "Receipt for a service fee paid to an urban department: usable as proof of "
+       "payment with the application it was paid for.", ["receipt_no", "service", "amount", "authority"],
+       {"receipt_no": TXT, "service": TXT, "service_title": TXT, "authority": TXT, "amount": {"type": "number"}, "currency": TXT,
+        "paid_at": TXT, "method": TXT, "gateway": TXT, "property_id": TXT}), "internal"),
  (cred("credential.urban_name_transfer", "Name transfer (mutation) order: the property is now recorded in the name of the "
        "transferee. Issued by the department that holds the property record.",
        ["property_id"],

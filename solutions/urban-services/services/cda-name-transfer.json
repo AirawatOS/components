@@ -74,10 +74,36 @@
       {
         "step": "approval",
         "role": "urban.estate-officer",
-        "task": "Approve the name transfer. The order is issued to the applicant's wallet.",
-        "issues": "credential.urban_name_transfer"
+        "task": "Approve the name transfer. The holder record is updated and the order is issued to the applicant's wallet.",
+        "issues": "credential.urban_name_transfer",
+        "effects": [
+          {
+            "close": {
+              "schema": "urban.property_holding",
+              "match": {
+                "property": "$form.property"
+              },
+              "patch": {
+                "until": "$today"
+              }
+            }
+          },
+          {
+            "write": {
+              "schema": "urban.property_holding",
+              "property": "$form.property",
+              "holder_name": "$form.transferee_name",
+              "holder_ref": "$applicant",
+              "relation": "owner",
+              "share_pct": 100,
+              "since": "$today",
+              "source_doc": "$case"
+            }
+          }
+        ]
       }
-    ]
+    ],
+    "payment": "before_submit"
   },
   "request_schema": {
     "type": "object",
