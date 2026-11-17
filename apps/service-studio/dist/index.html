@@ -408,12 +408,12 @@ async function ask(){
   const inp=document.getElementById('ai'), msg=inp.value.trim(); if(!msg)return; inp.value='';
   if(document.getElementById('right').classList.contains('collapsed')) toggleAI();
   pushMsg('user',msg); HIST.push({role:'user',text:msg});
-  const wait=pushMsg('ai','…thinking');
+  const wait=pushMsg('ai','…designing the service — this can take up to a minute');
   const fee_codes={}; FEEROWS.forEach(r=>{ (fee_codes[r.service]=fee_codes[r.service]||[]).push(r.fee_head+(r.rate!=null?' (₹'+r.rate+(r.basis==='per_sqm'?'/sq m':'')+')':'')); });
   const vocab={document_types:DOCTYPES.map(d=>({code:d.code,name:d.name})), fee_codes};
   let r; try{ r=await api('/bridge/service-expert',{message:msg,history:HIST,spec:buildBody(),vocab}); }catch(e){ r={reply:'model error'}; }
   wait.remove();
-  pushMsg('ai', r.reply||'(no reply)'); HIST.push({role:'assistant',text:r.reply||''});
+  pushMsg('ai', r.reply || ('⚠ The AI Expert could not answer: '+(r.error||r.detail||'no reply')+' — please try again.')); HIST.push({role:'assistant',text:r.reply||''});
   if((r.notes||[]).length) pushMsg('ai', '⚠ Please check:\n• '+r.notes.join('\n• '));
   if(r.spec && Object.keys(r.spec).length){ const d=document.getElementById('chat'); const b=document.createElement('div'); b.className='msg';
     b.innerHTML='<button class="btn sm" style="margin:4px 0">✨ Apply to editor</button>'; b.querySelector('button').onclick=()=>applySpec(r.spec);

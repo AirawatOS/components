@@ -9,7 +9,7 @@
 # updates, network-unique service ids, checks + citizen preview before publish. Round-trips hand-written offerings.
 component_id: ds:airawatdeveloper:app/service-studio
 kind: app
-version: 0.3.3
+version: 0.3.4
 provider: ds:airawatdeveloper:developer
 display_name: Service Studio
 entrypoint: index.html
