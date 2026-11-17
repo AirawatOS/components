@@ -96,7 +96,7 @@ function parseOffering(o){
   const st={B:{service_id:o.service_id||'',title:o.title||'',domain:o.domain||'urban',description:o.description||'',jurisdiction:o.jurisdiction||'',
                entitlement:o.entitlement||'residence',audience:o.audience||'civic.resident',
                fees_on:o.fee_ref==='urban.fee_schedule', fee_service:ff.fee_service||(o.fee_ref?o.service_id:''), payment:ff.payment||'none',
-               route_zone:smap.area==='zone' && Object.values(props).some(p=>p['x-from']==='property.zone'||String(p['x-from']||'').endsWith('.zone'))},
+               route_zone:smap.area==='zone' && Object.values(props).some(p=>p['x-lookup']==='urban.property')},
             FIELDS:[], STEPS:[], DOCS:[], REQCREDS:o.required_credentials||[]};
   let sec='';
   for(const k of order){ const p=props[k]||{};
@@ -388,17 +388,12 @@ async function publish(){
   if(r.published){ SEL=b.service_id; await loadNav(); ORIG=SVCS.find(o=>o.service_id===SEL)||null; out.innerHTML=' <span class="ok">✓ Published — citizens can find it in My Services.</span>'; }
   else out.innerHTML=' <span class="err">✗ '+esc(typeof r.detail==='string'?r.detail:JSON.stringify(r.detail||r.error||'failed'))+'</span>';
 }
-function applySpec(s){                              // the AI expert's proposal → editor state (fields + workflow)
-  if(s.service_id && !SEL) B.service_id=(ME.tenant?ME.tenant+'-':'')+slug(s.service_id).replace(new RegExp('^'+(ME.tenant||'')+'-'),'');
-  if(s.title) B.title=s.title; if(s.description) B.description=s.description;
-  const props=(s.request_schema||{}).properties||{}, req=(s.request_schema||{}).required||[];
-  if(Object.keys(props).length) FIELDS=Object.keys(props).map(k=>{ const p=props[k]; return {key:k,label:p.title||k,
-      type:Array.isArray(p.enum)?'choice':p.format==='date'?'date':p.type==='number'?'number':p['x-widget']==='textarea'?'textarea':'text',
-      required:req.includes(k),section:'',help:p.description||'',options:Array.isArray(p.enum)?p.enum.join('\n'):'',show_field:'',show_values:'',prefill:false,scope_dim:''}; });
-  if((s.workflow||[]).length) STEPS=s.workflow.map(w=>({step:w.step||'',role:ROLES.includes(w.role)?w.role:(ROLES.find(r=>r.startsWith('urban.'))||ROLES[0]||''),task:w.task||'',
-      issues:CTYPES.some(c=>c.type===w.issues)?w.issues:'',sla:'',office:false,effect:'none',holder_field:''}));
-  REQCREDS=new Set((s.required_credentials||[]).filter(t=>CTYPES.some(c=>c.type===t)));
-  renderEditor();
+function applySpec(s){                              // the AI expert's proposal (v2 offering shape) → the editor, via the round-trip parser
+  const keepId = SEL ? B.service_id : (ME.tenant?ME.tenant+'-':'')+slug(s.service_id||s.title||'service').replace(new RegExp('^'+(ME.tenant||'')+'-'),'');
+  const st = parseOffering({...s, service_id:keepId, jurisdiction:B.jurisdiction||(AJUR?AJUR.code:''), audience:B.audience||s.audience||'civic.resident', domain:s.domain||B.domain});
+  if(!st.B.title) st.B.title=B.title; if(!st.B.description) st.B.description=B.description;
+  st.STEPS.forEach(x=>{ if(!x.role) x.role=''; });
+  applyState(st); TAB='form'; renderEditor();
 }
 
 function toggleAI(){ document.getElementById('right').classList.toggle('collapsed'); }
@@ -410,9 +405,12 @@ async function ask(){
   if(document.getElementById('right').classList.contains('collapsed')) toggleAI();
   pushMsg('user',msg); HIST.push({role:'user',text:msg});
   const wait=pushMsg('ai','…thinking');
-  let r; try{ r=await api('/bridge/service-expert',{message:msg,history:HIST,spec:buildBody()}); }catch(e){ r={reply:'model error'}; }
+  const fee_codes={}; FEEROWS.forEach(r=>{ (fee_codes[r.service]=fee_codes[r.service]||[]).push(r.fee_head+(r.rate!=null?' (₹'+r.rate+(r.basis==='per_sqm'?'/sq m':'')+')':'')); });
+  const vocab={document_types:DOCTYPES.map(d=>({code:d.code,name:d.name})), fee_codes};
+  let r; try{ r=await api('/bridge/service-expert',{message:msg,history:HIST,spec:buildBody(),vocab}); }catch(e){ r={reply:'model error'}; }
   wait.remove();
   pushMsg('ai', r.reply||'(no reply)'); HIST.push({role:'assistant',text:r.reply||''});
+  if((r.notes||[]).length) pushMsg('ai', '⚠ Please check:\n• '+r.notes.join('\n• '));
   if(r.spec && Object.keys(r.spec).length){ const d=document.getElementById('chat'); const b=document.createElement('div'); b.className='msg';
     b.innerHTML='<button class="btn sm" style="margin:4px 0">✨ Apply to editor</button>'; b.querySelector('button').onclick=()=>applySpec(r.spec);
     d.appendChild(b); d.scrollTop=d.scrollHeight; }
