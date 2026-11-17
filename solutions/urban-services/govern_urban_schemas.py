@@ -140,6 +140,13 @@ CREDENTIALS = [
        "payment with the application it was paid for.", ["receipt_no", "service", "amount", "authority"],
        {"receipt_no": TXT, "service": TXT, "service_title": TXT, "authority": TXT, "amount": {"type": "number"}, "currency": TXT,
         "paid_at": TXT, "method": TXT, "gateway": TXT, "property_id": TXT}), "internal"),
+ (("credential.urban_freehold_conversion", {"type": "object", "title": "credential.urban_freehold_conversion", "x-kind": "fragment",
+   "description": "Freehold conversion order: the property, previously leasehold, is now held freehold. Issued by the department "
+                  "that holds the property record. Claims are the application's own fields (they vary by department's form).",
+   "x-open": True, "x-open-reason": "the claims are the citizen's application fields, which each department's Studio-built form defines",
+   "required": ["property_id"],
+   "properties": {"property": TXT, "property_id": TXT, "zone": TXT, "address": TXT, "land_use": TXT, "area_sqm": {"type": ["number", "string"]},
+                  "conversion_reason": TXT, "remarks": TXT}}), "internal"),
  (cred("credential.urban_name_transfer", "Name transfer (mutation) order: the property is now recorded in the name of the "
        "transferee. Issued by the department that holds the property record.",
        ["property_id"],

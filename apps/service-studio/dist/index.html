@@ -116,6 +116,7 @@ function parseOffering(o){
   st.STEPS=(ff.workflow||[]).map(s=>{ const e=s.effects||null; let effect='none', holder_field='';
       if(e && e.length===2 && e[0].close && e[1].write && e[0].close.schema==='urban.property_holding' && e[1].write.schema==='urban.property_holding'){
         effect='transfer_holding'; holder_field=String(e[1].write.holder_name||'').replace('$form.',''); }
+      else if(e && e.length===2 && e[0].close && e[0].close.schema==='urban.property' && (e[0].close.patch||{}).tenure==='freehold') effect='convert_freehold';
       else if(e) effect='custom';
       return {step:s.step,role:s.role,task:s.task||'',issues:s.issues||'',sla:slas[s.step]!=null?String(slas[s.step]):'',office:s.office_by==='zone',
               effect,holder_field,raw_effects:effect==='custom'?e:null}; });
@@ -154,6 +155,9 @@ function buildBody(){
       {close:{schema:'urban.property_holding', match:{property:'$form.'+propKey}, patch:{until:'$today'}}},
       {write:{schema:'urban.property_holding', property:'$form.'+propKey, holder_name:'$form.'+s.holder_field, holder_ref:'$applicant',
               relation:'owner', share_pct:100, since:'$today', source_doc:'$case'}}];
+    else if(s.effect==='convert_freehold' && propKey) o.effects=[
+      {close:{schema:'urban.property', match:{id:'$form.'+propKey}, patch:{tenure:'freehold'}}},
+      {close:{schema:'urban.lease', match:{property:'$form.'+propKey, status:'active'}, patch:{status:'converted'}}}];
     else if(s.effect==='custom' && s.raw_effects) o.effects=s.raw_effects;
     return o; });
   const ful={};
@@ -352,7 +356,7 @@ function paneWf(){
       <div class="more" style="grid-template-columns:1fr 1fr">
         <div>${prop&&B.route_zone?`<label class="chk" style="margin-top:18px"><input type="checkbox" ${s.office?'checked':''} onchange="STEPS[${i}].office=this.checked"> Goes to the zone office of the property</label>`:'<label>&nbsp;</label><div class="hint">Sent to anyone holding the role.</div>'}</div>
         <div><label>On approval, issue</label><select onchange="STEPS[${i}].issues=this.value"><option value="">— nothing —</option>${opt(CTYPES.map(c=>[c.type,c.title||ctitle(c.type)]),s.issues)}</select></div>
-        <div><label>On approval, update the department's records</label><select onchange="STEPS[${i}].effect=this.value;renderEditor()">${opt([['none','— nothing —'],...(prop?[['transfer_holding','Transfer the property to the new holder']]:[]),...(s.effect==='custom'?[['custom','Custom (kept as authored)']]:[])],s.effect)}</select></div>
+        <div><label>On approval, update the department's records</label><select onchange="STEPS[${i}].effect=this.value;renderEditor()">${opt([['none','— nothing —'],...(prop?[['transfer_holding','Transfer the property to the new holder'],['convert_freehold','Convert the property to freehold (tenure → freehold; active lease → converted)']]:[]),...(s.effect==='custom'?[['custom','Custom (kept as authored)']]:[])],s.effect)}</select></div>
         <div>${s.effect==='transfer_holding'?`<label>New holder's name comes from</label><select onchange="STEPS[${i}].holder_field=this.value"><option value="">choose a field…</option>${opt(tf,s.holder_field)}</select>`:''}</div>
       </div></div>`).join('')}</div>`;
 }

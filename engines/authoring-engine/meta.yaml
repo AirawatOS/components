@@ -4,7 +4,7 @@
 # spec/actions, never writes to disk (Studio's solution-generate + project-* orchestration stays host-side).
 component_id: ds:airawatdeveloper:engine/authoring-engine
 kind: engine
-version: 0.2.0
+version: 0.2.1
 provider: ds:airawat:developer
 display_name: Authoring Engine
 entrypoint: run.py

@@ -159,6 +159,13 @@ def _v2_sanitize(spec, roles, ctypes, doc_codes, fee_codes):
                                             "holder_ref": "$applicant", "relation": "owner", "share_pct": 100, "since": "$today", "source_doc": "$case"}}]
             else:
                 st.pop("effects")
+        elif eff == "convert_freehold":
+            prop = next((k for k, p in ((spec.get("request_schema") or {}).get("properties") or {}).items() if isinstance(p, dict) and p.get("x-lookup") == "urban.property"), None)
+            if prop:
+                st["effects"] = [{"close": {"schema": "urban.property", "match": {"id": "$form." + prop}, "patch": {"tenure": "freehold"}}},
+                                 {"close": {"schema": "urban.lease", "match": {"property": "$form." + prop, "status": "active"}, "patch": {"status": "converted"}}}]
+            else:
+                st.pop("effects")
         elif eff is not None:
             st.pop("effects")
         wf.append(st)
@@ -208,7 +215,7 @@ def h_service_expert(ctx):
         "- Fees: if the service charges a fee set fee_ref:'urban.fee_schedule' and fulfillment.fee_service to one of this department's fee codes "
         + _json.dumps(fee_codes) + " (or a new kebab-case code if none fits — the admin will add its rules); payment:'before_submit' when it is paid online.\n"
         "- fulfillment.workflow: ordered steps {step:'<kebab>', role:<ONE OF " + _json.dumps(urban_roles) + ">, task, office_by:'zone' (only with a property lookup), "
-        "issues:<credential type, ONLY from " + _json.dumps(ctypes) + ">, effects:'transfer_holding:<field with the new holder name>' only when the holder changes}; "
+        "issues:<credential type, ONLY from " + _json.dumps(ctypes) + ">, effects:'transfer_holding:<field with the new holder name>' only when the holder changes, or 'convert_freehold' when a leasehold property becomes freehold}; "
         "fulfillment.sla_hours {step: hours} for every step.\n"
         "- required_credentials: usually ['credential.identity_verified'].\n"
         "Respond with ONE JSON object only — no reasoning, no markdown: {\"reply\":\"<2-3 sentences: what you built and what the admin should check>\", \"spec\":{...}}.\n\n"
