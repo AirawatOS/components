@@ -78,7 +78,7 @@ const PROP_HIDDEN=['property_id','zone','address','land_use','area_sqm'];       
 const FIELD_TYPES=[['text','Text'],['textarea','Long text'],['number','Number'],['date','Date'],['choice','Choice list'],['property','🏠 Property lookup'],['location','📍 Location picker']];
 const BASIS=[['flat','Flat amount'],['per_sqm','Per sq m'],['percent_of_value','% of value'],['per_unit','Per unit'],['slab','Slabs (by area)']];
 let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], AREAS=[], UNITS=[], SVCS=[], ALLSVCS=[], SEL=null, HIST=[], DOCTYPES=[], FEEROWS=[];
-let AJUR=null, ALLOWED=[], TAB='basics', ORIG=null;
+let AJUR=null, ALLOWED=[], TAB='basics', ORIG=null, TESTED=null, PV={}, PVLOOK=null, GRANTS=null;
 let B={}, FIELDS=[], STEPS=[], DOCS=[], REQCREDS=new Set();
 
 // ================= the MODEL: offering JSON ⇄ editor state (pure — no DOM; round-trip tested) =================
@@ -205,10 +205,10 @@ async function loadNav(){
        <div class="s">${esc(o.status||'')} · ${((o.fulfillment||{}).workflow||[]).length} steps${o.fee_ref?' · fee':''}</div></div>`).join('')
     : '<div class="muted" style="padding:10px">No services yet.</div>';
 }
-function newSvc(){ SEL=null; ORIG=null; const st=blankState(); st.B.jurisdiction=AJUR?AJUR.code:'';
+function newSvc(){ SEL=null; ORIG=null; TESTED=null; PV={}; PVLOOK=null; const st=blankState(); st.B.jurisdiction=AJUR?AJUR.code:'';
   st.B.domain=DOMAINS.includes('urban')?'urban':(DOMAINS[0]||'urban'); st.STEPS[0].role=ROLES.find(r=>r.startsWith('urban.'))||ROLES[0]||'';
   applyState(st); TAB='basics'; renderEditor(); loadNav(); }
-function loadSvc(i){ const o=SVCS[i]; SEL=o.service_id; ORIG=o; applyState(parseOffering(o)); TAB='basics'; renderEditor(); loadNav(); }
+function loadSvc(i){ const o=SVCS[i]; SEL=o.service_id; ORIG=o; TESTED=null; PV={}; PVLOOK=null; applyState(parseOffering(o)); TAB='basics'; renderEditor(); loadNav(); }
 
 const opt=(list,sel,lab)=>list.map(x=>{ const v=Array.isArray(x)?x[0]:x, l=Array.isArray(x)?x[1]:(lab?lab(x):x); return `<option value="${esc(v)}"${v===sel?' selected':''}>${esc(l)}</option>`; }).join('');
 const roleOpts=sel=>opt(ROLES,sel,r=>r.replace(/^urban\./,'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())+' ('+r+')');
@@ -220,10 +220,10 @@ const myFeeRows=()=>FEEROWS.filter(r=>r.service===feeCode());
 
 function renderEditor(){
   const n={form:FIELDS.filter(f=>f.key||f.label).length, docs:DOCS.length, fees:B.fees_on?myFeeRows().length:0, wf:STEPS.filter(s=>s.role).length};
-  const T=[['basics','Basics',''],['form','Form',n.form],['docs','Documents',n.docs],['fees','Fees & payment',B.fees_on?n.fees+' rules':'off'],['wf','Workflow',n.wf+' steps'],['review','Review & publish','']];
+  const T=[['basics','Basics',''],['form','Form',n.form],['docs','Documents',n.docs],['fees','Fees & payment',B.fees_on?n.fees+' rules':'off'],['wf','Workflow',n.wf+' steps'],['test','Preview & test',isTested()?'✓ tested':'not tested'],['review','Review & publish','']];
   document.getElementById('edit').innerHTML = `<div class="tabs">${T.map(([k,l,c])=>`<button class="${TAB===k?'on':''}" onclick="TAB='${k}';renderEditor()">${l}${c!==''?`<span class="n">${esc(c)}</span>`:''}</button>`).join('')}</div>
     <div id="pane"></div>`;
-  ({basics:paneBasics, form:paneForm, docs:paneDocs, fees:paneFees, wf:paneWf, review:paneReview})[TAB]();
+  ({basics:paneBasics, form:paneForm, docs:paneDocs, fees:paneFees, wf:paneWf, test:paneTest, review:paneReview})[TAB]();
 }
 function paneBasics(){
   const taken = slug(B.service_id) && ALLSVCS.some(o=>o.service_id===slug(B.service_id) && o.tenant!==ME.tenant);
@@ -378,13 +378,84 @@ function paneReview(){
     return `${p['x-section']?'<div class="pill" style="margin:10px 0 2px 0">'+esc(p['x-section'])+'</div>':''}<div style="font-size:13px;margin:3px 0">• ${esc(p.title)}${b.request_schema.required.includes(k)?' <span class="err">*</span>':''}
       <span class="muted">${p['x-lookup']?'property lookup':Array.isArray(p.enum)?'choice: '+p.enum.map(v=>(p['x-enum-labels']||{})[v]||tcase(v)).slice(0,6).join(' / '):p.format||p['x-widget']||p.type}${p['x-show-if']?' · only if '+esc(JSON.stringify(p['x-show-if']).replace(/[{}"]/g,'')):''}</span></div>`; }).join('');
   document.getElementById('pane').innerHTML = `<div class="card"><h3>Checks</h3>${ck.map(([g,m])=>`<div class="check ${g?'good':'bad'}">${g?'✓':'✗'} ${esc(m)}</div>`).join('')}
-      <div style="margin-top:10px"><button class="btn" id="pub" ${ok?'':'disabled'} onclick="publish()">${SEL?'Publish changes':'Publish service'}</button> <span id="pubOut" class="muted"></span></div></div>
+      <div class="check ${isTested()?'good':'bad'}">${isTested()?'✓ Tested — a test run of exactly this definition passed':'✗ Not tested — run a test application in <a style="color:var(--accent);cursor:pointer" onclick="TAB=\'test\';renderEditor()">Preview &amp; test</a> (any change needs a new test)'}</div>
+      <div style="margin-top:10px"><button class="btn" id="pub" ${ok&&isTested()?'':'disabled'} onclick="publish()">${SEL?'Publish changes':'Publish service'}</button> <span id="pubOut" class="muted"></span></div></div>
     <div class="card"><h3>What the citizen sees</h3><b>${esc(b.title)}</b><div class="muted">${esc(b.description)}</div>${form}
       ${(b.fulfillment.documents||[]).length?'<div style="margin-top:8px"><b style="font-size:13px">Documents</b>'+b.fulfillment.documents.map(d=>'<div style="font-size:13px">• '+esc((DOCTYPES.find(t=>t.code===d.type)||{}).name||d.type)+(Object.keys(d.when).length?' <span class="muted">('+esc(JSON.stringify(d.when).replace(/[{}"]/g,''))+')</span>':'')+'</div>').join('')+'</div>':''}
       ${B.fees_on?'<div style="margin-top:8px;font-size:13px"><b>Fee</b> from rule code “'+esc(feeCode())+'” · '+(B.payment==='before_submit'?'paid before submitting':'paid later')+'</div>':''}
       <div style="margin-top:8px;font-size:13px"><b>Then</b> ${b.fulfillment.workflow.map((s,i)=>(i+1)+'. '+esc(tcase(s.step))+' — '+esc(s.role)+(s.office_by?' (zone office)':'')+(b.fulfillment.sla_hours&&b.fulfillment.sla_hours[s.step]?' · '+b.fulfillment.sla_hours[s.step]+'h':'')+(s.issues?' · issues '+esc(ctitle(s.issues)):'')+(s.effects?' · updates records':'')).join('<br>')}</div></div>
     <div class="card"><details><summary class="muted" style="cursor:pointer">Technical definition (what gets published)</summary><pre>${esc(JSON.stringify(b,null,2))}</pre></details></div>`;
 }
+
+// ================= PREVIEW & TEST (dry run — writes nothing) =================
+const defHash=()=>JSON.stringify(buildBody());
+function isTested(){ return !!TESTED && TESTED===defHash(); }
+const q=(schema,filter)=>api('/bridge/query',{app_id:APP,schema,filter:filter||{}}).then(r=>(r.results||[]).map(x=>x.object||x)).catch(()=>[]);
+function pvVisible(p){ const si=p['x-show-if']; if(!si) return true; return Object.entries(si).every(([f,w])=>Array.isArray(w)?w.includes(PV[f]):PV[f]===w); }
+function paneTest(){
+  const b=buildBody(), props=b.request_schema.properties, order=b.request_schema['x-order'];
+  let last=null;
+  const fields=order.filter(k=>!props[k]['x-from']).map(k=>{ const p=props[k]; if(!pvVisible(p)) return '';
+    let h=''; if(p['x-section'] && p['x-section']!==last){ last=p['x-section']; h+=`<div class="pill" style="margin:12px 0 2px 0">${esc(last)}</div>`; }
+    const req=b.request_schema.required.includes(k)?' <span class="err">*</span>':'', help=p.description?`<div class="hint">${esc(p.description)}</div>`:'';
+    let w;
+    if(p['x-lookup']==='urban.property') w=`<div style="display:flex;gap:6px"><input value="${esc(PV[k]||'')}" placeholder="e.g. UP-CDA-000123" oninput="PV['${k}']=this.value.toUpperCase()"><button class="btn ghost sm" onclick="pvLookup('${k}')">Find</button></div>
+        <div class="hint">${PVLOOK?`✓ <b>${esc(PVLOOK.property_id)}</b> · ${esc(PVLOOK.address||'')} · ${esc(PVLOOK.land_use||'')} · ${esc(PVLOOK.area_sqm||'')} sq m · ${esc(PVLOOK.zone_name||'')} · ${esc(PVLOOK.tenure||'')}`:'Look up a real property of your department to test with.'}</div>`;
+    else if(Array.isArray(p.enum)) w=`<select onchange="PV['${k}']=this.value;renderEditor()"><option value="">Choose…</option>${p.enum.map(v=>`<option value="${esc(v)}"${PV[k]===v?' selected':''}>${esc((p['x-enum-labels']||{})[v]||tcase(v))}</option>`).join('')}</select>`;
+    else if(p['x-widget']==='textarea') w=`<textarea rows="2" oninput="PV['${k}']=this.value">${esc(PV[k]||'')}</textarea>`;
+    else w=`<input type="${p.format==='date'?'date':p.type==='number'?'number':'text'}" value="${esc(PV[k]||'')}" placeholder="${p['x-prefill']?'(the applicant’s verified name)':''}" oninput="PV['${k}']=this.value">`;
+    return h+`<label>${esc(p.title)}${req}</label>${help}${w}`; }).join('');
+  const docs=(b.fulfillment.documents||[]).filter(d=>Object.entries(d.when||{}).every(([f,w])=>Array.isArray(w)?w.includes(PV[f]):PV[f]===w));
+  const facts={area_sqm:PVLOOK&&PVLOOK.area_sqm, land_use:PVLOOK&&PVLOOK.land_use, zone:PVLOOK&&PVLOOK.zone, value:PV.declared_value||PV.value, units:PV.units||PV.days};
+  const items=B.fees_on?feeCalc(myFeeRows(),facts):[], tot=items.reduce((a,[,v])=>a+(v||0),0);
+  document.getElementById('pane').innerHTML=`<div class="card"><h3>Preview — what the citizen sees</h3>
+      <b>${esc(b.title||'(untitled)')}</b><div class="muted">${esc(b.description||'')}</div>${fields||'<div class="muted">No fields.</div>'}
+      ${docs.length?'<label style="margin-top:12px">Documents the office will check</label>'+docs.map(d=>'<div class="chk" style="cursor:default">📄 '+esc((DOCTYPES.find(t=>t.code===d.type)||{}).name||d.type)+'</div>').join(''):''}
+      ${B.fees_on?`<label style="margin-top:12px">Fee</label><div>${items.length?items.map(([h,v])=>esc(h)+': '+(v==null?'<span class="warn">needs the property / more details</span>':'₹'+Math.round(v).toLocaleString('en-IN'))).join(' · ')+' — <b>₹'+Math.round(tot).toLocaleString('en-IN')+'</b>':'<span class="muted">no fee rule applies yet</span>'}${B.payment==='before_submit'?' <span class="pill">paid before submitting</span>':''}</div>`:''}</div>
+    <div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Test run</h3><span class="hint" style="margin-left:8px">a dry run with the answers above — nothing is written</span>
+      <button class="btn sm" style="margin-left:auto" onclick="runTest()">▶ Run a test application</button></div><div id="tres" class="hint" style="margin-top:8px">${isTested()?'✓ The last test of this exact definition passed.':'Fill in the preview, then run.'}</div></div>`;
+}
+async function pvLookup(k){
+  const id=(PV[k]||'').trim(); if(!id) return;
+  const r=await api('/bridge/urban-property',{authority:ME.tenant, property_id:id});
+  PVLOOK=r.property||null; if(!PVLOOK) alert(r.error||'not found'); renderEditor();
+}
+function areaChain(id){ const out=[]; let c=id, seen=new Set(); while(c && !seen.has(c)){ seen.add(c); out.push(c); c=(AREAS.find(a=>a.id===c)||{}).parent; } return out; }
+async function runTest(){
+  const out=document.getElementById('tres'); out.innerHTML='Running…';
+  const b=buildBody(), props=b.request_schema.properties, rows=[]; let blocking=false;
+  const line=(ok,txt,block)=>{ rows.push(`<div class="check ${ok===true?'good':ok===false?'bad':''}">${ok===true?'✓':ok===false?(block?'✗':'⚠'):'•'} ${txt}</div>`); if(ok===false&&block) blocking=true; };
+  // 1. can the citizen submit?
+  const visible=b.request_schema.required.filter(k=>!props[k]['x-from'] && pvVisible(props[k]));
+  const missing=visible.filter(k=>props[k]['x-lookup'] ? !PVLOOK : !(PV[k]||'').toString().trim());
+  line(!missing.length, missing.length?'The citizen could not submit yet — missing: '+missing.map(k=>esc(props[k].title)).join(', '):'The citizen can submit (all required answers given)', true);
+  const ck=checks().filter(c=>!c[0]); ck.forEach(c=>line(false,esc(c[1]),true));
+  // 2. fee
+  if(B.fees_on){ const facts={area_sqm:PVLOOK&&PVLOOK.area_sqm, land_use:PVLOOK&&PVLOOK.land_use, zone:PVLOOK&&PVLOOK.zone, value:PV.declared_value||PV.value, units:PV.units||PV.days};
+    const items=feeCalc(myFeeRows(),facts), tot=items.reduce((a,[,v])=>a+(v||0),0);
+    line(items.length>0 && items.every(([,v])=>v!=null), items.length?'Fee ₹'+Math.round(tot).toLocaleString('en-IN')+' — '+items.map(([h,v])=>esc(h)+(v==null?' (cannot compute)':' ₹'+Math.round(v).toLocaleString('en-IN'))).join(', ')+(B.payment==='before_submit'?' · paid before submitting':''):'No fee rule applies to this application', false); }
+  // 3. routing, officers, due times
+  if(!GRANTS) GRANTS=await q('governance.role_grant',{});
+  const zone=PVLOOK&&PVLOOK.zone; let t=Date.now();
+  for(const st of b.fulfillment.workflow){
+    const holders=GRANTS.filter(g=>g.role===st.role && !g.revoked && (!st.office_by || !g.scope || !g.scope.area || (zone && areaChain(zone).includes(g.scope.area))));
+    const sla=(b.fulfillment.sla_hours||{})[st.step]; if(sla) t+=sla*3600e3;
+    const office=st.office_by&&zone?(UNITS.find(u=>u.area===zone)||{}).name||PVLOOK.zone_name:'';
+    line(holders.length>0, `<b>${esc(tcase(st.step))}</b> → ${esc(st.role)}${office?' at <b>'+esc(office)+'</b>':''}: ${holders.length?holders.map(g=>esc(String(g.subject).split('/').pop())).join(', '):'<b>no officer holds this role'+(st.office_by?' for this zone':'')+'</b> — post one in Org Setup'}${sla?' · due by '+new Date(t).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}`, false);
+    // 4. what approval would change (department's real records — read only)
+    for(const e of (st.effects||[])){ const c=e.close, w=e.write;
+      const val=v=>typeof v==='string'&&v.startsWith('$form.')?(props[v.slice(6)]&&props[v.slice(6)]['x-lookup']?(PVLOOK&&PVLOOK.property):PV[v.slice(6)]):v;
+      if(c){ const match=Object.fromEntries(Object.entries(c.match||{}).map(([k,v])=>[k,val(v)]));
+        if(Object.values(match).some(v=>!v)){ line(null,`On approval: would update ${esc(c.schema)} — needs the test answers`); continue; }
+        const recs=(await q(c.schema,match)).filter(r=>!r.until);
+        line(true,`On approval: ${recs.length?recs.map(r=>esc(c.schema.split('.').pop())+' '+esc(r.holder_name||r.property_id||r.deed_no||String(r.id).split('/').pop())+(c.patch.tenure?' tenure '+esc(r.tenure)+' → '+esc(c.patch.tenure):'')+(c.patch.status?' '+esc(r.status)+' → '+esc(c.patch.status):'')+(c.patch.until?' closed':'')).join('; '):'no matching '+esc(c.schema)+' record'}`); }
+      if(w){ line(true,`On approval: creates ${esc(w.schema.split('.').pop())} — ${esc(val(w.holder_name)||'(name from the form)')}${w.relation?' as '+esc(w.relation):''}`); } }
+    if(st.issues) line(true,`On approval: issues <b>${esc(ctitle(st.issues))}</b> to the applicant's wallet, with: ${esc(Object.keys(PV).filter(k=>PV[k]).concat(PVLOOK?['property_id','address','zone']:[]).join(', '))}`);
+  }
+  out.innerHTML=rows.join('')+(blocking?'<div class="err" style="margin-top:8px">Fix the ✗ items and run again.</div>':'<div class="ok" style="margin-top:8px">✓ Test passed — you can publish from Review &amp; publish.</div>');
+  if(!blocking){ TESTED=defHash(); const tb=[...document.querySelectorAll('.tabs button')].find(x=>x.textContent.startsWith('Preview')); if(tb) tb.innerHTML='Preview & test<span class="n">✓ tested</span>'; }
+}
+
 async function publish(){
   const btn=document.getElementById('pub'), out=document.getElementById('pubOut'); btn.disabled=true; out.textContent=' Publishing…';
   const b=buildBody(); const r=await api('/bridge/service-offering-save', b);

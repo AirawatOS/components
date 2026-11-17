@@ -5,7 +5,7 @@
 # service bridges (search / select / consent / route / transactions).
 component_id: ds:airawatdeveloper:app/jan-seva
 kind: app
-version: 0.6.0
+version: 0.6.1
 provider: ds:airawatdeveloper:developer
 display_name: My Services
 icon: 🏛️

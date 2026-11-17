@@ -556,9 +556,13 @@ async function track(){
           ${statusChip(t.status)}</div><div class="prog" id="pg${i}"></div></div>`; }).join('');
   updateBadges();
   TXNS.forEach(async (t,i)=>{                   // live progress from the department's own case (data at source)
-    try{ const s = await api('/bridge/service-status', {app_id:APP, case:t.case}); const m = s.message||{};
+    try{ let m = {};
+      try{ const s = await api('/bridge/service-status', {app_id:APP, case:t.case}); if(s && s.message && s.message.case) m = s.message; }catch(e){}
+      // the live case read may be unavailable to this app — the network's record of the application (status + current
+      // step, kept in sync by the department) is the fallback, so an approved application never shows as just "Submitted"
       const o = CATALOG.find(c=>c.service_id===t.service_id) || {}; const wf = ((o.fulfillment||{}).workflow||[]).map(x=>x.step);
-      const cur = m.current_step, closed = m.status==='closed';
+      const cur = m.current_step || (['rejected','returned'].includes(t.status) ? t.status : t.current_step) || 'received';
+      const closed = m.status==='closed' || ['resolved','rejected','returned','closed','withdrawn'].includes(t.status);
       const stages = ['submitted'].concat(wf, ['decision']);
       let at = cur==='received'||cur==='submitted' ? 1 : (wf.indexOf(cur) >= 0 ? wf.indexOf(cur)+1 : 0);
       if(closed) at = stages.length;
