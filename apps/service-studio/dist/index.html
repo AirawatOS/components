@@ -35,13 +35,24 @@
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
   .modal.open{display:flex}.sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:520px;max-width:92vw;max-height:88vh;overflow:auto}
   .pill{display:inline-block;background:#21262d;border-radius:999px;padding:1px 9px;font-size:12px;margin-left:6px}
+  /* 0.3.0 */
+  .tabs{display:flex;gap:2px;max-width:760px;margin:0 auto 4px;border-bottom:1px solid var(--line);position:sticky;top:-18px;background:var(--bg);z-index:3;padding-top:4px}
+  .tabs button{background:none;border:0;color:var(--dim);padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;border-bottom:2px solid transparent}
+  .tabs button.on{color:var(--txt);border-bottom-color:var(--accent)} .tabs .n{font-weight:400;font-size:11px;color:var(--dim);margin-left:4px}
+  .fld{border:1px solid var(--line);border-radius:9px;padding:10px;margin:8px 0;background:var(--panel2)}
+  .fld .top{display:grid;grid-template-columns:auto 1.4fr 1fr auto auto;gap:6px;align-items:center}
+  .fld .more{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+  .hint{font-size:12px;color:var(--dim)} .warn{color:var(--warn)}
+  table.t{width:100%;border-collapse:collapse;font-size:13px} table.t td,table.t th{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top}
+  table.t th{color:var(--dim);font-weight:500;font-size:12px}
+  .check{padding:4px 0} .check.bad{color:var(--err)} .check.good{color:var(--good)}
+  pre{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;max-height:340px;overflow:auto}
 </style>
 <div class="hbar">
   <b>🛠️ Service Studio</b><span class="muted" id="scope"></span>
   <span style="margin-left:auto"></span>
   <button class="btn ghost sm" onclick="newSvc()">＋ New Service</button>
-  <button class="btn ghost sm" onclick="preview()">Preview</button>
-  <button class="btn sm" id="pub" onclick="publish()">Publish</button>
+    <button class="btn sm" id="pub" onclick="publish()">Publish</button>
   <button class="btn ghost sm" onclick="toggleAI()">🤖 AI Expert</button>
 </div>
 <div class="body">
@@ -61,12 +72,110 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 const slug=s=>String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const skey=s=>slug(s).replace(/-/g,'_');
 const ctitle=t=>String(t||'').replace(/^credential\./,'').replace(/[_-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-const SOLUTION='ds:airawatdeveloper:solution/declarative-service';
-let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], AREAS=[], UNITS=[], SVCS=[], SEL=null, HIST=[];
-let AJUR=null, ALLOWED=[];   // the AGENCY'S own jurisdiction + any sub-jurisdictions it may serve
-let B={service_id:'',title:'',domain:'',description:'',jurisdiction:'',entitlement:'residence',audience:'civic.resident'};
-let FIELDS=[], STEPS=[], REQCREDS=new Set();
+const tcase=s=>String(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const APP='service-studio', SOLUTION='ds:airawatdeveloper:solution/declarative-service';
+const PROP_HIDDEN=['property_id','zone','address','land_use','area_sqm'];            // filled from a property lookup
+const FIELD_TYPES=[['text','Text'],['textarea','Long text'],['number','Number'],['date','Date'],['choice','Choice list'],['property','🏠 Property lookup'],['location','📍 Location picker']];
+const BASIS=[['flat','Flat amount'],['per_sqm','Per sq m'],['percent_of_value','% of value'],['per_unit','Per unit'],['slab','Slabs (by area)']];
+let ME={}, ROLES=[], CTYPES=[], CITIES=[], DOMAINS=[], AREAS=[], UNITS=[], SVCS=[], ALLSVCS=[], SEL=null, HIST=[], DOCTYPES=[], FEEROWS=[];
+let AJUR=null, ALLOWED=[], TAB='basics', ORIG=null;
+let B={}, FIELDS=[], STEPS=[], DOCS=[], REQCREDS=new Set();
 
+// ================= the MODEL: offering JSON ⇄ editor state (pure — no DOM; round-trip tested) =================
+function blankState(){
+  return {B:{service_id:'',title:'',domain:'urban',description:'',jurisdiction:'',entitlement:'residence',audience:'civic.resident',
+             fees_on:false, fee_service:'', payment:'none', route_zone:false},
+          FIELDS:[{key:'',label:'',type:'text',required:false,section:'',help:'',options:'',show_field:'',show_values:'',prefill:false,scope_dim:''}],
+          STEPS:[{step:'',role:'',task:'',issues:'',sla:'',office:false,effect:'none',holder_field:'',raw_effects:null}],
+          DOCS:[], REQCREDS:[]};
+}
+function parseOffering(o){
+  const rs=o.request_schema||{}, props=rs.properties||{}, req=rs.required||[], ff=o.fulfillment||{};
+  const order=(rs['x-order']||[]).filter(k=>k in props).concat(Object.keys(props).filter(k=>!(rs['x-order']||[]).includes(k)));
+  const smap=o.scope_map||{};
+  const st={B:{service_id:o.service_id||'',title:o.title||'',domain:o.domain||'urban',description:o.description||'',jurisdiction:o.jurisdiction||'',
+               entitlement:o.entitlement||'residence',audience:o.audience||'civic.resident',
+               fees_on:o.fee_ref==='urban.fee_schedule', fee_service:ff.fee_service||(o.fee_ref?o.service_id:''), payment:ff.payment||'none',
+               route_zone:smap.area==='zone' && Object.values(props).some(p=>p['x-from']==='property.zone'||String(p['x-from']||'').endsWith('.zone'))},
+            FIELDS:[], STEPS:[], DOCS:[], REQCREDS:o.required_credentials||[]};
+  let sec='';
+  for(const k of order){ const p=props[k]||{};
+    if(p['x-from']) continue;                                                    // hidden lookup fields are regenerated
+    if(p['x-section']) sec=p['x-section'];
+    const si=p['x-show-if']||{}, sf=Object.keys(si)[0]||'';
+    let type=p.format==='date'?'date':p['x-widget']==='textarea'?'textarea':p.type==='number'?'number':'text', options='', scope_dim='';
+    if(p['x-lookup']==='urban.property') type='property';
+    const dim=Object.keys(smap).find(d=>smap[d]===k);
+    if(dim && Array.isArray(p.enum)){ type='location'; scope_dim=dim; }
+    else if(Array.isArray(p.enum)){ type='choice'; const L=p['x-enum-labels']||{}; options=p.enum.map(v=>L[v]&&L[v]!==tcase(v)?v+' = '+L[v]:v).join('\n'); }
+    st.FIELDS.push({key:k,label:p.title||k,type,required:req.includes(k),section:sec,help:p.description||'',options,
+      show_field:sf, show_values:sf?[].concat(si[sf]).join(', '):'', prefill:p['x-prefill']==='identity.name', scope_dim});
+  }
+  if(!st.FIELDS.length) st.FIELDS=blankState().FIELDS;
+  const slas=ff.sla_hours||{};
+  st.STEPS=(ff.workflow||[]).map(s=>{ const e=s.effects||null; let effect='none', holder_field='';
+      if(e && e.length===2 && e[0].close && e[1].write && e[0].close.schema==='urban.property_holding' && e[1].write.schema==='urban.property_holding'){
+        effect='transfer_holding'; holder_field=String(e[1].write.holder_name||'').replace('$form.',''); }
+      else if(e) effect='custom';
+      return {step:s.step,role:s.role,task:s.task||'',issues:s.issues||'',sla:slas[s.step]!=null?String(slas[s.step]):'',office:s.office_by==='zone',
+              effect,holder_field,raw_effects:effect==='custom'?e:null}; });
+  if(!st.STEPS.length) st.STEPS=blankState().STEPS;
+  st.DOCS=(ff.documents||[]).map(d=>{ const w=d.when||{}, f=Object.keys(w)[0]||''; return {type:d.type, when_field:f, when_values:f?[].concat(w[f]).join(', '):''}; });
+  return st;
+}
+function buildBody(){
+  const props={}, req=[], order=[]; let lastSec=null, propKey=null;
+  for(const f of FIELDS){ const k=f.key||skey(f.label); if(!k) continue;
+    const p={type:'string', title:f.label||tcase(k)};
+    if(f.type==='number') p.type='number';
+    if(f.type==='date') p.format='date';
+    if(f.type==='textarea') p['x-widget']='textarea';
+    if(f.help) p.description=f.help;
+    if(f.section && f.section!==lastSec){ p['x-section']=f.section; lastSec=f.section; }
+    if(f.type==='choice'){ const opts=String(f.options||'').split(/\n|,/).map(x=>x.trim()).filter(Boolean).map(x=>{ const m=x.split('='); return [slug(m[0]), (m[1]||'').trim()]; });
+      p.enum=opts.map(o=>o[0]); const L=Object.fromEntries(opts.filter(o=>o[1]).map(o=>[o[0],o[1]])); if(Object.keys(L).length) p['x-enum-labels']=L; }
+    if(f.type==='location' && f.scope_dim){ const opts = f.scope_dim==='area' ? AREAS.map(a=>[a.id, a.name+(a.level?' ('+a.level+')':'')])
+          : f.scope_dim==='org_unit' ? UNITS.map(u=>[u.id, u.name]) : CITIES.map(c=>[c.code, c.name]);
+      if(opts.length){ p.enum=opts.map(o=>o[0]); p['x-enum-labels']=Object.fromEntries(opts); } }
+    if(f.type==='property'){ p['x-lookup']='urban.property'; propKey=k; }
+    if(f.show_field){ const v=String(f.show_values||'').split(',').map(x=>slug(x)).filter(Boolean); p['x-show-if']={[f.show_field]: v.length===1?v[0]:v}; }
+    if(f.prefill) p['x-prefill']='identity.name';
+    props[k]=p; order.push(k); if(f.required) req.push(k);
+    if(f.type==='property') for(const h of PROP_HIDDEN){ props[h]={type:'string','x-from':k+'.'+h}; order.push(h); }
+  }
+  const scope_map={};
+  FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(k && f.type==='location' && f.scope_dim) scope_map[f.scope_dim]=k; });
+  if(propKey && B.route_zone) scope_map.area='zone';
+  const sla={}, wf=STEPS.filter(s=>s.role).map(s=>{ const step=slug(s.step)||slug(s.task)||'step';
+    if(String(s.sla).trim()!=='' && !isNaN(+s.sla)) sla[step]=+s.sla;
+    const o={step, role:s.role, ...(s.office && propKey && B.route_zone ? {office_by:'zone'} : {}), task:s.task||s.step};
+    if(s.issues) o.issues=s.issues;
+    if(s.effect==='transfer_holding' && propKey && s.holder_field) o.effects=[
+      {close:{schema:'urban.property_holding', match:{property:'$form.'+propKey}, patch:{until:'$today'}}},
+      {write:{schema:'urban.property_holding', property:'$form.'+propKey, holder_name:'$form.'+s.holder_field, holder_ref:'$applicant',
+              relation:'owner', share_pct:100, since:'$today', source_doc:'$case'}}];
+    else if(s.effect==='custom' && s.raw_effects) o.effects=s.raw_effects;
+    return o; });
+  const ful={};
+  if(B.fees_on && B.fee_service) ful.fee_service=B.fee_service;
+  if(B.fees_on && B.payment==='before_submit') ful.payment='before_submit';
+  const docs=DOCS.filter(d=>d.type).map(d=>{ const v=String(d.when_values||'').split(',').map(x=>slug(x)).filter(Boolean);
+    return {type:d.type, when: d.when_field&&v.length ? {[d.when_field]: v.length===1?v[0]:v} : {}}; });
+  if(docs.length) ful.documents=docs;
+  if(Object.keys(sla).length) ful.sla_hours=sla;
+  ful.workflow=wf;
+  const body={tenant:ME.tenant, service_id:slug(B.service_id), domain:B.domain, title:B.title, description:B.description,
+    interaction:['search'].concat(B.fees_on?['select']:[],['init','status']), jurisdiction:B.jurisdiction, audience:B.audience||'civic.resident',
+    solution:SOLUTION, required_credentials:[...REQCREDS], scope_map, fulfillment:ful,
+    request_schema:{type:'object', required:req, properties:props, 'x-order':order}};
+  if(B.entitlement && B.entitlement!=='residence') body.entitlement=B.entitlement;
+  if(B.fees_on) body.fee_ref='urban.fee_schedule';
+  if(Object.keys(sla).length) body.sla_ref=Object.entries(sla).map(([k,v])=>k+' '+v+'h').join(', ');
+  return body;
+}
+function applyState(st){ B=st.B; FIELDS=st.FIELDS; STEPS=st.STEPS; DOCS=st.DOCS; REQCREDS=new Set(st.REQCREDS); }
+
+// ================= the EDITOR (UI over the model) =================
 async function boot(){
   try{ ME=await get('/session'); }catch(e){ ME={}; }
   document.getElementById('scope').textContent='· '+(ME.tenant||'');
@@ -74,123 +183,218 @@ async function boot(){
   try{ CTYPES=((await get('/bridge/catalog?kind=credential-types')).credential_types||[]); }catch(e){}
   try{ DOMAINS=((await get('/bridge/catalog?kind=domains')).domains||[]).map(d=>d.domain||d).filter(Boolean); }catch(e){}
   try{ CITIES=((await api('/bridge/jurisdictions',{})).jurisdictions||[]); }catch(e){}
-  try{ AREAS=((await get('/bridge/catalog?kind=areas')).areas||[]); }catch(e){}          // the agency's org.area (📍 Area picker)
-  try{ UNITS=((await get('/bridge/catalog?kind=org_units')).org_units||[]); }catch(e){}   // the agency's org.org_unit (📍 Org unit)
-  // the agency's HOME jurisdiction (the jurisdiction linked to this tenant, else jurisdiction==tenant name)
-  AJUR = CITIES.find(j=>j.tenant===ME.tenant) || CITIES.find(j=>j.code===ME.tenant) || {code:ME.tenant||'', name:(ME.tenant||'your jurisdiction'), kind:'jurisdiction'};
-  const inScope=j=>{ let c=j, seen=new Set(); while(c && !seen.has(c.code)){ if(c.code===AJUR.code) return true; seen.add(c.code); c=CITIES.find(x=>x.code===c.parent); } return false; };
-  ALLOWED = CITIES.filter(inScope); if(!ALLOWED.length) ALLOWED=[AJUR];
+  try{ AREAS=((await get('/bridge/catalog?kind=areas')).areas||[]); }catch(e){}
+  try{ UNITS=((await get('/bridge/catalog?kind=org_units')).org_units||[]); }catch(e){}
+  try{ DOCTYPES=((await api('/bridge/query',{app_id:APP,schema:'urban.document_type'})).results||[]).map(x=>x.object||x).sort((a,b)=>String(a.name).localeCompare(b.name)); }catch(e){}
+  await loadFees();
+  AJUR = CITIES.find(j=>j.tenant===ME.tenant) || CITIES.find(j=>j.code===ME.tenant) || null;
+  const inScope=j=>{ let c=j, seen=new Set(); while(c && !seen.has(c.code)){ if(AJUR && c.code===AJUR.code) return true; seen.add(c.code); c=CITIES.find(x=>x.code===c.parent); } return false; };
+  ALLOWED = AJUR ? CITIES.filter(inScope) : CITIES.filter(c=>c.kind!=='nation');
   await loadNav(); newSvc();
 }
+async function loadFees(){ try{ FEEROWS=((await api('/bridge/query',{app_id:APP,schema:'urban.fee_schedule'})).results||[]).map(x=>x.object||x); }catch(e){ FEEROWS=[]; } }
 async function loadNav(){
-  try{ const d=await api('/bridge/service-offerings',{tenant:ME.tenant}); SVCS=(d.offerings||[]).filter(o=>o.tenant===ME.tenant); }catch(e){ SVCS=[]; }
-  document.getElementById('nav').innerHTML = SVCS.length ? SVCS.map(o=>
-    `<div class="navi ${SEL===o.service_id?'on':''}" onclick='loadSvc(${JSON.stringify(o).replace(/'/g,"&#39;")})'>
-       <div>${esc(o.title||o.service_id)}</div><div class="s">${esc(o.jurisdiction||'')} · ${((o.fulfillment||{}).workflow||[]).length} steps</div></div>`).join('')
+  try{ const d=await api('/bridge/service-offerings',{}); ALLSVCS=d.offerings||[]; SVCS=ALLSVCS.filter(o=>o.tenant===ME.tenant); }catch(e){ SVCS=[]; }
+  document.getElementById('nav').innerHTML = SVCS.length ? SVCS.map((o,i)=>
+    `<div class="navi ${SEL===o.service_id?'on':''}" onclick="loadSvc(${i})"><div>${esc(o.title||o.service_id)}</div>
+       <div class="s">${esc(o.status||'')} · ${((o.fulfillment||{}).workflow||[]).length} steps${o.fee_ref?' · fee':''}</div></div>`).join('')
     : '<div class="muted" style="padding:10px">No services yet.</div>';
 }
-function newSvc(){ SEL=null; B={service_id:'',title:'',domain:(DOMAINS.includes('civic')?'civic':(DOMAINS[0]||'')),description:'',jurisdiction:(AJUR?AJUR.code:(ME.tenant||'')),entitlement:'residence',audience:(ROLES.includes('civic.resident')?'civic.resident':(ROLES[0]||''))};
-  FIELDS=[{key:'',label:'',type:'text',required:false}]; STEPS=[{step:'',role:ROLES[0]||'',task:'',issues:''}]; REQCREDS=new Set(); renderEditor(); loadNav(); }
-function loadSvc(o){ SEL=o.service_id;
-  B={service_id:o.service_id,title:o.title||'',domain:o.domain||'civic',description:o.description||'',jurisdiction:o.jurisdiction||'',entitlement:o.entitlement||'residence',audience:o.audience||'civic.resident'};
-  const props=(o.request_schema||{}).properties||{}, req=(o.request_schema||{}).required||[];
-  const smap=o.scope_map||{}, dimOf=k=>Object.keys(smap).find(d=>smap[d]===k)||'';   // restore the 📍 location marker
-  FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k]['x-widget']==='textarea'?'textarea':(props[k].type==='number'?'number':'text')),required:req.includes(k),scope_dim:dimOf(k)}));
-  if(!FIELDS.length) FIELDS=[{key:'',label:'',type:'text',required:false}];
-  STEPS=((o.fulfillment||{}).workflow||[]).map(s=>({step:s.step,role:s.role,task:s.task,issues:s.issues||''}));
-  if(!STEPS.length) STEPS=[{step:'',role:ROLES[0]||'',task:'',issues:''}];
-  REQCREDS=new Set(o.required_credentials||[]); renderEditor(); loadNav();
-}
-const cityOpts=sel=>CITIES.map(c=>`<option value="${esc(c.code)}"${c.code===sel?' selected':''}>${esc(c.name)} (${esc(c.kind)})</option>`).join('');
-const domainOpts=sel=>(DOMAINS.length?DOMAINS:['civic']).map(d=>`<option${d===sel?' selected':''}>${esc(d)}</option>`).join('');
-const allowedOpts=sel=>ALLOWED.map(j=>`<option value="${esc(j.code)}"${j.code===sel?' selected':''}>${esc(j.name)} (${esc(j.kind)})</option>`).join('');
-const roleOpts=sel=>ROLES.map(r=>`<option${r===sel?' selected':''}>${esc(r)}</option>`).join('');
-const issOpts=sel=>'<option value="">— issues nothing —</option>'+CTYPES.map(c=>`<option value="${esc(c.type)}"${c.type===sel?' selected':''}>${esc(c.title)}</option>`).join('');
+function newSvc(){ SEL=null; ORIG=null; const st=blankState(); st.B.jurisdiction=AJUR?AJUR.code:(ALLOWED[0]||{}).code||'';
+  st.B.domain=DOMAINS.includes('urban')?'urban':(DOMAINS[0]||'urban'); st.STEPS[0].role=ROLES.find(r=>r.startsWith('urban.'))||ROLES[0]||'';
+  applyState(st); TAB='basics'; renderEditor(); loadNav(); }
+function loadSvc(i){ const o=SVCS[i]; SEL=o.service_id; ORIG=o; applyState(parseOffering(o)); TAB='basics'; renderEditor(); loadNav(); }
+
+const opt=(list,sel,lab)=>list.map(x=>{ const v=Array.isArray(x)?x[0]:x, l=Array.isArray(x)?x[1]:(lab?lab(x):x); return `<option value="${esc(v)}"${v===sel?' selected':''}>${esc(l)}</option>`; }).join('');
+const roleOpts=sel=>opt(ROLES,sel,r=>r.replace(/^urban\./,'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())+' ('+r+')');
+const choiceFields=()=>FIELDS.filter(f=>f.type==='choice'&&(f.key||f.label)).map(f=>[f.key||skey(f.label), f.label||f.key]);
+const textFields=()=>FIELDS.filter(f=>['text'].includes(f.type)&&(f.key||f.label)).map(f=>[f.key||skey(f.label), f.label||f.key]);
+const hasProperty=()=>FIELDS.some(f=>f.type==='property');
+const feeCode=()=>B.fee_service || slug(B.service_id);
+const myFeeRows=()=>FEEROWS.filter(r=>r.service===feeCode());
 
 function renderEditor(){
-  document.getElementById('edit').innerHTML = `
-    <div class="card"><h3>Service</h3>
-      <div class="grid">
-        <div><label>Service id (slug)</label><input id="sid" value="${esc(B.service_id)}" placeholder="birth-certificate" oninput="B.service_id=this.value"></div>
-        <div><label>Title shown to citizens</label><input id="title" value="${esc(B.title)}" placeholder="Birth Certificate" oninput="B.title=this.value"></div>
-      </div>
-      <div class="grid">
-        <div><label>Domain</label><select onchange="B.domain=this.value">${domainOpts(B.domain)}</select></div>
-        <div><label>Description</label><input value="${esc(B.description)}" oninput="B.description=this.value" placeholder="One line"></div>
-      </div>
-      <div class="grid">
-        <div><label>Jurisdiction</label>${ALLOWED.length<=1
-          ? `<div style="padding:9px 0">📍 <b>${esc(AJUR?AJUR.name:B.jurisdiction)}</b> <span class="muted">— your agency's jurisdiction</span></div>`
-          : `<select onchange="B.jurisdiction=this.value">${allowedOpts(B.jurisdiction)}</select>`}</div>
-        <div><label>Who it's for <span class="muted">(governed role)</span></label><select onchange="B.audience=this.value">${roleOpts(B.audience)}</select></div>
-      </div>
-      <div class="grid">
-        <div><label>Qualifies by <span class="muted">(how a resident matches)</span></label><select onchange="B.entitlement=this.value"><option value="residence"${B.entitlement==='residence'?' selected':''}>Lives in the jurisdiction</option><option value="property"${B.entitlement==='property'?' selected':''}>Owns property in the jurisdiction</option></select></div>
-        <div></div>
-      </div>
-    </div>
-    <div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Intake form</h3><span class="muted" style="margin-left:8px">what the citizen fills in</span><button class="btn ghost sm" style="margin-left:auto" onclick="FIELDS.push({key:'',label:'',type:'text',required:false});renderFields()">+ Field</button></div><div id="fields"></div></div>
-    <div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Workflow</h3><span class="muted" style="margin-left:8px">who handles it, step by step</span><button class="btn ghost sm" style="margin-left:auto" onclick="STEPS.push({step:'',role:ROLES[0]||'',task:'',issues:''});renderSteps()">+ Step</button></div><div id="steps"></div>
-      <div class="muted" style="margin-top:6px">A step may <b>issue</b> a credential (a network-approved type) — minted into the citizen's wallet when that step completes.</div></div>
-    <div class="card"><h3>Required documents</h3><div class="muted">The citizen must present these (reused from their wallet). Only network-approved credential types — not free text.</div><div id="reqc"></div></div>`;
-  renderFields(); renderSteps(); renderReqc();
+  const n={form:FIELDS.filter(f=>f.key||f.label).length, docs:DOCS.length, fees:B.fees_on?myFeeRows().length:0, wf:STEPS.filter(s=>s.role).length};
+  const T=[['basics','Basics',''],['form','Form',n.form],['docs','Documents',n.docs],['fees','Fees & payment',B.fees_on?n.fees+' rules':'off'],['wf','Workflow',n.wf+' steps'],['review','Review & publish','']];
+  document.getElementById('edit').innerHTML = `<div class="tabs">${T.map(([k,l,c])=>`<button class="${TAB===k?'on':''}" onclick="TAB='${k}';renderEditor()">${l}${c!==''?`<span class="n">${esc(c)}</span>`:''}</button>`).join('')}</div>
+    <div id="pane"></div>`;
+  ({basics:paneBasics, form:paneForm, docs:paneDocs, fees:paneFees, wf:paneWf, review:paneReview})[TAB]();
 }
-function renderFields(){ document.getElementById('fields').innerHTML=FIELDS.map((f,i)=>`
-    <div class="rowline">
-      <input placeholder="Label (e.g. Full name)" value="${esc(f.label)}" oninput="FIELDS[${i}].label=this.value;FIELDS[${i}].key=FIELDS[${i}].key||skey(this.value)">
-      <select onchange="FIELDS[${i}].type=this.value">${['text','textarea','number','date'].map(t=>`<option${f.type===t?' selected':''}>${t}</option>`).join('')}</select>
-      <select title="Mark as the LOCATION of the work → routes the case to the officer for that area/jurisdiction (org RBAC)" onchange="FIELDS[${i}].scope_dim=this.value">${[['','📍 —'],['area','📍 Area'],['jurisdiction','📍 Jurisdiction'],['org_unit','📍 Org unit']].map(([v,l])=>`<option value="${v}"${(f.scope_dim||'')===v?' selected':''}>${l}</option>`).join('')}</select>
-      <label style="margin:0"><input type="checkbox" style="width:auto" ${f.required?'checked':''} onchange="FIELDS[${i}].required=this.checked"> req</label>
-      <button class="btn danger sm" onclick="FIELDS.splice(${i},1);renderFields()">✕</button></div>`).join('')
-    + '<div class="muted" style="margin-top:6px">Tag one field as 📍 <b>Location</b> — its value (an area/jurisdiction code) routes the request to the officer scoped to that place.</div>'; }
-function renderSteps(){ document.getElementById('steps').innerHTML=STEPS.map((s,i)=>`
-    <div class="stepline"><div class="num">${i+1}</div>
-      <input placeholder="stage" value="${esc(s.step)}" oninput="STEPS[${i}].step=this.value">
-      <select onchange="STEPS[${i}].role=this.value">${roleOpts(s.role)}</select>
-      <input placeholder="Task for the officer" value="${esc(s.task)}" oninput="STEPS[${i}].task=this.value">
-      <select title="Issues a credential?" onchange="STEPS[${i}].issues=this.value">${issOpts(s.issues)}</select>
-      <span><button class="btn ghost sm" onclick="if(${i}>0){[STEPS[${i}],STEPS[${i-1}]]=[STEPS[${i-1}],STEPS[${i}]];renderSteps()}">↑</button><button class="btn danger sm" onclick="STEPS.splice(${i},1);renderSteps()">✕</button></span></div>`).join(''); }
-function renderReqc(){ document.getElementById('reqc').innerHTML = CTYPES.length ? CTYPES.map(c=>`
-    <label class="chk"><input type="checkbox" ${REQCREDS.has(c.type)?'checked':''} onchange="this.checked?REQCREDS.add('${c.type}'):REQCREDS.delete('${c.type}')"> ${esc(c.title)} <span class="pill">${esc(c.type)}</span></label>`).join('')
-    : '<div class="muted">No credential types approved in the network yet. Ask the AI Expert to design one, or a step can issue one.</div>'; }
-
-function buildBody(){
-  const props={},req=[]; FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(!k)return; const p={title:f.label||k,type:f.type==='number'?'number':'string'};
-    if(f.type==='date')p.format='date'; if(f.type==='textarea')p['x-widget']='textarea';
-    if(f.scope_dim){                                    // 📍 location field → bake a picker of the agency's places (value = the code the scope routes on)
-      const opts = f.scope_dim==='area' ? AREAS.map(a=>[a.id, a.name+(a.level?' ('+a.level+')':'')])
-                 : f.scope_dim==='org_unit' ? UNITS.map(u=>[u.id, u.name])
-                 : CITIES.map(c=>[c.code, c.name]);      // jurisdiction
-      if(opts.length){ p.type='string'; p.enum=opts.map(o=>o[0]); p['x-enum-labels']=Object.fromEntries(opts); }
-    }
-    props[k]=p; if(f.required)req.push(k); });
-  const wf=STEPS.filter(s=>s.role).map(s=>({step:slug(s.step)||slug(s.task)||'step',role:s.role,task:s.task||s.step,...(s.issues?{issues:s.issues}:{})}));
-  const scope_map={}; FIELDS.forEach(f=>{ const k=f.key||skey(f.label); if(k && f.scope_dim) scope_map[f.scope_dim]=k; });  // form field → case scope
-  return {service_id:slug(B.service_id),title:B.title,domain:B.domain,description:B.description,interaction:['search','init','status'],
-    jurisdiction:B.jurisdiction,entitlement:B.entitlement,audience:B.audience||'civic.resident',request_schema:{type:'object',properties:props,required:req,additionalProperties:false},
-    solution:SOLUTION,fulfillment:{workflow:wf},required_credentials:[...REQCREDS],scope_map};
+function paneBasics(){
+  const taken = slug(B.service_id) && ALLSVCS.some(o=>o.service_id===slug(B.service_id) && o.tenant!==ME.tenant);
+  document.getElementById('pane').innerHTML = `<div class="card"><h3>Service</h3>
+    <div class="grid"><div><label>Title shown to citizens</label><input value="${esc(B.title)}" placeholder="Lease deed" oninput="B.title=this.value;if(!SEL&&!B._sidTouched){B.service_id=(ME.tenant?ME.tenant+'-':'')+slug(this.value);document.getElementById('sid').value=B.service_id;}"></div>
+      <div><label>Service id <span class="muted">(unique across the network)</span></label><input id="sid" value="${esc(B.service_id)}" ${SEL?'disabled':''} oninput="B.service_id=this.value;B._sidTouched=true">
+        ${taken?'<div class="hint warn">⚠ another department already uses this id — choose another</div>':''}</div></div>
+    <label>What it is, in one or two sentences</label><textarea rows="3" oninput="B.description=this.value">${esc(B.description)}</textarea>
+    <div class="grid"><div><label>Who can apply <span class="muted">(governed role)</span></label><select onchange="B.audience=this.value">${opt(ROLES,B.audience)}</select></div>
+      <div><label>Where it is offered</label><select onchange="B.jurisdiction=this.value">${opt(ALLOWED.map(j=>[j.code,j.name+' ('+j.kind+')']),B.jurisdiction)}</select></div></div>
+    <div class="grid"><div><label>Domain</label><select onchange="B.domain=this.value">${opt(DOMAINS.length?DOMAINS:['urban'],B.domain)}</select></div><div></div></div></div>`;
+}
+function paneForm(){
+  document.getElementById('pane').innerHTML = `<div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Application form</h3>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="FIELDS.push({key:'',label:'',type:'text',required:false,section:(FIELDS[FIELDS.length-1]||{}).section||''});renderEditor()">＋ Field</button></div>
+    <div class="hint">Fields appear in this order. A <b>section</b> starts a heading. <b>Show only if</b> hides a field unless another field has one of the values.</div>
+    ${FIELDS.map((f,i)=>{ const k=f.key||skey(f.label); return `<div class="fld"><div class="top">
+        <span class="num">${i+1}</span>
+        <input placeholder="Label (e.g. Reason for transfer)" value="${esc(f.label)}" oninput="FIELDS[${i}].label=this.value;if(!FIELDS[${i}]._kt)FIELDS[${i}].key=skey(this.value)">
+        <select onchange="FIELDS[${i}].type=this.value;renderEditor()">${opt(FIELD_TYPES,f.type)}</select>
+        <label style="margin:0;white-space:nowrap"><input type="checkbox" style="width:auto" ${f.required?'checked':''} onchange="FIELDS[${i}].required=this.checked"> required</label>
+        <span style="white-space:nowrap"><button class="btn ghost sm" title="Move up" onclick="if(${i}>0){[FIELDS[${i}],FIELDS[${i-1}]]=[FIELDS[${i-1}],FIELDS[${i}]];renderEditor()}">↑</button><button class="btn danger sm" onclick="FIELDS.splice(${i},1);renderEditor()">✕</button></span></div>
+      <div class="more">
+        <div><label>Section</label><input value="${esc(f.section)}" placeholder="e.g. Property" oninput="FIELDS[${i}].section=this.value"></div>
+        <div><label>Help text</label><input value="${esc(f.help)}" oninput="FIELDS[${i}].help=this.value"></div>
+        <div><label>Field key</label><input value="${esc(k)}" oninput="FIELDS[${i}].key=skey(this.value);FIELDS[${i}]._kt=true"></div>
+        <div><label>Show only if</label><select onchange="FIELDS[${i}].show_field=this.value;renderEditor()"><option value="">— always —</option>${opt(choiceFields().filter(c=>c[0]!==k),f.show_field)}</select></div>
+        <div><label>…has value(s)</label><input value="${esc(f.show_values)}" placeholder="sale, gift" ${f.show_field?'':'disabled'} oninput="FIELDS[${i}].show_values=this.value"></div>
+        <div>${f.type==='text'?`<label>&nbsp;</label><label class="chk" style="margin:0"><input type="checkbox" ${f.prefill?'checked':''} onchange="FIELDS[${i}].prefill=this.checked"> prefill with verified name</label>`:''}</div>
+      </div>
+      ${f.type==='choice'?`<label>Options — one per line, <span class="muted">value = Label</span> (label optional)</label><textarea rows="3" oninput="FIELDS[${i}].options=this.value">${esc(f.options)}</textarea>`:''}
+      ${f.type==='property'?`<div class="hint" style="margin-top:6px">🏠 The citizen enters a Unified Property ID; the department's record fills in the address, land use, area and zone (used for fees and routing).</div>
+          <label class="chk"><input type="checkbox" ${B.route_zone?'checked':''} onchange="B.route_zone=this.checked"> Route the application to the office of the property's zone</label>`:''}
+      ${f.type==='location'?`<label>Location kind</label><select onchange="FIELDS[${i}].scope_dim=this.value">${opt([['area','Area / ward (routes to its office)'],['org_unit','Office'],['jurisdiction','Jurisdiction']],f.scope_dim||'area')}</select>`:''}
+    </div>`; }).join('')}</div>`;
+  FIELDS.forEach(f=>{ if(f.type==='location' && !f.scope_dim) f.scope_dim='area'; });
+}
+function paneDocs(){
+  const cf=choiceFields();
+  document.getElementById('pane').innerHTML = `<div class="card"><h3>Documents the office will check</h3>
+    <div class="hint">From the shared document list. A document can depend on an answer — e.g. a death certificate only when the reason is inheritance. Citizens can attach documents from their wallet (incl. DigiLocker); they arrive signed.</div>
+    ${DOCS.map((d,i)=>`<div class="fld"><div class="grid" style="grid-template-columns:1.4fr 1fr 1fr auto">
+        <select onchange="DOCS[${i}].type=this.value">${opt(DOCTYPES.map(t=>[t.code,t.name]),d.type)}</select>
+        <select onchange="DOCS[${i}].when_field=this.value;renderEditor()"><option value="">— always needed —</option>${opt(cf,d.when_field)}</select>
+        <input value="${esc(d.when_values)}" placeholder="when value(s)" ${d.when_field?'':'disabled'} oninput="DOCS[${i}].when_values=this.value">
+        <button class="btn danger sm" onclick="DOCS.splice(${i},1);renderEditor()">✕</button></div></div>`).join('')}
+    <button class="btn ghost sm" onclick="DOCS.push({type:(DOCTYPES[0]||{}).code||'',when_field:'',when_values:''});renderEditor()">＋ Document</button>
+    ${DOCTYPES.length?'':'<div class="hint warn">No document types found for this department (urban.document_type).</div>'}</div>
+    <div class="card"><h3>Credentials the citizen must hold</h3><div class="hint">Checked automatically from the wallet before the application is accepted.</div>
+    ${CTYPES.map(c=>`<label class="chk"><input type="checkbox" ${REQCREDS.has(c.type)?'checked':''} onchange="this.checked?REQCREDS.add('${c.type}'):REQCREDS.delete('${c.type}')"> ${esc(c.title||ctitle(c.type))} <span class="pill">${esc(c.type)}</span></label>`).join('')}</div>`;
+}
+function feeCalc(rows, f){            // mirrors the department's fee calculator (staging patch 8) for the Studio's "try it"
+  const num=v=>v===''||v==null||isNaN(+v)?null:+v; const area=num(f.area_sqm), items=[];
+  for(const r of rows){ const c=r.conditions||{};
+    if(c.land_use && c.land_use!==f.land_use) continue; if(c.category && c.category!==f.category) continue;
+    if(c.zone && String(c.zone).split('/').pop()!==String(f.zone||'').split('/').pop()) continue;
+    if(c.min_area_sqm!=null && (area==null||area<c.min_area_sqm)) continue; if(c.max_area_sqm!=null && (area==null||area>c.max_area_sqm)) continue;
+    const rate=r.rate||0; let amt=null;
+    if(r.basis==='flat') amt=rate; else if(r.basis==='per_sqm') amt=area==null?null:rate*area; else if(r.basis==='percent_of_value') amt=num(f.value)==null?null:rate*num(f.value)/100;
+    else if(r.basis==='per_unit') amt=rate*(num(f.units)||1); else if(r.basis==='slab'){ const sl=(r.slabs||[]).find(x=>x.upto==null||(area||0)<=x.upto); amt=sl?sl.rate:null; }
+    items.push([r.fee_head, amt]); }
+  return items;
+}
+function paneFees(){
+  const rows=myFeeRows();
+  document.getElementById('pane').innerHTML = `<div class="card"><h3>Fees</h3>
+    <label class="chk"><input type="checkbox" ${B.fees_on?'checked':''} onchange="B.fees_on=this.checked;if(this.checked&&!B.fee_service)B.fee_service=slug(B.service_id).replace(new RegExp('^'+(ME.tenant||'')+'-'),'');renderEditor()"> This service charges a fee (calculated from your department's fee rules)</label>
+    ${B.fees_on?`<div class="grid"><div><label>Fee rule code <span class="muted">(your department's code for this service)</span></label><input value="${esc(B.fee_service)}" oninput="B.fee_service=slug(this.value)" onchange="renderEditor()"></div>
+      <div><label>Payment</label><select onchange="B.payment=this.value">${opt([['none','Pay later / at the office'],['before_submit','Pay before submitting (online)']],B.payment)}</select></div></div>
+    <table class="t" style="margin-top:10px"><tr><th>Fee head</th><th>Basis</th><th>Rate</th><th>Applies when</th><th>Order / notification</th><th></th></tr>
+      ${rows.map(r=>`<tr><td>${esc(r.fee_head)}</td><td>${esc((BASIS.find(b=>b[0]===r.basis)||[0,r.basis])[1])}</td>
+        <td>${r.basis==='slab'?(r.slabs||[]).map(x=>'≤'+(x.upto==null?'∞':x.upto)+': ₹'+x.rate).join(', '):(r.basis==='percent_of_value'?r.rate+'%':'₹'+r.rate+(r.basis==='per_sqm'?'/sq m':r.unit?'/'+esc(r.unit):''))}</td>
+        <td>${esc(Object.entries(r.conditions||{}).map(([k,v])=>tcase(k)+' '+v).join(', ')||'always')}</td><td>${esc(r.statutory_ref||'')}</td>
+        <td><button class="btn ghost sm" onclick='editFee(${JSON.stringify(r.id)})'>Edit</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No rules yet for this code.</td></tr>'}</table>
+    <button class="btn ghost sm" style="margin-top:8px" onclick="editFee(null)">＋ Fee rule</button>
+    <div id="feeed"></div>
+    <div class="fld" style="margin-top:12px"><b>Try it</b> <span class="hint">— what a citizen would pay</span>
+      <div class="grid" style="grid-template-columns:1fr 1fr 1fr 1fr"><div><label>Area (sq m)</label><input id="tA" value="150"></div>
+        <div><label>Land use</label><select id="tL">${opt(['residential','commercial','industrial','institutional','mixed'])}</select></div>
+        <div><label>Declared value (₹)</label><input id="tV"></div><div><label>&nbsp;</label><button class="btn ghost" onclick="tryFee()">Calculate</button></div></div>
+      <div id="tOut" class="muted"></div></div>`:''}</div>`;
+}
+function tryFee(){ const items=feeCalc(myFeeRows(), {area_sqm:document.getElementById('tA').value, land_use:document.getElementById('tL').value, value:document.getElementById('tV').value});
+  const tot=items.reduce((a,[,v])=>a+(v||0),0);
+  document.getElementById('tOut').innerHTML = items.length ? items.map(([h,v])=>esc(h)+': '+(v==null?'<span class="warn">needs more information</span>':'₹'+Math.round(v).toLocaleString('en-IN'))).join(' · ')+' — <b>total ₹'+Math.round(tot).toLocaleString('en-IN')+'</b>' : 'No rule applies.'; }
+function editFee(id){
+  const r = id ? FEEROWS.find(x=>x.id===id) : {schema:'urban.fee_schedule', authority:ME.tenant, service:feeCode(), fee_head:'', basis:'flat', rate:0, effective_from:new Date().toISOString().slice(0,10)};
+  const c=r.conditions||{};
+  document.getElementById('feeed').innerHTML = `<div class="fld" style="margin-top:10px"><b>${id?'Edit':'New'} fee rule</b>
+    <div class="grid" style="grid-template-columns:1.4fr 1fr 1fr"><div><label>Fee head</label><input id="fH" value="${esc(r.fee_head)}" placeholder="e.g. Lease deed fee"></div>
+      <div><label>Basis</label><select id="fB">${opt(BASIS,r.basis)}</select></div>
+      <div><label>Rate <span class="muted">(₹, or % for value)</span></label><input id="fR" value="${esc(r.rate==null?'':r.rate)}"></div></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr 1fr 1fr"><div><label>Only for land use</label><select id="fLU"><option value="">any</option>${opt(['residential','commercial','industrial','institutional','mixed'],c.land_use)}</select></div>
+      <div><label>Min area</label><input id="fMin" value="${esc(c.min_area_sqm==null?'':c.min_area_sqm)}"></div><div><label>Max area</label><input id="fMax" value="${esc(c.max_area_sqm==null?'':c.max_area_sqm)}"></div>
+      <div><label>Unit <span class="muted">(per unit)</span></label><input id="fU" value="${esc(r.unit||'')}"></div></div>
+    <label>Slabs <span class="muted">(for "Slabs": up-to-area:amount, … ; last without a limit e.g. 20:1500, 50:3500, :7500)</span></label><input id="fS" value="${esc((r.slabs||[]).map(x=>(x.upto==null?'':x.upto)+':'+x.rate).join(', '))}">
+    <div class="grid"><div><label>Order / notification it rests on</label><input id="fO" value="${esc(r.statutory_ref||'')}"></div><div><label>Effective from</label><input id="fE" type="date" value="${esc(r.effective_from||'')}"></div></div>
+    <div style="margin-top:8px"><button class="btn sm" onclick='saveFee(${JSON.stringify(id)})'>Save rule</button> <button class="btn ghost sm" onclick="document.getElementById('feeed').innerHTML=''">Cancel</button> <span id="fOut" class="muted"></span></div></div>`;
+}
+async function saveFee(id){
+  const v=x=>document.getElementById(x).value.trim(), n=x=>v(x)===''?null:+v(x);
+  const base = id ? FEEROWS.find(x=>x.id===id) : {schema:'urban.fee_schedule', id:'ds:'+ME.tenant+':urban/fee_schedule/'+feeCode()+'-'+Math.random().toString(36).slice(2,8), authority:ME.tenant, service:feeCode()};
+  const o={...base, tenant:ME.tenant, fee_head:v('fH'), basis:v('fB'), statutory_ref:v('fO')||null, effective_from:v('fE')||null, updated_at:new Date().toISOString()};
+  if(!o.fee_head){ document.getElementById('fOut').innerHTML='<span class="err">A fee head is required.</span>'; return; }
+  if(o.basis==='slab'){ o.slabs=v('fS').split(',').map(x=>x.trim()).filter(Boolean).map(x=>{ const [u,r]=x.split(':'); return {upto:u.trim()===''?null:+u, rate:+r}; }); delete o.rate; }
+  else { o.rate=n('fR'); delete o.slabs; }
+  o.unit = o.basis==='per_unit' ? (v('fU')||'unit') : null;
+  const cond={}; if(v('fLU')) cond.land_use=v('fLU'); if(n('fMin')!=null) cond.min_area_sqm=n('fMin'); if(n('fMax')!=null) cond.max_area_sqm=n('fMax');
+  o.conditions = Object.keys(cond).length ? cond : null;
+  Object.keys(o).forEach(k=>{ if(o[k]===null) delete o[k]; });
+  const r=await api('/bridge/save',{app_id:APP,id:o.id,object:o});
+  if(r.error||r.detail){ document.getElementById('fOut').innerHTML='<span class="err">✗ '+esc(r.detail||r.error)+'</span>'; return; }
+  await loadFees(); renderEditor();
+}
+function paneWf(){
+  const tf=textFields(), prop=hasProperty();
+  document.getElementById('pane').innerHTML = `<div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Workflow</h3>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="STEPS.push({step:'',role:ROLES.find(r=>r.startsWith('urban.'))||'',task:'',issues:'',sla:'',office:false,effect:'none',holder_field:''});renderEditor()">＋ Step</button></div>
+    <div class="hint">Each step goes to an officer role. At every step the officer can approve / forward, return for documents, or reject. The last step's approval completes the service.</div>
+    ${STEPS.map((s,i)=>`<div class="fld"><div class="top" style="grid-template-columns:auto 1fr 1.3fr .6fr auto">
+        <span class="num">${i+1}</span><input placeholder="Step name (e.g. Scrutiny)" value="${esc(s.step)}" oninput="STEPS[${i}].step=this.value">
+        <select onchange="STEPS[${i}].role=this.value">${roleOpts(s.role)}</select>
+        <input placeholder="SLA hours" value="${esc(s.sla)}" oninput="STEPS[${i}].sla=this.value" title="Time allowed for this step (hours)">
+        <span style="white-space:nowrap"><button class="btn ghost sm" onclick="if(${i}>0){[STEPS[${i}],STEPS[${i-1}]]=[STEPS[${i-1}],STEPS[${i}]];renderEditor()}">↑</button><button class="btn danger sm" onclick="STEPS.splice(${i},1);renderEditor()">✕</button></span></div>
+      <label>What the officer does</label><input value="${esc(s.task)}" oninput="STEPS[${i}].task=this.value">
+      <div class="more" style="grid-template-columns:1fr 1fr">
+        <div>${prop&&B.route_zone?`<label class="chk" style="margin-top:18px"><input type="checkbox" ${s.office?'checked':''} onchange="STEPS[${i}].office=this.checked"> Goes to the zone office of the property</label>`:'<label>&nbsp;</label><div class="hint">Sent to anyone holding the role.</div>'}</div>
+        <div><label>On approval, issue</label><select onchange="STEPS[${i}].issues=this.value"><option value="">— nothing —</option>${opt(CTYPES.map(c=>[c.type,c.title||ctitle(c.type)]),s.issues)}</select></div>
+        <div><label>On approval, update the department's records</label><select onchange="STEPS[${i}].effect=this.value;renderEditor()">${opt([['none','— nothing —'],...(prop?[['transfer_holding','Transfer the property to the new holder']]:[]),...(s.effect==='custom'?[['custom','Custom (kept as authored)']]:[])],s.effect)}</select></div>
+        <div>${s.effect==='transfer_holding'?`<label>New holder's name comes from</label><select onchange="STEPS[${i}].holder_field=this.value"><option value="">choose a field…</option>${opt(tf,s.holder_field)}</select>`:''}</div>
+      </div></div>`).join('')}</div>`;
+}
+function checks(){ const b=buildBody(), out=[];
+  const add=(ok,msg)=>out.push([ok,msg]);
+  add(!!b.title,'Title'); add(!!b.service_id && !ALLSVCS.some(o=>o.service_id===b.service_id && o.tenant!==ME.tenant),'Service id is set and not used by another department');
+  add(Object.keys(b.request_schema.properties).length>0,'The form has at least one field');
+  add(b.fulfillment.workflow.length>0,'The workflow has at least one step with a role');
+  if(B.fees_on) add(myFeeRows().length>0,'Fee rules exist for code “'+feeCode()+'”');
+  FIELDS.filter(f=>f.type==='choice').forEach(f=>add(String(f.options||'').trim()!=='','Choice field “'+(f.label||f.key)+'” has options'));
+  STEPS.filter(s=>s.effect==='transfer_holding').forEach(s=>add(!!s.holder_field,'Step “'+(s.step||'?')+'”: choose where the new holder’s name comes from'));
+  if(B.route_zone) add(STEPS.some(s=>s.office),'At least one step goes to the zone office');
+  return out;
+}
+function paneReview(){
+  const b=buildBody(), ck=checks(), ok=ck.every(c=>c[0]), props=b.request_schema.properties;
+  const form=b.request_schema['x-order'].filter(k=>!props[k]['x-from']).map(k=>{ const p=props[k];
+    return `${p['x-section']?'<div class="pill" style="margin:10px 0 2px 0">'+esc(p['x-section'])+'</div>':''}<div style="font-size:13px;margin:3px 0">• ${esc(p.title)}${b.request_schema.required.includes(k)?' <span class="err">*</span>':''}
+      <span class="muted">${p['x-lookup']?'property lookup':Array.isArray(p.enum)?'choice: '+p.enum.map(v=>(p['x-enum-labels']||{})[v]||tcase(v)).slice(0,6).join(' / '):p.format||p['x-widget']||p.type}${p['x-show-if']?' · only if '+esc(JSON.stringify(p['x-show-if']).replace(/[{}"]/g,'')):''}</span></div>`; }).join('');
+  document.getElementById('pane').innerHTML = `<div class="card"><h3>Checks</h3>${ck.map(([g,m])=>`<div class="check ${g?'good':'bad'}">${g?'✓':'✗'} ${esc(m)}</div>`).join('')}
+      <div style="margin-top:10px"><button class="btn" id="pub" ${ok?'':'disabled'} onclick="publish()">${SEL?'Publish changes':'Publish service'}</button> <span id="pubOut" class="muted"></span></div></div>
+    <div class="card"><h3>What the citizen sees</h3><b>${esc(b.title)}</b><div class="muted">${esc(b.description)}</div>${form}
+      ${(b.fulfillment.documents||[]).length?'<div style="margin-top:8px"><b style="font-size:13px">Documents</b>'+b.fulfillment.documents.map(d=>'<div style="font-size:13px">• '+esc((DOCTYPES.find(t=>t.code===d.type)||{}).name||d.type)+(Object.keys(d.when).length?' <span class="muted">('+esc(JSON.stringify(d.when).replace(/[{}"]/g,''))+')</span>':'')+'</div>').join('')+'</div>':''}
+      ${B.fees_on?'<div style="margin-top:8px;font-size:13px"><b>Fee</b> from rule code “'+esc(feeCode())+'” · '+(B.payment==='before_submit'?'paid before submitting':'paid later')+'</div>':''}
+      <div style="margin-top:8px;font-size:13px"><b>Then</b> ${b.fulfillment.workflow.map((s,i)=>(i+1)+'. '+esc(tcase(s.step))+' — '+esc(s.role)+(s.office_by?' (zone office)':'')+(b.fulfillment.sla_hours&&b.fulfillment.sla_hours[s.step]?' · '+b.fulfillment.sla_hours[s.step]+'h':'')+(s.issues?' · issues '+esc(ctitle(s.issues)):'')+(s.effects?' · updates records':'')).join('<br>')}</div></div>
+    <div class="card"><details><summary class="muted" style="cursor:pointer">Technical definition (what gets published)</summary><pre>${esc(JSON.stringify(b,null,2))}</pre></details></div>`;
 }
 async function publish(){
-  if(!slug(B.service_id)||!B.title){ alert('Service id and title are required'); return; }
-  const btn=document.getElementById('pub'); btn.disabled=true; btn.textContent='Publishing…';
-  const r=await api('/bridge/service-offering-save', buildBody());
-  btn.disabled=false; btn.textContent='Publish';
-  if(r.published){ SEL=slug(B.service_id); await loadNav(); alert('✓ Published — citizens in '+B.jurisdiction+' can now use it.'); }
-  else alert('✗ '+(r.detail||r.error||'failed'));
+  const btn=document.getElementById('pub'), out=document.getElementById('pubOut'); btn.disabled=true; out.textContent=' Publishing…';
+  const b=buildBody(); const r=await api('/bridge/service-offering-save', b);
+  btn.disabled=false;
+  if(r.published){ SEL=b.service_id; await loadNav(); ORIG=SVCS.find(o=>o.service_id===SEL)||null; out.innerHTML=' <span class="ok">✓ Published — citizens can find it in My Services.</span>'; }
+  else out.innerHTML=' <span class="err">✗ '+esc(typeof r.detail==='string'?r.detail:JSON.stringify(r.detail||r.error||'failed'))+'</span>';
 }
-function preview(){
-  const bd=buildBody(), props=bd.request_schema.properties;
-  const form=Object.keys(props).map(k=>`<label>${esc(props[k].title||k)}${bd.request_schema.required.includes(k)?' *':''}</label><input disabled placeholder="${esc(props[k].format==='date'?'date':props[k].type)}">`).join('')||'<div class="muted">No fields yet.</div>';
-  const rc=(bd.required_credentials||[]).map(t=>`<div class="chk">✓ ${esc(ctitle(t))} <span class="pill">from wallet</span></div>`).join('');
-  const wf=(bd.fulfillment.workflow||[]).map((s,i)=>`${i+1}. ${esc(s.step)} → <b>${esc(s.role)}</b>${s.issues?' · issues '+esc(ctitle(s.issues)):''}`).join('<br>');
-  document.getElementById('sheet').innerHTML=`<h3>Citizen preview — ${esc(bd.title||'service')}</h3>
-    <div class="muted">${esc(bd.description||'')} · ${esc(bd.jurisdiction)} · ${esc(bd.entitlement)}</div>
-    ${rc?'<h3 style="margin-top:14px">Required documents</h3>'+rc:''}
-    <h3 style="margin-top:14px">Application form</h3>${form}
-    <h3 style="margin-top:14px">Behind the scenes</h3><div class="muted" style="font-size:13px">${wf||'no workflow'}</div>
-    <div style="margin-top:14px;text-align:right"><button class="btn ghost sm" onclick="document.getElementById('modal').classList.remove('open')">Close</button></div>`;
-  document.getElementById('modal').classList.add('open');
+function applySpec(s){                              // the AI expert's proposal → editor state (fields + workflow)
+  if(s.service_id && !SEL) B.service_id=(ME.tenant?ME.tenant+'-':'')+slug(s.service_id).replace(new RegExp('^'+(ME.tenant||'')+'-'),'');
+  if(s.title) B.title=s.title; if(s.description) B.description=s.description;
+  const props=(s.request_schema||{}).properties||{}, req=(s.request_schema||{}).required||[];
+  if(Object.keys(props).length) FIELDS=Object.keys(props).map(k=>{ const p=props[k]; return {key:k,label:p.title||k,
+      type:Array.isArray(p.enum)?'choice':p.format==='date'?'date':p.type==='number'?'number':p['x-widget']==='textarea'?'textarea':'text',
+      required:req.includes(k),section:'',help:p.description||'',options:Array.isArray(p.enum)?p.enum.join('\n'):'',show_field:'',show_values:'',prefill:false,scope_dim:''}; });
+  if((s.workflow||[]).length) STEPS=s.workflow.map(w=>({step:w.step||'',role:ROLES.includes(w.role)?w.role:(ROLES.find(r=>r.startsWith('urban.'))||ROLES[0]||''),task:w.task||'',
+      issues:CTYPES.some(c=>c.type===w.issues)?w.issues:'',sla:'',office:false,effect:'none',holder_field:''}));
+  REQCREDS=new Set((s.required_credentials||[]).filter(t=>CTYPES.some(c=>c.type===t)));
+  renderEditor();
 }
+
 function toggleAI(){ document.getElementById('right').classList.toggle('collapsed'); }
 
 // ---- Service AI Expert ----
@@ -210,15 +414,6 @@ async function ask(){
     b.innerHTML=`<div class="bub">📄 New credential type suggested: <b>${esc(ct.title||ct.type)}</b> (needs network approval)<br><button class="btn ghost sm" style="margin-top:6px">Propose to network</button></div>`;
     b.querySelector('button').onclick=()=>proposeCred(ct); d.appendChild(b); d.scrollTop=d.scrollHeight; });
 }
-function applySpec(s){
-  if(s.service_id)B.service_id=s.service_id; if(s.title)B.title=s.title; if(s.domain)B.domain=s.domain;
-  if(s.description)B.description=s.description; if(s.entitlement)B.entitlement=s.entitlement;
-  const props=(s.request_schema||{}).properties||{}, req=(s.request_schema||{}).required||[];
-  if(Object.keys(props).length) FIELDS=Object.keys(props).map(k=>({key:k,label:props[k].title||k,type:props[k].format==='date'?'date':(props[k].type==='number'?'number':'text'),required:req.includes(k)}));
-  if((s.workflow||[]).length) STEPS=s.workflow.map(w=>({step:w.step||'',role:ROLES.includes(w.role)?w.role:(ROLES[0]||''),task:w.task||'',issues:CTYPES.some(c=>c.type===w.issues)?w.issues:''}));
-  REQCREDS=new Set((s.required_credentials||[]).filter(t=>CTYPES.some(c=>c.type===t)));
-  renderEditor();
-}
 async function proposeCred(ct){
   const type=ct.type&&ct.type.startsWith('credential.')?ct.type:('credential.'+skey(ct.type||ct.title));
   const props={}, req=[]; (ct.claims||[]).forEach(f=>{ const k=skey(f); if(k){ props[k]={type:'string'}; req.push(k); } });
@@ -226,5 +421,5 @@ async function proposeCred(ct){
   const r=await api('/bridge/schema-request',{schema_id:type,version:'0.1.0',definition:defn,kind:'fragment',justification:'Proposed via Service Studio: '+(ct.title||type)});
   pushMsg('ai', r.filed ? ('✓ Proposed '+type+' — '+(r.note||'pending network approval')) : ('✗ '+(r.detail||r.error||'could not propose')));
 }
-boot();
+if(typeof document!=='undefined') boot();
 </script>

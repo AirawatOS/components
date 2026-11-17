@@ -3,13 +3,17 @@
 # governed, steward-signed service offering bound to the generic certified `declarative-service` solution —
 # no solution developer required. Complex services still bind a bespoke certified solution. Talks only to the
 # app-host bridges (service-offering-save / service-offerings / catalog / jurisdictions); the network authorises.
+# 0.3.0 (Service Studio v2): sections, choice lists, conditional fields, help, prefill, property lookup with routing
+# to the zone office, a document checklist (urban.document_type, conditional), fee rules (the department's
+# urban.fee_schedule — view, edit, try) and payment, per-step SLA / office / certificate / on-approval record
+# updates, network-unique service ids, checks + citizen preview before publish. Round-trips hand-written offerings.
 component_id: ds:airawatdeveloper:app/service-studio
 kind: app
-version: 0.2.5
+version: 0.3.0
 provider: ds:airawatdeveloper:developer
 display_name: Service Studio
 entrypoint: index.html
-required_schemas: [network.service_offering]
-writes: []
+required_schemas: [network.service_offering, urban.document_type, urban.fee_schedule]
+writes: [urban.fee_schedule]
 sandboxed: true
 roles: [platform.tenant-admin, platform.steward]
