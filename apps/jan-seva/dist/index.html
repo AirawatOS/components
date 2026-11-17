@@ -356,6 +356,8 @@ async function linkProperty(k){
   out.innerHTML = r.linked ? ' <span class="ok">✓ Linked — the department\'s signed record is now in your wallet.</span>'
                            : ' <span class="err">✗ '+esc(r.error||'could not link')+'</span>';
 }
+const titleCase = s => String(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+let CREDMATCH = {};    // required credential type -> matched wallet VC (reuse)
 // ===================== Jan Seva 0.4.0 — three tabs; a service opens as a 3-step application =====================
 const DEPT = {'city-da':'City Development Authority','city-mc':'City Municipal Corporation','uit':'Urban Improvement Trust',
   'housing-board':'State Housing Board','sidc':'Industrial Development Corporation','state-udd':'Urban Development Department',
