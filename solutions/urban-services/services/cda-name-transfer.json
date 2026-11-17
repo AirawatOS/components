@@ -103,7 +103,8 @@
         ]
       }
     ],
-    "payment": "before_submit"
+    "payment": "before_submit",
+    "escalate_to": "urban.commissioner"
   },
   "request_schema": {
     "type": "object",

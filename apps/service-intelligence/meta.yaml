@@ -1,0 +1,15 @@
+# Service Intelligence (kind=app) — for department heads: monitor service delivery against the SLA, find hotspots,
+# and get AI-inferred recommendations for continuous improvement. Read-only over the department's OWN records
+# (platform.case / platform.task / urban.payment + its published service offerings); SLA clocks are DERIVED (task
+# created_at + the service's sla_hours per step; done_at vs due). The AI sees only aggregated, non-personal figures.
+component_id: ds:airawatdeveloper:app/service-intelligence
+kind: app
+version: 0.1.0
+provider: ds:airawatdeveloper:developer
+display_name: Service Intelligence
+icon: 📈
+entrypoint: index.html
+required_schemas: [platform.case, platform.task, urban.payment, network.service_offering]
+writes: []
+sandboxed: true
+roles: [platform.tenant-admin, urban.commissioner]

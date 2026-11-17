@@ -99,9 +99,24 @@ function rel(ts){                                              // "2 min ago" ·
   return 'just now';
 }
 let SHOWN=0; const PAGE=25;                                    // paging: render newest PAGE, "load more" for older
+// SLA clocks (derived): a service task is due at (when it reached you) + the service's SLA hours for that step
+let OFFS=null;
+function slaOf(i){
+  const ref=String(i.ref||''); if(!OFFS || !/:task\//.test(ref) || i.kind!=='task') return null;      // ds:<tenant>:task/<service>-<n>-<step>
+  const rest=ref.split('/').pop(); const o=OFFS.find(x=>rest.startsWith(x.service_id+'-')); if(!o) return null;
+  const step=rest.slice(o.service_id.length+1).split('-').slice(1).join('-'); const h=((o.fulfillment||{}).sla_hours||{})[step];
+  if(!h || !i.created_at) return null;
+  const due=Date.parse(i.created_at)+h*3600e3; return {due, h, left:(due-Date.now())/3600e3};
+}
+const dur=h=>{ h=Math.abs(h); return h<1?Math.round(h*60)+' min':h<48?Math.round(h)+' h':Math.floor(h/24)+' d '+Math.round(h%24)+' h'; };
+function slaBadge(i){ const k=slaOf(i); if(!k || i.status==='done') return '';
+  return k.left<0 ? `<span class="badge" style="background:#4a1416;color:#ff7b72">⏰ overdue by ${dur(k.left)}</span>`
+       : `<span class="badge" style="background:${k.left<k.h/4?'#3d2e00;color:#e3b341':'#0c2d6b;color:#79c0ff'}">⏱ due in ${dur(k.left)}</span>`; }
 async function loadList(){
+  if(OFFS===null){ try{ OFFS=((await bpost('/bridge/service-offerings',{})).json||{}).offerings||[]; }catch(e){ OFFS=[]; } }
   ITEMS=await query('platform.inbox_item',{});
   ITEMS.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  if(FILTER!=='done'){ const key=i=>{ const k=i.status!=='done'&&slaOf(i); return k?k.left:1e9; }; ITEMS.sort((a,b)=>key(a)-key(b)); }   // overdue first, then soonest due
   SHOWN=Math.min(PAGE, ITEMS.length);
   paintList();
 }
@@ -118,7 +133,7 @@ function paintList(){
     <div class="item st-${i.status||'unread'} ${i.status==='done'?'is-done':''}" data-ix="${ix}"><span class="dot ${i.kind}"></span>
       <div style="flex:1"><div class="it-title">${esc(i.title)}</div>
         ${i.body?`<div class="it-body">${esc(i.body)}</div>`:''}
-        <div class="meta"><span class="pill k-${i.kind}">${K.i} ${K.l}</span><span class="badge b-${i.status||'unread'}">${i.status==='done'?'✓ done':(i.status||'unread')}</span>${i.source?`<span>${esc(i.source)}</span>`:''}<span title="${esc(i.created_at||'')}">${rel(i.created_at)}</span></div>
+        <div class="meta"><span class="pill k-${i.kind}">${K.i} ${K.l}</span><span class="badge b-${i.status||'unread'}">${i.status==='done'?'✓ done':(i.status||'unread')}</span>${slaBadge(i)}${i.source?`<span>${esc(i.source)}</span>`:''}<span title="${esc(i.created_at||'')}">${rel(i.created_at)}</span></div>
       </div></div>`;}).join('')
     + (SHOWN<FI.length?`<button id="more" class="more">Load ${Math.min(PAGE,FI.length-SHOWN)} more · ${FI.length-SHOWN} older</button>`:'');
   list.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>openItem(FI[+el.dataset.ix])));

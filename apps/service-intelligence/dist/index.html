@@ -1,0 +1,179 @@
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141a;--line:#21262d;--txt:#e6edf3;--dim:#8b949e;--accent:#2f81f7;--good:#3fb950;--warn:#d29922;--err:#f85149}
+  *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .hbar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .hbar b{font-size:15px} select,button{font:inherit} select{background:var(--bg);color:var(--txt);border:1px solid #30363d;border-radius:7px;padding:5px 8px}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:6px 12px;cursor:pointer;font-weight:500}.btn.ghost{background:#21262d;color:var(--txt)}.btn:disabled{opacity:.5}
+  main{max-width:1180px;margin:0 auto;padding:14px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}.kpi .v{font-size:24px;font-weight:600}.kpi .l{color:var(--dim);font-size:12px}.kpi .s{font-size:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:12px}
+  h3{margin:0 0 8px;font-size:14px} .muted{color:var(--dim);font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left} th{color:var(--dim);font-weight:500;font-size:12px}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .g{color:var(--good)}.w{color:var(--warn)}.e{color:var(--err)}
+  .bar{height:8px;border-radius:4px;background:#21262d;overflow:hidden;min-width:60px}.bar i{display:block;height:100%}
+  .hot{border-left:3px solid var(--err);background:var(--panel2);border-radius:8px;padding:10px 12px;margin:8px 0}.hot.w{border-left-color:var(--warn)}
+  .hot b{display:block} .ins{border:1px solid var(--line);border-radius:9px;padding:12px;margin:8px 0;background:var(--panel2)}
+  .pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;background:#21262d;margin-left:6px}.pill.h{background:#4a1416;color:#ff7b72}.pill.m{background:#3d2e00;color:#e3b341}.pill.l{background:#0c2d6b;color:#79c0ff}
+  svg text{fill:var(--dim);font-size:10px}
+  @media (max-width:820px){ .grid2{grid-template-columns:1fr} }
+</style>
+<div class="hbar"><b>📈 Service Intelligence</b><span class="muted" id="who"></span>
+  <span style="margin-left:auto"></span>
+  <select id="svc"></select>
+  <select id="per"><option value="30">Last 30 days</option><option value="90" selected>Last 90 days</option><option value="7">Last 7 days</option></select>
+  <label class="muted"><input type="checkbox" id="demo" checked> include demo history</label>
+</div>
+<main><div id="body"><div class="card muted">Loading the department's applications…</div></div></main>
+<script>
+const api=(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+const get=p=>fetch(p).then(r=>r.json());
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tcase=s=>String(s||'').replace(/^urban\./,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const APP='service-intelligence', H=3600e3, NOW=Date.now();
+let ME={}, OFFS=[], CASES=[], TASKS=[], PAYS=[], AREAS=[], UNITS=[], AI=null;
+const med=a=>{ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; };
+const pct=(a,b)=>b?Math.round(100*a/b):null;
+const fd=h=>h==null?'—':h<24?Math.round(h)+' h':(h/24).toFixed(1)+' d';
+const zoneName=id=>(AREAS.find(a=>a.id===id)||{}).name||String(id||'—').split('/').pop();
+
+async function q(schema, filter){                       // page through the department's records (keyset cursor)
+  let out=[], cursor=null;
+  for(let i=0;i<20;i++){ const r=await api('/bridge/query',{app_id:APP,schema,filter:filter||{},limit:2000,...(cursor?{cursor}:{})});
+    out=out.concat((r.results||[]).map(x=>x.object||x)); cursor=r.next_cursor; if(!cursor) break; }
+  return out;
+}
+async function boot(){
+  try{ ME=await get('/session'); }catch(e){}
+  document.getElementById('who').textContent='· '+(ME.tenant_name||ME.tenant||'');
+  try{ OFFS=((await api('/bridge/service-offerings',{tenant:ME.tenant})).offerings||[]).filter(o=>o.tenant===ME.tenant); }catch(e){}
+  try{ AREAS=((await get('/bridge/catalog?kind=areas')).areas||[]); UNITS=((await get('/bridge/catalog?kind=org_units')).org_units||[]); }catch(e){}
+  const roles=[...new Set(OFFS.flatMap(o=>((o.fulfillment||{}).workflow||[]).map(s=>s.role)).filter(Boolean))];
+  [CASES, PAYS] = await Promise.all([q('platform.case'), q('urban.payment')]);
+  for(const r of roles) TASKS=TASKS.concat(await q('platform.task',{assignee:'role://'+ME.tenant+'/'+r}));
+  const svcs=[...new Set(CASES.map(c=>c.service))];
+  document.getElementById('svc').innerHTML='<option value="">All services</option>'+svcs.map(s=>`<option value="${esc(s)}">${esc(title(s))}</option>`).join('');
+  ['svc','per','demo'].forEach(id=>document.getElementById(id).onchange=()=>{ AI=null; render(); });
+  render();
+}
+const title=s=>(OFFS.find(o=>o.service_id===s)||{}).title||tcase(s);
+const slaOf=(svc,step)=>{ const o=OFFS.find(x=>x.service_id===svc); return ((o&&o.fulfillment&&o.fulfillment.sla_hours)||{})[step] || 72; };
+
+// ---- SLA clocks (derived): due = created + SLA hours of that step; on time if done before due ----
+function clock(t, c){ const sla=slaOf(c.service,t.workflow_step), cr=Date.parse(t.created_at), due=cr+sla*H, end=t.done_at?Date.parse(t.done_at):null;
+  return {sla, due, hours:((end||NOW)-cr)/H, done:!!end, late:end?end>due:NOW>due, overdueBy:end?null:Math.max(0,(NOW-due)/H)}; }
+
+function scope(){
+  const svc=document.getElementById('svc').value, days=+document.getElementById('per').value, demo=document.getElementById('demo').checked, from=NOW-days*24*H;
+  const cases=CASES.filter(c=>(!svc||c.service===svc) && (demo||!(c.scope||{})._synthetic) && Date.parse(c.opened_at)>=from);
+  const byId=Object.fromEntries(cases.map(c=>[c.id,c]));
+  const tasks=TASKS.filter(t=>byId[t.case]).map(t=>({t, c:byId[t.case], k:clock(t,byId[t.case])}));
+  return {svc, days, cases, tasks, byId, from};
+}
+function metrics(S){
+  const closed=S.cases.filter(c=>c.status==='closed'), open=S.cases.filter(c=>c.status!=='closed');
+  const approved=closed.filter(c=>c.current_step==='resolved'), returned=closed.filter(c=>c.current_step==='returned'), rejected=closed.filter(c=>c.current_step==='rejected');
+  const done=S.tasks.filter(x=>x.k.done), openT=S.tasks.filter(x=>!x.k.done), overdue=openT.filter(x=>x.k.late);
+  const tat=approved.map(c=>(Date.parse(c.closed_at)-Date.parse(c.opened_at))/H);
+  const caseIds=new Set(S.cases.map(c=>c.id)), fees=PAYS.filter(p=>caseIds.has(p.case)&&p.status==='paid').reduce((a,p)=>a+(p.amount||0),0);
+  return {received:S.cases.length, closed:closed.length, open:open.length, approved:approved.length, returned:returned.length, rejected:rejected.length,
+    compliance:pct(done.filter(x=>!x.k.late).length, done.length), stepsDone:done.length, overdue:overdue.length, openTasks:openT.length,
+    tatMedian:med(tat), fees, overdueList:overdue.sort((a,b)=>b.k.overdueBy-a.k.overdueBy)};
+}
+function groupStats(S, keyFn){
+  const g={};
+  for(const x of S.tasks){ const k=keyFn(x); if(k==null) continue; const e=g[k]=g[k]||{k,done:[],open:0,overdue:0,late:0,returned:0,sla:x.k.sla};
+    if(x.k.done){ e.done.push(x.k.hours); if(x.k.late) e.late++; if(x.t.decision==='returned') e.returned++; } else { e.open++; if(x.k.late) e.overdue++; } }
+  return Object.values(g).map(e=>({...e, n:e.done.length, median:med(e.done), compliance:pct(e.done.length-e.late, e.done.length), retRate:pct(e.returned,e.done.length)}));
+}
+function hotspots(S, M){
+  const out=[];
+  const zs=groupStats(S, x=>x.t.workflow_step+'|'+(x.c.scope||{}).area);
+  zs.filter(z=>z.n>=5 && z.median>z.sla).forEach(z=>{ const [st,ar]=z.k.split('|'); out.push({sev:z.median>1.3*z.sla?'h':'m', title:`${tcase(st)} in ${zoneName(ar)} is slower than the SLA`,
+    detail:`median ${fd(z.median)} against ${fd(z.sla)} · ${z.compliance}% on time · ${z.overdue} open overdue`}); });
+  const ss=groupStats(S, x=>x.t.workflow_step);
+  ss.filter(s=>s.overdue>=5).forEach(s=>out.push({sev:'h', title:`Backlog at ${tcase(s.k)}`, detail:`${s.overdue} of ${s.open} open tasks are past their SLA`}));
+  const recent=S.tasks.filter(x=>x.k.done && NOW-Date.parse(x.t.done_at)<21*24*H), older=S.tasks.filter(x=>x.k.done && NOW-Date.parse(x.t.done_at)>=21*24*H);
+  for(const st of [...new Set(S.tasks.map(x=>x.t.workflow_step))]){ const r=med(recent.filter(x=>x.t.workflow_step===st).map(x=>x.k.hours)), o=med(older.filter(x=>x.t.workflow_step===st).map(x=>x.k.hours));
+    if(r!=null && o!=null && r>1.6*o && r>8) out.push({sev:'m', title:`${tcase(st)} has slowed down in the last 3 weeks`, detail:`median ${fd(r)} now vs ${fd(o)} before`}); }
+  const bySvc={}; S.cases.filter(c=>c.status==='closed').forEach(c=>{ const e=bySvc[c.service]=bySvc[c.service]||{n:0,ret:0,why:{}}; e.n++; if(c.current_step==='returned'){ e.ret++; const w=(c.scope||{}).return_reason||'reason not recorded'; e.why[w]=(e.why[w]||0)+1; } });
+  Object.entries(bySvc).forEach(([s,e])=>{ const r=pct(e.ret,e.n); if(e.n>=10 && r>=15){ const top=Object.entries(e.why).sort((a,b)=>b[1]-a[1])[0];
+    out.push({sev:r>=25?'h':'m', title:`${title(s)}: ${r}% of applications are returned`, detail:`most common reason: “${top[0]}” (${top[1]} of ${e.ret})`}); } });
+  return out;
+}
+const bar=(v,max,col)=>`<div class="bar"><i style="width:${Math.max(2,Math.min(100,100*(v||0)/(max||1)))}%;background:${col}"></i></div>`;
+const cc=v=>v==null?'':v>=90?'g':v>=70?'w':'e';
+function weekly(S){
+  const wk=Math.ceil(S.days/7), rows=[];
+  for(let i=wk-1;i>=0;i--){ const a=NOW-(i+1)*7*24*H, b=NOW-i*7*24*H;
+    rows.push({rec:S.cases.filter(c=>{const t=Date.parse(c.opened_at); return t>=a&&t<b;}).length, done:S.cases.filter(c=>c.closed_at&&Date.parse(c.closed_at)>=a&&Date.parse(c.closed_at)<b).length}); }
+  const mx=Math.max(1,...rows.map(r=>Math.max(r.rec,r.done))), W=Math.max(220,rows.length*44), Hh=120;
+  return `<svg viewBox="0 0 ${W} ${Hh+18}" width="100%" height="${Hh+18}">${rows.map((r,i)=>{ const x=i*44+6, h1=r.rec/mx*Hh, h2=r.done/mx*Hh;
+      return `<rect x="${x}" y="${Hh-h1}" width="16" height="${h1}" fill="#2f81f7"><title>received ${r.rec}</title></rect><rect x="${x+18}" y="${Hh-h2}" width="16" height="${h2}" fill="#3fb950"><title>closed ${r.done}</title></rect>
+      <text x="${x+17}" y="${Hh+13}" text-anchor="middle">${rows.length-i===1?'this wk':'-'+(rows.length-i-1)+'w'}</text>`; }).join('')}</svg>
+    <div class="muted"><span style="color:#2f81f7">■</span> received · <span style="color:#3fb950">■</span> closed, per week</div>`;
+}
+function render(){
+  const S=scope(), M=metrics(S), hs=hotspots(S,M);
+  const zones=groupStats(S, x=>(x.c.scope||{}).area).sort((a,b)=>String(a.k).localeCompare(String(b.k)));
+  const steps=groupStats(S, x=>x.t.workflow_step);
+  const people=groupStats(S, x=>x.k.done?x.t.completed_by:null).sort((a,b)=>b.n-a.n);
+  const svcs=Object.values(S.cases.reduce((g,c)=>{ const e=g[c.service]=g[c.service]||{s:c.service,n:0,open:0,ok:0,ret:0,rej:0,tat:[]}; e.n++; if(c.status!=='closed') e.open++;
+      else if(c.current_step==='resolved'){ e.ok++; e.tat.push((Date.parse(c.closed_at)-Date.parse(c.opened_at))/H); } else if(c.current_step==='returned') e.ret++; else if(c.current_step==='rejected') e.rej++; return g; },{}));
+  const maxMed=Math.max(...zones.map(z=>z.median||0),1);
+  document.getElementById('body').innerHTML=`
+  <div class="kpis">
+    <div class="kpi"><div class="l">Applications received</div><div class="v">${M.received}</div><div class="s muted">${M.open} in progress</div></div>
+    <div class="kpi"><div class="l">Steps completed on time</div><div class="v ${cc(M.compliance)}">${M.compliance==null?'—':M.compliance+'%'}</div><div class="s muted">of ${M.stepsDone} completed steps</div></div>
+    <div class="kpi"><div class="l">Overdue right now</div><div class="v ${M.overdue?'e':'g'}">${M.overdue}</div><div class="s muted">of ${M.openTasks} open steps</div></div>
+    <div class="kpi"><div class="l">Median time to approval</div><div class="v">${fd(M.tatMedian)}</div><div class="s muted">${M.approved} approved</div></div>
+    <div class="kpi"><div class="l">Returned · rejected</div><div class="v">${pct(M.returned,M.closed)??'—'}% · ${pct(M.rejected,M.closed)??'—'}%</div><div class="s muted">of ${M.closed} closed</div></div>
+    <div class="kpi"><div class="l">Fees collected</div><div class="v">₹${Math.round(M.fees).toLocaleString('en-IN')}</div><div class="s muted">online, before submit</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>🔥 Hotspots <span class="muted">— found automatically</span></h3>${hs.length?hs.map(h=>`<div class="hot ${h.sev==='m'?'w':''}"><b>${esc(h.title)}</b><span class="muted">${esc(h.detail)}</span></div>`).join(''):'<div class="muted">No hotspots in this period. 🎉</div>'}</div>
+    <div class="card"><h3>Received and closed</h3>${weekly(S)}</div>
+  </div>
+  <div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">🤖 AI analysis &amp; recommendations</h3><span class="muted" style="margin-left:8px">the model sees only the aggregated figures on this page — no names, no applications</span>
+    <button class="btn" style="margin-left:auto" id="aib" onclick="analyse()">${AI?'Analyse again':'Analyse'}</button></div><div id="ai">${AI||'<div class="muted" style="margin-top:6px">Asks the department’s AI model to explain the hotspots, infer likely causes and recommend improvements.</div>'}</div></div>
+  <div class="grid2">
+    <div class="card"><h3>By zone office</h3><table><tr><th>Zone</th><th class="n">Steps done</th><th>Median</th><th></th><th class="n">On time</th><th class="n">Open overdue</th></tr>
+      ${zones.map(z=>`<tr><td>${esc(zoneName(z.k))}</td><td class="n">${z.n}</td><td>${fd(z.median)}</td><td>${bar(z.median,maxMed,z.median>z.sla?'#f85149':'#2f81f7')}</td><td class="n ${cc(z.compliance)}">${z.compliance??'—'}%</td><td class="n ${z.overdue?'e':''}">${z.overdue}</td></tr>`).join('')}</table></div>
+    <div class="card"><h3>By workflow step <span class="muted">— where time goes</span></h3><table><tr><th>Step</th><th>SLA</th><th>Median</th><th class="n">On time</th><th class="n">Open</th><th class="n">Overdue</th><th class="n">Returned</th></tr>
+      ${steps.map(s=>`<tr><td>${esc(tcase(s.k))}</td><td>${fd(s.sla)}</td><td class="${s.median>s.sla?'e':''}">${fd(s.median)}</td><td class="n ${cc(s.compliance)}">${s.compliance??'—'}%</td><td class="n">${s.open}</td><td class="n ${s.overdue?'e':''}">${s.overdue}</td><td class="n">${s.retRate??0}%</td></tr>`).join('')}</table></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>By service</h3><table><tr><th>Service</th><th class="n">Received</th><th class="n">Open</th><th class="n">Approved</th><th class="n">Returned</th><th class="n">Rejected</th><th>Median to approval</th></tr>
+      ${svcs.map(s=>`<tr><td>${esc(title(s.s))}</td><td class="n">${s.n}</td><td class="n">${s.open}</td><td class="n">${s.ok}</td><td class="n">${s.ret}</td><td class="n">${s.rej}</td><td>${fd(med(s.tat))}</td></tr>`).join('')}</table></div>
+    <div class="card"><h3>Officers</h3><table><tr><th>Officer</th><th class="n">Steps done</th><th>Median</th><th class="n">On time</th></tr>
+      ${people.map(p=>`<tr><td>${esc(String(p.k).split('/').pop())}</td><td class="n">${p.n}</td><td>${fd(p.median)}</td><td class="n ${cc(p.compliance)}">${p.compliance??'—'}%</td></tr>`).join('')}</table></div>
+  </div>
+  <div class="card"><h3>Overdue now <span class="muted">— oldest first</span></h3><table><tr><th>Application</th><th>Service</th><th>Step</th><th>Zone</th><th>Overdue by</th></tr>
+    ${M.overdueList.slice(0,12).map(x=>`<tr><td>${esc(String(x.c.id).split('/').pop().toUpperCase())}${(x.c.scope||{})._synthetic?' <span class="pill">demo</span>':''}</td><td>${esc(title(x.c.service))}</td><td>${esc(tcase(x.t.workflow_step))}</td><td>${esc(zoneName((x.c.scope||{}).area))}</td><td class="e">${fd(x.k.overdueBy)}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">Nothing overdue.</td></tr>'}</table></div>
+  <div class="muted" style="margin:10px 0">SLA clocks are derived: each step's due time = when it reached the officer + the service's SLA hours for that step (calendar hours).</div>`;
+}
+function firstJson(t){ t=String(t||'').replace(/```(json)?/g,''); for(let i=t.indexOf('{'); i!==-1; i=t.indexOf('{',i+1)){ for(let j=t.lastIndexOf('}'); j>i; j=t.lastIndexOf('}',j-1)){ try{ return JSON.parse(t.slice(i,j+1)); }catch(e){} } } return null; }
+async function analyse(){
+  const S=scope(), M=metrics(S), b=document.getElementById('aib'); b.disabled=true; b.textContent='Analysing… (up to a minute)';
+  const facts={department:ME.tenant_name||ME.tenant, period_days:S.days, service:S.svc?title(S.svc):'all services',
+    kpis:{received:M.received, open:M.open, approved:M.approved, returned:M.returned, rejected:M.rejected, steps_on_time_pct:M.compliance, overdue_now:M.overdue, open_steps:M.openTasks, median_days_to_approval:M.tatMedian&&+(M.tatMedian/24).toFixed(1)},
+    by_step:groupStats(S,x=>x.t.workflow_step).map(s=>({step:s.k, sla_h:s.sla, median_h:s.median&&Math.round(s.median), on_time_pct:s.compliance, open:s.open, overdue:s.overdue, returned_pct:s.retRate})),
+    by_zone_and_step:groupStats(S,x=>x.t.workflow_step+' @ '+zoneName((x.c.scope||{}).area)).map(s=>({where:s.k, sla_h:s.sla, median_h:s.median&&Math.round(s.median), on_time_pct:s.compliance, overdue:s.overdue, done:s.n})),
+    return_reasons:S.cases.filter(c=>c.current_step==='returned').reduce((a,c)=>{ const r=(c.scope||{}).return_reason||'not recorded'; a[r]=(a[r]||0)+1; return a; },{}),
+    weekly_received_closed:(()=>{ const w=[]; for(let i=Math.ceil(S.days/7)-1;i>=0;i--){ const a=NOW-(i+1)*7*24*H, z=NOW-i*7*24*H; w.push([S.cases.filter(c=>{const t=Date.parse(c.opened_at);return t>=a&&t<z;}).length, S.cases.filter(c=>c.closed_at&&Date.parse(c.closed_at)>=a&&Date.parse(c.closed_at)<z).length]); } return w; })(),
+    hotspots:hotspots(S,M).map(h=>h.title+' — '+h.detail)};
+  const sys='You are a public-service delivery analyst advising the head of an urban department. From the aggregated FACTS (JSON) identify the 3-6 most important issues for timely, citizen-friendly service delivery, infer the most likely causes from the evidence, and recommend concrete improvements the department can make (staffing / workload balancing, process or form changes, document checks moved earlier, citizen guidance, SLA or escalation changes, digital verification, etc.). Ground every point in the numbers; do not invent data. Reply with JSON ONLY: {"summary":"<2 sentences>","insights":[{"title":"","evidence":"<the numbers>","likely_cause":"","recommendation":"","expected_impact":"","owner":"<role, e.g. Zone 4 office / Estate cell / Commissioner>","priority":"high|medium|low"}]}';
+  let r; try{ r=await api('/bridge/ai-assist',{task:'assist', app_id:APP, system:sys, prompt:'Analyse these service-delivery facts and recommend improvements.', context:JSON.stringify(facts)}); }catch(e){ r={error:String(e)}; }
+  const j=firstJson(r.content);
+  AI = j && j.insights ? `<div style="margin:8px 0">${esc(j.summary||'')}</div>` + j.insights.map(x=>`<div class="ins"><b>${esc(x.title)}</b><span class="pill ${x.priority==='high'?'h':x.priority==='low'?'l':'m'}">${esc(x.priority||'')}</span>
+        <div class="muted" style="margin-top:4px"><b style="display:inline;color:var(--txt)">Evidence:</b> ${esc(x.evidence)}</div>
+        <div class="muted"><b style="display:inline;color:var(--txt)">Likely cause:</b> ${esc(x.likely_cause)}</div>
+        <div style="margin-top:4px">➜ ${esc(x.recommendation)}</div>
+        <div class="muted">Expected impact: ${esc(x.expected_impact)} · Owner: ${esc(x.owner)}</div></div>`).join('') + `<div class="muted">Model: ${esc(r.model||'')} · recommendations are advice — the department decides.</div>`
+    : `<div class="e" style="margin-top:6px">${esc(r.error || 'The model did not return recommendations — try again.')}</div>`;
+  render();
+}
+boot();
+</script>

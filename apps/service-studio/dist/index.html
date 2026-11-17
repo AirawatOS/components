@@ -84,7 +84,7 @@ let B={}, FIELDS=[], STEPS=[], DOCS=[], REQCREDS=new Set();
 // ================= the MODEL: offering JSON ⇄ editor state (pure — no DOM; round-trip tested) =================
 function blankState(){
   return {B:{service_id:'',title:'',domain:'urban',description:'',jurisdiction:'',entitlement:'residence',audience:'civic.resident',
-             fees_on:false, fee_service:'', payment:'none', route_zone:false},
+             fees_on:false, fee_service:'', payment:'none', route_zone:false, escalate_to:''},
           FIELDS:[{key:'',label:'',type:'text',required:false,section:'',help:'',options:'',show_field:'',show_values:'',prefill:false,scope_dim:''}],
           STEPS:[{step:'',role:'',task:'',issues:'',sla:'',office:false,effect:'none',holder_field:'',raw_effects:null}],
           DOCS:[], REQCREDS:[]};
@@ -95,7 +95,7 @@ function parseOffering(o){
   const smap=o.scope_map||{};
   const st={B:{service_id:o.service_id||'',title:o.title||'',domain:o.domain||'urban',description:o.description||'',jurisdiction:o.jurisdiction||'',
                entitlement:o.entitlement||'residence',audience:o.audience||'civic.resident',
-               fees_on:o.fee_ref==='urban.fee_schedule', fee_service:ff.fee_service||(o.fee_ref?o.service_id:''), payment:ff.payment||'none',
+               fees_on:o.fee_ref==='urban.fee_schedule', fee_service:ff.fee_service||(o.fee_ref?o.service_id:''), payment:ff.payment||'none', escalate_to:ff.escalate_to||'',
                route_zone:smap.area==='zone' && Object.values(props).some(p=>p['x-lookup']==='urban.property')},
             FIELDS:[], STEPS:[], DOCS:[], REQCREDS:o.required_credentials||[]};
   let sec='';
@@ -167,6 +167,7 @@ function buildBody(){
     return {type:d.type, when: d.when_field&&v.length ? {[d.when_field]: v.length===1?v[0]:v} : {}}; });
   if(docs.length) ful.documents=docs;
   if(Object.keys(sla).length) ful.sla_hours=sla;
+  if(B.escalate_to) ful.escalate_to=B.escalate_to;
   ful.workflow=wf;
   const body={tenant:ME.tenant, service_id:slug(B.service_id), domain:B.domain, title:B.title, description:B.description,
     interaction:['search'].concat(B.fees_on?['select']:[],['init','status']), jurisdiction:B.jurisdiction, audience:B.audience||'civic.resident',
@@ -347,6 +348,8 @@ function paneWf(){
   document.getElementById('pane').innerHTML = `<div class="card"><div style="display:flex;align-items:center"><h3 style="margin:0">Workflow</h3>
       <button class="btn ghost sm" style="margin-left:auto" onclick="STEPS.push({step:'',role:ROLES.find(r=>r.startsWith('urban.'))||'',task:'',issues:'',sla:'',office:false,effect:'none',holder_field:''});renderEditor()">＋ Step</button></div>
     <div class="hint">Each step goes to an officer role. At every step the officer can approve / forward, return for documents, or reject. The last step's approval completes the service.</div>
+    <div class="grid" style="margin-top:6px"><div><label>When a step passes its SLA, escalate to</label><select onchange="B.escalate_to=this.value"><option value="">— no escalation —</option>${roleOpts(B.escalate_to)}</select></div>
+      <div class="hint" style="padding-top:22px">An overdue step is raised once, as a notice in that role's Inbox.</div></div>
     ${STEPS.map((s,i)=>`<div class="fld"><div class="top" style="grid-template-columns:auto 1fr 1.3fr .6fr auto">
         <span class="num">${i+1}</span><input placeholder="Step name (e.g. Scrutiny)" value="${esc(s.step)}" oninput="STEPS[${i}].step=this.value">
         <select onchange="STEPS[${i}].role=this.value">${roleOpts(s.role)}</select>
