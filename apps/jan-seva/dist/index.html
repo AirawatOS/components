@@ -23,22 +23,63 @@
   .cred.ok{background:#12331f;color:#3fb950}.cred.err{background:#3a1518;color:#f85149}
   h3{margin:.2em 0}
   .sec{margin:16px 0 2px;font-weight:600;font-size:14px;border-bottom:1px solid #21262d;padding-bottom:4px}
+  /* 0.4.0 — tabs, service cards, 3-step application, progress */
+  .tabs{display:flex;gap:4px;position:sticky;top:0;z-index:5;background:#0d1117;padding:10px 0 6px;border-bottom:1px solid #21262d}
+  .tabs button{flex:1;background:none;border:0;color:#8b949e;font:inherit;font-weight:600;padding:9px 6px;border-radius:8px;cursor:pointer}
+  .tabs button.on{background:#161b22;color:#e6edf3;box-shadow:inset 0 -2px 0 #3b82f6}
+  .badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:999px;background:#d29922;color:#0d1117;font-size:11px;line-height:18px;margin-left:4px}
+  .badge[hidden]{display:none}
+  .search{font-size:16px;padding:12px 14px}
+  .dept{margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b949e}
+  .svc{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px;border:1px solid #21262d;border-radius:10px;margin:6px 0;cursor:pointer}
+  .svc:hover{border-color:#3b82f6;background:#131a24}.svc .muted{margin-top:2px}
+  .go{color:#58a6ff;font-weight:600;white-space:nowrap;font-size:14px}
+  .note{background:#2a2410;border:1px solid #4d3d12;color:#e3b341;border-radius:10px;padding:10px 12px;margin:12px 0;font-size:14px}
+  .note a,.back,a{color:#58a6ff;cursor:pointer}
+  .back{font-size:13px;display:inline-block;margin-bottom:6px}
+  h2{margin:.1em 0 .2em;font-size:20px}
+  .desc{color:#c9d1d9;font-size:14px;margin:8px 0}
+  .flow{font-size:12px;color:#8b949e;background:#0d1117;border-radius:8px;padding:6px 10px}
+  .stepper{display:flex;list-style:none;padding:0;margin:16px 0 8px;gap:6px;counter-reset:st}
+  .stepper li{flex:1;font-size:13px;color:#8b949e;padding:8px 6px;border-top:3px solid #30363d;counter-increment:st}
+  .stepper li::before{content:counter(st)". "}
+  .stepper li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}.stepper li.done{color:#3fb950;border-color:#238636}
+  .help{font-size:12px;color:#8b949e;margin-top:2px}.req{color:#f85149}
+  .fld{margin-bottom:4px}
+  .nav{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+  .btn.sm{padding:5px 10px;font-size:13px}
+  .doc{display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid #21262d;border-radius:8px;padding:10px 12px;margin:6px 0;font-size:14px}
+  .doc.ok{border-color:#238636;background:#0f2417}.doc.err{border-color:#da3633;background:#2a1215}
+  table.rv{width:100%;border-collapse:collapse;font-size:14px}table.rv td{padding:6px 4px;border-bottom:1px solid #21262d;vertical-align:top}
+  table.rv td:first-child{color:#8b949e;width:42%}
+  .amt{font-size:18px}
+  .consent{display:flex;gap:8px;align-items:flex-start;margin-top:14px;color:#c9d1d9;font-size:14px}.consent input{width:auto;margin-top:3px}
+  .card.done{text-align:center}.card.done .big{font-size:40px;color:#3fb950}.ref{font-size:18px;letter-spacing:.03em}
+  .chip{font-size:12px;border-radius:999px;padding:3px 10px;white-space:nowrap}
+  .chip.b{background:#0c2d6b;color:#79c0ff}.chip.g{background:#0f3d1e;color:#3fb950}.chip.r{background:#4a1416;color:#ff7b72}
+  .chip.y{background:#3d2e00;color:#e3b341}.chip.m{background:#21262d;color:#8b949e}
+  .track{display:flex;list-style:none;padding:0;margin:12px 0 0;gap:4px}
+  .track li{flex:1;font-size:12px;color:#8b949e;padding-top:6px;border-top:3px solid #30363d}
+  .track li.done{color:#3fb950;border-color:#238636}.track li.on{color:#e6edf3;border-color:#3b82f6;font-weight:600}
+  @media (max-width:520px){ main{padding:10px} .svc{flex-direction:column;align-items:flex-start} .stepper li,.track li{font-size:11px} }
 </style>
 <header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· <span data-i18n="js.tagline">Citizen Services</span></span>
   <span id="who" class="who"></span></header>
 <main>
   <div id="gate"></div>
   <div id="app" style="display:none">
-    <div class="card" id="acct"><span class="muted">Loading your account…</span></div>
-    <div class="card">
-      <div class="row"><input id="q" data-i18n-ph="js.search_ph" placeholder="Search a service — e.g. complaint, water"/><button class="btn" id="go" data-i18n="ui.search">Search</button></div>
-      <div id="results" class="muted" data-i18n-html="js.search_hint">Type a service and search — you'll see the services offered in <b id="cityname">your city</b>.</div>
-    </div>
-    <div id="detail"></div>
-    <div class="card">
-      <div class="row"><b data-i18n="js.my_requests">My requests</b><button class="btn ghost" id="refresh" data-i18n="js.refresh">Refresh</button></div>
-      <div id="txns" class="muted" style="margin-top:8px">—</div>
-    </div>
+    <nav class="tabs"><button data-tab="svc" class="on">Services</button><button data-tab="req">My requests <span id="reqN" class="badge" hidden></span></button><button data-tab="acct">My account <span id="acctN" class="badge" hidden></span></button></nav>
+    <section id="tab-svc">
+      <div id="banner"></div>
+      <div class="card" id="svcList">
+        <input id="q" class="search" data-i18n-ph="js.search_ph" placeholder="Search a service — e.g. complaint, water"/>
+        <div class="muted" style="font-size:12px;margin-top:-2px">Services offered in <b id="cityname">your city</b></div>
+        <div id="results"></div>
+      </div>
+      <div id="detail"></div>
+    </section>
+    <section id="tab-req" hidden><div class="row" style="margin:12px 0 0"><b>My requests</b><button class="btn ghost sm" id="refresh">Refresh</button></div><div id="txns"></div></section>
+    <section id="tab-acct" hidden><div class="card" id="acct"><span class="muted">Loading your account…</span></div></section>
   </div>
 </main>
 <script src="/shared/i18n.js"></script>
@@ -149,6 +190,7 @@ function renderWho(){
   document.getElementById('cityname').textContent = home;
 }
 function moved(){
+  showTab('svc'); if(SEL) closeSvc();
   document.getElementById('detail').innerHTML = `<div class="card"><h3>Change your city</h3>
     <div class="muted">Your account, history and open requests stay — only which services you see will change.</div>
     <label>I now live in</label><select id="mv">${cityOptions(PROFILE&&PROFILE.primary)}</select>
@@ -167,18 +209,6 @@ function moved(){
 async function logout(){ try{ await fetch('/logout',{method:'POST'}); }catch(e){} notifyShell(); boot(); }
 // tell the outer run-shell to refresh its identity badge after a sign-in/out change inside the frame
 function notifyShell(){ try{ parent.postMessage({type:'airawat-session'}, '*'); }catch(e){} }
-
-function renderApp(){
-  document.getElementById('gate').innerHTML='';
-  document.getElementById('app').style.display='';
-  renderWho();
-  document.getElementById('go').onclick = search;
-  document.getElementById('q').addEventListener('keydown', e=>{if(e.key==='Enter') search();});
-  document.getElementById('refresh').onclick = track;
-  renderAccount();
-  search();   // browse: show ALL services available to this citizen on load (national + their city), no guessing
-  track();
-}
 
 // ---- MY ACCOUNT: verified identity, linked department records, wallet, DigiLocker (sandbox) ----
 let WALLET = {offers:[], held:[]}, DLSTAT = {};
@@ -207,7 +237,8 @@ async function renderAccount(){
       ${pushable(h)?`<button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="pushDL('${esc(h.vc&&h.vc.id||'')}',this)">Save to DigiLocker</button>`:''}</div>`).join('')
     : '<div class="muted">Your wallet is empty.</div>';
   const offHtml = WALLET.offers.length ? `<label>Waiting for you to accept</label>` + WALLET.offers.map(o=>`<div class="row cred" style="background:#2a2410;color:#e3b341"><span>✉️ ${esc(o.title||o.type)} — ${esc(issuerName(o.issuer_tenant))}</span><button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="acceptOffer('${esc(o.id)}')">Accept</button></div>`).join('') : '';
-  box.innerHTML = `<div class="row"><b>My account</b><span class="muted">one account for every department in the network</span></div>
+  updateBadges();
+  box.innerHTML = `<div class="muted" style="font-size:13px">One account for every department in the network.</div>
     <div class="sec">Identity</div>${idHtml}
     <div class="sec">My properties (linked department records)</div>${propHtml}
     <div class="sec">My wallet</div>${offHtml}${docHtml}
@@ -242,72 +273,6 @@ async function pushDL(vcid, btn){
   btn.disabled=true; btn.textContent='Saving…';
   const r = await api('/bridge/digilocker', {action:'push', credential_id: vcid});
   btn.textContent = r.pushed ? '✓ In DigiLocker' : '✗ '+(r.error||'failed');
-}
-// ---- discover → file → track (jurisdiction-scoped by the citizen's profile) ----
-async function search(){
-  const r = await api('/bridge/service-search', {query: document.getElementById('q').value});
-  CATALOG = (r.message || {}).catalog || [];
-  const el = document.getElementById('results');
-  el.innerHTML = CATALOG.length ? CATALOG.map((o,i)=>
-    `<div class="svc"><div class="row"><div><b>${esc(o.title)}</b><span class="pill">${esc(o.domain)}</span><br>
-       <span class="muted">${esc(o.description||'')}</span></div>
-       <button class="btn ghost" onclick="pick(${i})">Open</button></div></div>`).join('')
-    : '<span class="muted">No services offered in your city for that search.</span>';
-}
-const titleCase = s => String(s||'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-let CREDMATCH = {};    // required credential type -> matched wallet VC id (reuse)
-async function pick(i){
-  SEL = CATALOG[i];
-  const canQuote = (SEL.interaction||[]).includes('select');
-  // render the intake form the agency AUTHORED (request_schema) — else a plain description box (backward compat)
-  const rs = SEL.request_schema || {}; const props = rs.properties || {}; const req = rs.required || [];
-  const keys = Object.keys(props); LOOKUP = {};
-  // The agency's AUTHORED form: x-section headings, x-show-if conditional fields, x-lookup registry lookups
-  // (a Unified Property ID → the department's property record), x-from hidden fields filled from a lookup.
-  let lastSec = null;
-  const form = keys.length ? keys.map(k=>{
-      const p = props[k]||{}; const lbl = esc(p.title||k) + (req.includes(k) ? ' *' : '');
-      if(p['x-from']) return `<input type="hidden" data-k="${esc(k)}" data-from="${esc(p['x-from'])}">`;
-      let h = '';
-      if(p['x-section'] && p['x-section']!==lastSec){ lastSec=p['x-section']; h += `<div class="sec">${esc(lastSec)}</div>`; }
-      const si = p['x-show-if'] ? ` data-showif="${esc(JSON.stringify(p['x-show-if']))}"` : '';
-      const help = p.description ? `<div class="muted" style="font-size:12px">${esc(p.description)}</div>` : '';
-      const t = p.format==='date' ? 'date' : (p.type==='number' ? 'number' : 'text');
-      let w;
-      if(p['x-lookup']==='urban.property'){
-        w = `<div class="row"><input data-k="${esc(k)}" data-lookup="urban.property" placeholder="e.g. UP-CDA-000123" style="text-transform:uppercase">
-             <button class="btn ghost" type="button" onclick="lookupProperty('${esc(k)}')">Find</button></div><div id="lk_${esc(k)}" class="muted"></div>`;
-      } else if(Array.isArray(p.enum)){
-        const L = p['x-enum-labels']||{};
-        w = `<select data-k="${esc(k)}"><option value="">— select —</option>`
-          + p.enum.map(v=>`<option value="${esc(v)}">${esc(L[v]||titleCase(v))}</option>`).join('') + `</select>`;
-      } else w = p['x-widget']==='textarea' ? `<textarea data-k="${esc(k)}" rows="3"></textarea>` : `<input data-k="${esc(k)}" type="${t}">`;
-      return h + `<div class="fld"${si}><label>${lbl}</label>${help}${w}</div>`;
-    }).join('')
-    : `<label>${AI18n.t('js.describe')}</label><textarea id="msg" rows="3" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea>`;
-  // REUSE: required documents pulled from the citizen's wallet (no re-upload); block if a required VC is missing
-  const rc = SEL.required_credentials || []; CREDMATCH = {}; let missing = false, credHtml = '';
-  if(rc.length){
-    let held = []; try{ held = (await api('/bridge/my-credentials',{})).held||[]; }catch(e){}
-    credHtml = `<label>Required documents (reused from your wallet)</label>` + rc.map(t=>{
-        const h = held.find(c=>c.type===t); if(h){ CREDMATCH[t]=h.vc; return `<div class="cred ok">✓ ${esc(h.title||titleCase(t))} — from your wallet</div>`; }
-        missing = true; return `<div class="cred err">✗ ${esc(titleCase(t))} — accept it in My Documents first</div>`;
-      }).join('');
-  }
-  document.getElementById('detail').innerHTML =
-    `<div class="card"><h3>${esc(SEL.title)}</h3>
-       <div class="muted">provided by <b>${esc(SEL.tenant)}</b> · steps: ${(SEL.interaction||[]).join(' → ')}</div>
-       ${canQuote?'<button class="btn ghost" style="margin-top:8px" onclick="quote()">Get fee quote</button>':''}
-       <div id="quote" class="muted"></div>
-       ${credHtml}
-       <div id="form">${form}</div>
-       <div id="docs"></div>
-       <button class="btn" id="submit" onclick="fileIt()"${missing?' disabled':''}>${AI18n.t('js.consent_submit')}</button>
-       ${missing?'<div class="err" style="font-size:13px;margin-top:6px">Get the missing document from its own service first — it will appear in My Documents, then you can reuse it here.</div>':''}
-       <div id="out" class="muted" style="margin-top:8px"></div></div>`;
-  _micify(document.getElementById('form'));   // 🎤 speak your complaint — mic on every free-text field
-  const fm=document.getElementById('form'); fm.addEventListener('change', applyShowIf); applyShowIf();
-  document.getElementById('detail').scrollIntoView({behavior:'smooth'});
 }
 /* ===== 🎤 Voice intake — speak your complaint in any language; transcribed via the gateway (Bodhan STT).
    Records in-frame → 16kHz WAV → chunk-upload to filestore → transcribe by file_id → into the field. ===== */
@@ -362,14 +327,6 @@ function formValues(){
 }
 function applyShowIf(){
   const v = {}; document.querySelectorAll('#form [data-k]').forEach(el=>{ v[el.dataset.k]=el.value; });
-  const D = ((SEL && SEL.fulfillment)||{}).documents || [], dbox = document.getElementById('docs');
-  if(dbox){ const need = D.filter(d=>Object.entries(d.when||{}).every(([f,w])=>Array.isArray(w)?w.includes(v[f]):v[f]===w));
-    DOCREFS = {};
-    const ALIAS = {'ownership-proof':['ownership-proof','sale-deed','lease-deed']};
-    const inWallet = t => (WALLET.held||[]).find(h=>h.type==='credential.digilocker_document' && (ALIAS[t]||[t]).includes((h.claims||{}).doc_type));
-    dbox.innerHTML = need.length ? '<label>Documents the office will check</label>' + need.map(d=>{ const h=inWallet(d.type);
-        if(h){ DOCREFS[d.type]={vc:h.vc, title:h.title}; return '<div class="cred ok">✓ '+esc(DOCNAME[d.type]||titleCase(d.type))+' — <b>'+esc(h.title)+'</b> from your wallet (DigiLocker), attached</div>'; }
-        return '<div class="cred" style="background:#161f2c;color:#c9d1d9">📄 '+esc(DOCNAME[d.type]||titleCase(d.type))+' <span class="muted">— not in your wallet; fetch it from DigiLocker in My account, or bring it to the office</span></div>'; }).join('') : ''; }
   document.querySelectorAll('#form .fld[data-showif]').forEach(box=>{
     let c={}; try{ c=JSON.parse(box.dataset.showif); }catch(e){}
     const ok = Object.entries(c).every(([f,want])=> Array.isArray(want) ? want.includes(v[f]) : v[f]===want);
@@ -379,7 +336,7 @@ function applyShowIf(){
 async function lookupProperty(k){
   const el = document.querySelector(`#form [data-k="${k}"]`), out = document.getElementById('lk_'+k);
   const id = (el.value||'').trim().toUpperCase(); if(!id){ out.innerHTML='<span class="err">Enter the Unified Property ID.</span>'; return; }
-  out.textContent = 'Looking up '+id+' at '+SEL.tenant+'…'; delete LOOKUP[k];
+  out.innerHTML = '<span class="muted">Looking up '+esc(id)+'…</span>'; delete LOOKUP[k];
   const r = await api('/bridge/urban-property', {authority: SEL.tenant, property_id: id});
   if(!r.property){ out.innerHTML = '<span class="err">✗ '+esc(r.error||'not found')+'</span>'; return; }
   const p = r.property; LOOKUP[k] = p;
@@ -392,50 +349,249 @@ async function lookupProperty(k){
 }
 async function linkProperty(k){
   const p = LOOKUP[k], out = document.getElementById('lnk_'+k); if(!p) return;
-  out.textContent = ' Checking with '+SEL.tenant+'…';
+  out.textContent = ' Checking with the department…';
   const r = await api('/bridge/urban-link', {authority: SEL.tenant, property_id: p.property_id});
   if(r.linked && r.credential && r.credential.id && !r.already){ await accept(r.credential.id); renderAccount(); }
   out.innerHTML = r.linked ? ' <span class="ok">✓ Linked — the department\'s signed record is now in your wallet.</span>'
                            : ' <span class="err">✗ '+esc(r.error||'could not link')+'</span>';
 }
-async function quote(){
-  const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id, message:{form: formValues()}});
-  const q = (r.message||{}).quote;
-  document.getElementById('quote').innerHTML = q && q.amount
-    ? `Fee: <b>₹${q.amount.toLocaleString('en-IN')}</b> — ${q.breakdown.map(b=>esc(b.item)+' ₹'+Number(b.amount).toLocaleString('en-IN')+(b.basis&&b.basis!=='flat'?' ('+esc(b.basis)+')':'')).join(', ')}${q.note&&q.fee_ref?'<br><span style="font-size:12px">'+esc(q.note)+'</span>':''}`
-    : (q && q.note && q.fee_ref ? esc(q.note) : 'No fee for this service.');
+// ===================== Jan Seva 0.4.0 — three tabs; a service opens as a 3-step application =====================
+const DEPT = {'city-da':'City Development Authority','city-mc':'City Municipal Corporation','uit':'Urban Improvement Trust',
+  'housing-board':'State Housing Board','sidc':'Industrial Development Corporation','state-udd':'Urban Development Department',
+  'dlb':'Directorate of Local Bodies','nashik':'Nashik Municipal Corporation','pune':'Pune Municipal Corporation',
+  'new-delhi':'New Delhi Municipal Council','esic':'ESIC','ncs':'National Career Service'};
+const deptName = t => DEPT[t] || ISSUER[t] || titleCase(t);
+const STATUS = {received:['Submitted','b'], in_progress:['Being processed','b'], open:['Being processed','b'], confirmed:['Being processed','b'],
+  resolved:['Approved','g'], closed:['Closed','g'], rejected:['Not approved','r'], returned:['Returned — documents needed','y'], withdrawn:['Withdrawn','m']};
+const statusChip = s => { const [l,c] = STATUS[s] || [titleCase(s||'—'),'m']; return `<span class="chip ${c}">${esc(l)}</span>`; };
+const roleName = r => titleCase(String(r||'').split('.').pop());
+const firstSentence = s => { s = String(s||''); const i = s.indexOf('. '); return i > 0 ? s.slice(0, i+1) : s; };
+const fmtDate = s => { try{ return new Date(s).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return s||''; } };
+let TAB = 'svc', TXNS = [];
+
+function showTab(t){
+  TAB = t;
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
+  ['svc','req','acct'].forEach(x=>{ document.getElementById('tab-'+x).hidden = (x!==t); });
+  if(t==='req') track();
+  if(t==='acct') renderAccount();
+  window.scrollTo(0,0);
+}
+function renderApp(){
+  document.getElementById('gate').innerHTML='';
+  document.getElementById('app').style.display='';
+  renderWho();
+  document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+  let deb; document.getElementById('q').addEventListener('input', ()=>{ clearTimeout(deb); deb=setTimeout(search, 250); });
+  document.getElementById('refresh').onclick = track;
+  renderAccount(); search(); track();
+}
+function updateBadges(){
+  const n = (WALLET.offers||[]).length + (DLSTAT.verified ? 0 : 1);
+  const a = document.getElementById('acctN'); a.textContent = n ? n : ''; a.hidden = !n;
+  const open = TXNS.filter(t=>['received','in_progress','open','confirmed','returned'].includes(t.status)).length;
+  const r = document.getElementById('reqN'); r.textContent = open ? open : ''; r.hidden = !open;
+  const ban = document.getElementById('banner');
+  if(ban) ban.innerHTML = DLSTAT.verified ? '' : `<div class="note">🪪 <b>Verify your identity once</b> — most services need it, and it lets departments find your records.
+     <a onclick="showTab('acct')">Verify now →</a></div>`;
+}
+
+// ---- Services: search as you type, grouped by department ----
+async function search(){
+  const q = document.getElementById('q').value;
+  const r = await api('/bridge/service-search', {query: q});
+  CATALOG = (r.message || {}).catalog || [];
+  const el = document.getElementById('results');
+  if(!CATALOG.length){ el.innerHTML = '<div class="muted" style="padding:8px 0">No services match that in '+esc(document.getElementById('cityname').textContent)+'.</div>'; return; }
+  const groups = {}; CATALOG.forEach((o,i)=>{ (groups[o.tenant] = groups[o.tenant] || []).push([o,i]); });
+  el.innerHTML = Object.entries(groups).map(([t, list])=>`<div class="dept">${esc(deptName(t))}</div>` + list.map(([o,i])=>
+    `<div class="svc" onclick="pick(${i})"><div><b>${esc(o.title)}</b><div class="muted">${esc(firstSentence(o.description))}</div></div>
+       <span class="go">Apply →</span></div>`).join('')).join('');
+}
+
+// ---- A service: 1 Details → 2 Documents → 3 Review & submit ----
+let STEP = 1;
+function orderedKeys(rs){
+  const props = rs.properties || {}, ord = rs['x-order'] || [];
+  return ord.filter(k=>k in props).concat(Object.keys(props).filter(k=>!ord.includes(k)));
+}
+async function pick(i){
+  SEL = CATALOG[i]; LOOKUP = {}; DOCREFS = {}; CREDMATCH = {}; STEP = 1;
+  const rs = SEL.request_schema || {}; const props = rs.properties || {}; const req = rs.required || [];
+  const keys = orderedKeys(rs); let lastSec = null;
+  const form = keys.length ? keys.map(k=>{
+      const p = props[k]||{}; const lbl = esc(p.title||titleCase(k)) + (req.includes(k) ? ' <span class="req">*</span>' : '');
+      if(p['x-from']) return `<input type="hidden" data-k="${esc(k)}" data-from="${esc(p['x-from'])}">`;
+      let h = '';
+      if(p['x-section'] && p['x-section']!==lastSec){ lastSec=p['x-section']; h += `<div class="sec">${esc(lastSec)}</div>`; }
+      const si = p['x-show-if'] ? ` data-showif="${esc(JSON.stringify(p['x-show-if']))}"` : '';
+      const help = p.description ? `<div class="help">${esc(p.description)}</div>` : '';
+      const t = p.format==='date' ? 'date' : (p.type==='number' ? 'number' : 'text');
+      const pre = p['x-prefill']==='identity.name' && DLSTAT.name ? ` value="${esc(DLSTAT.name)}"` : '';
+      let w;
+      if(p['x-lookup']==='urban.property'){
+        w = `<div class="row"><input data-k="${esc(k)}" data-lookup="urban.property" placeholder="e.g. UP-CDA-000123" style="text-transform:uppercase">
+             <button class="btn ghost" type="button" onclick="lookupProperty('${esc(k)}')">Find</button></div><div id="lk_${esc(k)}"></div>`;
+      } else if(Array.isArray(p.enum)){
+        const L = p['x-enum-labels']||{};
+        w = `<select data-k="${esc(k)}"><option value="">Choose…</option>` + p.enum.map(v=>`<option value="${esc(v)}">${esc(L[v]||titleCase(v))}</option>`).join('') + `</select>`;
+      } else w = p['x-widget']==='textarea' ? `<textarea data-k="${esc(k)}" rows="3"></textarea>` : `<input data-k="${esc(k)}" type="${t}"${pre}>`;
+      return h + `<div class="fld"${si}><label>${lbl}</label>${help}${w}</div>`;
+    }).join('')
+    : `<div class="fld"><label>${AI18n.t('js.describe')} <span class="req">*</span></label><textarea id="msg" rows="4" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea></div>`;
+  const ff = SEL.fulfillment || {}; const sla = Object.values(ff.sla_hours||{}).reduce((a,b)=>a+b,0);
+  const steps = (ff.workflow||[]).map(s=>titleCase(s.step)+' ('+roleName(s.role)+')');
+  document.getElementById('svcList').hidden = true; document.getElementById('banner').hidden = true;
+  document.getElementById('detail').innerHTML = `<div class="card">
+      <a class="back" onclick="closeSvc()">← All services</a>
+      <h2>${esc(SEL.title)}</h2>
+      <div class="muted">${esc(deptName(SEL.tenant))}${sla?' · usually decided within '+Math.ceil(sla/24)+' working days':''}</div>
+      <p class="desc">${esc(SEL.description||'')}</p>
+      ${steps.length?`<div class="flow">What happens: ${['Submit'].concat(steps,['Decision']).map(esc).join(' → ')}</div>`:''}
+      <ol class="stepper"><li data-s="1">Details</li><li data-s="2">Documents</li><li data-s="3">Review &amp; submit</li></ol>
+      <div id="s1"><div id="form">${form}</div></div>
+      <div id="s2" hidden><div id="docs"></div></div>
+      <div id="s3" hidden><div id="review"></div></div>
+      <div id="out" class="muted" style="margin-top:8px"></div>
+      <div class="nav"><button class="btn ghost" id="prevB" onclick="go(STEP-1)">Back</button><button class="btn" id="nextB" onclick="go(STEP+1)">Continue</button></div>
+    </div>`;
+  _micify(document.getElementById('form'));
+  const fm = document.getElementById('form'); fm.addEventListener('change', applyShowIf); fm.addEventListener('input', ()=>{ document.getElementById('out').textContent=''; });
+  applyShowIf(); setStep(1);
+}
+function closeSvc(){ SEL = null; document.getElementById('detail').innerHTML=''; document.getElementById('svcList').hidden=false; document.getElementById('banner').hidden=false; window.scrollTo(0,0); }
+function setStep(n){
+  STEP = n;
+  [1,2,3].forEach(s=>{ document.getElementById('s'+s).hidden = (s!==n); });
+  document.querySelectorAll('.stepper li').forEach(li=>{ const s=+li.dataset.s; li.className = s<n?'done':(s===n?'on':''); });
+  document.getElementById('prevB').style.visibility = n>1 ? 'visible' : 'hidden';
+  const nb = document.getElementById('nextB'); nb.textContent = n<3 ? 'Continue' : 'Submit application'; nb.disabled = false;
+  window.scrollTo(0,0);
+}
+function missingRequired(){
+  const rs = SEL.request_schema||{}, props = rs.properties||{}, form = formValues();
+  if(document.getElementById('msg')) return document.getElementById('msg').value.trim() ? [] : [AI18n.t('js.describe')];
+  return (rs.required||[]).filter(k=>{ const el=document.querySelector(`#form [data-k="${k}"]`); const box=el&&el.closest('.fld');
+      if(box && box.style.display==='none') return false;
+      if(el && el.dataset.lookup) return !LOOKUP[k];
+      return form[k]==null || form[k]===''; }).map(k=>(props[k]||{}).title||titleCase(k));
+}
+async function go(n){
+  const out = document.getElementById('out'); out.textContent = '';
+  if(n < STEP){ setStep(n); return; }
+  if(STEP===1){ const m = missingRequired(); if(m.length){ out.innerHTML='<span class="err">Please complete: '+m.map(esc).join(', ')+'</span>'; return; } setStep(2); renderDocs(); return; }
+  if(STEP===2){ setStep(3); renderReview(); return; }
+  if(STEP===3) return fileIt();
+}
+
+// ---- Step 2: one documents list — the required credentials + the service's checklist, matched against the wallet ----
+let LOCKER = null;
+async function renderDocs(){
+  const box = document.getElementById('docs'); box.innerHTML = '<span class="muted">Checking your wallet…</span>';
+  await loadWallet();
+  if(DLSTAT.verified && LOCKER===null){ try{ LOCKER = (await api('/bridge/digilocker',{action:'list'})).documents || []; }catch(e){ LOCKER=[]; } }
+  const v = {}; document.querySelectorAll('#form [data-k]').forEach(el=>{ v[el.dataset.k]=el.value; });
+  const D = ((SEL.fulfillment)||{}).documents || [];
+  const need = D.filter(d=>Object.entries(d.when||{}).every(([f,w])=>Array.isArray(w)?w.includes(v[f]):v[f]===w));
+  const ALIAS = {'ownership-proof':['ownership-proof','sale-deed','lease-deed']};
+  const inWallet = t => (WALLET.held||[]).find(h=>h.type==='credential.digilocker_document' && (ALIAS[t]||[t]).includes((h.claims||{}).doc_type));
+  const inLocker = t => (LOCKER||[]).find(d=>!d.in_wallet && !d.pushed && (ALIAS[t]||[t]).includes(d.doc_type));
+  CREDMATCH = {}; DOCREFS = {}; let blocked = false;
+  const reqC = (SEL.required_credentials||[]).map(t=>{ const h=(WALLET.held||[]).find(c=>c.type===t);
+      if(h){ CREDMATCH[t]=h.vc; return `<div class="doc ok"><span>✓ <b>${esc(h.title||titleCase(t.split('.').pop()))}</b></span><span class="muted">in your wallet · will be attached</span></div>`; }
+      blocked = true;
+      return `<div class="doc err"><span>✗ <b>${t==='credential.identity_verified'?'Verified identity':esc(titleCase(t.split('.').pop()))}</b> — required</span>
+        ${t==='credential.identity_verified'?`<button class="btn sm" onclick="showTab('acct')">Verify in My account</button>`:''}</div>`; });
+  const docs = need.map(d=>{ const name = DOCNAME[d.type]||titleCase(d.type); const h = inWallet(d.type);
+      if(h){ DOCREFS[d.type]={vc:h.vc, title:h.title}; return `<div class="doc ok"><span>✓ <b>${esc(name)}</b><br><span class="muted">${esc(h.title)} · from DigiLocker</span></span><span class="muted">will be attached</span></div>`; }
+      const l = inLocker(d.type);
+      if(l) return `<div class="doc"><span>📄 <b>${esc(name)}</b><br><span class="muted">${esc(l.title)} is in your DigiLocker</span></span>
+          <button class="btn sm" onclick="fetchForApp('${esc(l.uri)}',this)">Fetch from DigiLocker</button></div>`;
+      return `<div class="doc"><span>📄 <b>${esc(name)}</b><br><span class="muted">Not in your wallet — you can still apply; the office may ask for it.</span></span></div>`; });
+  box.innerHTML = (reqC.length||docs.length) ? `<div class="sec">Documents</div>${reqC.join('')}${docs.join('')}
+      <div class="help" style="margin-top:6px">Documents from your wallet are signed by their issuer — the office sees them as verified, no upload needed.</div>`
+    : '<div class="muted">No documents are needed for this service.</div>';
+  document.getElementById('nextB').disabled = blocked;
+}
+async function fetchForApp(uri, btn){
+  btn.disabled = true; btn.textContent = 'Fetching…';
+  const r = await api('/bridge/digilocker', {action:'fetch', uri});
+  if(!r.fetched){ btn.textContent = '✗ ' + (r.error||'failed'); return; }
+  if(r.credential && r.credential.id && !r.already) await accept(r.credential.id);
+  LOCKER = null; renderDocs(); renderAccount();
+}
+
+// ---- Step 3: review what will be sent, the fee (calculated automatically), consent, submit ----
+async function renderReview(){
+  const rs = SEL.request_schema||{}, props = rs.properties||{}, form = formValues();
+  const rows = orderedKeys(rs).filter(k=>!(props[k]||{})['x-from'] && form[k]!=null && form[k]!=='').map(k=>
+      `<tr><td>${esc((props[k]||{}).title||titleCase(k))}</td><td>${esc(LOOKUP[k] ? LOOKUP[k].property_id+' — '+(LOOKUP[k].address||'') : (Array.isArray((props[k]||{}).enum)?titleCase(form[k]):form[k]))}</td></tr>`).join('');
+  const msg = document.getElementById('msg');
+  const att = Object.values(CREDMATCH).length + Object.values(DOCREFS).length;
+  document.getElementById('review').innerHTML = `<div class="sec">Your application</div>
+      ${msg?`<p>${esc(msg.value)}</p>`:`<table class="rv">${rows}</table>`}
+      <div class="sec">Documents attached</div><div>${att ? Object.values(DOCREFS).map(d=>'✓ '+esc(d.title)).concat(Object.keys(CREDMATCH).map(t=>'✓ '+(t==='credential.identity_verified'?'Verified identity':titleCase(t.split('.').pop())))).join('<br>') : '<span class="muted">None</span>'}</div>
+      <div class="sec">Fee</div><div id="fee" class="muted">Calculating…</div>
+      <label class="consent"><input type="checkbox" id="agree"> I agree that the <b>${esc(deptName(SEL.tenant))}</b> may process this application and see the documents attached.</label>`;
+  document.getElementById('nextB').disabled = true;
+  document.getElementById('agree').onchange = e => { document.getElementById('nextB').disabled = !e.target.checked; };
+  if((SEL.interaction||[]).includes('select')){
+    try{ const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id, message:{form}});
+      const q = (r.message||{}).quote;
+      document.getElementById('fee').innerHTML = q && q.amount
+        ? `<b class="amt">₹${q.amount.toLocaleString('en-IN')}</b> ` + q.breakdown.map(b=>esc(b.item)+(b.basis&&b.basis!=='flat'?' ('+esc(b.basis)+')':'')).join(', ')
+          + `<div class="help">Pay at the office or online when the office asks — you will be told before any payment is due.</div>`
+        : 'No fee.';
+    }catch(e){ document.getElementById('fee').textContent = 'The office will tell you the fee.'; }
+  } else document.getElementById('fee').textContent = 'No fee.';
 }
 async function fileIt(){
-  const out = document.getElementById('out'), btn = document.getElementById('submit');
-  const props0 = (SEL.request_schema||{}).properties||{};
-  btn.disabled = true;
-  // collect the authored form's values → {form, description}. description = a human summary for the officer's inbox.
-  const form = formValues();
-  const miss = ((SEL.request_schema||{}).required||[]).filter(k=>{ const b=document.querySelector(`#form [data-k="${k}"]`); const box=b&&b.closest('.fld'); return !(box&&box.style.display==='none') && (form[k]==null||form[k]==='') ; });
-  if(miss.length){ out.innerHTML='<span class="err">Please fill: '+miss.map(k=>esc(((props0[k]||{}).title)||k)).join(', ')+'</span>'; btn.disabled=false; return; }
-  out.textContent = 'Requesting your consent…';
-  await api('/bridge/service-consent', {app_id:APP, service_id:SEL.service_id, provider:SEL.tenant, expires_at:'2027-01-01T00:00:00Z'});
-  out.textContent = 'Submitting to ' + SEL.tenant + '…';
+  const out = document.getElementById('out'), btn = document.getElementById('nextB');
+  btn.disabled = true; out.textContent = 'Submitting…';
+  const form = formValues(); const props = (SEL.request_schema||{}).properties||{};
   const legacy = document.getElementById('msg');
-  const props = (SEL.request_schema||{}).properties||{};
   const description = legacy ? legacy.value : Object.entries(form).filter(([k])=>!(props[k]||{})['x-from']).map(([k,v])=>((props[k]&&props[k].title)||k)+': '+(LOOKUP[k]?LOOKUP[k].property_id:v)).join(' · ');
   const docs = Object.values(DOCREFS);
-  const credential_refs = Object.values(CREDMATCH).concat(docs.map(d=>d.vc).filter(Boolean));   // reused wallet VCs + attached documents — the provider verifies each
-  const fullDesc = description + (docs.length ? ' · Documents (verified, from wallet): ' + docs.map(d=>d.title).join(', ') : '');
+  const credential_refs = Object.values(CREDMATCH).concat(docs.map(d=>d.vc).filter(Boolean));
+  const fullDesc = (docs.length ? 'Documents (verified): ' + docs.map(d=>d.title).join(', ') + ' · ' : '') + description;
+  await api('/bridge/service-consent', {app_id:APP, service_id:SEL.service_id, provider:SEL.tenant, expires_at:'2027-01-01T00:00:00Z'});
   const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{form, description: fullDesc, credential_refs}});
   const m = r.message || {};
-  out.innerHTML = m.reference
-    ? `<span class="ok">✓ Submitted.</span> Reference <b>${esc(m.reference)}</b> — ${esc(SEL.tenant)} has your request.`
-    : `<span class="err">✗ ${esc(r.error||'could not submit')}</span>`;
-  btn.disabled = false; track();
+  if(!m.reference){ out.innerHTML = `<span class="err">✗ ${esc(r.detail||r.error||'Could not submit — please try again.')}</span>`; btn.disabled = false; return; }
+  const ff = SEL.fulfillment||{}; const first = (ff.workflow||[])[0];
+  document.getElementById('detail').innerHTML = `<div class="card done">
+      <div class="big">✓</div><h2>Application submitted</h2>
+      <div>Your reference: <b class="ref">${esc(m.reference)}</b></div>
+      <p class="muted">The <b>${esc(deptName(SEL.tenant))}</b> has your application${first?' — it is now with the '+esc(roleName(first.role))+(first.office_by?' of your zone office':''):''}.
+        You'll see every step in <b>My requests</b>${(ff.workflow||[]).some(s=>s.issues)?', and the decision will arrive in your wallet':''}.</p>
+      <div class="nav"><button class="btn ghost" onclick="closeSvc()">Back to services</button><button class="btn" onclick="closeSvc();showTab('req')">Track it in My requests</button></div></div>`;
+  track();
 }
+
+// ---- My requests: one card per application, with progress ----
 async function track(){
   const d = await api('/bridge/service-transactions', {});
-  const t = (d.transactions || []).slice().reverse();
-  document.getElementById('txns').innerHTML = t.length
-    ? t.map(x=>`<div class="row" style="padding:4px 0"><span>${esc(x.service_id)}</span>
-        <span><span class="pill">${esc(x.status)}</span> ${x.case?'<span class="muted">'+esc(x.case.split('/').pop())+'</span>':''}</span></div>`).join('')
-    : '<span class="muted">No requests yet.</span>';
+  TXNS = (d.transactions || []).filter(t=>t.case).slice().reverse();
+  const el = document.getElementById('txns');
+  if(!TXNS.length){ el.innerHTML = '<div class="card muted">No applications yet. Find a service under <a onclick="showTab(\'svc\')">Services</a>.</div>'; updateBadges(); return; }
+  el.innerHTML = TXNS.map((t,i)=>{ const o = CATALOG.find(c=>c.service_id===t.service_id) || {};
+      return `<div class="card req"><div class="row"><div><b>${esc(o.title||titleCase(t.service_id))}</b>
+          <div class="muted">${esc(deptName(t.provider))} · ${esc(fmtDate(t.created_at))} · Ref <b>${esc(String(t.case).split('/').pop().toUpperCase())}</b></div></div>
+          ${statusChip(t.status)}</div><div class="prog" id="pg${i}"></div></div>`; }).join('');
+  updateBadges();
+  TXNS.forEach(async (t,i)=>{                   // live progress from the department's own case (data at source)
+    try{ const s = await api('/bridge/service-status', {app_id:APP, case:t.case}); const m = s.message||{};
+      const o = CATALOG.find(c=>c.service_id===t.service_id) || {}; const wf = ((o.fulfillment||{}).workflow||[]).map(x=>x.step);
+      const cur = m.current_step, closed = m.status==='closed';
+      const stages = ['submitted'].concat(wf, ['decision']);
+      let at = cur==='received'||cur==='submitted' ? 1 : (wf.indexOf(cur) >= 0 ? wf.indexOf(cur)+1 : 0);
+      if(closed) at = stages.length;
+      const label = s => s==='submitted'?'Submitted':s==='decision'?(cur==='rejected'?'Not approved':cur==='returned'?'Returned':'Decision'):titleCase(s);
+      document.getElementById('pg'+i).innerHTML = '<ol class="track">' + stages.map((s,j)=>`<li class="${j<at?'done':j===at?'on':''}">${esc(label(s))}</li>`).join('') + '</ol>'
+        + (cur==='returned' ? '<div class="note">The office returned this application — documents are needed. Apply again with them.</div>' : '');
+    }catch(e){}
+  });
 }
+
 boot();
 </script>

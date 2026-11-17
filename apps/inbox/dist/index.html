@@ -286,12 +286,16 @@ async function caseDetails(b,c){
   let h='<div class="lbl" style="margin-top:0">Application submitted by the citizen</div>';
   if(Object.keys(data).length){
     h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px">';
-    for(const k of Object.keys(data)) h+='<div style="color:#8b949e">'+esc(k.replace(/[_-]/g,' '))+'</div><div>'+esc(data[k])+'</div>';
+    const hide=new Set(Object.keys(data).filter(k=>k==='property'&&data.property_id));   // the record id when the readable id is there
+    const cap=k=>{const t=k.replace(/[_-]/g,' '); return t.charAt(0).toUpperCase()+t.slice(1);};
+    const val=v=>{const x=String(v==null?'':v); return x.startsWith('ds:')?x.split('/').pop().replace(/-/g,' '):x.replace(/^(sale|inheritance|gift|family-settlement)$/,m=>cap(m));};
+    for(const k of Object.keys(data)) if(!hide.has(k)) h+='<div style="color:#8b949e">'+esc(cap(k))+'</div><div>'+esc(val(data[k]))+'</div>';
     h+='</div>';
   } else { h+='<div class="note">No structured application on file.</div>'; }
   box.innerHTML=h; b.appendChild(box);
 }
 async function taskControls(b,task){
+  if(task.case && task.workflow_step) await caseDetails(b,{id:task.case});   // the application, right on the task
   const box=document.createElement('div'); box.className='controls';
   if(task.case){const cl=mkbtn('Open case ↗','btn',()=>push(task.case,{title:'Case'})); box.appendChild(cl);}
   b.appendChild(box);
@@ -318,7 +322,8 @@ async function taskControls(b,task){
     const go=mkbtn('Record decision','btn primary',()=>decide(task.id,'selected',SEL)); go.disabled=true; b.appendChild(go);
   } else {
     const acts=document.createElement('div'); acts.className='controls';
-    acts.appendChild(mkbtn('Approve','btn approve',()=>decide(task.id,'approved',null)));
+    acts.appendChild(mkbtn(task.workflow_step?'Approve / forward':'Approve','btn approve',()=>decide(task.id,'approved',null)));
+    if(task.workflow_step) acts.appendChild(mkbtn('Return for documents','btn',()=>decide(task.id,'returned',null)));
     acts.appendChild(mkbtn('Reject','btn reject',()=>decide(task.id,'rejected',null)));
     b.appendChild(acts);
   }
@@ -332,7 +337,7 @@ async function decide(taskId,outcome,selected){
   if(r.json && r.json.via==='workflow'){                  // a SERVICE-WORKFLOW step: advanced / closed (no decision receipt)
     const rc=document.createElement('div'); rc.className='ok';
     rc.textContent = r.json.case_closed
-      ? ('✓ '+(outcome==='rejected'?'Rejected — case closed':'Approved — completed'+(r.json.issued?' · credential issued to the applicant':'')))
+      ? ('✓ '+(outcome==='rejected'?'Rejected — case closed':outcome==='returned'?'Returned to the applicant for documents — case closed':'Approved — completed'+(r.json.issued?' · the order was issued to the applicant\'s wallet':'')))
       : ('✓ Approved — advanced to “'+(r.json.advanced_to||'next step')+'”'+(r.json.routed_to?' · now with '+r.json.routed_to:''));
     b.appendChild(rc); loadList(); return;
   }
