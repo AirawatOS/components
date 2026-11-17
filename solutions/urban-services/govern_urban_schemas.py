@@ -111,6 +111,29 @@ SCHEMAS = [
 ]
 
 
+# CREDENTIAL TYPES (the claims contract of a signed credential a department issues into a citizen's wallet). Governed
+# like any schema; x-kind "fragment" = a value object (the claims), not a stored registry record.
+def cred(sid, desc, required, props):
+    return sid, {"type": "object", "title": sid, "x-kind": "fragment", "description": desc, "additionalProperties": False,
+                 "required": required, "properties": props}
+
+
+TXT = {"type": "string"}
+CREDENTIALS = [
+ (cred("credential.urban_property_holding", "Issued by an urban department when a citizen links its record of a property "
+       "they hold to their account (account linking): the property, the capacity and share, and the verified name.",
+       ["property_id", "authority", "relation"],
+       {"property_id": TXT, "authority": TXT, "relation": TXT, "holder_name": TXT, "address": TXT, "land_use": TXT,
+        "area_sqm": {"type": "number"}, "share_pct": {"type": "number"}, "since": TXT}), "internal"),
+ (cred("credential.urban_name_transfer", "Name transfer (mutation) order: the property is now recorded in the name of the "
+       "transferee. Issued by the department that holds the property record.",
+       ["property_id"],
+       {"property": TXT, "property_id": TXT, "zone": TXT, "address": TXT, "land_use": TXT, "area_sqm": {"type": ["number", "string"]},
+        "transfer_reason": TXT, "transferor_name": TXT, "transferee_name": TXT, "relation_to_transferor": TXT,
+        "deed_no": TXT, "deed_date": TXT, "remarks": TXT}), "internal"),
+]
+
+
 def _post(url, body, token=None):
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
     if token:
@@ -126,7 +149,7 @@ if __name__ == "__main__":
     if err:
         raise SystemExit("login failed: " + err.split(" ")[0])
     tok = r["access_token"]
-    for (sid, d), sens in SCHEMAS:
+    for (sid, d), sens in SCHEMAS + CREDENTIALS:
         pr, perr = _post(f"{NET}/v1/schema-requests", {"schema_id": sid, "version": "0.1.0", "definition": d, "x_kind": d["x-kind"],
                          "sensitivity": sens, "justification": "Urban services product — shared master data for every urban department."}, tok)
         if perr and "already published" in perr:

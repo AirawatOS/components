@@ -22,6 +22,7 @@
   .cred{border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
   .cred.ok{background:#12331f;color:#3fb950}.cred.err{background:#3a1518;color:#f85149}
   h3{margin:.2em 0}
+  .sec{margin:16px 0 2px;font-weight:600;font-size:14px;border-bottom:1px solid #21262d;padding-bottom:4px}
 </style>
 <header><b>🏛️ Jan Seva</b> <span class="muted" style="font-weight:400">· <span data-i18n="js.tagline">Citizen Services</span></span>
   <span id="who" class="who"></span></header>
@@ -195,18 +196,28 @@ async function pick(i){
   const canQuote = (SEL.interaction||[]).includes('select');
   // render the intake form the agency AUTHORED (request_schema) — else a plain description box (backward compat)
   const rs = SEL.request_schema || {}; const props = rs.properties || {}; const req = rs.required || [];
-  const keys = Object.keys(props);
+  const keys = Object.keys(props); LOOKUP = {};
+  // The agency's AUTHORED form: x-section headings, x-show-if conditional fields, x-lookup registry lookups
+  // (a Unified Property ID → the department's property record), x-from hidden fields filled from a lookup.
+  let lastSec = null;
   const form = keys.length ? keys.map(k=>{
       const p = props[k]||{}; const lbl = esc(p.title||k) + (req.includes(k) ? ' *' : '');
+      if(p['x-from']) return `<input type="hidden" data-k="${esc(k)}" data-from="${esc(p['x-from'])}">`;
+      let h = '';
+      if(p['x-section'] && p['x-section']!==lastSec){ lastSec=p['x-section']; h += `<div class="sec">${esc(lastSec)}</div>`; }
+      const si = p['x-show-if'] ? ` data-showif="${esc(JSON.stringify(p['x-show-if']))}"` : '';
+      const help = p.description ? `<div class="muted" style="font-size:12px">${esc(p.description)}</div>` : '';
       const t = p.format==='date' ? 'date' : (p.type==='number' ? 'number' : 'text');
-      if(Array.isArray(p.enum)){                          // a picker (e.g. a 📍 location field baked with the agency's areas)
+      let w;
+      if(p['x-lookup']==='urban.property'){
+        w = `<div class="row"><input data-k="${esc(k)}" data-lookup="urban.property" placeholder="e.g. UP-CDA-000123" style="text-transform:uppercase">
+             <button class="btn ghost" type="button" onclick="lookupProperty('${esc(k)}')">Find</button></div><div id="lk_${esc(k)}" class="muted"></div>`;
+      } else if(Array.isArray(p.enum)){
         const L = p['x-enum-labels']||{};
-        return `<label>${lbl}</label><select data-k="${esc(k)}"><option value="">— select —</option>`
-          + p.enum.map(v=>`<option value="${esc(v)}">${esc(L[v]||v)}</option>`).join('') + `</select>`;
-      }
-      return p['x-widget']==='textarea'
-        ? `<label>${lbl}</label><textarea data-k="${esc(k)}" rows="3"></textarea>`
-        : `<label>${lbl}</label><input data-k="${esc(k)}" type="${t}">`;
+        w = `<select data-k="${esc(k)}"><option value="">— select —</option>`
+          + p.enum.map(v=>`<option value="${esc(v)}">${esc(L[v]||titleCase(v))}</option>`).join('') + `</select>`;
+      } else w = p['x-widget']==='textarea' ? `<textarea data-k="${esc(k)}" rows="3"></textarea>` : `<input data-k="${esc(k)}" type="${t}">`;
+      return h + `<div class="fld"${si}><label>${lbl}</label>${help}${w}</div>`;
     }).join('')
     : `<label>${AI18n.t('js.describe')}</label><textarea id="msg" rows="3" placeholder="e.g. garbage uncollected at ward 5 for 3 days"></textarea>`;
   // REUSE: required documents pulled from the citizen's wallet (no re-upload); block if a required VC is missing
@@ -225,10 +236,12 @@ async function pick(i){
        <div id="quote" class="muted"></div>
        ${credHtml}
        <div id="form">${form}</div>
+       <div id="docs"></div>
        <button class="btn" id="submit" onclick="fileIt()"${missing?' disabled':''}>${AI18n.t('js.consent_submit')}</button>
        ${missing?'<div class="err" style="font-size:13px;margin-top:6px">Get the missing document from its own service first — it will appear in My Documents, then you can reuse it here.</div>':''}
        <div id="out" class="muted" style="margin-top:8px"></div></div>`;
   _micify(document.getElementById('form'));   // 🎤 speak your complaint — mic on every free-text field
+  const fm=document.getElementById('form'); fm.addEventListener('change', applyShowIf); applyShowIf();
   document.getElementById('detail').scrollIntoView({behavior:'smooth'});
 }
 /* ===== 🎤 Voice intake — speak your complaint in any language; transcribed via the gateway (Bodhan STT).
@@ -269,23 +282,73 @@ function _micify(box){ if(!box)return; box.querySelectorAll("textarea").forEach(
   ta.insertAdjacentElement("afterend", st); ta.insertAdjacentElement("afterend", b);
   attachMic(b, ta, {status:m=>{st.textContent=m; setTimeout(()=>{if(st.textContent===m)st.textContent="";},4000);}});
 }); }
+let LOOKUP = {};
+const DOCNAME = {'identity-proof':'Identity proof','address-proof':'Address proof','ownership-proof':'Proof of ownership (sale deed, lease deed or patta)',
+  'sale-deed':'Registered sale deed','lease-deed':'Lease deed / patta','allotment-letter':'Allotment letter','death-certificate':'Death certificate of the holder',
+  'succession-certificate':'Succession certificate or will','affidavit':'Affidavit (prescribed format)','no-dues':'No-dues certificate','site-plan':'Site plan',
+  'building-plan':'Building plan drawings','tax-receipt':'Latest property-tax receipt','indemnity-bond':'Indemnity bond'};
+function formValues(){
+  const form = {};
+  document.querySelectorAll('#form [data-k]').forEach(el=>{
+    const box = el.closest('.fld'); if(box && box.style.display==='none') return;     // a hidden conditional field is not sent
+    if(el.dataset.lookup){ const r = LOOKUP[el.dataset.k]; if(r){ form[el.dataset.k] = r.property; } else if(el.value!=='') form[el.dataset.k]=el.value.trim().toUpperCase(); return; }
+    if(el.value!=='') form[el.dataset.k]=el.value; });
+  return form;
+}
+function applyShowIf(){
+  const v = {}; document.querySelectorAll('#form [data-k]').forEach(el=>{ v[el.dataset.k]=el.value; });
+  const D = ((SEL && SEL.fulfillment)||{}).documents || [], dbox = document.getElementById('docs');
+  if(dbox){ const need = D.filter(d=>Object.entries(d.when||{}).every(([f,w])=>Array.isArray(w)?w.includes(v[f]):v[f]===w));
+    dbox.innerHTML = need.length ? '<label>Documents the office will check</label>' + need.map(d=>'<div class="cred" style="background:#161f2c;color:#c9d1d9">📄 '+esc(DOCNAME[d.type]||titleCase(d.type))+'</div>').join('')
+      + '<div class="muted" style="font-size:12px">Keep them ready — the office may ask to see them.</div>' : ''; }
+  document.querySelectorAll('#form .fld[data-showif]').forEach(box=>{
+    let c={}; try{ c=JSON.parse(box.dataset.showif); }catch(e){}
+    const ok = Object.entries(c).every(([f,want])=> Array.isArray(want) ? want.includes(v[f]) : v[f]===want);
+    box.style.display = ok ? '' : 'none';
+  });
+}
+async function lookupProperty(k){
+  const el = document.querySelector(`#form [data-k="${k}"]`), out = document.getElementById('lk_'+k);
+  const id = (el.value||'').trim().toUpperCase(); if(!id){ out.innerHTML='<span class="err">Enter the Unified Property ID.</span>'; return; }
+  out.textContent = 'Looking up '+id+' at '+SEL.tenant+'…'; delete LOOKUP[k];
+  const r = await api('/bridge/urban-property', {authority: SEL.tenant, property_id: id});
+  if(!r.property){ out.innerHTML = '<span class="err">✗ '+esc(r.error||'not found')+'</span>'; return; }
+  const p = r.property; LOOKUP[k] = p;
+  document.querySelectorAll('#form [data-from]').forEach(h=>{ const [src, attr] = h.dataset.from.split('.'); if(src===k) h.value = (p[attr]==null?'':p[attr]); });
+  out.innerHTML = `<div class="cred ok">✓ <b>${esc(p.property_id)}</b> · ${esc(p.address||'')}<br>
+      ${esc(titleCase(p.property_type||''))} · ${esc(titleCase(p.land_use||''))} · ${p.area_sqm!=null?esc(p.area_sqm)+' sq m':''}
+      ${p.zone_name?' · '+esc(p.zone_name):''}${p.scheme_name?' · '+esc(p.scheme_name):''} · ${esc(titleCase(p.tenure||''))}</div>
+    <button class="btn ghost" type="button" style="padding:4px 10px;font-size:13px" onclick="linkProperty('${esc(k)}')">🔗 This is my property — link it to my account</button>
+    <span id="lnk_${esc(k)}" class="muted"></span>`;
+}
+async function linkProperty(k){
+  const p = LOOKUP[k], out = document.getElementById('lnk_'+k); if(!p) return;
+  out.textContent = ' Checking with '+SEL.tenant+'…';
+  const r = await api('/bridge/urban-link', {authority: SEL.tenant, property_id: p.property_id});
+  out.innerHTML = r.linked ? ' <span class="ok">✓ Linked — the department\'s signed record is now in your wallet.</span>'
+                           : ' <span class="err">✗ '+esc(r.error||'could not link')+'</span>';
+}
 async function quote(){
-  const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id});
+  const r = await api('/bridge/service-route', {app_id:APP, action:'select', service_id:SEL.service_id, message:{form: formValues()}});
   const q = (r.message||{}).quote;
   document.getElementById('quote').innerHTML = q && q.amount
-    ? `Fee: <b>₹${q.amount} ${esc(q.currency)}</b> (${q.breakdown.map(b=>esc(b.item)+' ₹'+b.amount).join(', ')})`
-    : 'No fee for this service.';
+    ? `Fee: <b>₹${q.amount.toLocaleString('en-IN')}</b> — ${q.breakdown.map(b=>esc(b.item)+' ₹'+Number(b.amount).toLocaleString('en-IN')+(b.basis&&b.basis!=='flat'?' ('+esc(b.basis)+')':'')).join(', ')}${q.note&&q.fee_ref?'<br><span style="font-size:12px">'+esc(q.note)+'</span>':''}`
+    : (q && q.note && q.fee_ref ? esc(q.note) : 'No fee for this service.');
 }
 async function fileIt(){
   const out = document.getElementById('out'), btn = document.getElementById('submit');
-  btn.disabled = true; out.textContent = 'Requesting your consent…';
+  const props0 = (SEL.request_schema||{}).properties||{};
+  btn.disabled = true;
+  // collect the authored form's values → {form, description}. description = a human summary for the officer's inbox.
+  const form = formValues();
+  const miss = ((SEL.request_schema||{}).required||[]).filter(k=>{ const b=document.querySelector(`#form [data-k="${k}"]`); const box=b&&b.closest('.fld'); return !(box&&box.style.display==='none') && (form[k]==null||form[k]==='') ; });
+  if(miss.length){ out.innerHTML='<span class="err">Please fill: '+miss.map(k=>esc(((props0[k]||{}).title)||k)).join(', ')+'</span>'; btn.disabled=false; return; }
+  out.textContent = 'Requesting your consent…';
   await api('/bridge/service-consent', {app_id:APP, service_id:SEL.service_id, provider:SEL.tenant, expires_at:'2027-01-01T00:00:00Z'});
   out.textContent = 'Submitting to ' + SEL.tenant + '…';
-  // collect the authored form's values → {form, description}. description = a human summary for the officer's inbox.
-  const form = {}; document.querySelectorAll('#form [data-k]').forEach(el=>{ if(el.value!=='') form[el.dataset.k]=el.value; });
   const legacy = document.getElementById('msg');
   const props = (SEL.request_schema||{}).properties||{};
-  const description = legacy ? legacy.value : Object.entries(form).map(([k,v])=>((props[k]&&props[k].title)||k)+': '+v).join(' · ');
+  const description = legacy ? legacy.value : Object.entries(form).filter(([k])=>!(props[k]||{})['x-from']).map(([k,v])=>((props[k]&&props[k].title)||k)+': '+(LOOKUP[k]?LOOKUP[k].property_id:v)).join(' · ');
   const credential_refs = Object.values(CREDMATCH);   // reused wallet VCs the provider will verify
   const r = await api('/bridge/service-route', {app_id:APP, action:'init', service_id:SEL.service_id, message:{form, description, credential_refs}});
   const m = r.message || {};
