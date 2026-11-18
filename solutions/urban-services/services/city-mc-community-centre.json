@@ -1,0 +1,98 @@
+{
+  "tenant": "city-mc",
+  "service_id": "city-mc-community-centre",
+  "domain": "urban",
+  "title": "Community centre booking",
+  "description": "Book a community centre for a function. The charge is per day and paid online.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {},
+  "fulfillment": {
+    "fee_service": "community-centre-booking",
+    "payment": "before_submit",
+    "sla_hours": {
+      "approval": 24
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "approval",
+        "role": "urban.revenue-officer",
+        "task": "Check availability and approve the booking."
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "centre",
+      "from_date",
+      "days",
+      "purpose"
+    ],
+    "properties": {
+      "centre": {
+        "type": "string",
+        "title": "Community centre",
+        "x-section": "Booking",
+        "enum": [
+          "zone-1-centre",
+          "zone-2-centre",
+          "zone-3-centre",
+          "zone-4-centre"
+        ],
+        "x-enum-labels": {
+          "zone-1-centre": "Zone 1 community centre",
+          "zone-2-centre": "Zone 2 community centre",
+          "zone-3-centre": "Zone 3 community centre",
+          "zone-4-centre": "Zone 4 community centre"
+        }
+      },
+      "from_date": {
+        "type": "string",
+        "title": "From",
+        "format": "date"
+      },
+      "days": {
+        "type": "number",
+        "title": "Number of days"
+      },
+      "purpose": {
+        "type": "string",
+        "title": "Purpose",
+        "enum": [
+          "wedding",
+          "religious",
+          "social",
+          "meeting",
+          "other"
+        ]
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "centre",
+      "from_date",
+      "days",
+      "purpose",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "approval 24h"
+}

@@ -1,0 +1,226 @@
+{
+  "tenant": "housing-board",
+  "service_id": "hb-name-transfer",
+  "domain": "urban",
+  "title": "Name transfer of an allotted house",
+  "description": "Record a Board house in the new holder's name after a sale, inheritance, gift or family settlement. Look the property up by its Unified Property ID; the application goes to the zone office of the property.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-state",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {
+    "area": "zone"
+  },
+  "fulfillment": {
+    "fee_service": "name-transfer",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "ownership-proof",
+        "when": {}
+      },
+      {
+        "type": "sale-deed",
+        "when": {
+          "transfer_reason": "sale"
+        }
+      },
+      {
+        "type": "death-certificate",
+        "when": {
+          "transfer_reason": "inheritance"
+        }
+      },
+      {
+        "type": "succession-certificate",
+        "when": {
+          "transfer_reason": "inheritance"
+        }
+      },
+      {
+        "type": "affidavit",
+        "when": {
+          "transfer_reason": [
+            "gift",
+            "family-settlement"
+          ]
+        }
+      },
+      {
+        "type": "no-dues",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "scrutiny": 72,
+      "approval": 48
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "scrutiny",
+        "role": "urban.dealing-assistant",
+        "office_by": "zone",
+        "task": "Check the application, the documents and the dues. Forward, return for documents, or reject."
+      },
+      {
+        "step": "approval",
+        "role": "urban.estate-officer",
+        "task": "Approve the transfer. The holder record is updated and the order is issued.",
+        "issues": "credential.urban_name_transfer",
+        "effects": [
+          {
+            "close": {
+              "schema": "urban.property_holding",
+              "match": {
+                "property": "$form.property"
+              },
+              "patch": {
+                "until": "$today"
+              }
+            }
+          },
+          {
+            "write": {
+              "schema": "urban.property_holding",
+              "property": "$form.property",
+              "holder_name": "$form.transferee_name",
+              "holder_ref": "$applicant",
+              "relation": "owner",
+              "share_pct": 100,
+              "since": "$today",
+              "source_doc": "$case"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "property",
+      "transfer_reason",
+      "transferor_name",
+      "transferee_name"
+    ],
+    "properties": {
+      "property": {
+        "type": "string",
+        "title": "Unified Property ID",
+        "x-section": "Property",
+        "x-lookup": "urban.property",
+        "description": "Printed on your allotment letter, lease deed or tax receipt."
+      },
+      "property_id": {
+        "type": "string",
+        "x-from": "property.property_id"
+      },
+      "zone": {
+        "type": "string",
+        "x-from": "property.zone"
+      },
+      "address": {
+        "type": "string",
+        "x-from": "property.address"
+      },
+      "land_use": {
+        "type": "string",
+        "x-from": "property.land_use"
+      },
+      "area_sqm": {
+        "type": "string",
+        "x-from": "property.area_sqm"
+      },
+      "transfer_reason": {
+        "type": "string",
+        "title": "Reason for transfer",
+        "x-section": "Transfer",
+        "enum": [
+          "sale",
+          "inheritance",
+          "gift",
+          "family-settlement"
+        ]
+      },
+      "transferor_name": {
+        "type": "string",
+        "title": "Present holder (as recorded)"
+      },
+      "relation_to_transferor": {
+        "type": "string",
+        "title": "Your relation to the deceased holder",
+        "enum": [
+          "spouse",
+          "son",
+          "daughter",
+          "parent",
+          "other-legal-heir"
+        ],
+        "x-show-if": {
+          "transfer_reason": "inheritance"
+        }
+      },
+      "transferee_name": {
+        "type": "string",
+        "title": "New holder (your name)",
+        "x-prefill": "identity.name",
+        "description": "As on your verified identity."
+      },
+      "deed_no": {
+        "type": "string",
+        "title": "Registered deed number",
+        "x-show-if": {
+          "transfer_reason": [
+            "sale",
+            "gift",
+            "family-settlement"
+          ]
+        }
+      },
+      "deed_date": {
+        "type": "string",
+        "title": "Deed date",
+        "format": "date",
+        "x-show-if": {
+          "transfer_reason": [
+            "sale",
+            "gift",
+            "family-settlement"
+          ]
+        }
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "property",
+      "property_id",
+      "zone",
+      "address",
+      "land_use",
+      "area_sqm",
+      "transfer_reason",
+      "transferor_name",
+      "relation_to_transferor",
+      "transferee_name",
+      "deed_no",
+      "deed_date",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "scrutiny 72h, approval 48h"
+}

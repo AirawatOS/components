@@ -1,0 +1,151 @@
+{
+  "tenant": "housing-board",
+  "service_id": "hb-allotment-registration",
+  "domain": "urban",
+  "title": "Allotment registration (lottery)",
+  "description": "Register for the allotment of a house or plot by lottery. Choose the scheme and your income category; the registration fee is paid online.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-state",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {},
+  "fulfillment": {
+    "fee_service": "allotment-processing",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "identity-proof",
+        "when": {}
+      },
+      {
+        "type": "address-proof",
+        "when": {}
+      },
+      {
+        "type": "income-certificate",
+        "when": {
+          "category": [
+            "ews",
+            "lig"
+          ]
+        }
+      },
+      {
+        "type": "caste-category-certificate",
+        "when": {
+          "reserved_category": [
+            "sc",
+            "st",
+            "obc"
+          ]
+        }
+      }
+    ],
+    "sla_hours": {
+      "verification": 120,
+      "registration": 48
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "verification",
+        "role": "urban.dealing-assistant",
+        "task": "Verify eligibility, income and documents."
+      },
+      {
+        "step": "registration",
+        "role": "urban.estate-officer",
+        "task": "Approve the registration for the lottery.",
+        "issues": "credential.urban_allotment_registration"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "scheme",
+      "category",
+      "annual_income",
+      "family_size"
+    ],
+    "properties": {
+      "scheme": {
+        "type": "string",
+        "title": "Scheme",
+        "x-section": "Scheme",
+        "enum": [
+          "hb-phase-1",
+          "hb-phase-2",
+          "hb-affordable"
+        ],
+        "x-enum-labels": {
+          "hb-phase-1": "Housing Scheme Phase I",
+          "hb-phase-2": "Housing Scheme Phase II",
+          "hb-affordable": "Affordable Housing Scheme"
+        }
+      },
+      "category": {
+        "type": "string",
+        "title": "Income category",
+        "enum": [
+          "ews",
+          "lig",
+          "mig",
+          "hig"
+        ],
+        "x-enum-labels": {
+          "ews": "EWS",
+          "lig": "LIG",
+          "mig": "MIG",
+          "hig": "HIG"
+        }
+      },
+      "annual_income": {
+        "type": "number",
+        "title": "Annual household income (₹)",
+        "x-section": "Household"
+      },
+      "family_size": {
+        "type": "number",
+        "title": "Family members"
+      },
+      "reserved_category": {
+        "type": "string",
+        "title": "Reserved category (if any)",
+        "enum": [
+          "none",
+          "sc",
+          "st",
+          "obc",
+          "disabled",
+          "ex-servicemen",
+          "government-employee"
+        ]
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "scheme",
+      "category",
+      "annual_income",
+      "family_size",
+      "reserved_category",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "verification 120h, registration 48h"
+}

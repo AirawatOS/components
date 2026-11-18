@@ -1,0 +1,152 @@
+{
+  "tenant": "city-mc",
+  "service_id": "city-mc-building-permission",
+  "domain": "urban",
+  "title": "Building permission (up to 500 sq m)",
+  "description": "Get permission to build on your plot in the city (up to 500 sq m). Scrutiny, a site inspection, then the permission with conditions.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {
+    "area": "zone"
+  },
+  "fulfillment": {
+    "fee_service": "building-permission-500",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "ownership-proof",
+        "when": {}
+      },
+      {
+        "type": "site-plan",
+        "when": {}
+      },
+      {
+        "type": "building-plan",
+        "when": {}
+      },
+      {
+        "type": "structural-certificate",
+        "when": {}
+      },
+      {
+        "type": "no-dues",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "scrutiny": 72,
+      "site-inspection": 72,
+      "approval": 48
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "scrutiny",
+        "role": "urban.assistant-town-planner",
+        "office_by": "zone",
+        "task": "Scrutinise the plans against the bye-laws and the master plan."
+      },
+      {
+        "step": "site-inspection",
+        "role": "urban.junior-engineer",
+        "office_by": "zone",
+        "task": "Inspect the site against the application.",
+        "inspection": {
+          "checklist": [
+            "Plot boundaries match the site plan",
+            "Setbacks as per the plan",
+            "Road width as stated"
+          ]
+        }
+      },
+      {
+        "step": "approval",
+        "role": "urban.town-planner",
+        "task": "Approve the permission with its conditions; it is issued to the applicant.",
+        "issues": "credential.urban_building_permission"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "property",
+      "built_up_sqm",
+      "floors",
+      "architect"
+    ],
+    "properties": {
+      "property": {
+        "type": "string",
+        "title": "Unified Property ID",
+        "x-section": "Property",
+        "x-lookup": "urban.property",
+        "description": "Printed on your allotment letter, lease deed or tax receipt."
+      },
+      "property_id": {
+        "type": "string",
+        "x-from": "property.property_id"
+      },
+      "zone": {
+        "type": "string",
+        "x-from": "property.zone"
+      },
+      "address": {
+        "type": "string",
+        "x-from": "property.address"
+      },
+      "land_use": {
+        "type": "string",
+        "x-from": "property.land_use"
+      },
+      "area_sqm": {
+        "type": "string",
+        "x-from": "property.area_sqm"
+      },
+      "built_up_sqm": {
+        "type": "number",
+        "title": "Proposed built-up area (sq m)",
+        "x-section": "Proposal"
+      },
+      "floors": {
+        "type": "number",
+        "title": "Number of floors"
+      },
+      "architect": {
+        "type": "string",
+        "title": "Registered architect (name and registration no.)"
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "property",
+      "property_id",
+      "zone",
+      "address",
+      "land_use",
+      "area_sqm",
+      "built_up_sqm",
+      "floors",
+      "architect",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "scrutiny 72h, site-inspection 72h, approval 48h"
+}

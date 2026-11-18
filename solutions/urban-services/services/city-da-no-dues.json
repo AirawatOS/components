@@ -1,0 +1,99 @@
+{
+  "tenant": "city-da",
+  "service_id": "city-da-no-dues",
+  "domain": "urban",
+  "title": "No-dues certificate",
+  "description": "Get a certificate that nothing is payable to the Authority on your property.",
+  "interaction": [
+    "search",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {
+    "area": "zone"
+  },
+  "fulfillment": {
+    "documents": [
+      {
+        "type": "tax-receipt",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "verification": 48,
+      "issue": 24
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "verification",
+        "role": "urban.dealing-assistant",
+        "office_by": "zone",
+        "task": "Verify the application, the records and the dues."
+      },
+      {
+        "step": "issue",
+        "role": "urban.revenue-officer",
+        "task": "Approve; the certificate is issued.",
+        "issues": "credential.urban_no_dues"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "property"
+    ],
+    "properties": {
+      "property": {
+        "type": "string",
+        "title": "Unified Property ID",
+        "x-section": "Property",
+        "x-lookup": "urban.property",
+        "description": "Printed on your allotment letter, lease deed or tax receipt."
+      },
+      "property_id": {
+        "type": "string",
+        "x-from": "property.property_id"
+      },
+      "zone": {
+        "type": "string",
+        "x-from": "property.zone"
+      },
+      "address": {
+        "type": "string",
+        "x-from": "property.address"
+      },
+      "land_use": {
+        "type": "string",
+        "x-from": "property.land_use"
+      },
+      "area_sqm": {
+        "type": "string",
+        "x-from": "property.area_sqm"
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "property",
+      "property_id",
+      "zone",
+      "address",
+      "land_use",
+      "area_sqm",
+      "remarks"
+    ]
+  },
+  "sla_ref": "verification 48h, issue 24h"
+}

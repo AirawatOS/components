@@ -1,0 +1,133 @@
+{
+  "tenant": "city-mc",
+  "service_id": "city-mc-trade-licence-renewal",
+  "domain": "urban",
+  "title": "Trade licence renewal",
+  "description": "Renew a trade licence before it expires. The fee depends on the premises area and is paid online.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {},
+  "fulfillment": {
+    "fee_service": "trade-licence",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "identity-proof",
+        "when": {}
+      },
+      {
+        "type": "trade-premises-proof",
+        "when": {}
+      },
+      {
+        "type": "noc-fire",
+        "when": {
+          "trade_type": [
+            "restaurant",
+            "eatery",
+            "warehouse"
+          ]
+        }
+      }
+    ],
+    "sla_hours": {
+      "verification": 48,
+      "approval": 24
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "verification",
+        "role": "urban.dealing-assistant",
+        "task": "Verify the application and documents."
+      },
+      {
+        "step": "approval",
+        "role": "urban.health-officer",
+        "task": "Approve; the licence is issued.",
+        "issues": "credential.urban_trade_licence"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "licence_no",
+      "trade_name",
+      "trade_type",
+      "premises_address",
+      "area_sqm",
+      "premises_ownership"
+    ],
+    "properties": {
+      "licence_no": {
+        "type": "string",
+        "title": "Current licence number",
+        "x-section": "Licence"
+      },
+      "trade_name": {
+        "type": "string",
+        "title": "Business / trade name",
+        "x-section": "Business"
+      },
+      "trade_type": {
+        "type": "string",
+        "title": "Type of trade",
+        "enum": [
+          "shop",
+          "restaurant",
+          "eatery",
+          "workshop",
+          "warehouse",
+          "clinic",
+          "salon",
+          "other"
+        ]
+      },
+      "premises_address": {
+        "type": "string",
+        "title": "Premises address"
+      },
+      "area_sqm": {
+        "type": "number",
+        "title": "Premises area (sq m)",
+        "description": "The fee depends on the premises area."
+      },
+      "premises_ownership": {
+        "type": "string",
+        "title": "The premises are",
+        "enum": [
+          "owned",
+          "rented"
+        ]
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "licence_no",
+      "trade_name",
+      "trade_type",
+      "premises_address",
+      "area_sqm",
+      "premises_ownership",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "verification 48h, approval 24h"
+}

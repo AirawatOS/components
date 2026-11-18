@@ -1,0 +1,134 @@
+{
+  "tenant": "state-udd",
+  "service_id": "udd-land-use-change",
+  "domain": "urban",
+  "title": "Change of land use",
+  "description": "Apply to change the permitted land use of a plot. The plan is scrutinised, the plot inspected, and the order issued. The charge depends on the proposed use.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-state",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {},
+  "fulfillment": {
+    "fee_service": "land-use-change",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "ownership-proof",
+        "when": {}
+      },
+      {
+        "type": "site-plan",
+        "when": {}
+      },
+      {
+        "type": "affidavit",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "scrutiny": 120,
+      "site-inspection": 72,
+      "approval": 72
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "scrutiny",
+        "role": "urban.assistant-town-planner",
+        "task": "Check conformity with the master plan, zoning and the documents."
+      },
+      {
+        "step": "site-inspection",
+        "role": "urban.field-inspector",
+        "task": "Inspect the plot.",
+        "inspection": {
+          "checklist": [
+            "Plot exists at the stated location",
+            "Present use matches the application",
+            "Access road is available",
+            "No encroachment on public land"
+          ]
+        }
+      },
+      {
+        "step": "approval",
+        "role": "urban.town-planner",
+        "task": "Approve the change of land use; the order is issued.",
+        "issues": "credential.urban_land_use_change"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "plot_location",
+      "area_sqm",
+      "current_land_use",
+      "land_use",
+      "purpose"
+    ],
+    "properties": {
+      "plot_location": {
+        "type": "string",
+        "title": "Plot location (village / sector, khasra or plot number)",
+        "x-section": "Land"
+      },
+      "area_sqm": {
+        "type": "number",
+        "title": "Plot area (sq m)"
+      },
+      "current_land_use": {
+        "type": "string",
+        "title": "Current land use",
+        "enum": [
+          "agricultural",
+          "residential",
+          "commercial",
+          "industrial",
+          "institutional"
+        ]
+      },
+      "land_use": {
+        "type": "string",
+        "title": "Proposed land use",
+        "enum": [
+          "residential",
+          "commercial",
+          "industrial",
+          "institutional",
+          "mixed"
+        ]
+      },
+      "purpose": {
+        "type": "string",
+        "title": "Purpose of the change",
+        "x-widget": "textarea"
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "plot_location",
+      "area_sqm",
+      "current_land_use",
+      "land_use",
+      "purpose",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "scrutiny 120h, site-inspection 72h, approval 72h"
+}

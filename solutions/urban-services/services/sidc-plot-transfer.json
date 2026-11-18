@@ -1,0 +1,163 @@
+{
+  "tenant": "sidc",
+  "service_id": "sidc-plot-transfer",
+  "domain": "urban",
+  "title": "Transfer of an industrial plot",
+  "description": "Transfer an industrial plot to another enterprise. The transfer charge is a percentage of the declared value, paid online.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-state",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {
+    "area": "zone"
+  },
+  "fulfillment": {
+    "fee_service": "industrial-plot-transfer",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "lease-deed",
+        "when": {}
+      },
+      {
+        "type": "no-dues",
+        "when": {}
+      },
+      {
+        "type": "affidavit",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "scrutiny": 72,
+      "approval": 48
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "scrutiny",
+        "role": "urban.dealing-assistant",
+        "office_by": "zone",
+        "task": "Check the lease conditions, dues and documents."
+      },
+      {
+        "step": "approval",
+        "role": "urban.estate-officer",
+        "task": "Approve the transfer; the holder record is updated.",
+        "issues": "credential.urban_name_transfer",
+        "effects": [
+          {
+            "close": {
+              "schema": "urban.property_holding",
+              "match": {
+                "property": "$form.property"
+              },
+              "patch": {
+                "until": "$today"
+              }
+            }
+          },
+          {
+            "write": {
+              "schema": "urban.property_holding",
+              "property": "$form.property",
+              "holder_name": "$form.transferee_name",
+              "holder_ref": "$applicant",
+              "relation": "owner",
+              "share_pct": 100,
+              "since": "$today",
+              "source_doc": "$case"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "property",
+      "transferee_enterprise",
+      "transferee_name",
+      "declared_value",
+      "activity"
+    ],
+    "properties": {
+      "property": {
+        "type": "string",
+        "title": "Unified Property ID",
+        "x-section": "Property",
+        "x-lookup": "urban.property",
+        "description": "Printed on your allotment letter, lease deed or tax receipt."
+      },
+      "property_id": {
+        "type": "string",
+        "x-from": "property.property_id"
+      },
+      "zone": {
+        "type": "string",
+        "x-from": "property.zone"
+      },
+      "address": {
+        "type": "string",
+        "x-from": "property.address"
+      },
+      "land_use": {
+        "type": "string",
+        "x-from": "property.land_use"
+      },
+      "area_sqm": {
+        "type": "string",
+        "x-from": "property.area_sqm"
+      },
+      "transferee_enterprise": {
+        "type": "string",
+        "title": "Transferee enterprise",
+        "x-section": "Transfer"
+      },
+      "transferee_name": {
+        "type": "string",
+        "title": "Applicant (your name)",
+        "x-prefill": "identity.name"
+      },
+      "declared_value": {
+        "type": "number",
+        "title": "Declared value of the transfer (₹)"
+      },
+      "activity": {
+        "type": "string",
+        "title": "Industrial activity of the transferee",
+        "x-widget": "textarea"
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "property",
+      "property_id",
+      "zone",
+      "address",
+      "land_use",
+      "area_sqm",
+      "transferee_enterprise",
+      "transferee_name",
+      "declared_value",
+      "activity",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "scrutiny 72h, approval 48h"
+}

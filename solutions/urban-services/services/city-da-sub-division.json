@@ -1,0 +1,151 @@
+{
+  "tenant": "city-da",
+  "service_id": "city-da-sub-division",
+  "domain": "urban",
+  "title": "Sub-division / layout of a plot",
+  "description": "Divide a plot into smaller plots. The layout is scrutinised, the site inspected and the layout approved.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {
+    "area": "zone"
+  },
+  "fulfillment": {
+    "fee_service": "sub-division",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "ownership-proof",
+        "when": {}
+      },
+      {
+        "type": "site-plan",
+        "when": {}
+      },
+      {
+        "type": "building-plan",
+        "when": {}
+      },
+      {
+        "type": "structural-certificate",
+        "when": {}
+      },
+      {
+        "type": "no-dues",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "scrutiny": 72,
+      "site-inspection": 72,
+      "approval": 48
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "scrutiny",
+        "role": "urban.assistant-town-planner",
+        "office_by": "zone",
+        "task": "Scrutinise the plans against the bye-laws and the master plan."
+      },
+      {
+        "step": "site-inspection",
+        "role": "urban.junior-engineer",
+        "office_by": "zone",
+        "task": "Inspect the site against the application.",
+        "inspection": {
+          "checklist": [
+            "Plot boundaries match the records",
+            "Internal access road provided",
+            "Minimum plot sizes respected"
+          ]
+        }
+      },
+      {
+        "step": "approval",
+        "role": "urban.town-planner",
+        "task": "Approve the permission with its conditions; it is issued to the applicant.",
+        "issues": "credential.urban_layout_approval"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "property",
+      "proposed_plots",
+      "layout_purpose"
+    ],
+    "properties": {
+      "property": {
+        "type": "string",
+        "title": "Unified Property ID",
+        "x-section": "Property",
+        "x-lookup": "urban.property",
+        "description": "Printed on your allotment letter, lease deed or tax receipt."
+      },
+      "property_id": {
+        "type": "string",
+        "x-from": "property.property_id"
+      },
+      "zone": {
+        "type": "string",
+        "x-from": "property.zone"
+      },
+      "address": {
+        "type": "string",
+        "x-from": "property.address"
+      },
+      "land_use": {
+        "type": "string",
+        "x-from": "property.land_use"
+      },
+      "area_sqm": {
+        "type": "string",
+        "x-from": "property.area_sqm"
+      },
+      "proposed_plots": {
+        "type": "number",
+        "title": "Number of plots proposed",
+        "x-section": "Proposal"
+      },
+      "layout_purpose": {
+        "type": "string",
+        "title": "Purpose",
+        "enum": [
+          "sale",
+          "family-partition",
+          "development"
+        ]
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "property",
+      "property_id",
+      "zone",
+      "address",
+      "land_use",
+      "area_sqm",
+      "proposed_plots",
+      "layout_purpose",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "scrutiny 72h, site-inspection 72h, approval 48h"
+}

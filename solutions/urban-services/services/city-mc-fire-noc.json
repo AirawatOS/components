@@ -1,0 +1,110 @@
+{
+  "tenant": "city-mc",
+  "service_id": "city-mc-fire-noc",
+  "domain": "urban",
+  "title": "Fire safety NOC",
+  "description": "Get the fire department's no-objection certificate for a building or business. The premises are inspected for fire safety.",
+  "interaction": [
+    "search",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {},
+  "fulfillment": {
+    "documents": [
+      {
+        "type": "building-plan",
+        "when": {}
+      },
+      {
+        "type": "ownership-proof",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "verification": 48,
+      "inspection": 72,
+      "issue": 24
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "verification",
+        "role": "urban.fire-officer",
+        "task": "Verify the application, the records and the dues."
+      },
+      {
+        "step": "inspection",
+        "role": "urban.fire-officer",
+        "task": "Inspect the premises.",
+        "inspection": {
+          "checklist": [
+            "Fire extinguishers installed and serviced",
+            "Exits clear and marked",
+            "Fire alarm / detectors working",
+            "Electrical wiring safe",
+            "Water storage for firefighting available"
+          ]
+        }
+      },
+      {
+        "step": "issue",
+        "role": "urban.fire-officer",
+        "task": "Approve; the certificate is issued.",
+        "issues": "credential.urban_noc"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "premises_address",
+      "occupancy",
+      "floor_area_sqm"
+    ],
+    "properties": {
+      "premises_address": {
+        "type": "string",
+        "title": "Premises address",
+        "x-section": "Premises"
+      },
+      "occupancy": {
+        "type": "string",
+        "title": "Use of the premises",
+        "enum": [
+          "shop",
+          "restaurant",
+          "hotel",
+          "hospital",
+          "school",
+          "warehouse",
+          "office",
+          "residential-high-rise"
+        ]
+      },
+      "floor_area_sqm": {
+        "type": "number",
+        "title": "Floor area (sq m)"
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "premises_address",
+      "occupancy",
+      "floor_area_sqm",
+      "remarks"
+    ]
+  },
+  "sla_ref": "verification 48h, inspection 72h, issue 24h"
+}

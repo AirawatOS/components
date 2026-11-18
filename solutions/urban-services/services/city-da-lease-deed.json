@@ -1,0 +1,111 @@
+{
+  "tenant": "city-da",
+  "service_id": "city-da-lease-deed",
+  "domain": "urban",
+  "title": "Lease deed issue",
+  "description": "Get the lease deed for an allotted property. The fee is paid online.",
+  "interaction": [
+    "search",
+    "select",
+    "init",
+    "status"
+  ],
+  "jurisdiction": "demo-city",
+  "audience": "civic.resident",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [
+    "credential.identity_verified"
+  ],
+  "scope_map": {
+    "area": "zone"
+  },
+  "fulfillment": {
+    "fee_service": "lease-deed",
+    "payment": "before_submit",
+    "documents": [
+      {
+        "type": "allotment-letter",
+        "when": {}
+      },
+      {
+        "type": "possession-letter",
+        "when": {}
+      },
+      {
+        "type": "no-dues",
+        "when": {}
+      }
+    ],
+    "sla_hours": {
+      "verification": 48,
+      "issue": 24
+    },
+    "escalate_to": "urban.commissioner",
+    "workflow": [
+      {
+        "step": "verification",
+        "role": "urban.dealing-assistant",
+        "office_by": "zone",
+        "task": "Verify the application, the records and the dues."
+      },
+      {
+        "step": "issue",
+        "role": "urban.estate-officer",
+        "task": "Approve; the certificate is issued.",
+        "issues": "credential.urban_lease_deed"
+      }
+    ]
+  },
+  "request_schema": {
+    "type": "object",
+    "required": [
+      "property"
+    ],
+    "properties": {
+      "property": {
+        "type": "string",
+        "title": "Unified Property ID",
+        "x-section": "Property",
+        "x-lookup": "urban.property",
+        "description": "Printed on your allotment letter, lease deed or tax receipt."
+      },
+      "property_id": {
+        "type": "string",
+        "x-from": "property.property_id"
+      },
+      "zone": {
+        "type": "string",
+        "x-from": "property.zone"
+      },
+      "address": {
+        "type": "string",
+        "x-from": "property.address"
+      },
+      "land_use": {
+        "type": "string",
+        "x-from": "property.land_use"
+      },
+      "area_sqm": {
+        "type": "string",
+        "x-from": "property.area_sqm"
+      },
+      "remarks": {
+        "type": "string",
+        "title": "Anything the office should know",
+        "x-widget": "textarea",
+        "x-section": "Other"
+      }
+    },
+    "x-order": [
+      "property",
+      "property_id",
+      "zone",
+      "address",
+      "land_use",
+      "area_sqm",
+      "remarks"
+    ]
+  },
+  "fee_ref": "urban.fee_schedule",
+  "sla_ref": "verification 48h, issue 24h"
+}
