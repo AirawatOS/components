@@ -309,8 +309,68 @@ async function caseDetails(b,c){
   } else { h+='<div class="note">No structured application on file.</div>'; }
   box.innerHTML=h; b.appendChild(box);
 }
+// ---- field inspection (a workflow step may require one: geo-tagged checklist + photos, recorded by the department) ----
+let INSP=null;
+function stepCfg(task){ const tail=String(task.id||'').split('/').pop(); const o=(OFFS||[]).find(x=>tail.startsWith(x.service_id+'-'));
+  const st=o?((o.fulfillment||{}).workflow||[]).find(w=>w.step===task.workflow_step):null; return {o, st, tail}; }
+async function priorInspections(b, task){
+  const {o, tail}=stepCfg(task); if(!o) return;
+  const stem=tail.slice(0, tail.length-String(task.workflow_step).length-1), tn=String(task.id).split(':')[1];
+  for(const w of ((o.fulfillment||{}).workflow||[]).filter(w=>w.inspection && w.step!==task.workflow_step)){
+    let r; try{ r=await resolveRef('ds:'+tn+':urban/inspection/'+stem+'-'+w.step); }catch(e){ continue; }
+    const x=r&&r.object; if(!x) continue;
+    const ok=(x.checklist||[]).filter(c=>c.result==='ok').length, n=(x.checklist||[]).length;
+    const d=document.createElement('div'); d.className='controls';
+    d.innerHTML=`<div class="lbl" style="margin-top:0">🔍 Field inspection — ${esc(w.step)}</div>
+      <div style="font-size:14px"><b class="${x.outcome==='satisfactory'?'ok':''}">${esc(x.outcome)}</b> · ${ok}/${n} items OK · ${esc(String(x.inspector||'').split('/').pop())} · ${esc(String(x.inspected_at||'').replace('T',' ').slice(0,16))}
+      ${x.location?` · 📍 ${(+x.location.lat).toFixed(5)}, ${(+x.location.lon).toFixed(5)}`:''} ${(x.photos||[]).length?' · 📷 '+x.photos.length:''}</div>
+      ${(x.checklist||[]).filter(c=>c.result!=='ok').map(c=>`<div style="font-size:13px;color:#f85149">✗ ${esc(c.item)}${c.note?' — '+esc(c.note):''}</div>`).join('')}
+      ${x.remarks?`<div style="font-size:13px;color:#8b949e">${esc(x.remarks)}</div>`:''}`;
+    b.appendChild(d);
+  }
+}
+function inspectionForm(b, task, st){
+  INSP={checklist:st.inspection.checklist.map(item=>({item, result:'', note:''})), location:null, accuracy_m:null, photos:[], remarks:''};
+  const d=document.createElement('div'); d.className='controls'; d.id='insp';
+  const paint=()=>{ d.innerHTML=`<div class="lbl" style="margin-top:0">🔍 Field inspection — required before you approve</div>
+      ${INSP.checklist.map((c,i)=>`<div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;margin:4px 0">
+          <span style="font-size:14px">${esc(c.item)}</span>
+          <span>${[['ok','✓ OK'],['not-ok','✗ Not OK'],['na','N/A']].map(([v,l])=>`<button class="btn" style="padding:3px 8px;font-size:12px;${c.result===v?'background:#1f6feb;color:#fff':''}" data-i="${i}" data-v="${v}">${l}</button>`).join(' ')}</span>
+          ${c.result==='not-ok'?`<input data-note="${i}" placeholder="What is wrong?" value="${esc(c.note)}" style="grid-column:1/3;width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px">`:''}</div>`).join('')}
+      <div style="margin:8px 0;font-size:13px">📍 ${INSP.location?`${INSP.location.lat.toFixed(5)}, ${INSP.location.lon.toFixed(5)}${INSP.accuracy_m?' (±'+Math.round(INSP.accuracy_m)+' m)':''}`:'<span style="color:#8b949e">no location yet</span>'}
+        <button class="btn" style="padding:3px 8px;font-size:12px" id="gl">Use my location</button> <button class="btn" style="padding:3px 8px;font-size:12px" id="pl">Use the property's recorded location</button></div>
+      <div style="font-size:13px">📷 ${INSP.photos.length} photo(s) <input type="file" accept="image/*" capture="environment" id="ph" style="font-size:12px"></div>
+      <textarea id="rm" placeholder="Remarks" rows="2" style="width:100%;margin-top:6px;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:6px">${esc(INSP.remarks)}</textarea>
+      <div id="imsg" style="font-size:12px;color:#8b949e"></div>`;
+    d.querySelectorAll('[data-v]').forEach(x=>x.onclick=()=>{ INSP.checklist[+x.dataset.i].result=x.dataset.v; paint(); });
+    d.querySelectorAll('[data-note]').forEach(x=>x.oninput=()=>{ INSP.checklist[+x.dataset.note].note=x.value; });
+    d.querySelector('#rm').oninput=e=>{ INSP.remarks=e.target.value; };
+    d.querySelector('#gl').onclick=()=>{ const m=d.querySelector('#imsg'); if(!navigator.geolocation){ m.textContent='Location is not available here — use the property’s recorded location.'; return; }
+      m.textContent='Getting your location…'; navigator.geolocation.getCurrentPosition(p=>{ INSP.location={lat:p.coords.latitude, lon:p.coords.longitude}; INSP.accuracy_m=p.coords.accuracy; paint(); },
+        e=>{ m.textContent='Could not get your location ('+e.message+') — use the property’s recorded location.'; }, {enableHighAccuracy:true, timeout:15000}); };
+    d.querySelector('#pl').onclick=async()=>{ const m=d.querySelector('#imsg'); m.textContent='Looking up the property…';
+      try{ const sub=(await resolveRef(String(task.case).replace(':case/',':civic/submission/'))).object||{}; const pid=(sub.data||{}).property_id;
+        const r=await bpost('/bridge/urban-property',{authority:String(task.id).split(':')[1], property_id:pid}); const loc=(r.json&&r.json.property||{}).location;
+        if(loc){ INSP.location={lat:+loc.lat, lon:+loc.lon}; INSP.accuracy_m=null; paint(); } else m.textContent='The property has no recorded location.'; }catch(e){ m.textContent='Could not look up the property.'; } };
+    d.querySelector('#ph').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const m=d.querySelector('#imsg'); m.textContent='Uploading photo…';
+      try{ const up='i'+Date.now().toString(36), r=await fetch('/bridge/upload-chunk?up='+up+'&seq=0&fin=1',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f}).then(x=>x.json());
+        if(r.file_id){ INSP.photos.push(r.file_id); paint(); } else m.textContent=r.error||'upload failed'; }catch(err){ m.textContent='upload failed'; } };
+  };
+  paint(); b.appendChild(d);
+}
+function inspectionPayload(){
+  if(!INSP) return null;
+  const pending=INSP.checklist.filter(c=>!c.result).length;
+  if(pending) return {error:'Mark every checklist item ('+pending+' left).'};
+  if(!INSP.location) return {error:'Add the location of the inspection.'};
+  const bad=INSP.checklist.some(c=>c.result==='not-ok');
+  return {checklist:INSP.checklist.map(c=>({item:c.item, result:c.result, note:c.note||null})), location:INSP.location, accuracy_m:INSP.accuracy_m,
+          photos:INSP.photos, remarks:INSP.remarks||null, outcome:bad?'deficiencies':'satisfactory'};
+}
 async function taskControls(b,task){
+  INSP=null;
   if(task.case && task.workflow_step) await caseDetails(b,{id:task.case});   // the application, right on the task
+  if(task.workflow_step){ if(OFFS===null){ try{ OFFS=((await bpost('/bridge/service-offerings',{})).json||{}).offerings||[]; }catch(e){ OFFS=[]; } } await priorInspections(b,task); }
   const box=document.createElement('div'); box.className='controls';
   if(task.case){const cl=mkbtn('Open case ↗','btn',()=>push(task.case,{title:'Case'})); box.appendChild(cl);}
   b.appendChild(box);
@@ -336,6 +396,7 @@ async function taskControls(b,task){
     }
     const go=mkbtn('Record decision','btn primary',()=>decide(task.id,'selected',SEL)); go.disabled=true; b.appendChild(go);
   } else {
+    const _sc=task.workflow_step?stepCfg(task):{}; if(_sc.st && _sc.st.inspection && task.status!=='done') inspectionForm(b,task,_sc.st);
     const acts=document.createElement('div'); acts.className='controls';
     acts.appendChild(mkbtn(task.workflow_step?'Approve / forward':'Approve','btn approve',()=>decide(task.id,'approved',null)));
     if(task.workflow_step) acts.appendChild(mkbtn('Return for documents','btn',()=>decide(task.id,'returned',null)));
@@ -346,8 +407,10 @@ async function taskControls(b,task){
 // the payoff: an action WRITES a governance.decision (evidence_manifest = receipt), the task closes,
 // and the event lands in the case history. We then render the decision itself — via its viz.layer.
 async function decide(taskId,outcome,selected){
-  const r=await bpost('/bridge/decide',{task:taskId,outcome,selected});
   const b=document.getElementById('d-body');
+  const insp=inspectionPayload();
+  if(insp && insp.error && outcome==='approved'){ const n=document.createElement('div'); n.className='note'; n.textContent='Inspection incomplete: '+insp.error; b.appendChild(n); return; }
+  const r=await bpost('/bridge/decide',{task:taskId,outcome,selected, ...(insp && !insp.error ? {inspection:insp} : {})});
   if(!r.ok){const n=document.createElement('div'); n.className='note'; n.textContent='Action refused ('+r.status+').'; b.appendChild(n); return;}
   if(r.json && r.json.via==='workflow'){                  // a SERVICE-WORKFLOW step: advanced / closed (no decision receipt)
     const rc=document.createElement('div'); rc.className='ok';

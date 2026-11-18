@@ -86,7 +86,7 @@ function blankState(){
   return {B:{service_id:'',title:'',domain:'urban',description:'',jurisdiction:'',entitlement:'residence',audience:'civic.resident',
              fees_on:false, fee_service:'', payment:'none', route_zone:false, escalate_to:''},
           FIELDS:[{key:'',label:'',type:'text',required:false,section:'',help:'',options:'',show_field:'',show_values:'',prefill:false,scope_dim:''}],
-          STEPS:[{step:'',role:'',task:'',issues:'',sla:'',office:false,effect:'none',holder_field:'',raw_effects:null}],
+          STEPS:[{step:'',role:'',task:'',issues:'',sla:'',office:false,effect:'none',holder_field:'',raw_effects:null,inspection:''}],
           DOCS:[], REQCREDS:[]};
 }
 function parseOffering(o){
@@ -119,7 +119,7 @@ function parseOffering(o){
       else if(e && e.length===2 && e[0].close && e[0].close.schema==='urban.property' && (e[0].close.patch||{}).tenure==='freehold') effect='convert_freehold';
       else if(e) effect='custom';
       return {step:s.step,role:s.role,task:s.task||'',issues:s.issues||'',sla:slas[s.step]!=null?String(slas[s.step]):'',office:s.office_by==='zone',
-              effect,holder_field,raw_effects:effect==='custom'?e:null}; });
+              effect,holder_field,raw_effects:effect==='custom'?e:null, inspection:((s.inspection||{}).checklist||[]).join('\n')}; });
   if(!st.STEPS.length) st.STEPS=blankState().STEPS;
   st.DOCS=(ff.documents||[]).map(d=>{ const w=d.when||{}, f=Object.keys(w)[0]||''; return {type:d.type, when_field:f, when_values:f?[].concat(w[f]).join(', '):''}; });
   return st;
@@ -151,6 +151,7 @@ function buildBody(){
     if(String(s.sla).trim()!=='' && !isNaN(+s.sla)) sla[step]=+s.sla;
     const o={step, role:s.role, ...(s.office && propKey && B.route_zone ? {office_by:'zone'} : {}), task:s.task||s.step};
     if(s.issues) o.issues=s.issues;
+    const chk=String(s.inspection||'').split('\n').map(x=>x.trim()).filter(Boolean); if(chk.length) o.inspection={checklist:chk};
     if(s.effect==='transfer_holding' && propKey && s.holder_field) o.effects=[
       {close:{schema:'urban.property_holding', match:{property:'$form.'+propKey}, patch:{until:'$today'}}},
       {write:{schema:'urban.property_holding', property:'$form.'+propKey, holder_name:'$form.'+s.holder_field, holder_ref:'$applicant',
@@ -356,6 +357,8 @@ function paneWf(){
         <input placeholder="SLA hours" value="${esc(s.sla)}" oninput="STEPS[${i}].sla=this.value" title="Time allowed for this step (hours)">
         <span style="white-space:nowrap"><button class="btn ghost sm" onclick="if(${i}>0){[STEPS[${i}],STEPS[${i-1}]]=[STEPS[${i-1}],STEPS[${i}]];renderEditor()}">↑</button><button class="btn danger sm" onclick="STEPS.splice(${i},1);renderEditor()">✕</button></span></div>
       <label>What the officer does</label><input value="${esc(s.task)}" oninput="STEPS[${i}].task=this.value">
+      <label class="chk" style="margin-top:6px"><input type="checkbox" ${s.inspection!==''&&s.inspection!=null?'checked':''} onchange="STEPS[${i}].inspection=this.checked?(STEPS[${i}].inspection||'Site matches the application'):'';renderEditor()"> 🔍 Field inspection at this step <span class="hint">— geo-tagged checklist + photos, recorded by the department</span></label>
+      ${s.inspection!==''&&s.inspection!=null?`<label>Inspection checklist — one item per line</label><textarea rows="4" oninput="STEPS[${i}].inspection=this.value">${esc(s.inspection)}</textarea>`:''}
       <div class="more" style="grid-template-columns:1fr 1fr">
         <div>${prop&&B.route_zone?`<label class="chk" style="margin-top:18px"><input type="checkbox" ${s.office?'checked':''} onchange="STEPS[${i}].office=this.checked"> Goes to the zone office of the property</label>`:'<label>&nbsp;</label><div class="hint">Sent to anyone holding the role.</div>'}</div>
         <div><label>On approval, issue</label><select onchange="STEPS[${i}].issues=this.value"><option value="">— nothing —</option>${opt(CTYPES.map(c=>[c.type,c.title||ctitle(c.type)]),s.issues)}</select></div>
