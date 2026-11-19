@@ -105,7 +105,7 @@
     var so=document.getElementById('aos-signout'); if(so)so.addEventListener('click',signOut);}
   async function refreshVerified(){ try{ var c=await aos.wallet(); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;}); }catch(e){} }
   async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: verified?'home':'ekyc'}; draw();}
-  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else if(n=='onboard')drawOnboard(); else drawHome();}
+  function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else if(n=='eshram')startEshram(); else if(n=='onboard')drawOnboard(); else drawHome();}
   // PLATFORM-AS-VERIFIER: Ola onboards a driver by VERIFYING 3 credentials from the wallet (identity + licence +
   // police) — the real incentive for a gig platform to adopt this (cheap, fraud-free onboarding; reuse across apps).
   var ONBOARD=[['credential.identity_verified','Identity (UIDAI eKYC)'],['credential.driving_license','Driving licence (RTO)'],['credential.police_verification','Police verification']];
@@ -166,9 +166,59 @@
        '<div class=app data-go=wallet><div class=ic>📜</div><div class=lbl>My Passport</div><div class=sub>All your credentials</div></div>'+
        '<div class=app data-go=services><div class=ic>🛡️</div><div class=lbl>Benefits &amp; Jobs</div><div class=sub>Enrol / find work</div></div>'+
        '<div class=app data-go=prove><div class=ic>🪪</div><div class=lbl>Prove</div><div class=sub>Share a credential</div></div>'+
+       '<div class=app data-go=eshram><div class=ic>🧾</div><div class=lbl>Register on eShram</div><div class=sub>Get your UAN</div></div>'+
       '</div>');
     var ge=document.getElementById('goekyc'); if(ge)ge.addEventListener('click',function(){view={name:'ekyc'};draw();});
     Array.prototype.forEach.call(panel.querySelectorAll('.app'),function(a){a.addEventListener('click',function(){view={name:a.getAttribute('data-go')};draw();});});
+  }
+  // ESHRAM REGISTRATION (ADR-0135): an INTERACTIVE network request. The Ministry's connector talks to eShram (sandbox);
+  // this page only renders the CHALLENGE it is sent (consent / captcha / otp / form) and relays the worker's answer.
+  // Ola never sees the Aadhaar number or the UAN — the outcome goes to the worker's wallet.
+  async function startEshram(){
+    render(hdr('Register on eShram')+'<p class=muted>Starting…</p>'); back('home');
+    try{ showChallenge(await aos.fulfil('eshram-registration')); }
+    catch(e){ render(hdr('Register on eShram')+'<p class=err>'+esc(e.message)+'</p>'); back('home'); }
+  }
+  function showChallenge(d){
+    var H=hdr('Register on eShram'), ist='width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px';
+    if(d.status=='completed'){ var o=d.outcome||{}; verified=true;
+      render(H+'<p class=ok>✓ Registered on eShram'+(o.new_registration?'':' — your existing UAN is now linked to Ola')+'</p>'+
+        (o.issued||[]).map(function(t){return '<div class=row><div class=t>📜 '+esc(t)+'<span class=chip>'+esc(o.issuer||'eShram')+'</span></div><div class=m>Signed and placed in your Avsar wallet</div></div>';}).join('')+
+        '<p class=muted>Ola has been told only that your registration is complete. Your UAN is in your wallet, to share when you choose.</p>'+
+        '<div style="margin-top:12px"><button class=btn id=gw>Open passport</button></div>'); back('home');
+      document.getElementById('gw').addEventListener('click',function(){view={name:'wallet'};draw();}); return; }
+    if(d.status!='awaiting_input'){
+      render(H+'<p class=err>'+esc(d.status=='cancelled'?'Registration cancelled — nothing was sent to eShram after this point.':(d.error||'Registration could not be completed.'))+'</p>'+
+        '<div style="margin-top:12px"><button class=btn id=rt>Start again</button></div>'); back('home');
+      document.getElementById('rt').addEventListener('click',startEshram); return; }
+    var c=d.challenge||{}, f='';
+    var top='<p class=muted>Step '+d.step_no+' of '+d.steps_total+' · <b>'+esc(c.title||'')+'</b> <span class=chip>eShram (sandbox) via the Ministry of Labour service</span></p>'+(d.error?'<p class=err>'+esc(d.error)+'</p>':'');
+    if(c.kind=='consent'){
+      f='<div class=row>'+(c.lines||[]).map(function(l){return '<p style="margin:6px 0">'+esc(l)+'</p>';}).join('')+'</div>'+
+        '<button class=btn id=agree>I agree, continue</button> <button class=btn id=cancel style="background:#3a3f55">Not now</button>';
+    } else {
+      if(c.verified_name) f+='<p class=ok>✓ Verified as '+esc(c.verified_name)+'</p>';
+      (c.fields||[]).forEach(function(x){
+        f+='<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">'+esc(x.label)+'</label>'+
+          (x.options?'<select data-f="'+esc(x.name)+'" style="'+ist+'"><option value="">Choose…</option>'+x.options.map(function(o){return '<option>'+esc(o)+'</option>';}).join('')+'</select>'
+                    :'<input data-f="'+esc(x.name)+'" '+(x.inputmode?'inputmode="'+esc(x.inputmode)+'" ':'')+(x.sensitive?'autocomplete=off ':'')+'placeholder="'+esc(x.placeholder||'')+'" value="'+esc(x.value||'')+'" style="'+ist+'">');
+      });
+      if(c.kind=='captcha') f+='<div style="margin-top:12px"><img alt="characters to type" src="data:image/svg+xml;base64,'+btoa(c.image_svg||'')+'" style="border-radius:6px"></div>'+
+        '<label style="font-size:12px;color:#7f8bb0;margin-top:6px;display:block">'+esc(c.answer_label||'Type the characters')+'</label><input data-f=captcha autocomplete=off style="'+ist+'">';
+      if(c.kind=='otp') f+='<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">'+esc(c.label||'OTP')+'</label><input data-f=otp inputmode=numeric autocomplete=one-time-code style="'+ist+'">'+
+        (c.sandbox_hint?'<p class=muted style="margin-top:6px">Sandbox: your OTP is <b>'+esc(c.sandbox_hint)+'</b> (a real one arrives by SMS)</p>':'');
+      if(c.consent) f+='<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px"><input type=checkbox data-f=agree> <span>'+esc(c.consent)+'</span></label>';
+      if(c.note) f+='<p class=muted style="margin-top:8px">'+esc(c.note)+'</p>';
+      f+='<div style="margin-top:14px"><button class=btn id=go>Continue</button> <button class=btn id=cancel style="background:#3a3f55">Cancel</button></div>';
+    }
+    render(H+top+f); back('home');
+    function send(ans){ render(H+top.replace(/<p class=err>.*?<\/p>/,'')+'<p class=muted>Checking with eShram…</p>'); back('home');
+      aos.respond(d.request_id,ans).then(showChallenge).catch(function(e){ showChallenge({status:'failed',error:e.message}); }); }
+    var cn=document.getElementById('cancel'); if(cn) cn.addEventListener('click',function(){ send({cancel:true}); });
+    var ag=document.getElementById('agree'); if(ag) ag.addEventListener('click',function(){ send({agree:true}); });
+    var go=document.getElementById('go'); if(go) go.addEventListener('click',function(){ var a={};
+      Array.prototype.forEach.call(panel.querySelectorAll('[data-f]'),function(el){ a[el.getAttribute('data-f')]=el.type=='checkbox'?el.checked:el.value.trim(); });
+      send(a); });
   }
   function hdr(t){return '<div class=viewhdr><button class=bk id=bk>‹ Back</button><h2>'+esc(t)+'</h2></div>';}
   function back(to){document.getElementById('bk').addEventListener('click',function(){view={name:to};draw();});}
