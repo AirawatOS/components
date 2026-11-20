@@ -118,7 +118,13 @@
   // check (/embed/verify) — genuine + current. jsPDF and qrcode-generator load from cdnjs only when first used.
   var PDFLIBS=null, ISSUER={'ola':'Ola','eshram-sandbox':'eShram (sandbox), Ministry of Labour','uidai':'UIDAI'};
   function loadScript(u){return new Promise(function(res,rej){var s=document.createElement('script');s.src=u;s.onload=res;s.onerror=function(){rej(new Error('could not load '+u));};document.head.appendChild(s);});}
-  function pdfLibs(){ if(!PDFLIBS) PDFLIBS=Promise.all([loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js')]); return PDFLIBS; }
+  // Served from the demo's own site (copies verified against cdnjs's SRI hashes); cdnjs only as a fallback.
+  function loadEither(local,cdn){ return loadScript(local).catch(function(){ return loadScript(cdn); }); }
+  function pdfLibs(){ if(!PDFLIBS) PDFLIBS=Promise.all([
+      loadEither(API+'/demo/vendor/jspdf-2.5.1.umd.min.js','https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+      loadEither(API+'/demo/vendor/qrcode-generator-1.4.4.min.js','https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js')])
+    .catch(function(e){ PDFLIBS=null; throw e; });
+    return PDFLIBS; }
   var PDFKIND={'credential.platform_work_certificate':{h:'WORK CERTIFICATE',col:[11,107,58],rows:[['Work','occupation'],['Platform ID','worker_platform_id'],['Working since','engaged_since'],['Date of birth','date_of_birth'],['Identity check','kyc_method'],['Certificate no.','certificate_no'],['Status','status']]},
     'credential.eshram_registration':{h:'eSHRAM UAN CARD',col:[21,62,140],rows:[['UAN','uan'],['Work','occupation'],['Registered on','registered_on'],['Status','status']]}};
   async function downloadPdf(c){
