@@ -100,7 +100,7 @@
   // the sign-in redirect in sessionStorage; the Aadhaar typed at Ola's check is kept in memory only, to prefill eShram's.
   var REG=false, lastAadhaar=null; try{REG=sessionStorage.getItem('ola-partner-reg')=='1';}catch(e){}
   function setReg(v){REG=v; try{ if(v)sessionStorage.setItem('ola-partner-reg','1'); else sessionStorage.removeItem('ola-partner-reg'); }catch(e){}}
-  function stepsBar(n){ if(!REG||n==null)return ''; var L=['Ola account','Worker account (Avsar)','Ola verifies you','Work certificate','eShram UAN'];
+  function stepsBar(n,force){ if((!REG&&!force)||n==null)return ''; var L=['Ola account','Ola verifies you','Partner certificate','Livelihood account','eShram UAN'];
     return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px">'+L.map(function(t,i){ var st=i<n?'':(i==n?'background:#2f9e63;color:#fff':'background:#222842;color:#7f8bb0');
       return '<span class=chip style="margin:0;'+st+'">'+(i<n?'✓ ':(i+1)+'. ')+t+'</span>';}).join('')+'</div>'; }
   function chrome(olaOnly){return '<div class=chrome><span class=mark style="color:#f5a623">Ola Partner</span>'+(olaOnly?'':'<span class=pill>secured by Avsar</span>')+'<span class=sp></span>'+
@@ -111,8 +111,8 @@
     var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});
     var so=document.getElementById('aos-signout'); if(so)so.addEventListener('click',signOut);}
   async function refreshVerified(){ try{ var c=await aos.wallet(); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;});
-    hasCert=(c||[]).some(function(x){return x.type=='credential.platform_work_certificate'&&x.issuer_tenant=='ola'&&(x.claims||{}).status=='active';}); }catch(e){} }
-  async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: !verified?'ekyc':(REG?(hasCert?'eshram':'workcert'):'home')}; draw();}
+    hasCert=(c||[]).some(function(x){return x.type=='credential.platform_work_certificate'&&x.issuer_tenant=='ola'&&(x.claims||{}).status=='active';}); verified=verified||hasCert; }catch(e){} }
+  async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: REG&&(olaGet()||{}).kyc?(hasCert?'eshram':'workcert'):'home'}; draw();}
   function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else if(n=='eshram')startEshram(); else if(n=='workcert')drawWorkCert(); else if(n=='onboard')drawOnboard(); else drawHome();}
   // DOWNLOADABLE PDF ("boarding pass"): the credential's headline facts + a QR code that opens the network's public
   // check (/embed/verify) — genuine + current. jsPDF and qrcode-generator load from cdnjs only when first used.
@@ -144,8 +144,8 @@
     downloadPdf(c).then(function(){b.textContent='Downloaded ✓';}).catch(function(e){b.textContent='PDF failed: '+e.message;}); }); }
   // WORK CERTIFICATE: Ola issues it once it has verified the worker (Aadhaar eKYC). It is what eShram registers from.
   async function drawWorkCert(){
-    var H=hdr('Ola work certificate',3); render(H+'<p class=muted>Ola is issuing your certificate…</p>'); back('home');
-    var d; try{ d=await aos.workCertificate({mobile:(olaGet()||{}).mobile}); }
+    var H=hdr('Ola work certificate',3); render(H+'<p class=muted>Ola is signing your certificate into your livelihood account…</p>'); back('home');
+    var oa=olaGet()||{}, d; try{ d=await aos.workCertificate({mobile:oa.mobile,kyc_ref:(oa.kyc||{}).ref}); }
     catch(e){ render(H+'<p class=err>'+esc(e.message)+'</p>'+(e.needs=='credential.identity_verified'?'<div style="margin-top:12px"><button class=btn id=gv>Verify your identity</button></div>':''));
       back('home'); var gv=document.getElementById('gv'); if(gv)gv.addEventListener('click',function(){view={name:'ekyc'};draw();}); return; }
     hasCert=true; if(REG){ view={name:'eshram'}; return draw(); }        // the journey moves straight on to eShram
@@ -213,9 +213,9 @@
   function drawHome(){
     var banner = verified
       ? '<p class=greet>Namaste · <b>'+esc((aos.citizen&&aos.citizen.name)||'')+'</b> · <span class=ok>Verified ✓</span></p>'
-      : '<div class=row style="border-color:#6b5a1f;background:#241f10"><div class=t>⚠ Verify your identity</div>'+
-        '<div class=muted>Ola verifies your Aadhaar once (eKYC). That unlocks your work certificate, your eShram UAN and benefits.</div>'+
-        '<div style="margin-top:8px"><button class=btn id=goekyc>Verify now</button></div></div>';
+      : '<div class=row style="border-color:#6b5a1f;background:#241f10"><div class=t>⚠ Your Ola partner certificate is not here yet</div>'+
+        '<div class=muted>Send it from Ola to this livelihood account. It gets you your eShram UAN and benefits.</div>'+
+        '<div style="margin-top:8px"><button class=btn id=goekyc>Send it now</button></div></div>';
     render(banner+
       '<div class=applaunch>'+
        '<div class=app data-go=onboard><div class=ic>🛺</div><div class=lbl>Drive with Ola</div><div class=sub>Onboard as a driver</div></div>'+
@@ -225,7 +225,7 @@
        '<div class=app data-go=workcert><div class=ic>🎫</div><div class=lbl>Work certificate</div><div class=sub>Signed by Ola · PDF</div></div>'+
        '<div class=app data-go=eshram><div class=ic>🧾</div><div class=lbl>Get your UAN</div><div class=sub>eShram · no form</div></div>'+
       '</div>');
-    var ge=document.getElementById('goekyc'); if(ge)ge.addEventListener('click',function(){view={name:'ekyc'};draw();});
+    var ge=document.getElementById('goekyc'); if(ge)ge.addEventListener('click',function(){ if((olaGet()||{}).kyc){view={name:'workcert'};draw();} else drawPartnerHome(); });
     Array.prototype.forEach.call(panel.querySelectorAll('.app'),function(a){a.addEventListener('click',function(){view={name:a.getAttribute('data-go')};draw();});});
   }
   // GET YOUR UAN (ADR-0135 interactive request): the Ministry's connector reads the worker's Ola WORK CERTIFICATE and
@@ -354,7 +354,7 @@
   var OLA_MEM=null;
   function olaGet(){ try{ var v=localStorage.getItem('ola-partner'); return v?JSON.parse(v):OLA_MEM; }catch(e){ return OLA_MEM; } }
   function olaSet(v){ OLA_MEM=v; try{ if(v)localStorage.setItem('ola-partner',JSON.stringify(v)); else localStorage.removeItem('ola-partner'); }catch(e){} }
-  function olaHdr(t,n){ return '<div class=viewhdr><h2>'+esc(t)+'</h2></div>'+stepsBar(n||0); }
+  function olaHdr(t,n){ return '<div class=viewhdr><h2>'+esc(t)+'</h2></div>'+stepsBar(n||0,true); }
   function drawOlaAuth(mode){
     overlay.classList.add('show'); var ist='width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px';
     var reg=mode!='signin', otp=null;
@@ -371,25 +371,53 @@
       if(!/^[6-9][0-9]{9}$/.test(m)){ e.textContent='Enter a valid 10-digit mobile number'; return; }
       var cur=olaGet(); if(!reg&&!(cur&&cur.mobile==m)){ e.textContent='No Ola partner account for this mobile on this device - register instead'; return; }
       if(otp){ var v=(document.getElementById('oo')||{}).value||''; if(v.trim()!=otp){ e.textContent='That OTP is not correct'; return; }
-        olaSet(reg?{name:nm,mobile:m,since:new Date().toISOString().slice(0,10)}:cur); setReg(true); renderHostUser(); return drawPartnerHome(); }
+        olaSet(reg?{name:nm,mobile:m,since:new Date().toISOString().slice(0,10)}:cur); renderHostUser(); return drawPartnerHome(); }
       otp=String(Math.floor(100000+Math.random()*900000)); e.textContent='';
       document.getElementById('otpbox').innerHTML='<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">OTP sent by Ola to '+esc(m.slice(0,2))+'xxxxxx'+esc(m.slice(-2))+'</label>'+
         '<input id=oo inputmode=numeric autocomplete=one-time-code style="'+ist+'"><p class=muted style="margin-top:6px">Simulated: your OTP is <b>'+otp+'</b></p>';
       document.getElementById('os').textContent='Verify & continue';
     });
   }
+  // OLA'S OWN AADHAAR CHECK - part of Ola's partner onboarding, before any livelihood account. The result is Ola's record
+  // (kept server-side by Ola, referenced by kyc_ref); the page keeps only the reference and the headline facts.
+  function drawOlaKyc(){
+    var o=olaGet(), ist='width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #2a2f45;background:#0b0e1a;color:#e8eaf2;margin-top:4px', txn=null;
+    render(olaHdr('Ola verifies your Aadhaar',1)+
+      '<p class=muted>Ola checks every partner once with UIDAI (Aadhaar eKYC). Ola keeps the result; it does not keep your Aadhaar number.</p>'+
+      '<label style="font-size:12px;color:#7f8bb0;display:block">Aadhaar number</label><input id=ka inputmode=numeric autocomplete=off placeholder="12 digits" style="'+ist+'">'+
+      '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13px"><input type=checkbox id=kg> <span>I agree that Ola verifies my Aadhaar with UIDAI using an OTP.</span></label>'+
+      '<div id=kotp></div><p class=err id=ke></p>'+
+      '<div style="margin-top:12px"><button class=btn id=kb>Send OTP</button></div>'+
+      '<p class=muted style="margin-top:10px">Sandbox: use an Aadhaar number from <a href="uidai-enrol.html" style="color:#8fe0b0">UIDAI (sandbox) enrolment</a>.</p>', true);
+    var kb=document.getElementById('kb'), ke=document.getElementById('ke');
+    function call(body){ return fetch(API+'/embed/platform/ekyc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({client_id:'ola'},body))})
+      .then(function(r){return r.json();}).then(function(d){ if(d.error) throw new Error(d.error); return d; }); }
+    kb.addEventListener('click',function(){ ke.textContent=''; kb.disabled=true;
+      if(!txn){ call({step:'otp',aadhaar:document.getElementById('ka').value,agree:document.getElementById('kg').checked}).then(function(d){
+          txn=d.txn; document.getElementById('kotp').innerHTML='<label style="font-size:12px;color:#7f8bb0;margin-top:10px;display:block">OTP sent to your Aadhaar-registered mobile</label>'+
+            '<input id=ko inputmode=numeric autocomplete=one-time-code style="'+ist+'"><p class=muted style="margin-top:6px">Sandbox: your OTP is <b>'+esc(d.sandbox_otp)+'</b></p>';
+          kb.textContent='Verify'; kb.disabled=false; }).catch(function(e){ ke.textContent=e.message; kb.disabled=false; }); return; }
+      call({step:'verify',txn:txn,otp:(document.getElementById('ko')||{}).value}).then(function(d){
+          var cur=olaGet()||{}; cur.kyc={ref:d.kyc_ref,name:d.name,dob:d.dob,gender:d.gender,last4:d.aadhaar_last4,verified_on:d.verified_on}; olaSet(cur); drawPartnerHome(); })
+        .catch(function(e){ ke.textContent=e.message; kb.disabled=false; if(/start again/.test(e.message)){ txn=null; kb.textContent='Send OTP'; document.getElementById('kotp').innerHTML=''; } });
+    });
+  }
   function drawPartnerHome(){
     var o=olaGet(); if(!o) return drawOlaAuth('register');
-    if(aos.citizen&&REG) return openOverlay();                       // worker account connected: the journey carries on
-    render(olaHdr('Welcome, '+(o.name||'partner'),1)+
-      '<div class=row><div class=check><span class=m>✓</span> Ola partner account · '+esc(o.mobile.slice(0,2)+'xxxxxx'+o.mobile.slice(-2))+'</div></div>'+
-      '<div class=row><div class=t>Next: connect your worker account</div>'+
-      '<p class=muted style="margin:6px 0">Your identity check, Ola work certificate and eShram UAN are kept in your own worker account, Avsar, run for workers by the Ministry of Labour. '+
-      'You can use them with other platforms and schemes. Ola never sees its password.</p>'+
-      '<button class=btn id=cw>Connect with Avsar</button></div>', true);
-    document.getElementById('cw').addEventListener('click',function(){ setReg(true); aos.login(); });
+    if(!o.kyc) return drawOlaKyc();
+    var k=o.kyc, rows=[['Name',k.name],['Date of birth',k.dob],['Mobile',o.mobile.slice(0,2)+'xxxxxx'+o.mobile.slice(-2)],['Work','Driver (ride-hailing)'],
+      ['Aadhaar check','UIDAI eKYC on '+(k.verified_on||'')],['Aadhaar','xxxx-xxxx-'+(k.last4||'')]];
+    render(olaHdr('You are registered as an Ola partner',2)+
+      '<p class=ok>✓ Welcome, '+esc(k.name||o.name||'')+'. Your Ola partner certificate is ready.</p>'+
+      '<div class=row><div class=t>🎫 Ola partner certificate<span class=chip>signed by Ola when sent</span></div>'+
+      rows.filter(function(r){return r[1];}).map(function(r){return '<div class=check><span class=muted style="min-width:110px">'+esc(r[0])+'</span> '+esc(r[1])+'</div>';}).join('')+'</div>'+
+      '<div class=row><div class=t>Send it to your livelihood account</div>'+
+      '<p class=muted style="margin:6px 0">Your livelihood account (Avsar, run for workers by the Ministry of Labour) keeps your certificates and gets you an eShram UAN from this one. '+
+      'Sign in if you have one, or create one. Ola never sees its password.</p>'+
+      '<button class=btn id=cw>Send to my livelihood account</button></div>', true);
+    document.getElementById('cw').addEventListener('click',function(){ setReg(true); if(aos.citizen) openOverlay(); else aos.login(); });
   }
-  function openPartner(){ overlay.classList.add('show'); if(!olaGet()) return drawOlaAuth('register'); if(!aos.citizen) return drawPartnerHome(); openOverlay(); }
+  function openPartner(){ overlay.classList.add('show'); var o=olaGet(); if(!o) return drawOlaAuth('register'); if(!o.kyc||!aos.citizen) return drawPartnerHome(); openOverlay(); }
   function renderHostUser(){
     var hu=document.getElementById('host-user'), si=document.getElementById('aos-signin'), o=olaGet();
     if(o){ si.style.display='none'; hu.style.display='flex';
@@ -400,9 +428,9 @@
       document.getElementById('signout-aos').addEventListener('click',signOut);
     } else { si.style.display='inline-flex'; hu.style.display='none'; }
   }
-  document.getElementById('aos-signin').addEventListener('click',function(){ setReg(true); openPartner(); });
-  var bc=document.getElementById('benefit-cta'); if(bc)bc.addEventListener('click',function(){ setReg(true); openPartner(); });
-  (async function(){ try{ await aos.handleCallback(); }catch(e){} renderHostUser(); if(aos.citizen&&REG&&olaGet()) openOverlay(); })();
+  document.getElementById('aos-signin').addEventListener('click',function(){ openPartner(); });
+  var bc=document.getElementById('benefit-cta'); if(bc)bc.addEventListener('click',function(){ openPartner(); });
+  (async function(){ try{ await aos.handleCallback(); }catch(e){} renderHostUser(); if(aos.citizen&&REG&&(olaGet()||{}).kyc) openOverlay(); })();
   }
 </script>
 </body></html>
