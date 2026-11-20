@@ -110,7 +110,9 @@
   function render(inner,olaOnly){panel.innerHTML=chrome(olaOnly)+'<div class=body>'+inner+'</div>'+(olaOnly?'':'<div class=secured>🔒 <b>Your worker account is Avsar · Ola never sees its password · every credential issuer-signed</b></div>');
     var c=document.getElementById('aos-close'); if(c)c.addEventListener('click',function(){overlay.classList.remove('show');});
     var so=document.getElementById('aos-signout'); if(so)so.addEventListener('click',signOut);}
-  async function refreshVerified(){ try{ var c=await aos.wallet(); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;});
+  // The wallet lists revoked credentials too (status 'revoked', e.g. replaced by a newer one): use only current ones.
+  function live(cs){ return (cs||[]).filter(function(x){ return x.status!='revoked'; }); }
+  async function refreshVerified(){ try{ var c=live(await aos.wallet()); verified=(c||[]).some(function(x){return String(x.type||'').indexOf('identity_verified')>=0;});
     hasCert=(c||[]).some(function(x){return x.type=='credential.platform_work_certificate'&&x.issuer_tenant=='ola'&&(x.claims||{}).status=='active';}); verified=verified||hasCert; }catch(e){} }
   async function openOverlay(){overlay.classList.add('show'); render('<p class=muted>Loading…</p>'); await refreshVerified(); view={name: REG&&(olaGet()||{}).kyc?(hasCert?'eshram':'workcert'):'home'}; draw();}
   function draw(){var n=view.name; if(n=='services')drawServices(); else if(n=='wallet')drawWallet(); else if(n=='result')drawResult(view.data); else if(n=='prove')drawProve(); else if(n=='proofresult')drawProofResult(view.data); else if(n=='ekyc')drawEkyc(); else if(n=='eshram')startEshram(); else if(n=='workcert')drawWorkCert(); else if(n=='onboard')drawOnboard(); else drawHome();}
@@ -239,6 +241,15 @@
   // OTP is asked only for an existing UAN, or when UIDAI's records don't match the certificate. This page renders the
   // CHALLENGE it is sent and relays the answer; Ola never sees the Aadhaar number; the UAN goes to the wallet.
   async function startEshram(){
+    try{ var have=live(await aos.wallet()).filter(function(x){ return x.type=='credential.eshram_registration'&&(x.claims||{}).status=='active'&&
+          ((x.claims||{}).platforms||[]).some(function(p){ return p.name=='Ola'; }); }).pop();
+      if(have){ setReg(false);                                         // already done: don't register or link again
+        render(hdr('Your UAN',5)+'<p class=ok>✓ You already have a UAN, linked to Ola</p>'+
+          '<div class=row><div class=t>📜 '+esc(have.title||'eShram registration')+'<span class=chip>'+esc(have.issuer||'eShram')+'</span></div>'+
+          '<div class=m>UAN '+esc((have.claims||{}).uan||'')+' · registered '+esc((have.claims||{}).registered_on||'')+'</div></div>'+
+          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class=btn id=pdf>Download UAN card (PDF)</button><button class="btn sec" id=gw>Open passport</button></div>');
+        back('home'); pdfButton('pdf',have); document.getElementById('gw').addEventListener('click',function(){view={name:'wallet'};draw();}); return; }
+    }catch(e){}
     render(hdr('Get your UAN',4)+'<p class=muted>Starting your eShram registration…</p>'); back('home');
     try{ showChallenge(await aos.fulfil('eshram-registration')); }
     catch(e){ var wc=/work certificate/i.test(e.message);
@@ -257,8 +268,8 @@
         '<p class=muted>Ola has been told only that this is done. Your UAN is in your wallet, to share when you choose.</p>'+
         '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class=btn id=pdf>Download UAN card (PDF)</button><button class="btn sec" id=pdfw>Work certificate (PDF)</button><button class="btn sec" id=gw>Open passport</button></div>'); back('home');
       document.getElementById('gw').addEventListener('click',function(){view={name:'wallet'};draw();});
-      aos.wallet().then(function(cs){ var c=(cs||[]).filter(function(x){return x.id==o.credential_id||x.type=='credential.eshram_registration';}).pop(); if(c)pdfButton('pdf',c); else document.getElementById('pdf').style.display='none';
-        var w=(cs||[]).filter(function(x){return x.type=='credential.platform_work_certificate';}).pop(); if(w)pdfButton('pdfw',w); else document.getElementById('pdfw').style.display='none'; });
+      aos.wallet().then(function(cs){ cs=live(cs); var c=cs.filter(function(x){return x.id==o.credential_id||x.type=='credential.eshram_registration';}).pop(); if(c)pdfButton('pdf',c); else document.getElementById('pdf').style.display='none';
+        var w=cs.filter(function(x){return x.type=='credential.platform_work_certificate';}).pop(); if(w)pdfButton('pdfw',w); else document.getElementById('pdfw').style.display='none'; });
       return; }
     if(d.status!='awaiting_input'){ setReg(false); lastAadhaar=null;
       render(H+'<p class=err>'+esc(d.status=='cancelled'?'Stopped — nothing more was sent to eShram.':(d.error||'This could not be completed.'))+'</p>'+
@@ -299,12 +310,12 @@
   function back(to){document.getElementById('bk').addEventListener('click',function(){view={name:to};draw();});}
   async function drawWallet(){
     render(hdr('My Passport')+'<div id=list>Loading…</div>'); back('home');
-    var creds; try{creds=await aos.wallet();}catch(e){document.getElementById('list').innerHTML='<span class=err>'+esc(e.message)+'</span>';return;}
+    var creds, replaced=0; try{ var all=await aos.wallet()||[]; creds=live(all); replaced=all.length-creds.length; }catch(e){document.getElementById('list').innerHTML='<span class=err>'+esc(e.message)+'</span>';return;}
     var list=document.getElementById('list');
     if(!creds||!creds.length){list.innerHTML='<p class=muted>Your passport is empty. Verify your identity to activate your Avsar account — that issues your first credential.</p>'+
       '<div style="margin-top:10px"><button class=btn id=gv>Verify with UIDAI eKYC</button></div>';
       var gv=document.getElementById('gv'); if(gv)gv.addEventListener('click',function(){view={name:'ekyc'};draw();}); return;}
-    list.innerHTML='<p class=muted>'+creds.length+' verifiable credential(s) — portable, each signed by its issuer</p>'+creds.map(function(c,i){
+    list.innerHTML='<p class=muted>'+creds.length+' verifiable credential(s) — portable, each signed by its issuer'+(replaced?' · '+replaced+' earlier one(s) replaced and no longer valid, not shown':'')+'</p>'+creds.map(function(c,i){
       return '<div class=row><div class=t>'+esc(c.title||c.type)+'<span class=chip>'+esc(c.issuer||c.issuer_tenant||'')+'</span></div>'+
         '<div class=kv>'+esc(JSON.stringify(c.claims||{},null,2))+'</div><div class=m style="margin-top:6px">🔏 '+esc(c.signature_key||c.type)+'</div>'+
         (PDFKIND[c.type]?'<div style="margin-top:8px"><button class="btn sec" id="pdf'+i+'">Download PDF</button></div>':'')+'</div>';}).join('');
