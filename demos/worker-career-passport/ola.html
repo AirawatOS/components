@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Ola Partner — powered by Avsar</title>
+<title>Ola Partner</title>
 <!--
   A GENUINELY THIRD-PARTY embedding app (ADR-0112). This page is hosted on Ola's OWN origin — serve it from
   your machine on a separate origin and open that URL:
@@ -71,16 +71,16 @@
 <p class=origin-note id=origin-note></p>
 <div class=benefit>
   <div class=big>🪪</div>
-  <div><h3>Unlock government benefits — verify once with Avsar</h3>
+  <div><h3>Become an Ola partner — get your eShram UAN and benefits in the same step</h3>
     <p>Your skill, work &amp; payment proofs sit in one portable wallet. Enrol in insurance &amp; find better jobs without leaving the app.</p></div>
-  <button class=go id=benefit-cta>Open Avsar</button>
+  <button class=go id=benefit-cta>Register as Ola Partner</button>
 </div>
 <div class=tiles>
   <div class=tile><div class=ic>💰</div><h3>Weekly earnings</h3><p>Paid out every Monday, tracked trip by trip.</p></div>
-  <div class=tile><div class=ic>📜</div><h3>Experience &amp; payment proofs</h3><p>Ola issues signed work &amp; payment certificates to your Avsar wallet.</p></div>
+  <div class=tile><div class=ic>📜</div><h3>Experience &amp; payment proofs</h3><p>Ola issues signed work &amp; payment certificates you can download and show anywhere.</p></div>
   <div class=tile><div class=ic>🛡️</div><h3>Accident cover &amp; pension</h3><p>Enrol in worker schemes right here — eligibility proven from your wallet.</p></div>
 </div>
-<p class=host-note>This app is operated by <b>Ola</b>, a participant on the network, served from <b id=origin-host>its own origin</b>. Sign-in, benefits, and credentials are <b>powered by Avsar</b> — Ola never sees your password, and your work identity travels with you across every platform.</p>
+<p class=host-note>A simulated <b>Ola Partner</b> page. Ola never sees your password, and your work certificates go with you to other platforms and government schemes.</p>
 <div id=aos-overlay class=overlay><div id=aos-panel class=panel></div></div>
 <script>
   // Backend (Avsar / app-host) — a DIFFERENT origin from this page. That's the whole point: real cross-origin.
@@ -89,8 +89,7 @@
   s.onload=function(){ boot(); };
   s.onerror=function(){ document.getElementById('aos-panel').innerHTML='could not load the Avsar SDK from '+API; };
   document.head.appendChild(s);
-  document.getElementById('origin-note').textContent='This page origin: '+location.origin+'  ·  Avsar backend: '+API+'  (cross-origin, CORS-gated)';
-  document.getElementById('origin-host').textContent=location.origin;
+  document.getElementById('origin-note').textContent='Simulated Ola Partner page · '+location.origin;
   function boot(){
   var aos=AirawatOS.init({clientId:'ola',redirectUri:location.origin+location.pathname,scope:'profile service:invoke',authBase:API});
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
@@ -104,7 +103,7 @@
   function stepsBar(n){ if(!REG||n==null)return ''; var L=['Avsar account','Ola verifies you','Work certificate','eShram UAN'];
     return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px">'+L.map(function(t,i){ var st=i<n?'':(i==n?'background:#2f9e63;color:#fff':'background:#222842;color:#7f8bb0');
       return '<span class=chip style="margin:0;'+st+'">'+(i<n?'✓ ':(i+1)+'. ')+t+'</span>';}).join('')+'</div>'; }
-  function chrome(){return '<div class=chrome><span class=mark>अवसर Avsar</span><span class=pill>Your livelihood wallet</span><span class=sp></span>'+
+  function chrome(){return '<div class=chrome><span class=mark style="color:#f5a623">Ola Partner</span><span class=pill>secured by Avsar</span><span class=sp></span>'+
     '<button class=icn id=aos-signout title="Sign out of Avsar" style="font-size:12px">Sign out</button>'+
     '<button class=icn id=aos-close title=Close>✕</button></div>';}
   function signOut(){ aos.logout(); verified=false; svcCache=null; overlay.classList.remove('show'); renderHostUser(); }
@@ -220,7 +219,7 @@
     render(banner+
       '<div class=applaunch>'+
        '<div class=app data-go=onboard><div class=ic>🛺</div><div class=lbl>Drive with Ola</div><div class=sub>Onboard as a driver</div></div>'+
-       '<div class=app data-go=wallet><div class=ic>📜</div><div class=lbl>My Passport</div><div class=sub>All your credentials</div></div>'+
+       '<div class=app data-go=wallet><div class=ic>📜</div><div class=lbl>My Passport</div><div class=sub>Held by Avsar, not Ola</div></div>'+
        '<div class=app data-go=services><div class=ic>🛡️</div><div class=lbl>Benefits &amp; Jobs</div><div class=sub>Enrol / find work</div></div>'+
        '<div class=app data-go=prove><div class=ic>🪪</div><div class=lbl>Prove</div><div class=sub>Share a credential</div></div>'+
        '<div class=app data-go=workcert><div class=ic>🎫</div><div class=lbl>Work certificate</div><div class=sub>Signed by Ola · PDF</div></div>'+
@@ -354,14 +353,14 @@
     var hu=document.getElementById('host-user'), si=document.getElementById('aos-signin');
     if(aos.citizen){ si.style.display='none'; hu.style.display='flex';
       var nm=aos.citizen.name||''; hu.innerHTML='<div class=av>'+esc((nm.trim()[0]||'?').toUpperCase())+'</div><span class=nm>'+esc(nm)+'</span>'+
-        '<button class=host-cta id=open-aos>Open Avsar</button>'+
+        '<button class=host-cta id=open-aos>My partner account</button>'+
         '<button class=host-cta id=signout-aos style="background:#2a2f45;color:#cfd6f0">Sign out</button>';
       document.getElementById('open-aos').addEventListener('click',openOverlay);
       document.getElementById('signout-aos').addEventListener('click',signOut);
     } else { si.style.display='inline-flex'; hu.style.display='none'; }
   }
   document.getElementById('aos-signin').addEventListener('click',function(){ setReg(true); aos.login(); });
-  var bc=document.getElementById('benefit-cta'); if(bc)bc.addEventListener('click',function(){ aos.citizen?openOverlay():aos.login(); });
+  var bc=document.getElementById('benefit-cta'); if(bc)bc.addEventListener('click',function(){ if(aos.citizen){ setReg(true); openOverlay(); } else { setReg(true); aos.login(); } });
   (async function(){ try{ await aos.handleCallback(); }catch(e){} renderHostUser(); if(aos.citizen) openOverlay(); })();
   }
 </script>
