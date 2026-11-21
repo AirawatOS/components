@@ -1,0 +1,90 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Your livelihood account</title>
+<!--
+  NETWORK-DRAWN SCREEN (ADR-0135 as amended, ADR-0136): the account holder's own steps of a request — consent, sensitive
+  input (Aadhaar number, OTP), the outcome. Served by the network at /embed/screen/fulfil; generic for every app and
+  every offering: it shows the requesting app's registered name and the challenge the network sends, nothing else.
+  The request is reached with a one-time ticket in the URL fragment (#r=<request>&t=<ticket>), never sent to a server.
+-->
+<style>
+:root{--ink:#15202b;--dim:#5f7183;--line:#e4e9ef;--bg:#f3f5f8;--card:#fff;--brand:#1f4fa3;--ok:#0b6b3a;--err:#b42318}
+*{box-sizing:border-box} body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}
+header b{font-size:17px} header span{font-size:12px;opacity:.85}
+main{max-width:520px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.from{font-size:13px;color:var(--dim);margin:0 0 10px} .from b{color:var(--ink)}
+h1{font-size:19px;margin:0 0 4px} .step{font-size:12px;color:var(--dim);margin:0 0 12px}
+p{margin:6px 0} .muted{color:var(--dim);font-size:13px} .err{color:var(--err);font-size:14px} .ok{color:var(--ok);font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px} th{text-align:left;color:var(--dim);font-weight:500;width:42%;padding:6px 0;border-top:1px solid var(--line);vertical-align:top} td{padding:6px 0;border-top:1px solid var(--line)}
+label{display:block;font-size:13px;color:var(--dim);margin-top:12px}
+input[type=text],input:not([type]),select{width:100%;padding:11px;border:1px solid #c9d2dc;border-radius:10px;font-size:16px;margin-top:4px;background:#fff}
+.chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);margin-top:14px} .chk input{margin-top:4px}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+button,.btn{padding:11px 16px;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;background:var(--brand);color:#fff;text-decoration:none;display:inline-block}
+.sec{background:#e8edf4;color:var(--ink)}
+.hint{background:#fff8e6;border:1px solid #f0dfa8;border-radius:8px;padding:6px 10px;font-size:13px;margin-top:8px}
+footer{max-width:520px;margin:0 auto;padding:0 16px 24px;color:var(--dim);font-size:12px}
+</style></head><body>
+<header><b>Avsar</b><span>your livelihood account · run for workers by the Ministry of Labour</span></header>
+<main id=m><div class=card><p class=muted>Loading…</p></div></main>
+<footer>This screen belongs to your livelihood account, not to the app that sent you here. The app never sees what you type here.</footer>
+<script>
+(function(){
+  var h=new URLSearchParams(location.hash.slice(1)), RID=h.get('r'), T=h.get('t'), M=document.getElementById('m'), APP='the app', RET='';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function post(path,body){ return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.json();}); }
+  function back(id,status){ return RET?RET+(RET.indexOf('?')<0?'?':'&')+'fulfil='+encodeURIComponent(id||RID)+'&status='+encodeURIComponent(status||''):''; }
+  function from(){ return '<p class=from>Request from <b>'+esc(APP)+'</b></p>'; }
+  function done(d){
+    history.replaceState(null,'',location.pathname);                    // the ticket is no longer needed
+    var o=d.outcome||{}, rb=back(d.request_id,d.status), out='';
+    if(d.status=='completed'){
+      out='<div class=card>'+from()+'<h1 class=ok>✓ Done</h1>'+
+        (o.method?'<p>'+esc(o.method)+'</p>':'')+'<p class=muted>'+(o.otps?o.otps+' OTP':'No OTP')+' · no form filled</p>'+
+        (o.issued||[]).map(function(t){return '<p>📜 <b>'+esc(t)+'</b> — signed by '+esc(o.issuer||'the issuer')+', now in your account</p>';}).join('')+
+        (o.new_registration&&!o.profile_complete?'<p class=muted>Later: complete your profile (family, nominee, self-declaration). What you got works already.</p>':'')+
+        '<p class=muted>'+esc(APP)+' is told only that this is done.</p>'+
+        '<div class=btns>'+(d.wallet_url?'<a class=btn href="'+esc(d.wallet_url)+'">Open my account</a>':'')+(rb?'<a class="btn sec" href="'+esc(rb)+'">Return to '+esc(APP)+'</a>':'')+'</div></div>';
+    } else {
+      out='<div class=card>'+from()+'<h1>'+(d.status=='cancelled'?'Stopped':'Not completed')+'</h1><p class=err>'+
+        esc(d.status=='cancelled'?'Nothing more was sent.':(d.error||'This could not be completed.'))+'</p>'+
+        (rb?'<div class=btns><a class=btn href="'+esc(rb)+'">Return to '+esc(APP)+'</a></div>':'')+'</div>';
+    }
+    M.innerHTML=out;
+  }
+  function show(d){
+    if(d.app)APP=d.app; if(d.return_url)RET=d.return_url;
+    if(d.status&&d.status!='awaiting_input') return done(d);
+    if(d.error&&!d.challenge){ M.innerHTML='<div class=card><h1>Link expired</h1><p class=err>'+esc(d.error)+'</p></div>'; return; }
+    var c=d.challenge||{}, f='';
+    if(c.kind=='consent'){
+      f=(c.lines||[]).map(function(l){return '<p>'+esc(l)+'</p>';}).join('')+
+        (c.facts&&c.facts.length?'<p class=muted style="margin-top:12px">What will be shared</p><table>'+c.facts.map(function(x){return '<tr><th>'+esc(x[0])+'</th><td>'+esc(x[1])+'</td></tr>';}).join('')+'</table>':'')+
+        '<div class=btns><button id=agree>I agree</button><button class=sec id=cancel>Not now</button></div>';
+    } else {
+      if(c.verified_name) f+='<p class=ok>✓ '+esc(c.verified_name)+'</p>';
+      (c.fields||[]).forEach(function(x){
+        f+='<label>'+esc(x.label)+'</label>'+(x.options?'<select data-f="'+esc(x.name)+'"><option value="">Choose…</option>'+x.options.map(function(o){return '<option>'+esc(o)+'</option>';}).join('')+'</select>'
+          :'<input data-f="'+esc(x.name)+'" '+(x.inputmode?'inputmode="'+esc(x.inputmode)+'" ':'')+'autocomplete=off placeholder="'+esc(x.placeholder||'')+'" value="'+esc(x.value||'')+'">');
+      });
+      if(c.kind=='captcha') f+='<div style="margin-top:12px"><img alt="characters to type" src="data:image/svg+xml;base64,'+btoa(c.image_svg||'')+'"></div><label>'+esc(c.answer_label||'Type the characters')+'</label><input data-f=captcha autocomplete=off>';
+      if(c.kind=='otp') f+='<label>'+esc(c.label||'OTP')+'</label><input data-f=otp inputmode=numeric autocomplete=one-time-code>'+(c.sandbox_hint?'<p class=hint>Sandbox: your OTP is <b>'+esc(c.sandbox_hint)+'</b> (a real one comes by SMS)</p>':'');
+      if(c.consent) f+='<label class=chk><input type=checkbox data-f=agree> <span>'+esc(c.consent)+'</span></label>';
+      if(c.note) f+='<p class=muted style="margin-top:10px">'+esc(c.note)+'</p>';
+      f+='<div class=btns><button id=go>Continue</button><button class=sec id=cancel>Cancel</button></div>';
+    }
+    M.innerHTML='<div class=card>'+from()+'<h1>'+esc(c.title||'')+'</h1><p class=step>Step '+d.step_no+' of '+d.steps_total+'</p>'+(d.error?'<p class=err>'+esc(d.error)+'</p>':'')+f+'</div>';
+    function send(ans){ M.innerHTML='<div class=card>'+from()+'<p class=muted>Working…</p></div>';
+      post('/embed/fulfil/respond',{request_id:RID,ticket:T,answer:ans}).then(show).catch(function(){ show({status:'failed',error:'The network could not be reached.'}); }); }
+    var x=document.getElementById('cancel'); if(x)x.onclick=function(){send({cancel:true});};
+    x=document.getElementById('agree'); if(x)x.onclick=function(){send({agree:true});};
+    x=document.getElementById('go'); if(x)x.onclick=function(){ var a={};
+      Array.prototype.forEach.call(M.querySelectorAll('[data-f]'),function(el){ a[el.getAttribute('data-f')]=el.type=='checkbox'?el.checked:el.value.trim(); }); send(a); };
+  }
+  if(!RID||!T){ M.innerHTML='<div class=card><h1>Nothing to do here</h1><p class=muted>Open this from the app that asked for it.</p></div>'; return; }
+  post('/embed/fulfil/view',{request_id:RID,ticket:T}).then(show).catch(function(){ M.innerHTML='<div class=card><p class=err>The network could not be reached.</p></div>'; });
+})();
+</script>
+</body></html>
