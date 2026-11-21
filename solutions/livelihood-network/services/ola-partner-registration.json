@@ -1,0 +1,28 @@
+{
+  "tenant": "ola",
+  "service_id": "ola-partner-registration",
+  "domain": "livelihood",
+  "title": "Partner registration",
+  "description": "Ola checks a new partner's Aadhaar facts, driving licence and police verification, then approves, returns for documents, or rejects the registration. Opened automatically when a partner finishes registering on Ola's home page.",
+  "interaction": [
+    "init",
+    "status"
+  ],
+  "jurisdiction": "IN",
+  "audience": "member.partner",
+  "solution": "ds:airawatdeveloper:solution/declarative-service",
+  "required_credentials": [],
+  "sla_ref": "verification 48h",
+  "fulfillment": {
+    "sla_hours": {
+      "verification": 48
+    },
+    "workflow": [
+      {
+        "step": "verification",
+        "role": "platform.tenant-admin",
+        "task": "Check the applicant's Aadhaar facts and documents (open each document link). Approve, return for documents, or reject."
+      }
+    ]
+  }
+}
