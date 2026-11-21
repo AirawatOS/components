@@ -1,0 +1,79 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Your livelihood account</title>
+<!--
+  NETWORK-DRAWN SCREEN (ADR-0136 phase 4): an organisation asks to LINK one of its members to their account on this
+  network. The person signs in, or creates the account (the name comes from the organisation's certificate), consents,
+  and the organisation's signed certificate goes into the account; the organisation receives only a link id that is
+  unique to it. Served by the network at /embed/screen/link; generic for every organisation. Reached with a one-time
+  ticket in the URL fragment (#r=<request>&t=<ticket>), never sent to a server.
+-->
+<style>
+:root{--ink:#15202b;--dim:#5f7183;--line:#e4e9ef;--bg:#f3f5f8;--card:#fff;--brand:#1f4fa3;--ok:#0b6b3a;--err:#b42318}
+*{box-sizing:border-box} body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}
+header b{font-size:17px} header span{font-size:12px;opacity:.85}
+main{max-width:520px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+h1{font-size:19px;margin:0 0 6px} p{margin:6px 0} .muted{color:var(--dim);font-size:13px} .err{color:var(--err);font-size:14px} .ok{color:var(--ok);font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px} th{text-align:left;color:var(--dim);font-weight:500;width:42%;padding:6px 0;border-top:1px solid var(--line);vertical-align:top} td{padding:6px 0;border-top:1px solid var(--line)}
+.tabs{display:flex;gap:6px;margin:4px 0 8px} .tabs button{flex:1;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff;font:inherit;font-size:14px;cursor:pointer}
+.tabs button.on{border-color:var(--brand);color:var(--brand);font-weight:600;background:#eef3fb}
+label{display:block;font-size:13px;color:var(--dim);margin-top:12px}
+input[type=text],input[type=password],input:not([type]){width:100%;padding:11px;border:1px solid #c9d2dc;border-radius:10px;font-size:16px;margin-top:4px;background:#fff}
+input[readonly]{background:#f3f5f8;color:var(--dim)}
+.chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);margin-top:14px} .chk input{margin-top:4px}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+button.go,.btn{padding:11px 16px;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;background:var(--brand);color:#fff;text-decoration:none;display:inline-block}
+.sec{background:#e8edf4!important;color:var(--ink)!important}
+footer{max-width:520px;margin:0 auto;padding:0 16px 24px;color:var(--dim);font-size:12px}
+</style></head><body>
+<header><b>Avsar</b><span>your livelihood account · run for workers by the Ministry of Labour</span></header>
+<main id=m><div class=card><p class=muted>Loading…</p></div></main>
+<footer>This screen belongs to your livelihood account, not to the organisation that sent you here. It never sees what you type here.</footer>
+<script>
+(function(){
+  var h=new URLSearchParams(location.hash.slice(1)), R=h.get('r'), T=h.get('t'), M=document.getElementById('m'), D=null, MODE='register';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function post(path,body){ return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({r:R,t:T},body||{}))}).then(function(r){return r.json();}); }
+  function back(){ return D&&D.return_url?'<a class="btn sec" href="'+esc(D.return_url)+'">Return to '+esc(D.tenant)+'</a>':''; }
+  function facts(){ return (D.facts||[]).length?'<table>'+D.facts.map(function(x){return '<tr><th>'+esc(x[0])+'</th><td>'+esc(x[1])+'</td></tr>';}).join('')+'</table>':''; }
+  function linked(){
+    M.innerHTML='<div class=card><h1 class=ok>✓ '+(D.mode=='open'?'Signed in':'Linked')+'</h1>'+
+      (D.mode=='open'?'<p>Your '+esc(D.tenant)+' account is linked to this account.</p>':'<p>'+esc(D.tenant)+'’s '+esc((D.role||'').toLowerCase())+' certificate is now in your '+esc(D.network)+' account. '+esc(D.tenant)+' received only a link number, not your account.</p>')+
+      ((D.next||[]).length?'<p class=muted style="margin-top:12px">What you can do with it now</p>':'')+
+      (D.next||[]).map(function(n){return '<div class=btns><button class=go data-next="'+esc(n.id)+'">'+esc(n.label)+'</button></div>';}).join('')+
+      '<p class=err id=ne></p><div class=btns>'+back()+'</div></div>';
+    Array.prototype.forEach.call(M.querySelectorAll('[data-next]'),function(b){ b.onclick=function(){ b.disabled=true; b.textContent='Opening…';
+      post('/embed/link/next',{action:b.getAttribute('data-next')}).then(function(d){
+        if(d.screen_url){ location.assign(d.screen_url); return; }
+        b.disabled=false; b.textContent=b.textContent.replace('Opening…','');
+        document.getElementById('ne').textContent=d.status=='completed'?'Already done: you have a UAN linked to '+D.tenant+'.':(d.error||'Could not open it.');
+        if(d.status=='completed') b.style.display='none'; }); }; });
+  }
+  function form(err){
+    var open=D.mode=='open', reg=!open&&MODE=='register';
+    M.innerHTML='<div class=card><h1>'+(open?'Sign in to your '+esc(D.network)+' account':esc(D.tenant)+' wants to link your '+esc((D.role||'').toLowerCase())+' account')+'</h1>'+
+      (open?'<p class=muted>Your '+esc(D.tenant)+' account is linked to a '+esc(D.network)+' account. Sign in to it to continue.</p>'
+           :'<p>'+esc(D.tenant)+' will send its signed certificate to your own '+esc(D.network)+' account. It keeps your certificates and gets you your eShram UAN and benefits.</p>'+
+            '<p class=muted style="margin-top:10px">The certificate '+esc(D.tenant)+' will send</p>'+facts())+'</div>'+
+      '<div class=card>'+(open?'':'<div class=tabs><button id=tr class="'+(reg?'on':'')+'">Create my account</button><button id=ts class="'+(reg?'':'on')+'">I have an account</button></div>')+
+      (err?'<p class=err>'+esc(err)+'</p>':'')+
+      (reg?'<label>Name (from the certificate — checked with Aadhaar by '+esc(D.tenant)+')</label><input readonly value="'+esc(D.name||'')+'">'+
+           '<label>Choose a username</label><input id=un autocomplete=username placeholder="at least 3 letters or digits">'
+          :'<label>Username</label><input id=un autocomplete=username><label>Password</label><input id=pw type=password autocomplete=current-password>')+
+      (D.needs_aadhaar?'<label>Aadhaar number — so the network can check you don’t already have an account (not stored)</label><input id=ad inputmode=numeric autocomplete=off placeholder="12 digits">':'')+
+      '<label class=chk><input type=checkbox id=ag> <span>'+(open?'Continue with this account.':'I agree to link my '+esc(D.tenant)+' account and to receive '+esc(D.tenant)+'’s certificate in my '+esc(D.network)+' account.')+'</span></label>'+
+      '<div class=btns><button class=go id=go>'+(open?'Sign in':reg?'Create account and link':'Sign in and link')+'</button>'+back()+'</div></div>';
+    if(!open){ document.getElementById('tr').onclick=function(){MODE='register';form();}; document.getElementById('ts').onclick=function(){MODE='signin';form();}; }
+    document.getElementById('go').onclick=function(){ var g=document.getElementById('go'); g.disabled=true;
+      var body={mode:open?'signin':MODE,username:(document.getElementById('un')||{}).value,password:(document.getElementById('pw')||{}).value,
+                aadhaar:(document.getElementById('ad')||{}).value,agree:document.getElementById('ag').checked};
+      post('/embed/link/complete',body).then(function(d){ if(d.linked){ D=d; linked(); } else form(d.error||'Could not link.'); })
+        .catch(function(){ form('The network could not be reached.'); }); };
+  }
+  if(!R||!T){ M.innerHTML='<div class=card><h1>Nothing to do here</h1><p class=muted>Open this from the organisation that asked for it.</p></div>'; return; }
+  post('/embed/link/view').then(function(d){ if(d.error){ M.innerHTML='<div class=card><h1>Link expired</h1><p class=err>'+esc(d.error)+'</p></div>'; return; }
+    D=d; if(d.linked) linked(); else form(); }).catch(function(){ M.innerHTML='<div class=card><p class=err>The network could not be reached.</p></div>'; });
+})();
+</script>
+</body></html>
