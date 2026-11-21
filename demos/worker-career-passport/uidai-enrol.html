@@ -3,7 +3,7 @@
 <!--
   The PREREQUISITE surface: UIDAI Aadhaar enrolment (what every downstream step assumes already happened).
   A worker with no Aadhaar enrols here; UIDAI issues an Aadhaar number + stores an identity.aadhaar record,
-  which eKYC later verifies against. Serve from the SAME origin as ola.html (so CORS to airos is allowed):
+  which eKYC later verifies against. Served from the same origin as the demo pages (so CORS to airos is allowed):
       cd components/demos/worker-career-passport && python3 -m http.server 8777
       open http://localhost:8777/uidai-enrol.html
   DEMO: open kiosk + simulated biometrics. Real UIDAI enrolment is operator-assisted with biometric de-dup.
@@ -30,7 +30,7 @@ button{margin-top:18px;padding:12px 16px;border:0;border-radius:10px;background:
 <header class=top><div class=seal>●</div><div><b>UIDAI</b> <span class=sub>Aadhaar Enrolment Kiosk</span></div></header>
 <div class=wrap>
   <h1>Enrol for Aadhaar</h1>
-  <p class=lede>Enrolment is the one‑time prerequisite. Once enrolled, your Aadhaar can be eKYC‑verified by any app — including your Avsar livelihood account.</p>
+  <p class=lede>Enrolment is the one‑time prerequisite. Once enrolled, your Aadhaar can be eKYC‑verified by any app — for example Ola's Aadhaar check when you register as a partner.</p>
   <div class=card id=form>
     <label>Full name</label><input id=name placeholder="Ravi Kumar">
     <label>Date of birth</label><input id=dob type=date>
@@ -59,7 +59,7 @@ button{margin-top:18px;padding:12px 16px;border:0;border-radius:10px;background:
       var u=d.uid, pretty=u.replace(/(\d{4})(\d{4})(\d{4})/,'$1 $2 $3');
       msg.innerHTML='<div class=result><div class=note>Enrolment complete — your Aadhaar number</div>'+
         '<div class=uid>'+esc(pretty)+'</div>'+
-        '<p class=note style="margin-top:10px">Keep this number. Use it to verify (eKYC) when you create your Avsar account in any app.</p></div>';
+        '<p class=note style="margin-top:10px">Keep this number. Use it for the Aadhaar check when you register with Ola, and again for your eShram UAN.</p></div>';
     }catch(e){ msg.innerHTML='<p class=err>'+esc(e.message)+'</p>'; }
   });
 </script>

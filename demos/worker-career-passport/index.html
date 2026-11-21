@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Avsar — Worker Passport Demo</title>
+<title>eShram — worker demo</title>
 <style>
 :root{--bg:#f7f4ee;--card:#fff;--ink:#1b2430;--dim:#5d6b7a;--line:#e8e2d6;--amber:#d9791a;--ola:#0b6b3a;--uidai:#b23140}
 @media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#171b24;--ink:#e9ecf2;--dim:#9aa6b4;--line:#272d3a;--amber:#f0932f}}
@@ -21,18 +21,18 @@ a.card p{margin:0;color:var(--dim);font-size:14px}
 .foot{color:#8a95a2;font-size:12.5px;margin-top:22px}
 </style></head><body>
 <div class=wrap>
-  <p class=k>अवसर · Avsar — worker livelihood passport</p>
-  <h1>Try the worker passport demo</h1>
-  <p class=l>A gig worker goes from an Aadhaar number to a verified identity, a job, insurance and benefits — carrying one portable wallet, no database merged.</p>
+  <p class=k>eShram · Ministry of Labour &amp; Employment — worker demo</p>
+  <h1>Try the platform-worker demo</h1>
+  <p class=l>A driver registers with Ola as usual. Ola checks their Aadhaar and approves them, then they link eShram: Ola's signed certificate goes into their eShram account and they get their UAN — no form, at most one OTP.</p>
   <div class=cards>
     <a class=card href="uidai-enrol.html">
       <div class=ic>🪪</div><h2>1 · UIDAI Enrolment</h2>
       <p>No Aadhaar yet? Enrol here first and get an Aadhaar number.</p>
       <span class=badge>start here if new</span>
     </a>
-    <a class=card href="ola.html">
-      <div class=ic>🛺</div><h2>2 · Ola Partner (Avsar)</h2>
-      <p>Register into Avsar, eKYC with your Aadhaar, onboard as a driver, enrol in benefits.</p>
+    <a class=card href="/t/ola">
+      <div class=ic>🛺</div><h2>2 · Ola (simulated)</h2>
+      <p>Register as an Ola partner, pass Ola's Aadhaar check and review, then Link eShram and get your UAN.</p>
       <span class=badge>the main demo</span>
     </a>
   </div>
@@ -40,10 +40,11 @@ a.card p{margin:0;color:var(--dim);font-size:14px}
     <b>Suggested flow</b>
     <ol>
       <li>Open <b>UIDAI Enrolment</b> → enrol → copy your 12‑digit Aadhaar number.</li>
-      <li>Open <b>Ola Partner</b> → <b>Register into Avsar</b> → <b>eKYC</b> with that Aadhaar number.</li>
-      <li>Try <b>Drive with Ola</b> (document verification) and <b>Benefits &amp; Jobs</b> (enrol in accident cover).</li>
+      <li>Open <b>Ola</b> → <b>Register</b> → <b>Partner</b>: mobile OTP, then Ola's Aadhaar check with that number, then your licence and police verification.</li>
+      <li>Ola's staff approve the registration in their Task Inbox.</li>
+      <li>Sign in to Ola → <b>Link eShram</b> → create or sign in to your eShram account → <b>Get your eShram UAN</b>.</li>
     </ol>
   </div>
-  <p class=foot>Reference demo on AirawatOS · ADR‑0112 participant‑embed + ADR‑0049 verifiable credentials. eKYC &amp; biometrics are simulated.</p>
+  <p class=foot>Reference demo on AirawatOS · ADR-0135 and ADR-0136. Ola, UIDAI and eShram are sandbox simulations: Aadhaar checks, OTPs and UANs are not real.</p>
 </div>
 </body></html>
