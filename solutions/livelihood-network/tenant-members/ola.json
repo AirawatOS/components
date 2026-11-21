@@ -1,0 +1,31 @@
+{
+  "_about": "Ola's member roles (ADR-0136): the tenant admin's configuration. Staging stand-in: deployed to /data/app-bundles/.tenant-members/ola.json until the admin screen (phase 3).",
+  "signin": ["mobile_otp"],
+  "roles": [
+    {
+      "id": "partner",
+      "label": "Partner",
+      "summary": "Drive or deliver with Ola. Earn on your schedule.",
+      "registration": {"steps": ["mobile_otp"], "approval": "auto"},
+      "fields": [
+        {"name": "full_name", "label": "Full name", "required": true},
+        {"name": "city", "label": "City", "required": true, "options": ["Bengaluru", "Delhi", "Hyderabad", "Mumbai", "Pune", "Other"]},
+        {"name": "vehicle", "label": "Vehicle", "required": true, "options": ["Car", "Auto-rickshaw", "Bike"]}
+      ],
+      "networks": [
+        {"id": "livelihood", "label": "Livelihood network",
+         "summary": "Keep your Ola work record in your own livelihood account, and get your eShram UAN from it."}
+      ]
+    },
+    {
+      "id": "customer",
+      "label": "Customer",
+      "summary": "Book rides with Ola.",
+      "registration": {"steps": ["mobile_otp"], "approval": "auto"},
+      "fields": [
+        {"name": "full_name", "label": "Full name", "required": true}
+      ],
+      "networks": []
+    }
+  ]
+}
