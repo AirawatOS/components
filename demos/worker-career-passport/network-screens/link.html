@@ -53,7 +53,7 @@ footer{max-width:520px;margin:0 auto;padding:0 16px 24px;color:var(--dim);font-s
   function form(err){
     var open=D.mode=='open', reg=!open&&MODE=='register';
     M.innerHTML='<div class=card><h1>'+(open?'Sign in to your '+esc(D.network)+' account':esc(D.tenant)+' wants to link your '+esc((D.role||'').toLowerCase())+' account')+'</h1>'+
-      (open?'<p class=muted>Your '+esc(D.tenant)+' account is linked to a '+esc(D.network)+' account. Sign in to it to continue.</p>'
+      (open?'<p class=muted>Your '+esc(D.tenant)+' account is linked to your '+esc(D.network)+' account. Sign in to it to continue.</p>'
            :'<p>'+esc(D.tenant)+' will send its signed certificate to your own '+esc(D.network)+' account. It keeps your certificates and gets you your eShram UAN and benefits.</p>'+
             '<p class=muted style="margin-top:10px">The certificate '+esc(D.tenant)+' will send</p>'+facts())+'</div>'+
       '<div class=card>'+(open?'':'<div class=tabs><button id=tr class="'+(reg?'on':'')+'">Create my account</button><button id=ts class="'+(reg?'':'on')+'">I have an account</button></div>')+
@@ -61,7 +61,7 @@ footer{max-width:520px;margin:0 auto;padding:0 16px 24px;color:var(--dim);font-s
       (reg?'<label>Name (from the certificate — checked with Aadhaar by '+esc(D.tenant)+')</label><input readonly value="'+esc(D.name||'')+'">'+
            '<label>Choose a username</label><input id=un autocomplete=username placeholder="at least 3 letters or digits">'
           :'<label>Username</label><input id=un autocomplete=username><label>Password</label><input id=pw type=password autocomplete=current-password>')+
-      (D.needs_aadhaar?'<label>Aadhaar number — so the network can check you don’t already have an account (not stored)</label><input id=ad inputmode=numeric autocomplete=off placeholder="12 digits">':'')+
+      (D.needs_aadhaar&&!open?'<label>Aadhaar number — so the network can check you don’t already have an account (not stored)</label><input id=ad inputmode=numeric autocomplete=off placeholder="12 digits">':'')+
       '<label class=chk><input type=checkbox id=ag> <span>'+(open?'Continue with this account.':'I agree to link my '+esc(D.tenant)+' account and to receive '+esc(D.tenant)+'’s certificate in my '+esc(D.network)+' account.')+'</span></label>'+
       '<div class=btns><button class=go id=go>'+(open?'Sign in':reg?'Create account and link':'Sign in and link')+'</button>'+back()+'</div></div>';
     if(!open){ document.getElementById('tr').onclick=function(){MODE='register';form();}; document.getElementById('ts').onclick=function(){MODE='signin';form();}; }
