@@ -9,7 +9,7 @@
     "status"
   ],
   "jurisdiction": "IN",
-  "audience": "member.partner",
+  "audience": "livelihood.platform-worker",
   "solution": "ds:airawatdeveloper:solution/declarative-service",
   "required_credentials": [],
   "sla_ref": "verification 48h",
