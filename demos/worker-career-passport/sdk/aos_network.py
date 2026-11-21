@@ -7,13 +7,13 @@ A platform such as Ola uses this from its own backend to link its members to the
     net = Network("https://airos.airawat.org", token_provider=lambda: my_service_token())
 
     # at the platform's own Aadhaar check (optional, recommended): keep the sealed token with your KYC record
-    sealed = net.sealed_token("livelihood", aadhaar_number)          # use the number in this call only
+    sealed = net.sealed_token("eshram", aadhaar_number)          # use the number in this call only
 
     # once: where the network sends events, and the secret to check them with (store the secret server-side)
-    secret = net.register_notifications("livelihood", "https://partners.example/network/events")
+    secret = net.register_notifications("eshram", "https://partners.example/network/events")
 
     # when a member taps "Link eShram"
-    req = net.create_link_request("livelihood", return_url="https://partners.example/eshram/return",
+    req = net.create_link_request("eshram", return_url="https://partners.example/eshram/return",
                                   role_label="Partner",
                                   certificate={"type": "credential.platform_work_certificate", "claims": {...}},
                                   sealed=sealed)
