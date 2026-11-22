@@ -50,30 +50,46 @@ footer{max-width:520px;margin:0 auto;padding:0 16px 24px;color:var(--dim);font-s
         document.getElementById('ne').textContent=d.status=='completed'?'Already done: you have a UAN linked to '+D.tenant+'.':(d.error||'Could not open it.');
         if(d.status=='completed') b.style.display='none'; }); }; });
   }
-  function form(err){
+  function form(err,otp){
     var open=D.mode=='open', reg=!open&&MODE=='register';
+    var agree='<label class=chk><input type=checkbox id=ag> <span>'+(open?'Continue with this account.':'I agree to link my '+esc(D.tenant)+' account and to receive '+esc(D.tenant)+'’s certificate in my '+esc(D.network)+' account.')+'</span></label>';
+    var aad='<label>Aadhaar number — '+(reg?'so the network can check you don’t already have an account':'so the network can find your account')+' (not stored)</label><input id=ad inputmode=numeric autocomplete=off placeholder="12 digits">';
+    var body;
+    if(reg){
+      body='<label>Name (from the certificate — checked with Aadhaar by '+esc(D.tenant)+')</label><input readonly value="'+esc(D.name||'')+'">'+
+           '<label>Choose a username</label><input id=un autocomplete=username placeholder="at least 3 letters or digits">'+
+           (D.needs_aadhaar?aad:'')+agree+'<div class=btns><button class=go id=go>Create account and link</button>'+back()+'</div>';
+    } else if(otp){
+      body='<p>We sent an OTP to the mobile on your '+esc(D.network)+' account, '+esc(otp.sent_to)+'.</p>'+
+           (otp.sandbox_otp?'<p class=muted>Sandbox — no SMS is sent. Your OTP is <b>'+esc(otp.sandbox_otp)+'</b></p>':'')+
+           '<label>OTP</label><input id=otp inputmode=numeric autocomplete=one-time-code maxlength=6>'+agree+
+           '<div class=btns><button class=go id=go>'+(open?'Verify and continue':'Verify and link')+'</button><button class="btn sec" id=so>Send again</button>'+back()+'</div>';
+    } else {
+      body=(D.existing&&!open?'<p>You already have an '+esc(D.network)+' account. We will send an OTP to its mobile, '+esc(D.existing)+'.</p>'
+                             :'<p class=muted>We will send an OTP to the mobile on your '+esc(D.network)+' account.</p>')+
+           (D.needs_aadhaar&&!open?aad:'')+'<div class=btns><button class=go id=so>Send OTP</button>'+back()+'</div>';
+    }
     M.innerHTML='<div class=card><h1>'+(open?'Sign in to your '+esc(D.network)+' account':esc(D.tenant)+' wants to link your '+esc((D.role||'').toLowerCase())+' account')+'</h1>'+
       (open?'<p class=muted>Your '+esc(D.tenant)+' account is linked to your '+esc(D.network)+' account. Sign in to it to continue.</p>'
            :'<p>'+esc(D.tenant)+' will send its signed certificate to your own '+esc(D.network)+' account. It keeps your certificates and gets you your eShram UAN and benefits.</p>'+
             '<p class=muted style="margin-top:10px">The certificate '+esc(D.tenant)+' will send</p>'+facts())+'</div>'+
-      '<div class=card>'+(open?'':'<div class=tabs><button id=tr class="'+(reg?'on':'')+'">Create my account</button><button id=ts class="'+(reg?'':'on')+'">I have an account</button></div>')+
-      (err?'<p class=err>'+esc(err)+'</p>':'')+
-      (reg?'<label>Name (from the certificate — checked with Aadhaar by '+esc(D.tenant)+')</label><input readonly value="'+esc(D.name||'')+'">'+
-           '<label>Choose a username</label><input id=un autocomplete=username placeholder="at least 3 letters or digits">'
-          :'<label>Username</label><input id=un autocomplete=username><label>Password</label><input id=pw type=password autocomplete=current-password>')+
-      (D.needs_aadhaar&&!open?'<label>Aadhaar number — so the network can check you don’t already have an account (not stored)</label><input id=ad inputmode=numeric autocomplete=off placeholder="12 digits">':'')+
-      '<label class=chk><input type=checkbox id=ag> <span>'+(open?'Continue with this account.':'I agree to link my '+esc(D.tenant)+' account and to receive '+esc(D.tenant)+'’s certificate in my '+esc(D.network)+' account.')+'</span></label>'+
-      '<div class=btns><button class=go id=go>'+(open?'Sign in':reg?'Create account and link':'Sign in and link')+'</button>'+back()+'</div></div>';
-    if(!open){ document.getElementById('tr').onclick=function(){MODE='register';form();}; document.getElementById('ts').onclick=function(){MODE='signin';form();}; }
-    document.getElementById('go').onclick=function(){ var g=document.getElementById('go'); g.disabled=true;
-      var body={mode:open?'signin':MODE,username:(document.getElementById('un')||{}).value,password:(document.getElementById('pw')||{}).value,
-                aadhaar:(document.getElementById('ad')||{}).value,agree:document.getElementById('ag').checked};
-      post('/embed/link/complete',body).then(function(d){ if(d.linked){ D=d; linked(); } else form(d.error||'Could not link.'); })
+      '<div class=card>'+(open?'':'<div class=tabs><button id=tr class="'+(reg?'on':'')+'">Create my account</button><button id=ts class="'+(reg?'':'on')+'">I have an eShram account</button></div>')+
+      (err?'<p class=err>'+esc(err)+'</p>':'')+body+'</div>';
+    if(!open){ document.getElementById('tr').onclick=function(){MODE='register';form();}; document.getElementById('ts').onclick=function(){MODE='otp';form();}; }
+    var so=document.getElementById('so');
+    if(so) so.onclick=function(){ so.disabled=true;
+      post('/embed/link/otp',{aadhaar:(document.getElementById('ad')||{}).value}).then(function(d){ if(d.sent_to) form(null,d); else form(d.error||'Could not send the OTP.'); })
         .catch(function(){ form('The network could not be reached.'); }); };
+    var g=document.getElementById('go');
+    if(g) g.onclick=function(){ g.disabled=true;
+      var body=reg?{mode:'register',username:(document.getElementById('un')||{}).value,aadhaar:(document.getElementById('ad')||{}).value,agree:document.getElementById('ag').checked}
+                  :{mode:'otp',otp:(document.getElementById('otp')||{}).value,agree:document.getElementById('ag').checked};
+      post('/embed/link/complete',body).then(function(d){ if(d.linked){ D=d; linked(); } else form(d.error||'Could not link.',reg?null:otp); })
+        .catch(function(){ form('The network could not be reached.',reg?null:otp); }); };
   }
   if(!R||!T){ M.innerHTML='<div class=card><h1>Nothing to do here</h1><p class=muted>Open this from the organisation that asked for it.</p></div>'; return; }
   post('/embed/link/view').then(function(d){ if(d.error){ M.innerHTML='<div class=card><h1>Link expired</h1><p class=err>'+esc(d.error)+'</p></div>'; return; }
-    D=d; if(d.linked) linked(); else form(); }).catch(function(){ M.innerHTML='<div class=card><p class=err>The network could not be reached.</p></div>'; });
+    D=d; if(d.mode=='open'||d.existing) MODE='otp'; if(d.linked) linked(); else form(); }).catch(function(){ M.innerHTML='<div class=card><p class=err>The network could not be reached.</p></div>'; });
 })();
 </script>
 </body></html>
