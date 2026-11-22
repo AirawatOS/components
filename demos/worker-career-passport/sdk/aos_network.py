@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aos_network 0.5 (listings: signed, cached, search providers — ADR-0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
+"""aos_network 0.6 (discovery feed: listings + services — ADR-0139/0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
 without AirawatOS).
 
 A platform such as Ola uses this from its own backend. It does NOT need AirawatOS: it registers on the network's portal
@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 def _b64u(raw):
@@ -175,8 +175,10 @@ class Network:
 
     # ---- search providers (0.5): your role USES a listing type -> you may read the network's listing feed --------------
     def listing_feed(self, network, since=0):
-        """Changes after `since` for the listing types your role uses: {next, more, changes: [{op: posted|changed|closed,
-        listing_id, version, listing}]}. Keep `next` and pass it back; you also get `listing.changed` events."""
+        """The network's discovery feed: changes after `since` for the listing types your role uses — and services, if your
+        role uses network.service_offering: {next, more, changes: [{kind: listing|service, op: posted|changed|closed,
+        listing_id, listing, live?}]}. A service's `listing` is its full signed record (check it with verify_service).
+        Keep `next` and pass it back; you also get `listing.changed` / `service.changed` events."""
         return self._call("listings/feed", {"network": network, "since": since})
 
     def verify_listing(self, listing):
@@ -196,6 +198,25 @@ class Network:
         same = st.get("type") == listing.get("type") and st.get("issuer") == listing.get("poster") and st.get("network") == listing.get("network") \
             and all(listing.get("fields", {}).get(k) in (v, _intish(v)) for k, v in (st.get("fields") or {}).items() if v not in (None, ""))
         return bool(same and str(listing.get("expires_at") or "") >= time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def verify_service(self, offering):
+        """True when a service from the discovery feed is the record its provider published: the provider's steward
+        signature over the record (canonical JSON, without `signature`) checks out against the provider's key in the
+        network directory, and the service is active."""
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        sig = (offering or {}).get("signature") or {}
+        if not (sig.get("value") and offering.get("participant_id")) or offering.get("status") != "active":
+            return False
+        try:
+            req = urllib.request.Request(self.root + "/network/v1/directory/resolve", data=json.dumps({"participant_id": offering["participant_id"]}).encode(),
+                                         method="POST", headers={"Content-Type": "application/json"})
+            keys = json.loads(urllib.request.urlopen(req, timeout=self.timeout).read()).get("keys") or []
+            k = next(x for x in keys if x.get("id") == sig.get("key_id") and x.get("status") == "active")
+            core = {a: b for a, b in offering.items() if a != "signature"}
+            Ed25519PublicKey.from_public_bytes(_unb64u(k["public_key"][1:])).verify(_unb64u(sig["value"][1:]), _canon(core).encode("utf-8"))
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def respond_url(listing):
@@ -252,6 +273,27 @@ class Network:
         """Hosted participants: True when an event body carries the HMAC signature (hex HMAC-SHA256 with your secret)."""
         good = hmac.new(bytes.fromhex(secret), raw_body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(good, signature or "")
+
+
+def _canon(o):
+    """RFC 8785 JSON canonical form (the subset the network signs): sorted keys, no spaces, minimal escaping."""
+    if o is None:
+        return "null"
+    if o is True:
+        return "true"
+    if o is False:
+        return "false"
+    if isinstance(o, str):
+        return json.dumps(o, ensure_ascii=False)
+    if isinstance(o, int):
+        return str(o)
+    if isinstance(o, float):
+        return str(int(o)) if o.is_integer() else repr(o)
+    if isinstance(o, (list, tuple)):
+        return "[" + ",".join(_canon(x) for x in o) + "]"
+    if isinstance(o, dict):
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + _canon(v) for k, v in sorted(o.items(), key=lambda kv: kv[0])) + "}"
+    raise TypeError("not canonical JSON: %s" % type(o))
 
 
 def _intish(v):
