@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aos_network 0.2 — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
+"""aos_network 0.3 (jobs, ADR-0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
 without AirawatOS).
 
 A platform such as Ola uses this from its own backend. It does NOT need AirawatOS: it registers on the network's portal
@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 def _b64u(raw):
@@ -154,6 +154,35 @@ class Network:
     def link_status(self, request_id):
         """{status: pending|linked|cancelled, link_id?} — the link id is yours alone; it does not identify the person elsewhere."""
         return self._call("link-requests/status", {"request_id": request_id})
+
+    # ---- jobs (0.3, ADR-0140) — your role must allow posting jobs and issuing job placements ----------------------------
+    def post_job(self, network, title, work, place=None, pay=None, openings=1, description=None):
+        """Post a job on the network; workers see it in their account. Returns the posting {id, ...}."""
+        return self._call("jobs/post", {"network": network, "title": title, "work": work, "place": place, "pay": pay,
+                                        "openings": openings, "description": description})["job"]
+
+    def close_job(self, network, job_id):
+        return self._call("jobs/close", {"network": network, "job_id": job_id})["job"]
+
+    def my_jobs(self, network):
+        """Your postings, each with its number of applications."""
+        return self._call("jobs/mine", {"network": network})["jobs"]
+
+    def list_applications(self, network, job_id=None):
+        """Applications to your jobs: {id, job, name, mobile?, experience: [{title, issuer_name, occupation, since,
+        genuine}], status}. Only what each worker chose to share; an applicant you are not linked to is known by the id."""
+        return self._call("jobs/applications", {"network": network, "job_id": job_id})["applications"]
+
+    def make_offer(self, network, certificate, application_id=None, link_id=None, job_id=None):
+        """Offer work to an applicant (application_id) or to a worker you are linked to (link_id). `certificate` is the
+        job placement you will give them: sign_certificate(network, claims, type="credential.job_placement").
+        It goes into their account if they accept; you are told by an event (job.offer_accepted / job.offer_declined)."""
+        body = {"network": network, "certificate": certificate, "application_id": application_id, "link_id": link_id, "job_id": job_id}
+        return self._call("jobs/offer", {k: v for k, v in body.items() if v is not None})["offer"]
+
+    def my_offers(self, network):
+        """Your offers and their status: open | accepted | declined | lapsed."""
+        return self._call("jobs/offers", {"network": network})["offers"]
 
     # ---- events from the network ----------------------------------------------------------------------------------------
     def network_keys(self):
