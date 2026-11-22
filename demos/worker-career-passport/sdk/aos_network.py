@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aos_network 0.3 (jobs, ADR-0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
+"""aos_network 0.4 (listings, ADR-0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
 without AirawatOS).
 
 A platform such as Ola uses this from its own backend. It does NOT need AirawatOS: it registers on the network's portal
@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 
 def _b64u(raw):
@@ -155,34 +155,38 @@ class Network:
         """{status: pending|linked|cancelled, link_id?} — the link id is yours alone; it does not identify the person elsewhere."""
         return self._call("link-requests/status", {"request_id": request_id})
 
-    # ---- jobs (0.3, ADR-0140) — your role must allow posting jobs and issuing job placements ----------------------------
-    def post_job(self, network, title, work, place=None, pay=None, openings=1, description=None):
-        """Post a job on the network; workers see it in their account. Returns the posting {id, ...}."""
-        return self._call("jobs/post", {"network": network, "title": title, "work": work, "place": place, "pay": pay,
-                                        "openings": openings, "description": description})["job"]
+    # ---- listings (0.4, ADR-0140): any kind of listing the network has — jobs, training seats, tenders… ---------------------
+    def listing_types(self, network):
+        """The kinds of listing on the network, each with its fields, words ("Jobs", "Apply") and what an offer issues."""
+        return self._call("listings/types", {"network": network})["types"]
 
-    def close_job(self, network, job_id):
-        return self._call("jobs/close", {"network": network, "job_id": job_id})["job"]
+    def post_listing(self, network, type, fields):
+        """Post a listing of a type the network has (your role must provide it), e.g.
+        post_listing(NETWORK, "hr.job_posting", {"title": ..., "work": ..., "pay": ...}). Fields follow the type."""
+        return self._call("listings/post", {"network": network, "type": type, "fields": fields})["listing"]
 
-    def my_jobs(self, network):
-        """Your postings, each with its number of applications."""
-        return self._call("jobs/mine", {"network": network})["jobs"]
+    def close_listing(self, network, listing_id):
+        return self._call("listings/close", {"network": network, "listing_id": listing_id})["listing"]
 
-    def list_applications(self, network, job_id=None):
-        """Applications to your jobs: {id, job, name, mobile?, experience: [{title, issuer_name, occupation, since,
-        genuine}], status}. Only what each worker chose to share; an applicant you are not linked to is known by the id."""
-        return self._call("jobs/applications", {"network": network, "job_id": job_id})["applications"]
+    def my_listings(self, network, type=None):
+        """Your listings, each with its number of responses."""
+        return self._call("listings/mine", {"network": network, "type": type})["listings"]
 
-    def make_offer(self, network, certificate, application_id=None, link_id=None, job_id=None):
-        """Offer work to an applicant (application_id) or to a worker you are linked to (link_id). `certificate` is the
-        job placement you will give them: sign_certificate(network, claims, type="credential.job_placement").
-        It goes into their account if they accept; you are told by an event (job.offer_accepted / job.offer_declined)."""
-        body = {"network": network, "certificate": certificate, "application_id": application_id, "link_id": link_id, "job_id": job_id}
-        return self._call("jobs/offer", {k: v for k, v in body.items() if v is not None})["offer"]
+    def list_responses(self, network, listing_id=None):
+        """Responses to your listings: {id, listing, type, name, mobile?, certificates: [{title, issuer_name, occupation,
+        since, genuine}], status}. Only what each person chose to share; someone not linked to you is known by the id."""
+        return self._call("listings/responses", {"network": network, "listing_id": listing_id})["responses"]
+
+    def make_offer(self, network, certificate, response_id=None, link_id=None, listing_id=None):
+        """Offer to someone who responded (response_id) or someone linked to you (link_id). `certificate` is what the
+        listing type issues, signed by you: sign_certificate(network, claims, type=<the type's offer_issues>). It goes into
+        their account if they accept; you are told by an event (offer.accepted / offer.declined)."""
+        body = {"network": network, "certificate": certificate, "response_id": response_id, "link_id": link_id, "listing_id": listing_id}
+        return self._call("listings/offer", {k: v for k, v in body.items() if v is not None})["offer"]
 
     def my_offers(self, network):
         """Your offers and their status: open | accepted | declined | lapsed."""
-        return self._call("jobs/offers", {"network": network})["offers"]
+        return self._call("listings/offers", {"network": network})["offers"]
 
     # ---- events from the network ----------------------------------------------------------------------------------------
     def network_keys(self):
