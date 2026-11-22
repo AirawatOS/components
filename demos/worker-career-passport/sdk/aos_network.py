@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aos_network 0.4 (listings, ADR-0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
+"""aos_network 0.5 (listings: signed, cached, search providers — ADR-0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
 without AirawatOS).
 
 A platform such as Ola uses this from its own backend. It does NOT need AirawatOS: it registers on the network's portal
@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 
 def _b64u(raw):
@@ -160,10 +160,47 @@ class Network:
         """The kinds of listing on the network, each with its fields, words ("Jobs", "Apply") and what an offer issues."""
         return self._call("listings/types", {"network": network})["types"]
 
-    def post_listing(self, network, type, fields):
+    def post_listing(self, network, type, fields, listing_id=None, valid_until=None):
         """Post a listing of a type the network has (your role must provide it), e.g.
-        post_listing(NETWORK, "hr.job_posting", {"title": ..., "work": ..., "pay": ...}). Fields follow the type."""
-        return self._call("listings/post", {"network": network, "type": type, "fields": fields})["listing"]
+        post_listing(NETWORK, "hr.job_posting", {"title": ..., "work": ..., "pay": ...}). Fields follow the type.
+        The listing is YOURS: the SDK signs it with your key; the network and search providers cache the signed copy.
+        Pass listing_id to publish a new version of one of your listings; valid_until = "YYYY-MM-DD" (default 30 days)."""
+        body = {"network": network, "type": type, "fields": fields, "listing_id": listing_id, "valid_until": valid_until}
+        if self._key:
+            st = {"type": type, "network": network, "issuer": self.client_id, "fields": fields, "listing_id": listing_id,
+                  "valid_until": valid_until, "iat": int(time.time()), "jti": _b64u(os.urandom(12))}
+            raw = json.dumps(st, separators=(",", ":"), sort_keys=True).encode()
+            body["signed"] = {"statement": _b64u(raw), "signature": _b64u(self._key.sign(raw)), "kid": self._kid}
+        return self._call("listings/post", body)["listing"]
+
+    # ---- search providers (0.5): your role USES a listing type -> you may read the network's listing feed --------------
+    def listing_feed(self, network, since=0):
+        """Changes after `since` for the listing types your role uses: {next, more, changes: [{op: posted|changed|closed,
+        listing_id, version, listing}]}. Keep `next` and pass it back; you also get `listing.changed` events."""
+        return self._call("listings/feed", {"network": network, "since": since})
+
+    def verify_listing(self, listing):
+        """True when the listing is signed by its poster's published key and the signed statement matches the copy you
+        hold, and it has not expired. Checks against the POSTER's key set, not the network's word."""
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        pr = listing.get("proof") or {}
+        if not (listing.get("signed") and pr.get("statement") and listing.get("poster_keys")):
+            return False
+        try:
+            raw = _unb64u(pr["statement"]); st = json.loads(raw)
+            keys = json.loads(urllib.request.urlopen(listing["poster_keys"], timeout=self.timeout).read()).get("keys") or []
+            k = next(x for x in keys if x.get("kid") == pr.get("kid") and x.get("crv") == "Ed25519")
+            Ed25519PublicKey.from_public_bytes(_unb64u(k["x"])).verify(_unb64u(pr["signature"]), raw)
+        except Exception:
+            return False
+        same = st.get("type") == listing.get("type") and st.get("issuer") == listing.get("poster") and st.get("network") == listing.get("network") \
+            and all(listing.get("fields", {}).get(k) in (v, _intish(v)) for k, v in (st.get("fields") or {}).items() if v not in (None, ""))
+        return bool(same and str(listing.get("expires_at") or "") >= time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    @staticmethod
+    def respond_url(listing):
+        """Where to send a person to respond: the network's own consent screen (they sign in there; you never see the response)."""
+        return listing.get("respond_url")
 
     def close_listing(self, network, listing_id):
         return self._call("listings/close", {"network": network, "listing_id": listing_id})["listing"]
@@ -215,6 +252,13 @@ class Network:
         """Hosted participants: True when an event body carries the HMAC signature (hex HMAC-SHA256 with your secret)."""
         good = hmac.new(bytes.fromhex(secret), raw_body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(good, signature or "")
+
+
+def _intish(v):
+    try:
+        return int(v)
+    except Exception:
+        return v
 
 
 def generate_keys(kid, out_dir):
