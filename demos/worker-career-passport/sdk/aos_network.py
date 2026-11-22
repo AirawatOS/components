@@ -113,7 +113,10 @@ class Network:
             return json.loads(urllib.request.urlopen(req, timeout=self.timeout).read())
         except urllib.error.HTTPError as e:
             try:
-                msg = json.loads(e.read()).get("error")
+                d = json.loads(e.read())
+                msg = d.get("error") or e.reason
+                if d.get("error_description"):                 # 0.2.1: keep the network's explanation
+                    msg = "%s: %s" % (msg, d["error_description"])
             except Exception:
                 msg = e.reason
             raise NetworkError(e.code, msg)
