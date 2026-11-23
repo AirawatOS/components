@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aos_network 0.6 (discovery feed: listings + services — ADR-0139/0140) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
+"""aos_network 0.7 (unlink; discovery feed: listings + services) — the network SDK for a participant's SERVERS (ADR-0135 Mode B, ADR-0136 linking, ADR-0137 participants
 without AirawatOS).
 
 A platform such as Ola uses this from its own backend. It does NOT need AirawatOS: it registers on the network's portal
@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 
 def _b64u(raw):
@@ -150,6 +150,11 @@ class Network:
         if link_id:
             body["link_id"] = link_id
         return self._call("link-requests", body)
+
+    def unlink(self, network, link_id):
+        """Unlink a person you are linked to (0.7). Your reference stops working; on eShram the registry removes you from
+        their registration. The person is told; you also get an `unlinked` event. They can link with you again later."""
+        return self._call("links/unlink", {"network": network, "link_id": link_id})
 
     def link_status(self, request_id):
         """{status: pending|linked|cancelled, link_id?} — the link id is yours alone; it does not identify the person elsewhere."""
